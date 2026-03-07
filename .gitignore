@@ -37,3 +37,16 @@ prisma/migrations/**/migration_lock.toml
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# -----------------------------------------------------------------------------
+# Nicht betriebsnotwendig – nur für Entwicklung/Planung (nicht veröffentlichen)
+# -----------------------------------------------------------------------------
+DiscordBot.md
+Roadmap.md
+UI.md
+db_schema.md
+functions.md
+progress_tracker.md
+project.md
+rules.md
+scripts/
