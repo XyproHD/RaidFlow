@@ -1,0 +1,60 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Light Mode: helle, freundliche Farben mit gutem Kontrast (Standard) */
+  :root {
+    --background: 40 20% 98%;
+    --foreground: 220 15% 18%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 18%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 15% 18%;
+    --primary: 220 70% 42%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 25% 92%;
+    --secondary-foreground: 220 15% 25%;
+    --muted: 40 15% 94%;
+    --muted-foreground: 220 10% 42%;
+    --accent: 40 30% 90%;
+    --accent-foreground: 220 15% 22%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 15% 88%;
+    --input: 40 15% 88%;
+    --ring: 220 70% 42%;
+    --radius: 0.5rem;
+  }
+  /* Dark Mode: dunkle Farben mit gutem Kontrast zu Bedienelementen und Text */
+  .dark {
+    --background: 222 28% 11%;
+    --foreground: 40 15% 96%;
+    --card: 222 28% 14%;
+    --card-foreground: 40 15% 96%;
+    --popover: 222 28% 14%;
+    --popover-foreground: 40 15% 96%;
+    --primary: 40 80% 55%;
+    --primary-foreground: 222 28% 8%;
+    --secondary: 222 22% 20%;
+    --secondary-foreground: 40 15% 92%;
+    --muted: 222 22% 18%;
+    --muted-foreground: 40 10% 68%;
+    --accent: 222 25% 22%;
+    --accent-foreground: 40 15% 92%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 40 15% 98%;
+    --border: 222 20% 24%;
+    --input: 222 20% 24%;
+    --ring: 40 80% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

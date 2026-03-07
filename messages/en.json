@@ -1,0 +1,15 @@
+{
+  "common": {
+    "appName": "RaidFlow"
+  },
+  "home": {
+    "welcome": "Welcome to RaidFlow"
+  },
+  "profile": {
+    "title": "My Profile",
+    "theme": "Display mode",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeDescription": "Light mode (default) or dark mode. Stored in your profile and in a cookie."
+  }
+}

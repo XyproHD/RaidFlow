@@ -1,0 +1,287 @@
+// RaidFlow – Prisma-Schema (Referenz: db_schema.md)
+// Tabellen mit Präfix rf_ in PostgreSQL (Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// -----------------------------------------------------------------------------
+// User & Guild
+// -----------------------------------------------------------------------------
+
+model RfUser {
+  id              String   @id @default(uuid())
+  discordId       String   @unique @map("discord_id")
+  themePreference String?  @map("theme_preference") // "light" | "dark" – Anzeige-Modus, wird auch per Cookie gespeichert
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  userGuilds       RfUserGuild[]
+  guildMembers     RfGuildMember[]
+  characters       RfCharacter[]
+  raidTimePrefs    RfRaidTimePreference[]
+  raidSignups      RfRaidSignup[]
+  raidCompletions  RfRaidCompletion[]
+  loots            RfLoot[]
+  auditLogs        RfAuditLog[]
+
+  @@map("rf_user")
+}
+
+model RfGuild {
+  id                          String   @id @default(uuid())
+  discordGuildId              String   @unique @map("discord_guild_id")
+  name                        String
+  botInviteStatus             String?  @map("bot_invite_status")
+  discordRoleGuildmasterId    String?  @map("discord_role_guildmaster_id")
+  discordRoleRaidleaderId     String?  @map("discord_role_raidleader_id")
+  discordRoleRaiderId         String?  @map("discord_role_raider_id")
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  userGuilds            RfUserGuild[]
+  raidGroups            RfRaidGroup[]
+  guildMembers          RfGuildMember[]
+  characters            RfCharacter[]
+  raids                 RfRaid[]
+  guildAllowedChannels  RfGuildAllowedChannel[]
+  loots                 RfLoot[]
+  auditLogs             RfAuditLog[]
+
+  @@map("rf_guild")
+}
+
+model RfUserGuild {
+  userId    String   @map("user_id")
+  guildId   String   @map("guild_id")
+  role      String
+  joinedAt  DateTime @default(now()) @map("joined_at")
+
+  user   RfUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild  RfGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@id([userId, guildId])
+  @@map("rf_user_guild")
+}
+
+model RfRaidGroup {
+  id             String   @id @default(uuid())
+  guildId        String   @map("guild_id")
+  name           String
+  discordRoleId  String?  @map("discord_role_id")
+  sortOrder      Int      @default(0) @map("sort_order")
+
+  guild         RfGuild        @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildMembers  RfGuildMember[]
+  raids         RfRaid[]       @relation("RaidGroupRestriction")
+
+  @@map("rf_raid_group")
+}
+
+model RfGuildMember {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  guildId      String    @map("guild_id")
+  raidGroupId  String?   @map("raid_group_id")
+  joinedAt     DateTime  @default(now()) @map("joined_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user      RfUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild     RfGuild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  raidGroup RfRaidGroup? @relation(fields: [raidGroupId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, guildId])
+  @@map("rf_guild_member")
+}
+
+// -----------------------------------------------------------------------------
+// Character, RaidTimePreference, Dungeon
+// -----------------------------------------------------------------------------
+
+model RfCharacter {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  guildId   String?  @map("guild_id")
+  name      String
+  mainSpec  String   @map("main_spec")
+  offSpec   String?  @map("off_spec")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user          RfUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild         RfGuild? @relation(fields: [guildId], references: [id], onDelete: SetNull)
+  raidSignups   RfRaidSignup[]
+  raidCompletions RfRaidCompletion[]
+  loots         RfLoot[]
+
+  @@map("rf_character")
+}
+
+model RfRaidTimePreference {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  weekday    String
+  timeSlot   String   @map("time_slot")
+  preference String
+  weekFocus  String?  @map("week_focus")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user RfUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("rf_raid_time_preference")
+}
+
+model RfDungeon {
+  id        String  @id @default(uuid())
+  name      String
+  expansion String
+
+  raids RfRaid[]
+  loots RfLoot[]
+
+  @@map("rf_dungeon")
+}
+
+// -----------------------------------------------------------------------------
+// Raid, Signup, Completion
+// -----------------------------------------------------------------------------
+
+model RfRaid {
+  id                      String    @id @default(uuid())
+  guildId                 String    @map("guild_id")
+  dungeonId               String    @map("dungeon_id")
+  name                    String
+  raidLeaderId            String?   @map("raid_leader_id")
+  lootmasterId            String?   @map("lootmaster_id")
+  minTanks                Int       @map("min_tanks")
+  minMelee                Int       @map("min_melee")
+  minRange                Int       @map("min_range")
+  minHealers              Int       @map("min_healers")
+  minSpecs                Json?     @map("min_specs")
+  raidGroupRestrictionId  String?   @map("raid_group_restriction_id")
+  note                    String?   @db.Text
+  maxPlayers              Int       @map("max_players")
+  scheduledAt             DateTime  @map("scheduled_at")
+  signupUntil             DateTime  @map("signup_until")
+  signupVisibility        String    @map("signup_visibility")
+  status                  String
+  discordThreadId         String?   @map("discord_thread_id")
+  discordChannelId       String?   @map("discord_channel_id")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  guild         RfGuild   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  dungeon       RfDungeon @relation(fields: [dungeonId], references: [id], onDelete: Restrict)
+  raidGroupRestriction RfRaidGroup? @relation("RaidGroupRestriction", fields: [raidGroupRestrictionId], references: [id], onDelete: SetNull)
+  signups       RfRaidSignup[]
+  completions   RfRaidCompletion[]
+  auditLogs     RfAuditLog[]
+
+  @@map("rf_raid")
+}
+
+model RfRaidSignup {
+  id            String    @id @default(uuid())
+  raidId        String    @map("raid_id")
+  userId        String    @map("user_id")
+  characterId   String?   @map("character_id")
+  type          String
+  allowReserve  Boolean   @default(false) @map("allow_reserve")
+  note          String?   @db.Text
+  setConfirmed  Boolean   @default(false) @map("set_confirmed")
+  signedAt      DateTime  @default(now()) @map("signed_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  raid      RfRaid     @relation(fields: [raidId], references: [id], onDelete: Cascade)
+  user      RfUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character RfCharacter? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+
+  @@map("rf_raid_signup")
+}
+
+model RfRaidCompletion {
+  id                   String   @id @default(uuid())
+  raidId               String   @map("raid_id")
+  userId               String   @map("user_id")
+  characterId          String?  @map("character_id")
+  participationCounter Decimal  @map("participation_counter") @db.Decimal(3, 2)
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  raid      RfRaid      @relation(fields: [raidId], references: [id], onDelete: Cascade)
+  user      RfUser      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character RfCharacter? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+
+  @@map("rf_raid_completion")
+}
+
+model RfLoot {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  guildId     String   @map("guild_id")
+  dungeonId   String   @map("dungeon_id")
+  characterId String?  @map("character_id")
+  itemRef     String   @map("item_ref")
+  receivedAt  DateTime @map("received_at")
+
+  user      RfUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild     RfGuild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  dungeon   RfDungeon  @relation(fields: [dungeonId], references: [id], onDelete: Restrict)
+  character RfCharacter? @relation(fields: [characterId], references: [id], onDelete: SetNull)
+
+  @@map("rf_loot")
+}
+
+model RfGuildAllowedChannel {
+  id                String    @id @default(uuid())
+  guildId           String    @map("guild_id")
+  discordChannelId  String    @map("discord_channel_id")
+  name              String?
+  lastValidatedAt   DateTime? @map("last_validated_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  guild RfGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@map("rf_guild_allowed_channel")
+}
+
+model RfAppAdmin {
+  id                 String   @id @default(uuid())
+  discordUserId      String   @unique @map("discord_user_id")
+  addedByDiscordId   String?  @map("added_by_discord_id")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@map("rf_app_admin")
+}
+
+model RfAppConfig {
+  key   String @id
+  value String @db.Text
+
+  @@map("rf_app_config")
+}
+
+model RfAuditLog {
+  id                String   @id @default(uuid())
+  entityType        String   @map("entity_type")
+  entityId          String   @map("entity_id")
+  action            String
+  changedByUserId   String   @map("changed_by_user_id")
+  fieldName         String?  @map("field_name")
+  oldValue          String?  @map("old_value") @db.Text
+  newValue          String?  @map("new_value") @db.Text
+  guildId           String?  @map("guild_id")
+  raidId            String?  @map("raid_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user  RfUser  @relation(fields: [changedByUserId], references: [id], onDelete: Cascade)
+  guild RfGuild? @relation(fields: [guildId], references: [id], onDelete: SetNull)
+  raid  RfRaid?  @relation(fields: [raidId], references: [id], onDelete: SetNull)
+
+  @@map("rf_audit_log")
+}

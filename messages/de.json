@@ -1,0 +1,15 @@
+{
+  "common": {
+    "appName": "RaidFlow"
+  },
+  "home": {
+    "welcome": "Willkommen bei RaidFlow"
+  },
+  "profile": {
+    "title": "Mein Profil",
+    "theme": "Anzeige-Modus",
+    "themeLight": "Hell",
+    "themeDark": "Dunkel",
+    "themeDescription": "Heller Modus (Standard) oder Dunkler Modus. Wird im Profil und per Cookie gespeichert."
+  }
+}
