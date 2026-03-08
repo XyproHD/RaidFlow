@@ -161,8 +161,15 @@ client.on('interactionCreate', async (interaction) => {
 
 const token = process.env.DISCORD_BOT_TOKEN;
 if (!token) {
-  console.error('DISCORD_BOT_TOKEN fehlt in .env');
+  console.error('DISCORD_BOT_TOKEN fehlt. Bitte in Railway/Vercel bzw. .env setzen.');
   process.exit(1);
 }
 
-client.login(token);
+client.on('error', (err) => {
+  console.error('Discord Client Error:', err);
+});
+
+client.login(token).catch((err) => {
+  console.error('Login fehlgeschlagen (Token prüfen, Application aktiv?):', err.message);
+  process.exit(1);
+});

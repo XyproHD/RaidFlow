@@ -120,7 +120,14 @@ So spricht jeder Bot automatisch die richtige Webapp an. Kein Code-Unterschied �
 
 ### 3.2 Automatisches Deployment
 
-Railway deployt bei Push: Service, der auf `main` hört, baut den Production-Bot; Service, der auf `preview` hört, baut den Preview-Bot. Nach Merge von `preview` nach `main` wird Production (Webapp + Production-Bot) automatisch aktualisiert.
+Railway deployt bei Push: Service, der auf `main` hört, baut den Production-Bot; Service, der auf `preview` hört, baut den Preview-Bot. **Wichtig:** Der Branch-Name muss exakt übereinstimmen (z. B. `Preview` vs. `preview` – Railway ist case-sensitiv). Nach Merge von `preview` nach `main` wird Production (Webapp + Production-Bot) automatisch aktualisiert.
+
+### 3.3 Bot zeigt in Discord als „Offline“
+
+- **Railway:** Prüfe, ob der Bot-Service für diese Stage überhaupt läuft (Deploy erfolgreich?). In den **Logs** des Services solltest du nach dem Start sehen: `RaidFlow Bot eingeloggt als <Name>#1234`. Fehlt das oder erscheint ein Fehler (z. B. „Login fehlgeschlagen“, „DISCORD_BOT_TOKEN fehlt“), dann:
+  - **DISCORD_BOT_TOKEN** auf Railway gesetzt? Muss der **Bot-Token** der **gleichen** Discord-Application sein, mit der du den Bot eingeladen hast (Production-Bot → Production-Token, Preview-Bot → Preview-Token).
+  - **Deploy-Branch:** Wenn dein Branch z. B. `Preview` (großes P) heißt, in Railway beim Preview-Bot-Service genau diesen Branch als Deploy-Branch einstellen, nicht `preview`.
+- **Discord:** Bot einmal aus dem Server entfernen und über den Einladungs-Link der **richtigen** Stage erneut hinzufügen (Production-Link für Production, Preview-Link für Preview).
 
 ---
 
