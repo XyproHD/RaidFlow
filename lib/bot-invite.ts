@@ -3,14 +3,14 @@
  * BigInt nötig, da Bits > 31 in JavaScript mit Number verloren gehen.
  */
 const DISCORD_BOT_PERMISSIONS =
-  (1n << 28n) | // MANAGE_ROLES – Rollen anlegen (Setup, Raidgruppen)
-  (1n << 10n) | // VIEW_CHANNEL – Channels/Threads sehen
-  (1n << 11n) | // SEND_MESSAGES – Nachrichten senden
-  (1n << 16n) | // READ_MESSAGE_HISTORY – Thread-Inhalt
-  (1n << 31n) | // USE_APPLICATION_COMMANDS – Slash-Commands
-  (1n << 34n) | // MANAGE_THREADS – Threads verwalten
-  (1n << 35n) | // CREATE_PUBLIC_THREADS – Raid-Threads erstellen
-  (1n << 38n);  // SEND_MESSAGES_IN_THREADS – Thread-Updates
+  (BigInt(1) << BigInt(28)) | // MANAGE_ROLES – Rollen anlegen (Setup, Raidgruppen)
+  (BigInt(1) << BigInt(10)) | // VIEW_CHANNEL – Channels/Threads sehen
+  (BigInt(1) << BigInt(11)) | // SEND_MESSAGES – Nachrichten senden
+  (BigInt(1) << BigInt(16)) | // READ_MESSAGE_HISTORY – Thread-Inhalt
+  (BigInt(1) << BigInt(31)) | // USE_APPLICATION_COMMANDS – Slash-Commands
+  (BigInt(1) << BigInt(34)) | // MANAGE_THREADS – Threads verwalten
+  (BigInt(1) << BigInt(35)) | // CREATE_PUBLIC_THREADS – Raid-Threads erstellen
+  (BigInt(1) << BigInt(38));  // SEND_MESSAGES_IN_THREADS – Thread-Updates
 
 /**
  * Bot-Einladungs-URL (Discord OAuth2).
