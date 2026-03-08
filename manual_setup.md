@@ -105,7 +105,14 @@ Damit gilt: Alle Einträge und Werte, die du lokal in `.env.local` für die Weba
 
 ## 3. Bot auf Railway betreiben
 
-Der Discord-Bot läuft **nicht** auf Vercel, sondern auf **Railway**. Zwei **Services** im selben (oder in zwei) Railway-Projekt(en): einer für Production (deployt von Branch `main`), einer für Preview (deployt von Branch `preview`). Pro Service: **Root Directory** = `discord-bot`, **Start Command** = `npm start` (bzw. `node index.js`).
+Der Discord-Bot läuft **nicht** auf Vercel, sondern auf **Railway**. Die **Webapp** (Next.js) gehört **nur** nach Vercel – auf Railway dürfen **nur** die Bot-Services laufen.
+
+**Wichtig:** Jeder Bot-Service auf Railway **muss** so konfiguriert sein:
+- **Root Directory:** `discord-bot` (nicht das Projektroot). Sonst baut Railway die Next.js-App und führt `next start` aus – dann läuft die Webapp auf Railway und der Bot **nie** (Bot bleibt offline).
+- **Start Command:** `npm start` oder `node index.js`.
+- In den **Deploy-Logs** muss nach dem Start stehen: `RaidFlow Bot eingeloggt als …`. Steht dort `Next.js` oder `next start`, ist der falsche Ordner gewählt (Root auf `discord-bot` setzen).
+
+Zwei **Services** im selben (oder in zwei) Railway-Projekt(en): einer für Production (deployt von Branch `main`), einer für Preview (deployt von Branch `preview`).
 
 ### 3.1 Zwei Bot-Services (Production + Preview)
 
@@ -128,6 +135,22 @@ Railway deployt bei Push: Service, der auf `main` hört, baut den Production-Bot
   - **DISCORD_BOT_TOKEN** auf Railway gesetzt? Muss der **Bot-Token** der **gleichen** Discord-Application sein, mit der du den Bot eingeladen hast (Production-Bot → Production-Token, Preview-Bot → Preview-Token).
   - **Deploy-Branch:** Wenn dein Branch z. B. `Preview` (großes P) heißt, in Railway beim Preview-Bot-Service genau diesen Branch als Deploy-Branch einstellen, nicht `preview`.
 - **Discord:** Bot einmal aus dem Server entfernen und über den Einladungs-Link der **richtigen** Stage erneut hinzufügen (Production-Link für Production, Preview-Link für Preview).
+
+---
+
+## 3.4 Discord-Login auf Vercel (Browser-Fehler / Redirect)
+
+Wenn der Login mit Discord auf https://raidflow.vercel.app eine Fehlermeldung oder eine leere/fehlerhafte Seite auslöst:
+
+1. **Discord Developer Portal** → deine Application → **OAuth2** → **Redirects:**  
+   Genau diese URL eintragen (Production): `https://raidflow.vercel.app/api/auth/callback/discord`  
+   Für Preview: `https://raidflow-git-preview-myhess-3468s-projects.vercel.app/api/auth/callback/discord`  
+   Kein abschließender Schrägstrich, exakt so.
+2. **Vercel** → Environment Variables: **NEXTAUTH_URL** für Production = `https://raidflow.vercel.app` (mit oder ohne `/` am Ende, einheitlich). Für Preview die jeweilige Preview-URL.
+3. **NEXTAUTH_SECRET** in Vercel gesetzt (pro Environment).
+4. Nach Änderung an Redirects oder Env: Deploy neu anstoßen bzw. Seite hart neu laden.
+
+**„Application error: a server-side exception has occurred“ (z. B. auf Preview):** Meist fehlen oder sind falsch gesetzt: **DATABASE_URL** / **DIRECT_URL** (Supabase für diese Stage), **NEXTAUTH_SECRET**, **NEXTAUTH_URL**, **DISCORD_CLIENT_ID**, **DISCORD_CLIENT_SECRET** in Vercel für das jeweilige Environment (Production bzw. Preview). In den Vercel-Logs (Functions/Logs) steht die genaue Exception.
 
 ---
 

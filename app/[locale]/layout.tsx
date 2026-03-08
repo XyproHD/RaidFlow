@@ -30,10 +30,20 @@ export default async function LocaleLayout({
 }) {
   const locale = await getLocale();
   const messages = await getMessages();
-  const session = await getServerSession(authOptions);
+
+  let session = null;
+  let isAdmin = false;
+  let botInviteUrl = '#';
+  try {
+    session = await getServerSession(authOptions);
+    const isLoggedIn = !!session?.discordId;
+    isAdmin = isLoggedIn ? await isApplicationAdmin(session.discordId) : false;
+    botInviteUrl = getBotInviteUrl();
+  } catch (e) {
+    console.error('[Layout] Session/DB/Env:', e);
+    // Fallbacks: Seite rendern, Nutzer sieht z. B. Landing; Fehler in Vercel Logs
+  }
   const isLoggedIn = !!session?.discordId;
-  const isAdmin = isLoggedIn ? await isApplicationAdmin(session.discordId) : false;
-  const botInviteUrl = getBotInviteUrl();
 
   return (
     <html lang={locale} suppressHydrationWarning>
