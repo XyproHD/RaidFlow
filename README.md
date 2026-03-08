@@ -66,10 +66,10 @@ Bei Raids mit **Raidgruppen-Einschränkung** brauchst du zusätzlich die passend
 ## Discord-Integration
 
 - **Login:** Per Discord OAuth (NextAuth.js). Es werden nur die **minimal nötigen Daten** verwendet (z. B. Discord-User-ID); E-Mail und Anzeigename werden nicht dauerhaft gespeichert (Datenminimierung).
-- **RaidFlow-Bot:** Wird auf den Discord-Server eingeladen. Mit **`/raidflow setup`** wird der Server in der Webapp angelegt und die Basis-Rollen (RaidFlow-Gildenmeister, RaidFlow-Raidleader, RaidFlow-Raider) auf Discord erstellt sowie in der App gespeichert. Mit **`/raidflow group <Groupname>`** wird die Rolle „Raidflowgroup-&lt;Groupname&gt;“ angelegt und in der App die Raidgruppe mit Rollen-ID hinterlegt.
+- **RaidFlow-Bot:** Wird auf den Discord-Server eingeladen (Einladungs-URL fordert die nötigen **Bot-Berechtigungen** an: Rollen verwalten, Channels sehen, Nachrichten/Threads senden usw.). Mit **`/raidflow setup`** wird der Server in der Webapp angelegt und die Basis-Rollen (RaidFlow-Gildenmeister, RaidFlow-Raidleader, RaidFlow-Raider) auf Discord erstellt sowie in der App gespeichert. Mit **`/raidflow group <Groupname>`** wird die Rolle „Raidflowgroup-&lt;Groupname&gt;“ angelegt und in der App die Raidgruppe mit Rollen-ID hinterlegt. Alle Bot-Antworten sind **ephemeral** (nur für den ausführenden Nutzer sichtbar), inkl. Zwischenstände (z. B. „Rollen werden erstellt…“).
 - **Raid-Threads:** Der Bot erstellt in einem von der Gildenverwaltung freigegebenen Channel einen Thread pro Raid und aktualisiert ihn bei Anmeldungen, beim „Raid setzen“ und beim Abschließen. **Thread-Inhalt (minimalistisch):** Dungeon, Name, Anmeldungen/max. Teilnehmer, fehlende Mindestbesetzung, „Mein Status“, Link „Raid im Browser“, Link „Raid-Teilnahme im Browser“. In der Webapp sind nur Raids sichtbar, für die der User die nötigen Rollen hat (bei Raidgruppen-Einschränkung zusätzlich Raidflowgroup).
 
-Details zum Bot: siehe **[DiscordBot.md](DiscordBot.md)**.
+Details zum Bot (Berechtigungen, ephemerale Antworten): siehe **[DiscordBot.md](DiscordBot.md)**.
 
 ---
 
@@ -115,6 +115,27 @@ RaidFlow unterstützt damit die gesamte Kette von der Planung über die Anmeldun
 | [progress_tracker.md](progress_tracker.md) | Fortschritt und Akzeptanzkriterien |
 | [DiscordBot.md](DiscordBot.md) | Bot-Befehle, Rollen, Threads |
 | [rules.md](rules.md) | Tech-Stack, Code-Style |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment-Pipeline (main/preview, Vercel, Railway) |
+| [manual_setup.md](manual_setup.md) | Manuelle Einrichtung (Vercel, Railway, Discord, Supabase) |
 
 **Lokal starten:** `npm run dev` – App unter http://localhost:3000 (Redirect auf /de).  
 **Datenbank:** `.env.example` nach `.env` kopieren und `DATABASE_URL`/`DIRECT_URL` eintragen. Für Prisma: `npx prisma db push` (Schema anwenden) oder `npx prisma migrate dev` (mit Migrationen; erwartet `.env`). Nach Schema-Änderungen (z. B. neues Feld `theme_preference` in rf_user) erneut `npx prisma db push` ausführen.
+
+---
+
+## Deployment (Vercel + Railway, zwei Stages)
+
+RaidFlow nutzt **zwei Stages**: **Production** (Branch `main`) und **Preview** (Branch `preview`). Die **Webapp** läuft auf **Vercel**, die **zwei Discord-Bots** auf **Railway**. Zuerst auf Preview deployen und testen, danach nach `main` pushen für Production.
+
+| Stage | Branch | Webapp (Vercel) | Bot (Railway) |
+|-------|--------|------------------|---------------|
+| **Production** | `main` | https://raidflow.vercel.app/ | 1 Service, Env = Production |
+| **Preview** | `preview` | https://raidflow-git-preview-myhess-3468s-projects.vercel.app/ | 1 Service, Env = Preview |
+
+| Was | Wo / Hinweis |
+|-----|----------------|
+| **Pipeline & Struktur** | [DEPLOYMENT.md](DEPLOYMENT.md) – Branches, URLs, Monorepo-Struktur, automatische Deploys. |
+| **Manuelle Einrichtung** | [manual_setup.md](manual_setup.md) – Vercel Environment Variables (Production + Preview), Railway (zwei Bot-Services), Discord, Supabase. |
+| **Build-Konfiguration** | **`vercel.json`** (Framework Next.js, Install/Build). Nicht entfernen; Änderungen im Repo vornehmen. |
+| **Output Directory** | Im Vercel-Dashboard *Settings → General → Build & Development* **leer lassen**. |
+| **Prisma** | `prisma` in **dependencies** (für Vercel Build). Schema-Änderungen: Migration lokal testen, auf Supabase anwenden; Vercel baut mit `prisma generate` automatisch. |

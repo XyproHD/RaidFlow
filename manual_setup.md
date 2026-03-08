@@ -1,0 +1,136 @@
+# RaidFlow – Manuelle Einrichtung (Production + Preview)
+
+Diese Anleitung beschreibt, wie du RaidFlow mit **zwei Stages** betreibst: **Production** (Branch `main`) und **Preview** (Branch `preview`). Die **Webapp** läuft auf **Vercel**, die **zwei Discord-Bots** auf **Railway**. Pro Stage: eigene Discord-Application, eigenes Supabase-Projekt, eigene Env-Variablen.
+
+**Pipeline:** Zuerst auf Preview deployen und testen, danach nach `main` pushen für Production. Siehe [DEPLOYMENT.md](DEPLOYMENT.md) für die Struktur und URLs.
+
+---
+
+## Übersicht
+
+| Komponente        | Production (Branch `main`)   | Preview (Branch `preview`)       |
+|-------------------|------------------------------|----------------------------------|
+| **Webapp**        | Vercel (Production)          | Vercel (Preview)                 |
+| **Webapp-URL**    | https://raidflow.vercel.app/ | https://raidflow-git-preview-myhess-3468s-projects.vercel.app/ |
+| **Discord Login** | Eigene Discord-OAuth-App     | Eigene Discord-OAuth-App        |
+| **Discord-Bot**   | Railway (1 Service)          | Railway (1 Service)              |
+| **Datenbank**     | Eigenes Supabase-Projekt     | Eigenes Supabase-Projekt        |
+
+Die **Webapp** läuft nur auf Vercel. Der **Discord-Bot** (Ordner `discord-bot/`) läuft auf **Railway** – zwei Services: einer deployt von `main` (Production-Bot), einer von `preview` (Preview-Bot). Jeder Service hat seine eigenen Environment Variables (Token, WEBAPP_URL, BOT_SETUP_SECRET).
+
+---
+
+## 1. Vorbereitung: Was du brauchst
+
+### 1.1 Discord (zwei „Umgebungen“)
+
+- **Production:**  
+  - 1 Discord Application (Developer Portal) → Client ID, Client Secret, Bot Token.  
+  - Diese Application = OAuth-Login der Webapp **und** der Production-Bot.
+- **Preview:**  
+  - 1 weitere Discord Application → eigene Client ID, Client Secret, Bot Token.  
+  - OAuth-Login der Preview-Webapp **und** Preview-Bot.
+
+Merke dir pro Umgebung:  
+`DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_BOT_TOKEN`.  
+Oft ist die Bot-Application-ID = Client ID derselben Application (`DISCORD_BOT_CLIENT_ID` = `DISCORD_CLIENT_ID`).
+
+### 1.2 Supabase (mindestens zwei Datenbanken)
+
+- **Production:** 1 Supabase-Projekt → Connection String (Pooler) und Direct URL.
+- **Preview:** 1 weiteres Supabase-Projekt → eigene Connection Strings.
+
+Aus dem Supabase-Dashboard (Project Settings → Database):
+
+- **Connection pooling (Transaction Mode, Port 6543):** für `DATABASE_URL` (mit `?pgbouncer=true` o. ä.).
+- **Direct connection (Session Mode, Port 5432):** für `DIRECT_URL`.
+
+### 1.3 Secrets (pro Umgebung neu erzeugen)
+
+- **NEXTAUTH_SECRET:** z. B. `openssl rand -base64 32` (einmal für Production, einmal für Preview).
+- **BOT_SETUP_SECRET:** gemeinsames Geheimnis zwischen **Webapp** und **Bot** derselben Stage (z. B. ein langer Zufallsstring). Production und Preview haben jeweils ein **eigenes** Secret.
+
+### 1.4 URLs
+
+- **Production-Webapp:** `https://raidflow.vercel.app/`
+- **Preview-Webapp:** `https://raidflow-git-preview-myhess-3468s-projects.vercel.app/`
+
+---
+
+## 2. Vercel: Environment Variables anlegen
+
+In Vercel: **Projekt öffnen → Settings → Environment Variables.**
+
+Für jede Variable kannst du angeben, für welche **Umgebung** sie gilt: **Production**, **Preview**, **Development**. Trage die Werte getrennt für Production und Preview ein (gleicher Name, unterschiedliche Werte je Environment).
+
+### 2.1 Welche Variablen in Vercel?
+
+Die **Webapp** (Next.js) nutzt die gleichen Keys wie in deiner lokalen `.env.local`. In Vercel musst du **alle** eintragen, die die Webapp braucht – mit den **Werten der jeweiligen Stage** (Production oder Preview).
+
+| Variable | Beschreibung | Production (Beispiel) | Preview (Beispiel) |
+|----------|--------------|------------------------|---------------------|
+| **NEXTAUTH_URL** | Öffentliche URL der Webapp | `https://raidflow.vercel.app/` | `https://raidflow-git-preview-myhess-3468s-projects.vercel.app/` |
+| **NEXTAUTH_SECRET** | Geheimer Schlüssel für Sessions (pro Stage neu) | `<eigenes Secret, z. B. openssl rand -base64 32>` | `<anderes Secret>` |
+| **DISCORD_CLIENT_ID** | Discord Application Client ID (OAuth) | Client ID der **Production**-Application | Client ID der **Preview**-Application |
+| **DISCORD_CLIENT_SECRET** | Discord Application Client Secret | Secret der **Production**-Application | Secret der **Preview**-Application |
+| **DISCORD_BOT_TOKEN** | Bot Token (Webapp ruft damit Discord-API z. B. für Rollen ab) | Bot Token des **Production**-Bots | Bot Token des **Preview**-Bots |
+| **DISCORD_BOT_CLIENT_ID** | Bot Application ID (für Einladungs-Link) | Oft gleich wie DISCORD_CLIENT_ID (Production) | Oft gleich wie DISCORD_CLIENT_ID (Preview) |
+| **BOT_SETUP_SECRET** | Gemeinsames Secret Webapp ↔ Bot (API-Aufrufe vom Bot) | Gemeinsamer Wert mit **Production**-Bot | Gemeinsamer Wert mit **Preview**-Bot |
+| **DATABASE_URL** | Supabase Connection String (Pooler, z. B. Port 6543) | Connection String **Production**-Supabase | Connection String **Preview**-Supabase |
+| **DIRECT_URL** | Supabase Direct URL (z. B. Port 5432, für Migrationen) | Direct URL **Production**-Supabase | Direct URL **Preview**-Supabase |
+
+**Optional** (wenn du sie lokal nutzt):
+
+| Variable | Beschreibung |
+|----------|--------------|
+| **WEBAPP_OWNER_DISCORD_ID** | Discord User ID des App-Owners (Admin-Rechte) |
+
+Hinweis: **WEBAPP_URL** braucht die Webapp auf Vercel **nicht** – die Variable nutzt der **Bot**, um die Webapp-API aufzurufen. Sie wird nur auf **Railway** pro Bot-Service gesetzt (Production-Bot: `https://raidflow.vercel.app/`, Preview-Bot: `https://raidflow-git-preview-myhess-3468s-projects.vercel.app/`).
+
+### 2.2 Vorgehen in Vercel
+
+1. **Settings → Environment Variables** öffnen.
+2. Für **jede** Variable aus der Tabelle oben:
+   - **Key** eintragen (exakt wie in der Tabelle).
+   - **Value** eintragen (Production-Werte **nur** für Production, Preview-Werte **nur** für Preview).
+   - **Environment** auswählen:  
+     - Für Production-Deploys: **Production** anhaken.  
+     - Für Preview-Deploys: **Preview** anhaken.  
+     - Optional: **Development** für lokale Vercel-Cli.
+3. Speichern. Nach dem nächsten Deploy (Production bzw. Preview) sind die jeweiligen Werte aktiv.
+
+Damit gilt: Alle Einträge und Werte, die du lokal in `.env.local` für die Webapp nutzt, solltest du **pro Stage** in Vercel anlegen – mit den Werten der **Production-** bzw. **Preview-**Umgebung (Discord, Supabase, Secrets, URLs).
+
+---
+
+## 3. Bot auf Railway betreiben
+
+Der Discord-Bot läuft **nicht** auf Vercel, sondern auf **Railway**. Zwei **Services** im selben (oder in zwei) Railway-Projekt(en): einer für Production (deployt von Branch `main`), einer für Preview (deployt von Branch `preview`). Pro Service: **Root Directory** = `discord-bot`, **Start Command** = `npm start` (bzw. `node index.js`).
+
+### 3.1 Zwei Bot-Services (Production + Preview)
+
+- **Production-Bot (Railway-Service für `main`):**  
+  - Env: `DISCORD_BOT_TOKEN` = Production-Bot-Token, `DISCORD_BOT_CLIENT_ID` = Production-Client-ID, `WEBAPP_URL` = `https://raidflow.vercel.app/`, `BOT_SETUP_SECRET` = dasselbe wie in Vercel **Production**.  
+  - Deploy-Branch in Railway: `main`.
+- **Preview-Bot (Railway-Service für `preview`):**  
+  - Env: `DISCORD_BOT_TOKEN` = Preview-Bot-Token, `DISCORD_BOT_CLIENT_ID` = Preview-Client-ID, `WEBAPP_URL` = `https://raidflow-git-preview-myhess-3468s-projects.vercel.app/`, `BOT_SETUP_SECRET` = dasselbe wie in Vercel **Preview**.  
+  - Deploy-Branch in Railway: `preview`.
+
+So spricht jeder Bot automatisch die richtige Webapp an. Kein Code-Unterschied – nur die Env-Variablen pro Service.
+
+### 3.2 Automatisches Deployment
+
+Railway deployt bei Push: Service, der auf `main` hört, baut den Production-Bot; Service, der auf `preview` hört, baut den Preview-Bot. Nach Merge von `preview` nach `main` wird Production (Webapp + Production-Bot) automatisch aktualisiert.
+
+---
+
+## 4. Kurz-Checkliste
+
+- [ ] Zwei Discord Applications (Production + Preview) mit je Client ID, Client Secret, Bot Token.
+- [ ] Zwei Supabase-Projekte (Production + Preview) mit je `DATABASE_URL` und `DIRECT_URL`.
+- [ ] In **Vercel** für **Production** (Branch `main`) alle Webapp-Variablen mit Production-Werten; **NEXTAUTH_URL** = `https://raidflow.vercel.app/`.
+- [ ] In **Vercel** für **Preview** (Branch `preview`) dieselben Variablen mit Preview-Werten; **NEXTAUTH_URL** = `https://raidflow-git-preview-myhess-3468s-projects.vercel.app/`.
+- [ ] Auf **Railway**: zwei Services für den Bot (Root Directory `discord-bot`), einer für `main` (Production-Bot), einer für `preview` (Preview-Bot), mit je passendem `DISCORD_BOT_TOKEN`, `WEBAPP_URL`, `BOT_SETUP_SECRET`.
+- [ ] Nach Änderungen an Env-Variablen: ggf. **Redeploy** in Vercel bzw. Railway.
+
+Wenn du das so anlegst, werden in Production immer Production-Bot und Production-DB genutzt, in Preview immer Preview-Bot und Preview-DB – ohne Code-Unterschied zwischen den Stages. Pipeline: [DEPLOYMENT.md](DEPLOYMENT.md).

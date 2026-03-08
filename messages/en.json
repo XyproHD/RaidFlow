@@ -3,7 +3,35 @@
     "appName": "RaidFlow"
   },
   "home": {
-    "welcome": "Welcome to RaidFlow"
+    "welcome": "Welcome to RaidFlow",
+    "loginWithDiscord": "Login with Discord",
+    "discordBotInvite": "Discord Bot invite",
+    "loginErrorTitle": "Discord login failed.",
+    "loginErrorHint": "Common causes: (1) Redirect URL below must be in the same Discord application that provides your Client ID & Secret. (2) NEXTAUTH_URL in .env.local must match exactly (no trailing slash). (3) NEXTAUTH_SECRET must be set. (4) After restarting \"npm run dev\", try logging in again and check the terminal for debug output with the exact error."
+  },
+  "footer": {
+    "imprint": "Imprint",
+    "disclaimer": "Disclaimer"
+  },
+  "topbar": {
+    "themeLabel": "Display mode",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "language": "Language"
+  },
+  "shell": {
+    "logout": "Log out",
+    "myProfile": "My Profile",
+    "guildManagement": "Guild Management",
+    "discordBotInvite": "Discord Bot invite",
+    "admin": "Admin"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "guilds": "Guilds",
+    "guildsEmpty": "No guilds. Set up the bot on a Discord server.",
+    "raids": "Raids",
+    "raidsEmpty": "No raids."
   },
   "profile": {
     "title": "My Profile",

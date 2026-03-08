@@ -3,7 +3,35 @@
     "appName": "RaidFlow"
   },
   "home": {
-    "welcome": "Willkommen bei RaidFlow"
+    "welcome": "Willkommen bei RaidFlow",
+    "loginWithDiscord": "Login mit Discord",
+    "discordBotInvite": "Discord-Bot einladen",
+    "loginErrorTitle": "Discord-Login fehlgeschlagen.",
+    "loginErrorHint": "Häufige Ursachen: (1) Redirect-URL wie unten bei derselben Discord-App eingetragen, in der du Client ID & Secret verwendest. (2) NEXTAUTH_URL in .env.local exakt wie unten (kein Slash). (3) NEXTAUTH_SECRET gesetzt. (4) Im Terminal nach Neustart von „npm run dev“ erscheinen bei erneutem Login-Versuch Debug-Meldungen – dort steht die genaue Fehlerursache."
+  },
+  "footer": {
+    "imprint": "Impressum",
+    "disclaimer": "Disclaimer"
+  },
+  "topbar": {
+    "themeLabel": "Anzeige-Modus",
+    "themeLight": "Hell",
+    "themeDark": "Dunkel",
+    "language": "Sprache"
+  },
+  "shell": {
+    "logout": "Abmelden",
+    "myProfile": "Mein Profil",
+    "guildManagement": "Gildenverwaltung",
+    "discordBotInvite": "Discord Bot einladen",
+    "admin": "Admin"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "guilds": "Gilden",
+    "guildsEmpty": "Keine Gilden. Bot auf einem Discord-Server einrichten.",
+    "raids": "Raids",
+    "raidsEmpty": "Keine Raids."
   },
   "profile": {
     "title": "Mein Profil",
