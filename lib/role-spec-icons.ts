@@ -28,6 +28,7 @@ export const SPEC_ICONS: Record<string, string> = {
   'Discipline Priest': 'spec-disc-priest.svg',
   'Restoration Druid': 'spec-resto-druid.svg',
   'Feral Druid': 'spec-feral-druid.svg',
+  'Feral (DPS) Druid': 'spec-feral-druid.svg',
   'Balance Druid': 'spec-balance-druid.svg',
   'Holy Paladin': 'spec-holy-paladin.svg',
   'Protection Paladin': 'spec-prot-paladin.svg',
