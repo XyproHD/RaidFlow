@@ -101,7 +101,7 @@ export function ProfileCharacters({
     const text = await res.text();
     try {
       const data = JSON.parse(text);
-      return data?.error ?? text || t('errorSave');
+      return (data?.error ?? text) || t('errorSave');
     } catch {
       return text || t('errorSave');
     }
