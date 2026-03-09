@@ -47,54 +47,58 @@ export async function getGuildsForUser(
   const result: UserGuildInfo[] = [];
 
   for (const guild of guilds) {
-    const roleIds = await getMemberRoleIds(guild.discordGuildId, discordId);
-    const resolved = resolveRaidFlowRole(
-      {
+    try {
+      const roleIds = await getMemberRoleIds(guild.discordGuildId, discordId);
+      const resolved = resolveRaidFlowRole(
+        {
+          id: guild.id,
+          discordGuildId: guild.discordGuildId,
+          name: guild.name,
+          discordRoleGuildmasterId: guild.discordRoleGuildmasterId,
+          discordRoleRaidleaderId: guild.discordRoleRaidleaderId,
+          discordRoleRaiderId: guild.discordRoleRaiderId,
+          raidGroups: guild.raidGroups,
+        },
+        roleIds
+      );
+
+      if (!resolved) continue;
+
+      await prisma.$transaction([
+        prisma.rfUserGuild.upsert({
+          where: {
+            userId_guildId: { userId, guildId: guild.id },
+          },
+          create: {
+            userId,
+            guildId: guild.id,
+            role: resolved.role,
+          },
+          update: { role: resolved.role },
+        }),
+        prisma.rfGuildMember.upsert({
+          where: {
+            userId_guildId: { userId, guildId: guild.id },
+          },
+          create: {
+            userId,
+            guildId: guild.id,
+            raidGroupId: resolved.raidGroupId,
+          },
+          update: { raidGroupId: resolved.raidGroupId },
+        }),
+      ]);
+
+      result.push({
         id: guild.id,
-        discordGuildId: guild.discordGuildId,
         name: guild.name,
-        discordRoleGuildmasterId: guild.discordRoleGuildmasterId,
-        discordRoleRaidleaderId: guild.discordRoleRaidleaderId,
-        discordRoleRaiderId: guild.discordRoleRaiderId,
-        raidGroups: guild.raidGroups,
-      },
-      roleIds
-    );
-
-    if (!resolved) continue;
-
-    await prisma.$transaction([
-      prisma.rfUserGuild.upsert({
-        where: {
-          userId_guildId: { userId, guildId: guild.id },
-        },
-        create: {
-          userId,
-          guildId: guild.id,
-          role: resolved.role,
-        },
-        update: { role: resolved.role },
-      }),
-      prisma.rfGuildMember.upsert({
-        where: {
-          userId_guildId: { userId, guildId: guild.id },
-        },
-        create: {
-          userId,
-          guildId: guild.id,
-          raidGroupId: resolved.raidGroupId,
-        },
-        update: { raidGroupId: resolved.raidGroupId },
-      }),
-    ]);
-
-    result.push({
-      id: guild.id,
-      name: guild.name,
-      discordGuildId: guild.discordGuildId,
-      role: resolved.role,
-      raidGroupId: resolved.raidGroupId,
-    });
+        discordGuildId: guild.discordGuildId,
+        role: resolved.role,
+        raidGroupId: resolved.raidGroupId,
+      });
+    } catch (e) {
+      console.error('[getGuildsForUser] guild:', guild.id, guild.name, e);
+    }
   }
 
   return result;

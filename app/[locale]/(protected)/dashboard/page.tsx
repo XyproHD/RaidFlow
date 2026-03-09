@@ -14,8 +14,14 @@ export default async function DashboardPage() {
   const userId = (session as { userId?: string } | null)?.userId;
   const discordId = (session as { discordId?: string } | null)?.discordId;
 
-  const guilds = userId && discordId ? await getGuildsForUser(userId, discordId) : [];
-  const raids = await getRaidsForUser(guilds);
+  let guilds: Awaited<ReturnType<typeof getGuildsForUser>> = [];
+  let raids: Awaited<ReturnType<typeof getRaidsForUser>> = [];
+  try {
+    guilds = userId && discordId ? await getGuildsForUser(userId, discordId) : [];
+    raids = await getRaidsForUser(guilds);
+  } catch (e) {
+    console.error('[Dashboard]', e);
+  }
 
   const roleKey: Record<string, string> = {
     guildmaster: t('roleGuildmaster'),

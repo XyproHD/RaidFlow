@@ -24,22 +24,27 @@ export interface RfGuildWithRoles {
 
 /**
  * Holt die Discord-Rollen-IDs eines Members auf einem Guild (über Bot-Token).
+ * Wirft nie: bei Fehlern (fehlender Token, Netzwerk, ungültige Antwort) wird [] zurückgegeben.
  */
 export async function getMemberRoleIds(
   discordGuildId: string,
   discordUserId: string
 ): Promise<string[]> {
-  const botToken = process.env.DISCORD_BOT_TOKEN;
-  if (!botToken) return [];
+  try {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) return [];
 
-  const res = await fetch(
-    `${DISCORD_API_BASE}/guilds/${discordGuildId}/members/${discordUserId}`,
-    { headers: { Authorization: `Bot ${botToken}` } }
-  );
+    const res = await fetch(
+      `${DISCORD_API_BASE}/guilds/${discordGuildId}/members/${discordUserId}`,
+      { headers: { Authorization: `Bot ${botToken}` } }
+    );
 
-  if (res.status === 404 || !res.ok) return [];
-  const data = (await res.json()) as { roles?: string[] };
-  return data.roles ?? [];
+    if (res.status === 404 || !res.ok) return [];
+    const data = (await res.json()) as { roles?: string[] };
+    return data.roles ?? [];
+  } catch {
+    return [];
+  }
 }
 
 /**
