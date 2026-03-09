@@ -97,6 +97,16 @@ export function ProfileCharacters({
     resetForm();
   }, [resetForm]);
 
+  const parseError = async (res: Response): Promise<string> => {
+    const text = await res.text();
+    try {
+      const data = JSON.parse(text);
+      return data?.error ?? text || t('errorSave');
+    } catch {
+      return text || t('errorSave');
+    }
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -115,14 +125,18 @@ export function ProfileCharacters({
           offSpec: offSpecId ? getSpecDisplayName(classId, offSpecId) : null,
         }),
       });
-      const data = await res.json();
       if (res.ok) {
-        router.refresh();
-        setList((prev) => [...prev, data.character]);
-        resetForm();
-        setModalOpen(null);
+        const data = await res.json();
+        if (data?.character) {
+          router.refresh();
+          setList((prev) => [...prev, data.character]);
+          resetForm();
+          setModalOpen(null);
+        } else {
+          setError(t('errorSave'));
+        }
       } else {
-        setError(data.error || t('errorSave'));
+        setError(await parseError(res));
       }
     } catch (err) {
       setError(t('errorSave'));
@@ -150,13 +164,13 @@ export function ProfileCharacters({
           offSpec: offSpecId ? getSpecDisplayName(classId, offSpecId) : null,
         }),
       });
-      const data = await res.json();
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         router.refresh();
-        setList((prev) => prev.map((r) => (r.id === editingId ? data.character : r)));
+        setList((prev) => prev.map((r) => (r.id === editingId ? (data.character ?? r) : r)));
         closeEdit();
       } else {
-        setError(data.error || t('errorSave'));
+        setError(await parseError(res));
       }
     } catch (err) {
       setError(t('errorSave'));
@@ -179,8 +193,7 @@ export function ProfileCharacters({
         setList((prev) => prev.filter((r) => r.id !== id));
         if (editingId === id) closeEdit();
       } else {
-        const data = await res.json();
-        setError(data.error || t('errorSave'));
+        setError(await parseError(res));
       }
     } finally {
       setLoading(false);
@@ -192,12 +205,38 @@ export function ProfileCharacters({
     return s?.role ?? 'Melee';
   };
 
+  const selectedMainSpecDisplay = classId && mainSpecId ? getSpecDisplayName(classId, mainSpecId) : null;
+  const selectedOffSpecDisplay = classId && offSpecId ? getSpecDisplayName(classId, offSpecId) : null;
+
   const formContent = (
     <>
       {error && (
         <p className="text-destructive text-sm mb-2" role="alert">
           {error}
         </p>
+      )}
+      {/* Auswahlvorschau mit Icons */}
+      {(classId || selectedMainSpecDisplay) && (
+        <div className="flex flex-wrap items-center gap-3 mb-3 p-2 rounded-lg bg-muted/30 border border-border">
+          {classId && (
+            <span className="inline-flex items-center gap-1.5">
+              <ClassIcon classId={classId} size={24} title={TBC_CLASSES.find((c) => c.id === classId)?.name} />
+              <span className="text-sm font-medium">{TBC_CLASSES.find((c) => c.id === classId)?.name}</span>
+            </span>
+          )}
+          {selectedMainSpecDisplay && (
+            <span className="inline-flex items-center gap-1.5">
+              <SpecIcon spec={selectedMainSpecDisplay} size={20} />
+              <span className="text-sm text-muted-foreground">{selectedMainSpecDisplay}</span>
+            </span>
+          )}
+          {selectedOffSpecDisplay && (
+            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+              <SpecIcon spec={selectedOffSpecDisplay} size={18} />
+              <span className="text-sm">({selectedOffSpecDisplay})</span>
+            </span>
+          )}
+        </div>
       )}
       <div className="grid gap-3">
         <label className="text-sm font-medium">

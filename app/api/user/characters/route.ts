@@ -47,24 +47,30 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const created = await prisma.rfCharacter.create({
-    data: {
-      userId,
-      name: name.trim(),
-      guildId: guildId || null,
-      mainSpec: mainSpec.trim(),
-      offSpec: offSpec?.trim() || null,
-    },
-    include: { guild: { select: { id: true, name: true } } },
-  });
-  return NextResponse.json({
-    character: {
-      id: created.id,
-      name: created.name,
-      guildId: created.guildId,
-      guildName: created.guild?.name ?? null,
-      mainSpec: created.mainSpec,
-      offSpec: created.offSpec,
-    },
-  });
+  try {
+    const created = await prisma.rfCharacter.create({
+      data: {
+        userId,
+        name: name.trim(),
+        guildId: guildId || null,
+        mainSpec: mainSpec.trim(),
+        offSpec: offSpec?.trim() || null,
+      },
+      include: { guild: { select: { id: true, name: true } } },
+    });
+    return NextResponse.json({
+      character: {
+        id: created.id,
+        name: created.name,
+        guildId: created.guildId,
+        guildName: created.guild?.name ?? null,
+        mainSpec: created.mainSpec,
+        offSpec: created.offSpec,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Speichern fehlgeschlagen';
+    console.error('Character create failed:', err);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { AvailabilityGrid } from '@/components/availability-grid';
 
 type RaidTimeRow = {
@@ -13,22 +13,31 @@ type RaidTimeRow = {
   weekFocus: string | null;
 };
 
+type Slot = { weekday: string; timeSlot: string; preference: string };
+
 export function ProfileRaidTimes({ initialData }: { initialData: RaidTimeRow[] }) {
   const t = useTranslations('profile');
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  /** Nach Speichern: gespeicherte Slots anzeigen, damit die Auswahl nicht verschwindet (bis Reload). */
+  const [lastSavedSlots, setLastSavedSlots] = useState<Slot[] | null>(null);
+  const [lastSavedWeekFocus, setLastSavedWeekFocus] = useState<string | null>(null);
 
-  const initialSlots = initialData.map((r) => ({
-    weekday: r.weekday,
-    timeSlot: r.timeSlot,
-    preference: r.preference,
-  }));
-  const initialWeekFocus = initialData[0]?.weekFocus ?? null;
+  const serverSlots = useMemo(
+    () =>
+      initialData.map((r) => ({
+        weekday: r.weekday,
+        timeSlot: r.timeSlot,
+        preference: r.preference,
+      })),
+    [initialData]
+  );
+  const serverWeekFocus = initialData[0]?.weekFocus ?? null;
 
-  const handleSave = async (
-    slots: { weekday: string; timeSlot: string; preference: string }[],
-    weekFocus: string | null
-  ) => {
+  const initialSlots = lastSavedSlots ?? serverSlots;
+  const initialWeekFocus = lastSavedWeekFocus ?? serverWeekFocus;
+
+  const handleSave = async (slots: Slot[], weekFocus: string | null) => {
     setSaving(true);
     try {
       const res = await fetch('/api/user/raid-times/bulk', {
@@ -38,6 +47,8 @@ export function ProfileRaidTimes({ initialData }: { initialData: RaidTimeRow[] }
         body: JSON.stringify({ slots, weekFocus }),
       });
       if (res.ok) {
+        setLastSavedSlots(slots);
+        setLastSavedWeekFocus(weekFocus);
         router.refresh();
       } else {
         const err = await res.json().catch(() => ({}));

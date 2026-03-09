@@ -6,6 +6,8 @@ import { getGuildsForUser } from '@/lib/user-guilds';
 import { ProfileRaidTimes } from './profile-raid-times';
 import { ProfileCharacters } from './profile-characters';
 
+export const dynamic = 'force-dynamic';
+
 /** Mein Profil: Raidzeiten, Charaktere, Raidstatistik, Loot. Theme in Topbar. */
 export default async function ProfilePage() {
   const t = await getTranslations('profile');
