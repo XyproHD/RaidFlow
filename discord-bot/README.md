@@ -7,7 +7,7 @@ Rechte: Nur Server-Owner oder Nutzer mit **Administrator** bzw. **Server verwalt
 
 **Antworten:** Alle Antworten auf Slash-Commands sind **ephemeral** (nur für den ausführenden Nutzer sichtbar, „Whisper“). Während der Ausführung werden Zwischenstände angezeigt (z. B. „Rollen werden erstellt…“, „Webapp wird benachrichtigt…“). Siehe [DiscordBot.md](../DiscordBot.md) Abschnitt „Antworten bei Slash-Command-Interaktionen (ephemeral)“.
 
-**Deployment:** Es gibt **zwei Bots** – einen für **Production** (Branch `main`), einen für **Preview** (Branch `preview`). Beide werden auf **Railway** betrieben (zwei Services, Root Directory `discord-bot`). Pro Service eigene Env-Variablen (Token, WEBAPP_URL, BOT_SETUP_SECRET). Siehe [DEPLOYMENT.md](../DEPLOYMENT.md) und [manual_setup.md](../manual_setup.md).
+**Deployment:** Es gibt **zwei Bots** – einen für **Production** (Branch `main`), einen für **Preview** (Branch `preview`). Beide werden auf **Railway** betrieben (zwei Services, Root Directory `discord-bot`). Pro Service eigene Env-Variablen (Token, WEBAPP_URL, BOT_SETUP_SECRET). Beim Start wird automatisch `deploy-commands.js` ausgeführt (Slash-Commands bei Discord registriert), danach startet der Bot. Siehe [DEPLOYMENT.md](../DEPLOYMENT.md) und [manual_setup.md](../manual_setup.md).
 
 ## Einrichtung (lokal / manuell)
 

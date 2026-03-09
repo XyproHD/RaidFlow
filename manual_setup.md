@@ -109,7 +109,7 @@ Der Discord-Bot läuft **nicht** auf Vercel, sondern auf **Railway**. Die **Weba
 
 **Wichtig:** Jeder Bot-Service auf Railway **muss** so konfiguriert sein:
 - **Root Directory:** `discord-bot` (nicht das Projektroot). Sonst baut Railway die Next.js-App und führt `next start` aus – dann läuft die Webapp auf Railway und der Bot **nie** (Bot bleibt offline).
-- **Start Command:** `npm start` oder `node index.js`.
+- **Start Command:** `npm start` (registriert beim Start die Slash-Commands bei Discord und startet danach den Bot). Alternativ nur Bot ohne Command-Registrierung: `npm run start:bot-only`.
 - In den **Deploy-Logs** muss nach dem Start stehen: `RaidFlow Bot eingeloggt als …`. Steht dort `Next.js` oder `next start`, ist der falsche Ordner gewählt (Root auf `discord-bot` setzen).
 
 Zwei **Services** im selben (oder in zwei) Railway-Projekt(en): einer für Production (deployt von Branch `main`), einer für Preview (deployt von Branch `preview`).
