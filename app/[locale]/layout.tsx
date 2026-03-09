@@ -33,11 +33,19 @@ export default async function LocaleLayout({
 
   let session = null;
   let isAdmin = false;
+  let showGuildManagement = false;
   let botInviteUrl = '#';
   try {
     session = await getServerSession(authOptions);
-    const discordId = session?.discordId;
+    const discordId = (session as { discordId?: string } | null)?.discordId;
+    const userId = (session as { userId?: string } | null)?.userId;
     if (discordId) isAdmin = await isApplicationAdmin(discordId);
+    if (userId) {
+      const guildmaster = await prisma.rfUserGuild.findFirst({
+        where: { userId, role: 'guildmaster' },
+      });
+      showGuildManagement = !!guildmaster;
+    }
     botInviteUrl = getBotInviteUrl();
   } catch (e) {
     console.error('[Layout] Session/DB/Env:', e);
@@ -56,7 +64,7 @@ export default async function LocaleLayout({
                   locale={locale}
                   isLoggedIn={isLoggedIn}
                   isAdmin={isAdmin}
-                  showGuildManagement={false}
+                  showGuildManagement={showGuildManagement}
                   botInviteUrl={botInviteUrl}
                 />
                 <main className="flex-1">{children}</main>

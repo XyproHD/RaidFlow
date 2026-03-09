@@ -119,7 +119,7 @@ RaidFlow unterstützt damit die gesamte Kette von der Planung über die Anmeldun
 | [manual_setup.md](manual_setup.md) | Manuelle Einrichtung (Vercel, Railway, Discord, Supabase) |
 
 **Lokal starten:** `npm run dev` – App unter http://localhost:3000 (Redirect auf /de).  
-**Datenbank:** `.env.example` nach `.env` kopieren und `DATABASE_URL`/`DIRECT_URL` eintragen. Für Prisma: `npx prisma db push` (Schema anwenden) oder `npx prisma migrate dev` (mit Migrationen; erwartet `.env`). Nach Schema-Änderungen (z. B. neues Feld `theme_preference` in rf_user) erneut `npx prisma db push` ausführen.
+**Datenbank:** `.env.example` nach `.env` kopieren und `DATABASE_URL`/`DIRECT_URL` eintragen. Für Prisma: `npx prisma db push` (Schema anwenden) oder `npx prisma migrate dev` (mit Migrationen; erwartet `.env`). Nach Schema-Änderungen (z. B. neues Feld `theme_preference` in rf_user) erneut `npx prisma db push` ausführen. **TBC-Dungeons:** `npm run db:seed` (bzw. `npx prisma db seed`) befüllt die Tabelle rf_dungeon mit TBC-Raids (Karazhan, SSC, BT usw.).
 
 ---
 
