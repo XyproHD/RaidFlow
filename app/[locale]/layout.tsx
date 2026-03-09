@@ -36,8 +36,8 @@ export default async function LocaleLayout({
   let botInviteUrl = '#';
   try {
     session = await getServerSession(authOptions);
-    const isLoggedIn = !!session?.discordId;
-    isAdmin = isLoggedIn ? await isApplicationAdmin(session.discordId) : false;
+    const discordId = session?.discordId;
+    if (discordId) isAdmin = await isApplicationAdmin(discordId);
     botInviteUrl = getBotInviteUrl();
   } catch (e) {
     console.error('[Layout] Session/DB/Env:', e);
