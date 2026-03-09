@@ -117,13 +117,18 @@ Zwei **Services** im selben (oder in zwei) Railway-Projekt(en): einer für Produ
 ### 3.1 Zwei Bot-Services (Production + Preview)
 
 - **Production-Bot (Railway-Service für `main`):**  
-  - Env: `DISCORD_BOT_TOKEN` = Production-Bot-Token, `DISCORD_BOT_CLIENT_ID` = Production-Client-ID, `WEBAPP_URL` = `https://raidflow.vercel.app/`, `BOT_SETUP_SECRET` = dasselbe wie in Vercel **Production**.  
+  - Env: `DISCORD_BOT_TOKEN` = Production-Bot-Token, `DISCORD_BOT_CLIENT_ID` = Production-Client-ID, `WEBAPP_URL` = `https://raidflow.vercel.app/`, `BOT_SETUP_SECRET` = dasselbe wie in Vercel **Production**. Falls Production unter Vercel Deployment Protection steht: **`VERCEL_AUTOMATION_BYPASS_SECRET`** = Bypass-Secret aus Vercel.  
   - Deploy-Branch in Railway: `main`.
 - **Preview-Bot (Railway-Service für `preview`):**  
-  - Env: `DISCORD_BOT_TOKEN` = Preview-Bot-Token, `DISCORD_BOT_CLIENT_ID` = Preview-Client-ID, `WEBAPP_URL` = `https://raidflow-git-preview-myhess-3468s-projects.vercel.app/`, `BOT_SETUP_SECRET` = dasselbe wie in Vercel **Preview**.  
+  - Env: `DISCORD_BOT_TOKEN` = Preview-Bot-Token, `DISCORD_BOT_CLIENT_ID` = Preview-Client-ID, `WEBAPP_URL` = `https://raidflow-git-preview-myhess-3468s-projects.vercel.app/`, `BOT_SETUP_SECRET` = dasselbe wie in Vercel **Preview**. Wenn die Preview-Webapp unter Vercel Deployment Protection läuft: zusätzlich **`VERCEL_AUTOMATION_BYPASS_SECRET`** = Bypass-Secret aus Vercel (Protection Bypass for Automation).  
   - Deploy-Branch in Railway: `preview`.
 
 So spricht jeder Bot automatisch die richtige Webapp an. Kein Code-Unterschied – nur die Env-Variablen pro Service.
+
+**Vercel Deployment Protection (401 beim Setup):** Wenn der Bot beim `/raidflow setup` bei „Webapp wird benachrichtigt…“ hängen bleibt und in den Railway-Logs **Webapp 401** oder „Authentication Required“ steht, blockiert **Vercel Deployment Protection** (Vercel Authentication) die Requests. Zwei Lösungen:
+
+1. **Schutz für Preview ausschalten:** Vercel → Projekt → **Settings → Deployment Protection** → bei „Vercel Authentication“ Preview ausnehmen oder Protection für Preview-Deployments deaktivieren.
+2. **Bypass für den Bot nutzen (empfohlen, wenn du Protection behalten willst):** Vercel → **Settings → Deployment Protection** → **Protection Bypass for Automation** → Bypass-Secret erzeugen. Den **gleichen Wert** auf **Railway** beim jeweiligen Bot-Service als Umgebungsvariable eintragen: **`VERCEL_AUTOMATION_BYPASS_SECRET`**. Der Bot sendet diesen Wert dann als Header und kann die Webapp-API aufrufen.
 
 ### 3.2 Automatisches Deployment
 

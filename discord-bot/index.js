@@ -31,12 +31,15 @@ async function callWebapp(path, body) {
   const base = process.env.WEBAPP_URL || 'http://localhost:3000';
   const secret = process.env.BOT_SETUP_SECRET;
   if (!secret) throw new Error('BOT_SETUP_SECRET not set');
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${secret}`,
+  };
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  if (bypass) headers['x-vercel-protection-bypass'] = bypass;
   const res = await fetch(`${base.replace(/\/$/, '')}${path}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${secret}`,
-    },
+    headers,
     body: JSON.stringify(body),
   });
   if (!res.ok) {
