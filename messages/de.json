@@ -64,6 +64,8 @@
     "charactersDescription": "Charaktere mit Name, Gilde, Spec und Off-Spec.",
     "characterName": "Name",
     "guild": "Gilde",
+    "optional": "optional",
+    "close": "Schließen",
     "class": "Klasse",
     "mainSpec": "Spec",
     "offSpec": "Off-Spec",

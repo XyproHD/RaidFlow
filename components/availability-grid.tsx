@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { WEEKDAYS, TIME_SLOTS_30MIN, type PreferenceType, type WeekFocusType } from '@/lib/profile-constants';
 
@@ -13,6 +13,25 @@ interface AvailabilityGridProps {
   saving?: boolean;
 }
 
+function buildGridFromSlots(
+  initialSlots: { weekday: string; timeSlot: string; preference: string }[]
+): Record<string, Record<string, CellValue>> {
+  const g: Record<string, Record<string, CellValue>> = {};
+  for (const d of WEEKDAYS) {
+    g[d] = {};
+    for (const slot of TIME_SLOTS_30MIN) {
+      g[d][slot] = '';
+    }
+  }
+  for (const s of initialSlots) {
+    if (WEEKDAYS.includes(s.weekday as typeof WEEKDAYS[number]) && g[s.weekday]) {
+      const val = s.preference === 'likely' ? 'likely' : s.preference === 'maybe' ? 'maybe' : '';
+      if (val) g[s.weekday][s.timeSlot] = val;
+    }
+  }
+  return g;
+}
+
 export function AvailabilityGrid({
   initialSlots,
   initialWeekFocus,
@@ -21,25 +40,21 @@ export function AvailabilityGrid({
 }: AvailabilityGridProps) {
   const t = useTranslations('profile');
   const [preference, setPreference] = useState<PreferenceType>('likely');
-  const [weekFocus, setWeekFocus] = useState<WeekFocusType | ''>(initialWeekFocus === 'weekday' ? 'weekday' : initialWeekFocus === 'weekend' ? 'weekend' : '');
-  const [grid, setGrid] = useState<Record<string, Record<string, CellValue>>>(() => {
-    const g: Record<string, Record<string, CellValue>> = {};
-    for (const d of WEEKDAYS) {
-      g[d] = {};
-      for (const slot of TIME_SLOTS_30MIN) {
-        g[d][slot] = '';
-      }
-    }
-    for (const s of initialSlots) {
-      if (WEEKDAYS.includes(s.weekday as typeof WEEKDAYS[number]) && g[s.weekday]) {
-        const val = s.preference === 'likely' ? 'likely' : s.preference === 'maybe' ? 'maybe' : '';
-        if (val) g[s.weekday][s.timeSlot] = val;
-      }
-    }
-    return g;
-  });
+  const [weekFocus, setWeekFocus] = useState<WeekFocusType | ''>(
+    initialWeekFocus === 'weekday' ? 'weekday' : initialWeekFocus === 'weekend' ? 'weekend' : 'weekend'
+  );
+  const [grid, setGrid] = useState<Record<string, Record<string, CellValue>>>(() =>
+    buildGridFromSlots(initialSlots)
+  );
   const [isDragging, setIsDragging] = useState(false);
   const [dragMode, setDragMode] = useState<'mark' | 'clear' | null>(null);
+
+  useEffect(() => {
+    setGrid(buildGridFromSlots(initialSlots));
+    setWeekFocus(
+      initialWeekFocus === 'weekday' ? 'weekday' : initialWeekFocus === 'weekend' ? 'weekend' : 'weekend'
+    );
+  }, [initialSlots, initialWeekFocus]);
 
   const setCell = useCallback((day: string, slot: string, value: CellValue) => {
     setGrid((prev) => {
@@ -92,28 +107,6 @@ export function AvailabilityGrid({
     await onSave(slots, weekFocus || null);
   }, [collectSlots, weekFocus, onSave]);
 
-  const handleClearDay = useCallback(
-    (day: string) => {
-      setGrid((prev) => {
-        const next = { ...prev };
-        next[day] = {};
-        for (const s of TIME_SLOTS_30MIN) next[day][s] = '';
-        const slots: { weekday: string; timeSlot: string; preference: string }[] = [];
-        for (const d of WEEKDAYS) {
-          const row = d === day ? next[d] : prev[d];
-          if (!row) continue;
-          for (const slot of TIME_SLOTS_30MIN) {
-            const v = row[slot];
-            if (v === 'likely' || v === 'maybe') slots.push({ weekday: d, timeSlot: slot, preference: v });
-          }
-        }
-        onSave(slots, weekFocus || null);
-        return next;
-      });
-    },
-    [weekFocus, onSave]
-  );
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-4">
@@ -136,9 +129,9 @@ export function AvailabilityGrid({
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto -mx-2">
         <table
-          className="w-full border-collapse select-none"
+          className="w-full border-collapse select-none text-[10px] sm:text-xs"
           role="grid"
           aria-label={t('raidTimes')}
           onMouseLeave={handleMouseUp}
@@ -146,39 +139,38 @@ export function AvailabilityGrid({
         >
           <thead>
             <tr>
-              <th className="w-10 border border-border bg-muted/50 p-1 text-left text-xs font-medium text-muted-foreground">
-                {t('weekday')}
+              <th className="w-9 min-w-[36px] border border-border bg-muted/50 p-0.5 text-left font-medium text-muted-foreground">
+                {t('timeSlot')}
               </th>
-              {TIME_SLOTS_30MIN.map((slot) => (
+              {WEEKDAYS.map((day) => (
                 <th
-                  key={slot}
-                  className="min-w-[28px] max-w-[32px] border border-border bg-muted/50 p-0.5 text-center text-[10px] text-muted-foreground"
+                  key={day}
+                  className="w-7 min-w-[28px] max-w-[32px] border border-border bg-muted/50 p-0.5 text-center font-medium text-muted-foreground"
                 >
-                  {slot}
+                  {day}
                 </th>
               ))}
-              <th className="w-8 border border-border bg-muted/50 p-0" aria-label={t('deleteRaidTime')} />
             </tr>
           </thead>
           <tbody>
-            {WEEKDAYS.map((day) => (
-              <tr key={day}>
-                <td className="border border-border bg-muted/30 p-1 text-xs font-medium text-foreground">
-                  {day}
+            {TIME_SLOTS_30MIN.map((slot) => (
+              <tr key={slot}>
+                <td className="border border-border bg-muted/30 p-0.5 font-medium text-foreground whitespace-nowrap">
+                  {slot}
                 </td>
-                {TIME_SLOTS_30MIN.map((slot) => {
+                {WEEKDAYS.map((day) => {
                   const val = grid[day]?.[slot] ?? '';
                   return (
                     <td
-                      key={slot}
-                      className="min-w-[28px] max-w-[32px] h-6 border border-border p-0"
+                      key={day}
+                      className="w-7 min-w-[28px] max-w-[32px] h-5 sm:h-6 border border-border p-0"
                       onMouseDown={() => handleMouseDown(day, slot)}
                       onMouseEnter={() => handleMouseEnter(day, slot)}
                       role="gridcell"
                       aria-selected={!!val}
                     >
                       <span
-                        className={`block h-full min-w-[24px] cursor-pointer ${
+                        className={`block h-full min-h-[20px] min-w-[24px] cursor-pointer ${
                           val === 'likely'
                             ? 'bg-green-500/80 hover:bg-green-500'
                             : val === 'maybe'
@@ -189,17 +181,6 @@ export function AvailabilityGrid({
                     </td>
                   );
                 })}
-                <td className="border border-border p-0 align-middle">
-                  <button
-                    type="button"
-                    onClick={() => handleClearDay(day)}
-                    className="flex h-6 w-6 items-center justify-center text-destructive hover:bg-destructive/10 rounded"
-                    aria-label={`${t('deleteRaidTime')} ${day}`}
-                    title={`${day} ${t('deleteRaidTime')}`}
-                  >
-                    <span className="text-sm font-bold">×</span>
-                  </button>
-                </td>
               </tr>
             ))}
           </tbody>

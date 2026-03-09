@@ -64,6 +64,8 @@
     "charactersDescription": "Characters with name, guild, spec and off-spec.",
     "characterName": "Name",
     "guild": "Guild",
+    "optional": "optional",
+    "close": "Close",
     "class": "Class",
     "mainSpec": "Spec",
     "offSpec": "Off-spec",

@@ -78,13 +78,32 @@ export default async function ProfilePage() {
     (a, b) => a.guildName.localeCompare(b.guildName) || a.dungeonName.localeCompare(b.dungeonName)
   );
 
-  const raidTimeRows = raidTimes.map((r) => ({
-    id: r.id,
-    weekday: r.weekday,
-    timeSlot: r.timeSlot,
-    preference: r.preference,
-    weekFocus: r.weekFocus,
-  }));
+  const TIME_SLOTS_30MIN = [
+    '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30',
+    '20:00', '20:30', '21:00', '21:30', '22:00', '22:30', '23:00', '23:30',
+    '00:00', '00:30', '01:00', '01:30', '02:00', '02:30', '03:00',
+  ];
+  const expandSlot = (slot: string): string[] => {
+    if (TIME_SLOTS_30MIN.includes(slot as (typeof TIME_SLOTS_30MIN)[number])) return [slot];
+    const match = slot.match(/^(\d{1,2})-(\d{1,2})$/);
+    if (!match) return [];
+    const [, start, end] = match;
+    const startIdx = TIME_SLOTS_30MIN.findIndex((s) => s.startsWith(start + ':'));
+    const endIdx = end === '03'
+      ? TIME_SLOTS_30MIN.length
+      : TIME_SLOTS_30MIN.findIndex((s) => s.startsWith(end + ':'));
+    if (startIdx === -1 || endIdx === -1) return [slot];
+    return TIME_SLOTS_30MIN.slice(startIdx, endIdx);
+  };
+  const raidTimeRows = raidTimes.flatMap((r) =>
+    expandSlot(r.timeSlot).map((timeSlot) => ({
+      id: r.id,
+      weekday: r.weekday,
+      timeSlot,
+      preference: r.preference,
+      weekFocus: r.weekFocus,
+    }))
+  );
 
   const characterRows = characters.map((c) => ({
     id: c.id,
