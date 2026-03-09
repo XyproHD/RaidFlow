@@ -65,7 +65,11 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ ok: true, raidGroupId: raidGroup.id });
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
     console.error('[API bot/raid-group]', e);
-    return NextResponse.json({ error: 'Database error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Database error', detail: process.env.NODE_ENV === 'development' ? message : undefined },
+      { status: 500 }
+    );
   }
 }

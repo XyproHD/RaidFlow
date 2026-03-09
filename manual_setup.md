@@ -45,6 +45,23 @@ Aus dem Supabase-Dashboard (Project Settings → Database):
 - **Connection pooling (Transaction Mode, Port 6543):** für `DATABASE_URL` (mit `?pgbouncer=true` o. ä.).
 - **Direct connection (Session Mode, Port 5432):** für `DIRECT_URL`.
 
+### 1.5 Schema-Updates: Preview- und Production-DB
+
+Das Datenbankschema wird mit **Prisma Migrate** verwaltet. Damit Preview- und Production-DB immer den gleichen Stand haben:
+
+1. **Schema ändern:** `prisma/schema.prisma` anpassen.
+2. **Migration erzeugen (lokal):**  
+   `npx prisma migrate dev --name <beschreibender_name>`  
+   Dabei muss in deiner Umgebung (z. B. `.env.local`) die **Ziel-DB** stehen – für die Preview-Pipeline also die **Preview-DB** (DATABASE_URL/DIRECT_URL des Preview-Supabase-Projekts). Es wird eine neue Datei unter `prisma/migrations/` erstellt und die Migration auf die verbundene DB angewendet.
+3. **Migration committen und auf Preview pushen:**  
+   Die neuen/geänderten Dateien in `prisma/migrations/` mit in den Commit auf den **Preview**-Branch legen und pushen.
+4. **Vercel Build:**  
+   Beim **Build** der Webapp führt Vercel automatisch `prisma migrate deploy` aus (siehe `package.json` → `build`). Dabei gilt:
+   - **Preview-Deploy:** Vercel nutzt die **Preview**-Env (DATABASE_URL/DIRECT_URL) → Migrationen laufen gegen die **Preview-DB**.
+   - **Production-Deploy (nach Merge auf `main`):** Vercel nutzt die **Production**-Env → Migrationen laufen gegen die **Production-DB**.
+
+**Ergebnis:** Jeder Deploy (Preview und Production) wendet ausstehende Migrationen auf die jeweilige Datenbank an. Nach Merge von Preview nach `main` ist das Schema in beiden DBs konsistent, sofern die gleichen Migrationen im Repo sind.
+
 ### 1.3 Secrets (pro Umgebung neu erzeugen)
 
 - **NEXTAUTH_SECRET:** z. B. `openssl rand -base64 32` (einmal für Production, einmal für Preview).
@@ -156,6 +173,8 @@ Wenn der Login mit Discord auf https://raidflow.vercel.app eine Fehlermeldung od
 4. Nach Änderung an Redirects oder Env: Deploy neu anstoßen bzw. Seite hart neu laden.
 
 **„Application error: a server-side exception has occurred“ (z. B. auf Preview):** Meist fehlen oder sind falsch gesetzt: **DATABASE_URL** / **DIRECT_URL** (Supabase für diese Stage), **NEXTAUTH_SECRET**, **NEXTAUTH_URL**, **DISCORD_CLIENT_ID**, **DISCORD_CLIENT_SECRET** in Vercel für das jeweilige Environment (Production bzw. Preview). In den Vercel-Logs (Functions/Logs) steht die genaue Exception.
+
+**„Webapp 500: Database error“ (beim `/raidflow setup`):** Die Webapp kann die Datenbank nicht erreichen oder das Schema fehlt. Für das **betreffende Environment** (z. B. Preview) prüfen: **DATABASE_URL** und **DIRECT_URL** in Vercel gesetzt und zeigen auf das **gleiche** Supabase-Projekt (Preview-DB). Außerdem muss das **Schema in dieser DB existieren** – z. B. einmal `npx prisma db push` oder `prisma migrate deploy` gegen die Preview-DB ausführen (mit Preview-`DATABASE_URL`/`DIRECT_URL` in der Umgebung). In den Vercel-Logs (Functions) steht die genaue Prisma-/DB-Fehlermeldung unter `[API bot/guild]`.
 
 ---
 

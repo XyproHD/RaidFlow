@@ -49,6 +49,8 @@ RaidFlow/
 
 Konfiguration von Branch → Service erfolgt in Vercel (Production/Preview) und in Railway (Deploy-Branch pro Service). Kein Code-Unterschied zwischen den Stages – nur **Environment Variables** pro Stage (siehe [manual_setup.md](manual_setup.md)).
 
+**Datenbank-Schema:** Beim Webapp-Build führt Vercel `prisma migrate deploy` aus. Dadurch werden ausstehende Migrationen automatisch auf die **jeweils zugehörige** Supabase-DB angewendet (Preview-Deploy → Preview-DB, Production-Deploy → Production-DB). Schema-Änderungen: Migration lokal mit `prisma migrate dev` erzeugen (gegen Preview-DB), Migration-Dateien committen, auf Preview pushen; beim Merge nach `main` laufen dieselben Migrationen bei Production gegen die Production-DB. Details: [manual_setup.md](manual_setup.md) Abschnitt 1.5.
+
 ---
 
 ## Referenz
