@@ -160,7 +160,7 @@ function RaidGroupsSection({
   onSaved: () => void;
 }) {
   const t = useTranslations('guildManagement');
-  const [showTwinks, setShowTwinks] = useState(false);
+  const [showTwinks, setShowTwinks] = useState(true);
   const [allowedByGroup, setAllowedByGroup] = useState<Record<string, Record<string, boolean>>>({});
   const [addOpen, setAddOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -455,36 +455,34 @@ function RaidGroupsSection({
                             visibleChars.map((ch) => {
                               const allowed = allowedByGroup[g.id]?.[ch.id] ?? true;
                               return (
-                                <div
+                                <CharacterCard
                                   key={ch.id}
-                                  className="flex items-center gap-2 flex-wrap"
-                                >
-                                  <CharacterCard
-                                    ch={ch}
-                                    showMainTwink
-                                    hasTwinksInGuild={hasTwinksInGuild}
-                                  />
-                                  <button
-                                    type="button"
-                                    role="switch"
-                                    aria-checked={allowed}
-                                    aria-label={t('characterAllowedInGroup')}
-                                    title={t('characterAllowedInGroup')}
-                                    disabled={submitting}
-                                    onClick={() => handleSetCharacterAllowed(g.id, ch.id, !allowed)}
-                                    className={cn(
-                                      'relative inline-flex h-6 w-11 shrink-0 rounded-full border border-input transition-colors',
-                                      allowed ? 'bg-primary' : 'bg-muted'
-                                    )}
-                                  >
-                                    <span
+                                  ch={ch}
+                                  showMainTwink
+                                  hasTwinksInGuild={hasTwinksInGuild}
+                                  trailingAction={
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={allowed}
+                                      aria-label={t('characterAllowedInGroup')}
+                                      title={t('characterAllowedInGroup')}
+                                      disabled={submitting}
+                                      onClick={() => handleSetCharacterAllowed(g.id, ch.id, !allowed)}
                                       className={cn(
-                                        'pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow ring-0 transition translate-x-0.5',
-                                        allowed && 'translate-x-5'
+                                        'relative inline-flex h-6 w-11 shrink-0 rounded-full border border-input transition-colors',
+                                        allowed ? 'bg-primary' : 'bg-muted'
                                       )}
-                                    />
-                                  </button>
-                                </div>
+                                    >
+                                      <span
+                                        className={cn(
+                                          'pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow ring-0 transition translate-x-0.5',
+                                          allowed && 'translate-x-5'
+                                        )}
+                                      />
+                                    </button>
+                                  }
+                                />
                               );
                             })
                           )}
@@ -517,16 +515,21 @@ function CharacterCard({
   showMainTwink = false,
   hasTwinksInGuild = false,
   highlightMain = false,
+  trailingAction,
 }: {
   ch: GuildCharacter;
   showMainTwink?: boolean;
   hasTwinksInGuild?: boolean;
   highlightMain?: boolean;
+  trailingAction?: React.ReactNode;
 }) {
   const tProfile = useTranslations('profile');
   const classId = getClassIdForSpec(ch.mainSpec);
   const twinkLabel = showMainTwink && !ch.isMain && hasTwinksInGuild;
   const mainOrAltTitle = ch.isMain ? tProfile('mainLabel') : twinkLabel ? tProfile('altLabel') : undefined;
+  const gridCols = showMainTwink
+    ? (trailingAction ? `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr auto` : `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr`)
+    : (trailingAction ? `${ICON_SIZE + 4}px auto 1fr auto` : `${ICON_SIZE + 4}px auto 1fr`);
   return (
     <div
       className={cn(
@@ -535,7 +538,7 @@ function CharacterCard({
           ? 'border-amber-500/50 bg-amber-500/10 dark:bg-amber-500/15'
           : 'border-border bg-card'
       )}
-      style={{ gridTemplateColumns: showMainTwink ? `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr` : `${ICON_SIZE + 4}px auto 1fr` }}
+      style={{ gridTemplateColumns: gridCols }}
     >
       {showMainTwink && (
         <div className="flex shrink-0 items-center justify-center w-8 h-8" title={mainOrAltTitle}>
@@ -565,6 +568,7 @@ function CharacterCard({
       <span className="font-medium text-sm truncate min-w-0" title={ch.name}>
         {ch.name}
       </span>
+      {trailingAction != null && <div className="flex items-center shrink-0">{trailingAction}</div>}
     </div>
   );
 }
