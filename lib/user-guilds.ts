@@ -14,7 +14,8 @@ export interface UserGuildInfo {
   name: string;
   discordGuildId: string;
   role: UserGuildRole;
-  raidGroupId: string | null;
+  /** Raidgruppen, in denen der User ist (aus Discord-Sync oder UI-Zuordnung). */
+  raidGroupIds: string[];
 }
 
 export interface UserRaidInfo {
@@ -68,9 +69,19 @@ export async function getGuildsForUser(
       );
 
       const role: UserGuildRole = resolved ? resolved.role : 'member';
-      const raidGroupId = resolved?.raidGroupId ?? null;
+      const raidGroupIdsFromDiscord = resolved?.raidGroupIds ?? [];
 
       if (resolved) {
+        const member = await prisma.rfGuildMember.upsert({
+          where: {
+            userId_guildId: { userId, guildId: guild.id },
+          },
+          create: {
+            userId,
+            guildId: guild.id,
+          },
+          update: {},
+        });
         await prisma.$transaction([
           prisma.rfUserGuild.upsert({
             where: {
@@ -83,26 +94,31 @@ export async function getGuildsForUser(
             },
             update: { role: resolved.role },
           }),
-          prisma.rfGuildMember.upsert({
-            where: {
-              userId_guildId: { userId, guildId: guild.id },
-            },
-            create: {
-              userId,
-              guildId: guild.id,
-              raidGroupId: resolved.raidGroupId,
-            },
-            update: { raidGroupId: resolved.raidGroupId },
+          prisma.rfGuildMemberRaidGroup.deleteMany({
+            where: { guildMemberId: member.id },
           }),
+          ...raidGroupIdsFromDiscord.map((raidGroupId) =>
+            prisma.rfGuildMemberRaidGroup.create({
+              data: { guildMemberId: member.id, raidGroupId },
+            })
+          ),
         ]);
       }
+
+      const member = await prisma.rfGuildMember.findUnique({
+        where: { userId_guildId: { userId, guildId: guild.id } },
+        include: {
+          memberRaidGroups: { select: { raidGroupId: true } },
+        },
+      });
+      const raidGroupIds = member?.memberRaidGroups.map((rg) => rg.raidGroupId) ?? [];
 
       result.push({
         id: guild.id,
         name: guild.name,
         discordGuildId: guild.discordGuildId,
         role,
-        raidGroupId,
+        raidGroupIds,
       });
     } catch (e) {
       console.error('[getGuildsForUser] guild:', guild.id, guild.name, e);
@@ -140,7 +156,7 @@ export async function getRaidsForUser(
     // Einschränkung: nur Raids, für die der User Raider-Recht hat (bei Raidgruppe: User muss in Gruppe sein oder Raidleader/Gildenmeister)
     if (raid.raidGroupRestrictionId) {
       const inGroup =
-        guildInfo.raidGroupId === raid.raidGroupRestrictionId;
+        guildInfo.raidGroupIds.includes(raid.raidGroupRestrictionId);
       const canManage =
         guildInfo.role === 'guildmaster' || guildInfo.role === 'raidleader';
       if (!inGroup && !canManage) continue;

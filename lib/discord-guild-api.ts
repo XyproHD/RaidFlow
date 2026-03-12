@@ -131,6 +131,32 @@ export async function getGuildChannels(
 }
 
 /**
+ * Fügt einem Guild-Member eine Rolle hinzu (z. B. Raidflowgroup-Rolle).
+ * PUT /guilds/{guild.id}/members/{user.id}/roles/{role.id}
+ */
+export async function addRoleToMember(
+  discordGuildId: string,
+  discordUserId: string,
+  discordRoleId: string
+): Promise<void> {
+  const token = getBotToken();
+  if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+
+  const res = await fetch(
+    `${DISCORD_API_BASE}/guilds/${discordGuildId}/members/${discordUserId}/roles/${discordRoleId}`,
+    {
+      method: 'PUT',
+      headers: { Authorization: `Bot ${token}` },
+    }
+  );
+
+  if (!res.status || (res.status !== 204 && res.status !== 200)) {
+    const text = await res.text();
+    throw new Error(`Discord API add role: ${res.status} ${text}`);
+  }
+}
+
+/**
  * Entfernt eine Rolle von einem Guild-Member (z. B. Raidflowgroup-Rolle beim Austritt).
  * DELETE /guilds/{guild.id}/members/{user.id}/roles/{role.id}
  */

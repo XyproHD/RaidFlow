@@ -13,8 +13,8 @@ type Member = {
   id: string;
   userId: string;
   discordId: string;
-  raidGroupId: string | null;
-  raidGroupName: string | null;
+  raidGroupIds: string[];
+  raidGroups: { id: string; name: string }[];
   joinedAt: string;
   characters: GuildCharacter[];
 };
@@ -279,14 +279,17 @@ function RaidGroupsSection({
     }
   };
 
-  const handleRemoveFromGroup = async (memberId: string) => {
+  const handleRemoveFromGroup = async (member: Member, groupId: string) => {
     setSubmitting(true);
     setErr(null);
     try {
       const res = await fetch(`/api/guilds/${guildId}/members`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId, raidGroupId: null }),
+        body: JSON.stringify({
+          memberId: member.id,
+          raidGroupIds: member.raidGroupIds.filter((id) => id !== groupId),
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -303,9 +306,10 @@ function RaidGroupsSection({
 
   const membersByGroup = new Map<string, Member[]>();
   for (const m of members) {
-    if (m.raidGroupId == null) continue;
-    if (!membersByGroup.has(m.raidGroupId)) membersByGroup.set(m.raidGroupId, []);
-    membersByGroup.get(m.raidGroupId)!.push(m);
+    for (const gid of m.raidGroupIds) {
+      if (!membersByGroup.has(gid)) membersByGroup.set(gid, []);
+      membersByGroup.get(gid)!.push(m);
+    }
   }
 
   const charsFiltered = (chars: GuildCharacter[]) =>
@@ -489,7 +493,7 @@ function RaidGroupsSection({
                         </div>
                         <button
                           type="button"
-                          onClick={() => handleRemoveFromGroup(m.id)}
+                          onClick={() => handleRemoveFromGroup(m, g.id)}
                           disabled={submitting}
                           className="shrink-0 p-1.5 rounded text-destructive hover:bg-destructive/10 disabled:opacity-50"
                           title={t('removeFromGroup')}
@@ -594,8 +598,9 @@ function MembersSection({
   const [showTwinks, setShowTwinks] = useState(false);
   const [assigning, setAssigning] = useState<string | null>(null);
   const [popupMemberId, setPopupMemberId] = useState<string | null>(null);
-  const [popupSelectedId, setPopupSelectedId] = useState<string | null>(null);
+  const [popupSelectedIds, setPopupSelectedIds] = useState<Set<string>>(new Set());
   const popupRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!popupMemberId) return;
@@ -606,13 +611,13 @@ function MembersSection({
     return () => document.removeEventListener('click', close);
   }, [popupMemberId]);
 
-  const handleSaveAssignment = async (memberId: string, raidGroupId: string | null) => {
+  const handleSaveAssignment = async (memberId: string, raidGroupIds: string[]) => {
     setAssigning(memberId);
     try {
       const res = await fetch(`/api/guilds/${guildId}/members`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberId, raidGroupId }),
+        body: JSON.stringify({ memberId, raidGroupIds }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -630,8 +635,43 @@ function MembersSection({
 
   const openPopup = (m: Member) => {
     setPopupMemberId(m.id);
-    setPopupSelectedId(m.raidGroupId);
+    setPopupSelectedIds(new Set(m.raidGroupIds));
   };
+
+  const toggleGroupInPopup = (groupId: string) => {
+    setPopupSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!popupMemberId) return;
+    const run = () => {
+      const trigger = triggerRef.current;
+      const popup = popupRef.current;
+      if (!trigger || !popup) return;
+      const tr = trigger.getBoundingClientRect();
+      const popupEl = popup as HTMLDivElement;
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+      const pad = 8;
+      let top = tr.bottom + 4;
+      let left = tr.right - popupEl.offsetWidth;
+      if (left < pad) left = pad;
+      if (left + popupEl.offsetWidth > vw - pad) left = vw - popupEl.offsetWidth - pad;
+      if (top + popupEl.offsetHeight > vh - pad) top = tr.top - popupEl.offsetHeight - 4;
+      if (top < pad) top = pad;
+      popupEl.style.position = 'fixed';
+      popupEl.style.top = `${top}px`;
+      popupEl.style.left = `${left}px`;
+      popupEl.style.right = 'auto';
+    };
+    const raf = typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame(run) : setTimeout(run, 0);
+    return () => (typeof cancelAnimationFrame !== 'undefined' ? cancelAnimationFrame(raf as number) : clearTimeout(raf as ReturnType<typeof setTimeout>));
+  }, [popupMemberId]);
 
   if (members.length === 0) {
     return (
@@ -704,13 +744,25 @@ function MembersSection({
                 </div>
                 <div className="flex items-center gap-2 shrink-0 flex-wrap sm:pt-0 pt-2 border-t border-border sm:border-0">
                   <span
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-muted text-muted-foreground max-w-[12rem] truncate"
-                    title={m.raidGroupName ?? undefined}
+                    className="inline-flex flex-wrap items-center gap-1 max-w-[14rem]"
+                    title={m.raidGroups.map((g) => g.name).join(', ') || undefined}
                   >
-                    {m.raidGroupName ?? t('noGroup')}
+                    {m.raidGroups.length > 0
+                      ? m.raidGroups.map((g) => (
+                          <span
+                            key={g.id}
+                            className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground"
+                          >
+                            {g.name}
+                          </span>
+                        ))
+                      : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
                   </span>
                   <div className="relative" ref={popupMemberId === m.id ? popupRef : undefined}>
                     <button
+                      ref={popupMemberId === m.id ? triggerRef : undefined}
                       type="button"
                       onClick={() => openPopup(m)}
                       disabled={assigning === m.id}
@@ -726,35 +778,27 @@ function MembersSection({
                         <p className="px-3 py-1 text-xs text-muted-foreground border-b border-border mb-2">
                           {t('assignGroups')}
                         </p>
-                        <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 cursor-pointer">
-                          <input
-                            type="radio"
-                            name={`group-${m.id}`}
-                            checked={popupSelectedId === null}
-                            onChange={() => setPopupSelectedId(null)}
-                            className="rounded-full"
-                          />
-                          <span className="text-sm">{t('noGroup')}</span>
-                        </label>
                         {raidGroups.map((rg) => (
                           <label
                             key={rg.id}
                             className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 cursor-pointer"
                           >
                             <input
-                              type="radio"
-                              name={`group-${m.id}`}
-                              checked={popupSelectedId === rg.id}
-                              onChange={() => setPopupSelectedId(rg.id)}
-                              className="rounded-full"
+                              type="checkbox"
+                              checked={popupSelectedIds.has(rg.id)}
+                              onChange={() => toggleGroupInPopup(rg.id)}
+                              className="rounded border-input"
                             />
                             <span className="text-sm">{rg.name}</span>
                           </label>
                         ))}
+                        {raidGroups.length === 0 && (
+                          <p className="px-3 py-2 text-sm text-muted-foreground">{t('noRaidGroups')}</p>
+                        )}
                         <div className="mt-2 pt-2 border-t border-border px-3">
                           <button
                             type="button"
-                            onClick={() => handleSaveAssignment(m.id, popupSelectedId)}
+                            onClick={() => handleSaveAssignment(m.id, Array.from(popupSelectedIds))}
                             disabled={assigning === m.id}
                             className="w-full rounded bg-primary text-primary-foreground px-3 py-2 text-sm font-medium disabled:opacity-50 min-w-[6rem]"
                           >

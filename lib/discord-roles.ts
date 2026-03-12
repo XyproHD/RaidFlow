@@ -9,7 +9,10 @@ export type RaidFlowRole = 'guildmaster' | 'raidleader' | 'raider';
 
 export interface ResolvedGuildRole {
   role: RaidFlowRole;
+  /** Erste gefundene Raidgruppe (Legacy). */
   raidGroupId: string | null;
+  /** Alle Raidgruppen-Rollen, die der User auf Discord hat. */
+  raidGroupIds: string[];
 }
 
 export interface RfGuildWithRoles {
@@ -75,13 +78,14 @@ export function resolveRaidFlowRole(
     if (!role) role = 'raider';
   }
 
+  const raidGroupIds: string[] = [];
   for (const rg of guild.raidGroups) {
     if (rg.discordRoleId && set.has(rg.discordRoleId)) {
-      raidGroupId = rg.id;
-      break;
+      raidGroupIds.push(rg.id);
+      if (raidGroupId == null) raidGroupId = rg.id;
     }
   }
 
   if (!role) return null;
-  return { role, raidGroupId };
+  return { role, raidGroupId, raidGroupIds };
 }

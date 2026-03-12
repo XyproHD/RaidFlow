@@ -77,10 +77,10 @@ model RfRaidGroup {
   discordRoleId  String?  @map("discord_role_id")
   sortOrder      Int      @default(0) @map("sort_order")
 
-  guild               RfGuild                 @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  guildMembers        RfGuildMember[]
-  raids               RfRaid[]                 @relation("RaidGroupRestriction")
-  raidGroupCharacters RfRaidGroupCharacter[]
+  guild                 RfGuild                      @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  memberRaidGroups      RfGuildMemberRaidGroup[]
+  raids                 RfRaid[]                     @relation("RaidGroupRestriction")
+  raidGroupCharacters   RfRaidGroupCharacter[]
 
   @@map("rf_raid_group")
 }
@@ -98,17 +98,27 @@ model RfRaidGroupCharacter {
   @@map("rf_raid_group_character")
 }
 
+model RfGuildMemberRaidGroup {
+  guildMemberId String @map("guild_member_id")
+  raidGroupId   String @map("raid_group_id")
+
+  guildMember RfGuildMember @relation(fields: [guildMemberId], references: [id], onDelete: Cascade)
+  raidGroup   RfRaidGroup    @relation(fields: [raidGroupId], references: [id], onDelete: Cascade)
+
+  @@id([guildMemberId, raidGroupId])
+  @@map("rf_guild_member_raid_group")
+}
+
 model RfGuildMember {
   id           String    @id @default(uuid())
   userId       String    @map("user_id")
   guildId      String    @map("guild_id")
-  raidGroupId  String?   @map("raid_group_id")
   joinedAt     DateTime  @default(now()) @map("joined_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  user      RfUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  guild     RfGuild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  raidGroup RfRaidGroup? @relation(fields: [raidGroupId], references: [id], onDelete: SetNull)
+  user             RfUser                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild            RfGuild                   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  memberRaidGroups RfGuildMemberRaidGroup[]
 
   @@unique([userId, guildId])
   @@map("rf_guild_member")

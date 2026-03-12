@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireGuildMasterOrForbid } from '@/lib/guild-master';
-import { removeRoleFromMember } from '@/lib/discord-guild-api';
+import { addRoleToMember, removeRoleFromMember } from '@/lib/discord-guild-api';
 
 /**
  * GET /api/guilds/[guildId]/members
- * Mitgliederliste der Gilde inkl. Raidgruppen-Zuordnung. Nur für Gildenmeister.
+ * Mitgliederliste der Gilde inkl. Raidgruppen-Zuordnung (mehrere pro Member). Nur für Gildenmeister.
  */
 export async function GET(
   _request: Request,
@@ -35,7 +35,9 @@ export async function GET(
           },
         },
       },
-      raidGroup: { select: { id: true, name: true } },
+      memberRaidGroups: {
+        include: { raidGroup: { select: { id: true, name: true } } },
+      },
     },
     orderBy: { joinedAt: 'asc' },
   });
@@ -45,8 +47,11 @@ export async function GET(
       id: m.id,
       userId: m.userId,
       discordId: m.user.discordId,
-      raidGroupId: m.raidGroupId,
-      raidGroupName: m.raidGroup?.name ?? null,
+      raidGroupIds: m.memberRaidGroups.map((rg) => rg.raidGroup.id),
+      raidGroups: m.memberRaidGroups.map((rg) => ({
+        id: rg.raidGroup.id,
+        name: rg.raidGroup.name,
+      })),
       joinedAt: m.joinedAt,
       characters: m.user.characters.map((c) => ({
         id: c.id,
@@ -61,8 +66,8 @@ export async function GET(
 
 /**
  * PATCH /api/guilds/[guildId]/members
- * Gruppenzuteilung für einen Member setzen.
- * Body: { memberId: string, raidGroupId: string | null }
+ * Raidgruppen-Zuordnung für einen Member setzen (mehrere Gruppen möglich).
+ * Body: { memberId: string, raidGroupIds: string[] }
  */
 export async function PATCH(
   request: Request,
@@ -72,7 +77,7 @@ export async function PATCH(
   const auth = await requireGuildMasterOrForbid(guildId);
   if (auth instanceof NextResponse) return auth;
 
-  let body: { memberId?: string; raidGroupId?: string | null };
+  let body: { memberId?: string; raidGroupIds?: string[] };
   try {
     body = await request.json();
   } catch {
@@ -87,20 +92,21 @@ export async function PATCH(
     );
   }
 
-  const raidGroupId =
-    body.raidGroupId === null || body.raidGroupId === undefined
-      ? null
-      : typeof body.raidGroupId === 'string' && body.raidGroupId.trim()
-        ? body.raidGroupId.trim()
-        : null;
+  const rawIds = Array.isArray(body.raidGroupIds) ? body.raidGroupIds : [];
+  const raidGroupIds = rawIds.filter(
+    (id): id is string => typeof id === 'string' && id.trim().length > 0
+  );
 
-  if (raidGroupId !== null) {
-    const group = await prisma.rfRaidGroup.findFirst({
-      where: { id: raidGroupId, guildId },
+  if (raidGroupIds.length > 0) {
+    const groups = await prisma.rfRaidGroup.findMany({
+      where: { id: { in: raidGroupIds }, guildId },
+      select: { id: true, discordRoleId: true },
     });
-    if (!group) {
+    const foundIds = new Set(groups.map((g) => g.id));
+    const invalid = raidGroupIds.filter((id) => !foundIds.has(id));
+    if (invalid.length > 0) {
       return NextResponse.json(
-        { error: 'Raid group not found or does not belong to this guild' },
+        { error: 'Raid group(s) not found or do not belong to this guild' },
         { status: 400 }
       );
     }
@@ -110,35 +116,89 @@ export async function PATCH(
     where: { id: memberId, guildId },
     include: {
       user: { select: { discordId: true } },
-      raidGroup: { select: { discordRoleId: true } },
+      memberRaidGroups: {
+        include: { raidGroup: { select: { id: true, discordRoleId: true } } },
+      },
     },
   });
   if (!member) {
     return NextResponse.json({ error: 'Member not found' }, { status: 404 });
   }
 
-  if (raidGroupId === null && member.raidGroupId && member.raidGroup?.discordRoleId) {
-    const guild = await prisma.rfGuild.findUnique({
-      where: { id: guildId },
-      select: { discordGuildId: true },
-    });
-    if (guild) {
-      try {
-        await removeRoleFromMember(
-          guild.discordGuildId,
-          member.user.discordId,
-          member.raidGroup.discordRoleId
-        );
-      } catch (e) {
-        console.error('[API guilds members PATCH] Discord remove role:', e);
+  const guild = await prisma.rfGuild.findUnique({
+    where: { id: guildId },
+    select: { discordGuildId: true },
+  });
+
+  const currentIds = new Set(
+    member.memberRaidGroups.map((rg) => rg.raidGroup.id)
+  );
+  const nextIds = new Set(raidGroupIds);
+  const toAdd = raidGroupIds.filter((id) => !currentIds.has(id));
+  const toRemove = [...currentIds].filter((id) => !nextIds.has(id));
+
+  const raidGroupsWithDiscord = await prisma.rfRaidGroup.findMany({
+    where: { guildId },
+    select: { id: true, discordRoleId: true },
+  });
+  const roleByGroupId = new Map(
+    raidGroupsWithDiscord.map((g) => [g.id, g.discordRoleId])
+  );
+
+  if (guild?.discordGuildId) {
+    const discordId = member.user.discordId;
+    for (const groupId of toRemove) {
+      const roleId = roleByGroupId.get(groupId);
+      if (roleId) {
+        try {
+          await removeRoleFromMember(guild.discordGuildId, discordId, roleId);
+        } catch (e) {
+          console.error('[API guilds members PATCH] Discord remove role:', e);
+        }
+      }
+    }
+    for (const groupId of toAdd) {
+      const roleId = roleByGroupId.get(groupId);
+      if (roleId) {
+        try {
+          await addRoleToMember(guild.discordGuildId, discordId, roleId);
+        } catch (e) {
+          console.error('[API guilds members PATCH] Discord add role:', e);
+        }
       }
     }
   }
 
-  const updated = await prisma.rfGuildMember.update({
+  await prisma.$transaction([
+    prisma.rfGuildMemberRaidGroup.deleteMany({
+      where: { guildMemberId: memberId },
+    }),
+    ...raidGroupIds.map((raidGroupId) =>
+      prisma.rfGuildMemberRaidGroup.create({
+        data: { guildMemberId: memberId, raidGroupId },
+      })
+    ),
+  ]);
+
+  const updated = await prisma.rfGuildMember.findUnique({
     where: { id: memberId },
-    data: { raidGroupId },
+    include: {
+      memberRaidGroups: {
+        include: { raidGroup: { select: { id: true, name: true } } },
+      },
+    },
   });
 
-  return NextResponse.json({ member: updated });
+  return NextResponse.json({
+    member: updated
+      ? {
+          id: updated.id,
+          raidGroupIds: updated.memberRaidGroups.map((rg) => rg.raidGroup.id),
+          raidGroups: updated.memberRaidGroups.map((rg) => ({
+            id: rg.raidGroup.id,
+            name: rg.raidGroup.name,
+          })),
+        }
+      : null,
+  });
 }
