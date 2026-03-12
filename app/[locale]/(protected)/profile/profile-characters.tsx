@@ -40,7 +40,7 @@ export function ProfileCharacters({
   const t = useTranslations('profile');
   const router = useRouter();
   const [list, setList] = useState(initialData);
-  const [modalOpen, setModalOpen] = useState<'add' | null>(null);
+  const [modalOpen, setModalOpen] = useState<'add' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -82,7 +82,6 @@ export function ProfileCharacters({
   }, [resetForm]);
 
   const openEdit = useCallback((c: CharacterRow) => {
-    setModalOpen(null);
     setEditingId(c.id);
     setName(c.name);
     setGuildId(c.guildId || '');
@@ -101,9 +100,11 @@ export function ProfileCharacters({
       setOffSpecId('');
     }
     setError(null);
+    setModalOpen('edit');
   }, []);
 
-  const closeEdit = useCallback(() => {
+  const closeModal = useCallback(() => {
+    setModalOpen(null);
     setEditingId(null);
     resetForm();
   }, [resetForm]);
@@ -210,7 +211,7 @@ export function ProfileCharacters({
         const data = await res.json().catch(() => ({}));
         router.refresh();
         setList((prev) => prev.map((r) => (r.id === editingId ? (data.character ?? r) : r)));
-        closeEdit();
+        closeModal();
       } else {
         setError(await parseError(res));
       }
@@ -233,7 +234,7 @@ export function ProfileCharacters({
       if (res.ok) {
         router.refresh();
         setList((prev) => prev.filter((r) => r.id !== id));
-        if (editingId === id) closeEdit();
+        if (editingId === id) closeModal();
       } else {
         setError(await parseError(res));
       }
@@ -451,52 +452,38 @@ export function ProfileCharacters({
         {t('addCharacter')}
       </button>
 
-      {/* Modal: Neuer Charakter */}
-      {modalOpen === 'add' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="modal-add-title">
+      {/* Modal: Charakter anlegen oder bearbeiten */}
+      {(modalOpen === 'add' || modalOpen === 'edit') && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="modal-character-title">
           <div className="bg-background border border-border rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
             <div className="p-4 border-b border-border flex justify-between items-center">
-              <h3 id="modal-add-title" className="text-lg font-semibold">{t('addCharacter')}</h3>
-              <button type="button" onClick={() => { setModalOpen(null); resetForm(); }} className="text-muted-foreground hover:text-foreground p-1" aria-label={t('close')}>×</button>
+              <h3 id="modal-character-title" className="text-lg font-semibold">
+                {modalOpen === 'add' ? t('addCharacter') : t('editCharacter')}
+              </h3>
+              <button type="button" onClick={closeModal} className="text-muted-foreground hover:text-foreground p-1" aria-label={t('close')}>×</button>
             </div>
-            <form onSubmit={handleAdd} className="p-4">
+            <form onSubmit={modalOpen === 'add' ? handleAdd : handleSaveEdit} className="p-4">
               {formContent}
-              <div className="flex gap-2 mt-4">
+              <div className="flex flex-wrap gap-2 mt-4">
                 <button type="submit" disabled={loading || !name.trim() || !classId || !mainSpecId} className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm disabled:opacity-50">
                   {t('save')}
                 </button>
-                <button type="button" onClick={() => { setModalOpen(null); resetForm(); }} className="rounded border border-input px-4 py-2 text-sm">
+                <button type="button" onClick={closeModal} className="rounded border border-input px-4 py-2 text-sm">
                   {t('cancel')}
                 </button>
+                {modalOpen === 'edit' && editingId && (
+                  <button
+                    type="button"
+                    onClick={() => editingId && handleDelete(editingId)}
+                    disabled={loading}
+                    className="rounded border border-destructive text-destructive px-4 py-2 text-sm hover:bg-destructive/10"
+                  >
+                    {t('deleteCharacter')}
+                  </button>
+                )}
               </div>
             </form>
           </div>
-        </div>
-      )}
-
-      {/* Inline-Bereich: Charakter bearbeiten (mit Löschen) */}
-      {editingId && (
-        <div className="mt-4 p-4 rounded-lg border border-border bg-muted/20">
-          <h3 className="text-sm font-semibold mb-3">{t('editCharacter')}</h3>
-          <form onSubmit={handleSaveEdit}>
-            {formContent}
-            <div className="flex flex-wrap gap-2 mt-4">
-              <button type="submit" disabled={loading} className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm">
-                {t('save')}
-              </button>
-              <button type="button" onClick={closeEdit} className="rounded border border-input px-4 py-2 text-sm">
-                {t('cancel')}
-              </button>
-              <button
-                type="button"
-                onClick={() => editingId && handleDelete(editingId)}
-                disabled={loading}
-                className="rounded border border-destructive text-destructive px-4 py-2 text-sm hover:bg-destructive/10"
-              >
-                {t('deleteCharacter')}
-              </button>
-            </div>
-          </form>
         </div>
       )}
     </section>
