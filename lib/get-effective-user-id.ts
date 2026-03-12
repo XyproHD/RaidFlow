@@ -15,16 +15,18 @@ export async function getEffectiveUserId(session: SessionLike): Promise<string |
   const candidateId = typeof s.userId === 'string' && s.userId ? s.userId : undefined;
 
   /** UUID-Format (rf_user.id); Discord-IDs sind lange Zahlenstrings. */
-  const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+  const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
   try {
     if (candidateId) {
       const user = await prisma.rfUser.findUnique({ where: { id: candidateId } });
       if (user) return user.id;
-      // Alte Session: userId ist oft Discord-ID (token.sub), dann per discordId suchen
+      // Alte Session / Fallback: userId ist oft Discord-ID (token.sub), dann per discordId suchen oder anlegen
       if (!isUuid(candidateId)) {
         const byDiscord = await prisma.rfUser.findUnique({ where: { discordId: candidateId } });
         if (byDiscord) return byDiscord.id;
+        // Session hat nur userId (Discord-ID), kein discordId – trotzdem User ermitteln/anlegen
+        discordId = discordId ?? candidateId;
       }
     }
 
