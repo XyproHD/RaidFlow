@@ -74,6 +74,7 @@
     "errorSave": "Speichern fehlgeschlagen.",
     "addCharacter": "Charakter anlegen",
     "editCharacter": "Bearbeiten",
+    "characterMenu": "Aktionen",
     "deleteCharacter": "Löschen",
     "setAsMain": "Als Main setzen",
     "mainLabel": "Main",

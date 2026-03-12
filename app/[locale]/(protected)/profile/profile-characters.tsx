@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { SpecIcon } from '@/components/spec-icon';
 import { ClassIcon } from '@/components/class-icon';
 import {
@@ -42,6 +42,17 @@ export function ProfileCharacters({
   const [list, setList] = useState(initialData);
   const [modalOpen, setModalOpen] = useState<'add' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!openMenuId) return;
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenuId(null);
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [openMenuId]);
   const [name, setName] = useState('');
   const [guildId, setGuildId] = useState('');
   const [classId, setClassId] = useState('');
@@ -355,11 +366,12 @@ export function ProfileCharacters({
           const twinkLabel = c.guildId && !c.isMain && charsInSameGuild(c.guildId).length > 1;
           const mainOrAltTitle = c.isMain && c.guildId ? t('mainLabel') : twinkLabel ? t('altLabel') : undefined;
           const ICON_SIZE = 24;
+          const menuOpen = openMenuId === c.id;
           return (
             <div
               key={c.id}
               className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
-              style={{ gridTemplateColumns: `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr 72px 64px` }}
+              style={{ gridTemplateColumns: `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr minmax(4rem, 1fr) 40px` }}
             >
               <div className="flex shrink-0 items-center justify-center w-8 h-8 mr-0.5" title={mainOrAltTitle}>
                 {c.isMain && c.guildId ? (
@@ -387,28 +399,43 @@ export function ProfileCharacters({
               <span className="font-medium text-base truncate min-w-0" title={c.name}>
                 {c.name}
               </span>
-              <div className="min-w-0">
-                {canSetMain(c) ? (
-                  <button
-                    type="button"
-                    onClick={() => handleSetMain(c.id)}
-                    disabled={loading}
-                    className="w-full min-w-[72px] rounded border border-input bg-muted/50 px-2 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
-                  >
-                    {t('setAsMain')}
-                  </button>
-                ) : (
-                  <span className="inline-block w-full min-w-[72px]" aria-hidden />
+              <span className="text-sm text-muted-foreground text-center truncate min-w-0" title={c.guildName ?? undefined}>
+                {c.guildName ?? '–'}
+              </span>
+              <div className="relative flex justify-end" ref={menuOpen ? menuRef : undefined}>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setOpenMenuId(menuOpen ? null : c.id); }}
+                  disabled={loading}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50 text-foreground hover:bg-muted disabled:opacity-50"
+                  aria-label={t('characterMenu')}
+                  aria-expanded={menuOpen}
+                >
+                  <span className="text-lg leading-none" aria-hidden>⋮</span>
+                </button>
+                {menuOpen && (
+                  <div className="absolute right-0 top-full z-20 mt-1 min-w-[140px] rounded-md border border-border bg-background py-1 shadow-md">
+                    {canSetMain(c) && (
+                      <button
+                        type="button"
+                        onClick={() => { handleSetMain(c.id); setOpenMenuId(null); }}
+                        disabled={loading}
+                        className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                      >
+                        {t('setAsMain')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => { openEdit(c); setOpenMenuId(null); }}
+                      disabled={loading}
+                      className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                    >
+                      {t('editCharacter')}
+                    </button>
+                  </div>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => openEdit(c)}
-                disabled={loading}
-                className="w-full min-w-[64px] rounded border border-input bg-muted/50 px-2 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
-              >
-                {t('editCharacter')}
-              </button>
             </div>
           );
         })}

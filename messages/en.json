@@ -74,6 +74,7 @@
     "errorSave": "Save failed.",
     "addCharacter": "Add character",
     "editCharacter": "Edit",
+    "characterMenu": "Actions",
     "deleteCharacter": "Delete",
     "setAsMain": "Set as main",
     "mainLabel": "Main",
