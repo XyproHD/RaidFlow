@@ -1,66 +1,64 @@
 /**
- * Mapping Rollen, Klassen und Specs auf Icon-Pfade.
- * Icons aus C:\tmp\wow nach public/icons/wow/ kopieren; Unterordner-Struktur beibehalten.
- * Matching per Dateiname: classes/<classId>.png, specs/<spec-dateiname>.png
+ * Mapping Rollen, Klassen und Specs auf PNG-Icon-Pfade.
+ * Icons: public/icons/wow/ (roles/, classes/, specs/<class>/).
  */
 
 const ICON_BASE = '/icons/wow';
 const CLASSES_BASE = `${ICON_BASE}/classes`;
 const SPECS_BASE = `${ICON_BASE}/specs`;
+const ROLES_BASE = `${ICON_BASE}/roles`;
 
 export const ROLE_ICONS: Record<string, { src: string; labelKey: string }> = {
-  Tank: { src: `${ICON_BASE}/role-tank.svg`, labelKey: 'roleTank' },
-  Melee: { src: `${ICON_BASE}/role-melee.svg`, labelKey: 'roleMelee' },
-  Range: { src: `${ICON_BASE}/role-range.svg`, labelKey: 'roleRange' },
-  Healer: { src: `${ICON_BASE}/role-healer.svg`, labelKey: 'roleHealer' },
+  Tank: { src: `${ROLES_BASE}/tank.png`, labelKey: 'roleTank' },
+  Melee: { src: `${ROLES_BASE}/melee.png`, labelKey: 'roleMelee' },
+  Range: { src: `${ROLES_BASE}/range.png`, labelKey: 'roleRange' },
+  Healer: { src: `${ROLES_BASE}/heal.png`, labelKey: 'roleHealer' },
 };
 
-/** Spec → Dateiname (ohne Ordner) für icons/wow/specs/. Sortierung wie in C:\tmp\wow Unterordnern. */
-export const SPEC_ICON_FILES: Record<string, string> = {
-  'Fire Mage': 'fire-mage.png',
-  'Frost Mage': 'frost-mage.png',
-  'Arcane Mage': 'arcane-mage.png',
-  'Protection Warrior': 'protection-warrior.png',
-  'Arms Warrior': 'arms-warrior.png',
-  'Fury Warrior': 'fury-warrior.png',
-  'Restoration Shaman': 'restoration-shaman.png',
-  'Elemental Shaman': 'elemental-shaman.png',
-  'Enhancement Shaman': 'enhancement-shaman.png',
-  'Holy Priest': 'holy-priest.png',
-  'Shadow Priest': 'shadow-priest.png',
-  'Discipline Priest': 'discipline-priest.png',
-  'Restoration Druid': 'restoration-druid.png',
-  'Feral Druid': 'feral-druid.png',
-  'Feral (DPS) Druid': 'feral-druid.png',
-  'Balance Druid': 'balance-druid.png',
-  'Holy Paladin': 'holy-paladin.png',
-  'Protection Paladin': 'protection-paladin.png',
-  'Retribution Paladin': 'retribution-paladin.png',
-  'Beast Mastery Hunter': 'beast-mastery-hunter.png',
-  'Marksmanship Hunter': 'marksmanship-hunter.png',
-  'Survival Hunter': 'survival-hunter.png',
-  'Affliction Warlock': 'affliction-warlock.png',
-  'Demonology Warlock': 'demonology-warlock.png',
-  'Destruction Warlock': 'destruction-warlock.png',
-  'Combat Rogue': 'combat-rogue.png',
-  'Assassination Rogue': 'assassination-rogue.png',
-  'Subtlety Rogue': 'subtlety-rogue.png',
+/** Spec-Anzeigename → relativer Pfad unter specs/ (z. B. "mage/fire.png"). */
+export const SPEC_ICON_PATHS: Record<string, string> = {
+  'Fire Mage': 'mage/fire.png',
+  'Frost Mage': 'mage/frost.png',
+  'Arcane Mage': 'mage/arcane.png',
+  'Protection Warrior': 'warrior/protection.png',
+  'Arms Warrior': 'warrior/arms.png',
+  'Fury Warrior': 'warrior/fury.png',
+  'Restoration Shaman': 'shaman/restoration.png',
+  'Elemental Shaman': 'shaman/elemental.png',
+  'Enhancement Shaman': 'shaman/enhancement.png',
+  'Holy Priest': 'priest/holy.png',
+  'Shadow Priest': 'priest/shadow.png',
+  'Discipline Priest': 'priest/discipline.png',
+  'Restoration Druid': 'druid/restoration.png',
+  'Feral Druid': 'druid/feral.png',
+  'Feral (DPS) Druid': 'druid/feral.png',
+  'Balance Druid': 'druid/balance.png',
+  'Holy Paladin': 'paladin/holy.png',
+  'Protection Paladin': 'paladin/protection.png',
+  'Retribution Paladin': 'paladin/retribution.png',
+  'Beast Mastery Hunter': 'hunter/beastmastery.png',
+  'Marksmanship Hunter': 'hunter/marksman.png',
+  'Survival Hunter': 'hunter/survival.png',
+  'Affliction Warlock': 'warlock/affliction.png',
+  'Demonology Warlock': 'warlock/demonology.png',
+  'Destruction Warlock': 'warlock/destruction.png',
+  'Combat Rogue': 'rogue/combat.png',
+  'Assassination Rogue': 'rogue/assassination.png',
+  'Subtlety Rogue': 'rogue/subtlety.png',
 };
 
 /** TBC-Klassen-IDs für Class-Icon (Dateiname: <id>.png unter icons/wow/classes/). */
 export const CLASS_ICON_IDS = ['druid', 'hunter', 'mage', 'paladin', 'priest', 'rogue', 'shaman', 'warlock', 'warrior'] as const;
 
 export function getRoleIcon(role: string): { src: string; labelKey: string } {
-  return ROLE_ICONS[role] ?? { src: `${ICON_BASE}/role-unknown.svg`, labelKey: 'roleUnknown' };
+  return ROLE_ICONS[role] ?? { src: `${ROLES_BASE}/melee.png`, labelKey: 'roleUnknown' };
 }
 
-/** Klassen-Icon-Pfad (public/icons/wow/classes/<classId>.png). Icons aus C:\tmp\wow\classes\ kopieren. */
 export function getClassIconPath(classId: string): string {
   return `${CLASSES_BASE}/${classId}.png`;
 }
 
-/** Spec-Icon-Pfad (public/icons/wow/specs/<dateiname>.png). Icons aus C:\tmp\wow\specs\ Unterordnern kopieren, Matching per Dateiname. */
 export function getSpecIconPath(spec: string): string {
-  const filename = SPEC_ICON_FILES[spec];
-  return filename ? `${SPECS_BASE}/${filename}` : `${ICON_BASE}/spec-default.svg`;
+  const path = SPEC_ICON_PATHS[spec];
+  return path ? `${SPECS_BASE}/${path}` : `${CLASSES_BASE}/mage.png`;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { WEEKDAYS, TIME_SLOTS_30MIN, type PreferenceType, type WeekFocusType } from '@/lib/profile-constants';
 
@@ -24,7 +24,7 @@ function buildGridFromSlots(
     }
   }
   for (const s of initialSlots) {
-    if (WEEKDAYS.includes(s.weekday as typeof WEEKDAYS[number]) && g[s.weekday]) {
+    if (WEEKDAYS.includes(s.weekday as (typeof WEEKDAYS)[number]) && g[s.weekday]) {
       const val = s.preference === 'likely' ? 'likely' : s.preference === 'maybe' ? 'maybe' : '';
       if (val) g[s.weekday][s.timeSlot] = val;
     }
@@ -39,10 +39,11 @@ export function AvailabilityGrid({
   saving = false,
 }: AvailabilityGridProps) {
   const t = useTranslations('profile');
+  const initialFocus: WeekFocusType | '' =
+    initialWeekFocus === 'weekday' ? 'weekday' : initialWeekFocus === 'weekend' ? 'weekend' : 'weekend';
+
   const [preference, setPreference] = useState<PreferenceType>('likely');
-  const [weekFocus, setWeekFocus] = useState<WeekFocusType | ''>(
-    initialWeekFocus === 'weekday' ? 'weekday' : initialWeekFocus === 'weekend' ? 'weekend' : 'weekend'
-  );
+  const [weekFocus, setWeekFocus] = useState<WeekFocusType | ''>(initialFocus);
   const [grid, setGrid] = useState<Record<string, Record<string, CellValue>>>(() =>
     buildGridFromSlots(initialSlots)
   );
@@ -51,10 +52,8 @@ export function AvailabilityGrid({
 
   useEffect(() => {
     setGrid(buildGridFromSlots(initialSlots));
-    setWeekFocus(
-      initialWeekFocus === 'weekday' ? 'weekday' : initialWeekFocus === 'weekend' ? 'weekend' : 'weekend'
-    );
-  }, [initialSlots, initialWeekFocus]);
+    setWeekFocus(initialFocus);
+  }, [initialSlots, initialWeekFocus, initialFocus]);
 
   const setCell = useCallback((day: string, slot: string, value: CellValue) => {
     setGrid((prev) => {
@@ -102,122 +101,168 @@ export function AvailabilityGrid({
     return slots;
   }, [grid]);
 
+  const isGridDirty = useMemo(() => {
+    const initial = buildGridFromSlots(initialSlots);
+    for (const day of WEEKDAYS) {
+      for (const slot of TIME_SLOTS_30MIN) {
+        if ((grid[day]?.[slot] ?? '') !== (initial[day]?.[slot] ?? '')) return true;
+      }
+    }
+    return false;
+  }, [grid, initialSlots]);
+
+  const isFocusDirty = weekFocus !== initialFocus;
+  const isDirty = isGridDirty || isFocusDirty;
+
   const handleSave = useCallback(async () => {
+    if (!isDirty) return;
     const slots = collectSlots();
     await onSave(slots, weekFocus || null);
-  }, [collectSlots, weekFocus, onSave]);
+  }, [collectSlots, weekFocus, onSave, isDirty]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-4">
-        <span className="text-sm font-medium text-foreground">{t('preference')}:</span>
-        <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
-          <button
-            type="button"
-            onClick={() => setPreference('likely')}
-            className={`rounded-md px-3 py-1.5 text-sm ${preference === 'likely' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-          >
-            {t('preferenceLikely')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setPreference('maybe')}
-            className={`rounded-md px-3 py-1.5 text-sm ${preference === 'maybe' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-          >
-            {t('preferenceMaybe')}
-          </button>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto -mx-2 w-max max-w-full">
-        <table
-          className="border-collapse select-none text-[10px] sm:text-xs"
-          role="grid"
-          aria-label={t('raidTimes')}
-          onMouseLeave={handleMouseUp}
-          onMouseUp={handleMouseUp}
+    <div className="relative">
+      {saving && (
+        <div
+          className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-[1px]"
+          aria-busy="true"
+          aria-live="polite"
         >
-          <thead>
-            <tr>
-              <th className="w-9 min-w-[36px] border border-border bg-muted/50 p-0.5 text-left font-medium text-muted-foreground">
-                {t('timeSlot')}
-              </th>
-              {WEEKDAYS.map((day) => (
-                <th
-                  key={day}
-                  className="w-7 min-w-[28px] max-w-[32px] border border-border bg-muted/50 p-0.5 text-center font-medium text-muted-foreground"
-                >
-                  {day}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {TIME_SLOTS_30MIN.map((slot) => (
-              <tr key={slot}>
-                <td className="border border-border bg-muted/30 p-0.5 font-medium text-foreground whitespace-nowrap">
-                  {slot}
-                </td>
-                {WEEKDAYS.map((day) => {
-                  const val = grid[day]?.[slot] ?? '';
-                  return (
-                    <td
-                      key={day}
-                      className="w-7 min-w-[28px] max-w-[32px] h-5 sm:h-6 border border-border p-0"
-                      onMouseDown={() => handleMouseDown(day, slot)}
-                      onMouseEnter={() => handleMouseEnter(day, slot)}
-                      role="gridcell"
-                      aria-selected={!!val}
-                    >
-                      <span
-                        className={`block h-full min-h-[20px] min-w-[24px] cursor-pointer ${
-                          val === 'likely'
-                            ? 'bg-green-500/80 hover:bg-green-500'
-                            : val === 'maybe'
-                              ? 'bg-amber-500/80 hover:bg-amber-500'
-                              : 'bg-background hover:bg-muted/50'
-                        }`}
-                      />
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          <p className="text-sm font-medium text-muted-foreground">{t('savingInProgress')}</p>
+        </div>
+      )}
 
-      <div className="flex flex-wrap items-center gap-4 border-t border-border pt-4">
-        <span className="text-sm font-medium text-foreground">{t('weekFocus')}:</span>
-        <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+      <div
+        className={`grid gap-6 sm:grid-cols-[1fr_auto] ${saving ? 'pointer-events-none select-none opacity-60' : ''}`}
+      >
+        {/* Linke Spalte: Zeitslot-Tabelle + Legende */}
+        <div className="space-y-3">
+          <div className="overflow-x-auto -mx-2 w-max max-w-full">
+            <table
+              className="border-collapse select-none text-[10px] sm:text-xs"
+              role="grid"
+              aria-label={t('raidTimes')}
+              onMouseLeave={handleMouseUp}
+              onMouseUp={handleMouseUp}
+            >
+              <thead>
+                <tr>
+                  <th className="w-9 min-w-[36px] border border-border bg-muted/50 p-0.5 text-left font-medium text-muted-foreground">
+                    {t('timeSlot')}
+                  </th>
+                  {WEEKDAYS.map((day) => (
+                    <th
+                      key={day}
+                      className="w-7 min-w-[28px] max-w-[32px] border border-border bg-muted/50 p-0.5 text-center font-medium text-muted-foreground"
+                    >
+                      {day}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {TIME_SLOTS_30MIN.map((slot) => (
+                  <tr key={slot}>
+                    <td className="border border-border bg-muted/30 p-0.5 font-medium text-foreground whitespace-nowrap">
+                      {slot}
+                    </td>
+                    {WEEKDAYS.map((day) => {
+                      const val = grid[day]?.[slot] ?? '';
+                      return (
+                        <td
+                          key={day}
+                          className="w-7 min-w-[28px] max-w-[32px] h-5 sm:h-6 border border-border p-0"
+                          onMouseDown={() => handleMouseDown(day, slot)}
+                          onMouseEnter={() => handleMouseEnter(day, slot)}
+                          role="gridcell"
+                          aria-selected={!!val}
+                        >
+                          <span
+                            className={`block h-full min-h-[20px] min-w-[24px] cursor-pointer ${
+                              val === 'likely'
+                                ? 'bg-green-500/80 hover:bg-green-500'
+                                : val === 'maybe'
+                                  ? 'bg-amber-500/80 hover:bg-amber-500'
+                                  : 'bg-background hover:bg-muted/50'
+                            }`}
+                          />
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-muted-foreground text-xs" role="note">
+            <span className="inline-block w-3 h-3 bg-amber-500/80 rounded-sm align-middle mr-1" aria-hidden />
+            {t('legendMaybe')} |{' '}
+            <span className="inline-block w-3 h-3 bg-green-500/80 rounded-sm align-middle mr-1" aria-hidden />
+            {t('legendLikely')}
+          </p>
+        </div>
+
+        {/* Rechte Spalte: Markieren als (übereinander), Fokus, Speichern */}
+        <div className="flex flex-col gap-4 min-w-[140px]">
+          <div>
+            <p className="text-sm font-medium text-foreground mb-2">{t('markAs')}</p>
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPreference('likely')}
+                className={`rounded-md border px-3 py-2 text-sm text-left w-full ${
+                  preference === 'likely'
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border bg-muted/30 text-muted-foreground hover:bg-muted/50'
+                }`}
+              >
+                {t('preferenceLikely')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreference('maybe')}
+                className={`rounded-md border px-3 py-2 text-sm text-left w-full ${
+                  preference === 'maybe'
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border bg-muted/30 text-muted-foreground hover:bg-muted/50'
+                }`}
+              >
+                {t('preferenceMaybe')}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium text-foreground mb-2">{t('weekFocus')}</p>
+            <div className="flex rounded-lg border border-border p-0.5 bg-muted/30 flex-col sm:flex-row gap-0.5">
+              <button
+                type="button"
+                onClick={() => setWeekFocus('weekday')}
+                className={`rounded-md px-3 py-1.5 text-sm flex-1 ${weekFocus === 'weekday' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              >
+                {t('weekFocusWeekday')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setWeekFocus('weekend')}
+                className={`rounded-md px-3 py-1.5 text-sm flex-1 ${weekFocus === 'weekend' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+              >
+                {t('weekFocusWeekend')}
+              </button>
+            </div>
+            <p className="text-muted-foreground text-xs mt-1.5 max-w-[200px]">{t('weekFocusHint')}</p>
+          </div>
+
           <button
             type="button"
-            onClick={() => setWeekFocus('weekday')}
-            className={`rounded-md px-3 py-1.5 text-sm ${weekFocus === 'weekday' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+            onClick={handleSave}
+            disabled={saving || !isDirty}
+            className="mt-auto rounded bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:pointer-events-none"
           >
-            {t('weekFocusWeekday')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setWeekFocus('weekend')}
-            className={`rounded-md px-3 py-1.5 text-sm ${weekFocus === 'weekend' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
-          >
-            {t('weekFocusWeekend')}
+            {saving ? t('saving') : t('save')}
           </button>
         </div>
-        <p className="text-muted-foreground text-xs max-w-md">
-          {t('weekFocusHint')}
-        </p>
       </div>
-
-      <button
-        type="button"
-        onClick={handleSave}
-        disabled={saving}
-        className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50"
-      >
-        {saving ? t('saving') : t('save')}
-      </button>
     </div>
   );
 }
