@@ -36,7 +36,7 @@ Bei Raids mit **Raidgruppen-Einschränkung** brauchst du zusätzlich die passend
 ### Für alle (nach Login)
 
 - **Dashboard:** Übersicht deiner Gilden (Discord-Server mit RaidFlow) und aller Raids mit Anmeldestand und Aktionen je nach Rolle.
-- **Mein Profil:** Anzeige-Modus (Hell/Dunkel, gespeichert im Profil und per Cookie), Raidzeiten-Präferenzen (wahrscheinlich/eventuell, Werktage/Wochenende), Charaktere (Name, Gilde, Spec, Off-Spec), Raidstatistik pro Dungeon und Gilde, Loottabelle (erhaltener Loot pro Gilde/Dungeon).
+- **Mein Profil:** Anzeige-Modus (Hell/Dunkel in der Topbar, gespeichert im Profil und per Cookie), Raidzeiten-Präferenzen (wahrscheinlich/eventuell, Werktage/Wochenende; Outlook-artiges Grid), Charaktere (Name, Gilde, Spec, Off-Spec; Main pro Gilde, sonst Twink), Raidstatistik pro Dungeon und Gilde, Loottabelle (erhaltener Loot pro Gilde/Dungeon).
 - **Sprachauswahl** in der Topbar (Standard: Browsersprache).
 - **Discord-Bot einladen:** Link, um den RaidFlow-Bot auf einem eigenen Discord-Server hinzuzufügen.
 

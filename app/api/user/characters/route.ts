@@ -24,6 +24,7 @@ export async function GET() {
       guildName: c.guild?.name ?? null,
       mainSpec: c.mainSpec,
       offSpec: c.offSpec,
+      isMain: c.isMain,
     })),
   });
 }
@@ -56,6 +57,7 @@ export async function POST(request: NextRequest) {
         guildId: guildId || null,
         mainSpec: mainSpec.trim(),
         offSpec: offSpec?.trim() || null,
+        isMain: false,
       },
       include: { guild: { select: { id: true, name: true } } },
     });
@@ -67,6 +69,7 @@ export async function POST(request: NextRequest) {
         guildName: created.guild?.name ?? null,
         mainSpec: created.mainSpec,
         offSpec: created.offSpec,
+        isMain: created.isMain,
       },
     });
   } catch (err) {

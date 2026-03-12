@@ -111,6 +111,7 @@ model RfCharacter {
   name      String
   mainSpec  String   @map("main_spec")
   offSpec   String?  @map("off_spec")
+  isMain    Boolean  @default(false) @map("is_main")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

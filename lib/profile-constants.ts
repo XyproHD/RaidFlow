@@ -25,3 +25,17 @@ export type PreferenceType = typeof PREFERENCE_LIKELY | typeof PREFERENCE_MAYBE;
 export const WEEK_FOCUS_WEEKDAY = 'weekday';
 export const WEEK_FOCUS_WEEKEND = 'weekend';
 export type WeekFocusType = typeof WEEK_FOCUS_WEEKDAY | typeof WEEK_FOCUS_WEEKEND;
+
+/** Erweitert gespeicherte Slots (z. B. "16-18") in 30-Min-Einzel slots für das Grid. */
+export function expandRaidTimeSlot(slot: string): string[] {
+  if (TIME_SLOTS_30MIN.includes(slot as (typeof TIME_SLOTS_30MIN)[number])) return [slot];
+  const match = slot.match(/^(\d{1,2})-(\d{1,2})$/);
+  if (!match) return [];
+  const [, start, end] = match;
+  const startIdx = TIME_SLOTS_30MIN.findIndex((s) => s.startsWith(start + ':'));
+  const endIdx = end === '03'
+    ? TIME_SLOTS_30MIN.length
+    : TIME_SLOTS_30MIN.findIndex((s) => s.startsWith(end + ':'));
+  if (startIdx === -1 || endIdx === -1) return [slot];
+  return TIME_SLOTS_30MIN.slice(startIdx, endIdx) as unknown as string[];
+}

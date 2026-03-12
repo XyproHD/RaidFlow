@@ -9,7 +9,6 @@ import {
   TBC_CLASSES,
   getSpecDisplayName,
   getAllSpecDisplayNames,
-  type TbcRole,
 } from '@/lib/wow-tbc-classes';
 
 type CharacterRow = {
@@ -19,6 +18,7 @@ type CharacterRow = {
   guildName: string | null;
   mainSpec: string;
   offSpec: string | null;
+  isMain: boolean;
 };
 
 type GuildOption = { id: string; name: string };
@@ -146,6 +146,37 @@ export function ProfileCharacters({
     }
   };
 
+  const handleSetMain = async (id: string) => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/user/characters/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ isMain: true }),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        router.refresh();
+        setList((prev) =>
+          prev.map((r) => {
+            if (r.id === id) return { ...r, isMain: true };
+            const char = prev.find((x) => x.id === id);
+            if (char?.guildId && r.guildId === char.guildId) return { ...r, isMain: false };
+            return r;
+          })
+        );
+      } else {
+        setError(await parseError(res));
+      }
+    } catch (err) {
+      setError(t('errorSave'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -200,10 +231,9 @@ export function ProfileCharacters({
     }
   };
 
-  const roleForSpec = (displayName: string): TbcRole => {
-    const s = allSpecs.find((x) => x.displayName === displayName);
-    return s?.role ?? 'Melee';
-  };
+  const charsInSameGuild = (guildId: string | null) =>
+    guildId ? list.filter((c) => c.guildId === guildId) : [];
+  const canSetMain = (c: CharacterRow) => !!c.guildId && !c.isMain;
 
   const selectedMainSpecDisplay = classId && mainSpecId ? getSpecDisplayName(classId, mainSpecId) : null;
   const selectedOffSpecDisplay = classId && offSpecId ? getSpecDisplayName(classId, offSpecId) : null;
@@ -322,28 +352,36 @@ export function ProfileCharacters({
       <div className="flex flex-wrap gap-2 mb-4">
         {list.map((c) => {
           const cClassId = getClassIdForSpec(c.mainSpec);
+          const twinkLabel = c.guildId && !c.isMain && charsInSameGuild(c.guildId).length > 1;
           return (
             <div
               key={c.id}
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
+              className="inline-flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
             >
               {cClassId && <ClassIcon classId={cClassId} size={20} title={c.mainSpec} />}
               <span className="font-medium">{c.name}</span>
-              {cClassId && <ClassIcon classId={cClassId} size={20} className="opacity-70" />}
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm text-muted-foreground inline-flex items-center gap-0.5">
                 <SpecIcon spec={c.mainSpec} size={16} />
-                <span className="ml-0.5">{c.mainSpec}</span>
-                {c.offSpec && (
-                  <>
-                    <span className="mx-0.5">({c.offSpec})</span>
-                  </>
-                )}
+                <span>{c.mainSpec}</span>
+                {c.offSpec && <span className="ml-0.5">({c.offSpec})</span>}
+                {twinkLabel && <span className="ml-1 text-muted-foreground/80">(Twink)</span>}
+                {c.isMain && c.guildId && <span className="ml-1 font-medium text-foreground">(Main)</span>}
               </span>
+              {canSetMain(c) && (
+                <button
+                  type="button"
+                  onClick={() => handleSetMain(c.id)}
+                  disabled={loading}
+                  className="rounded border border-input bg-muted/50 px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                >
+                  {t('setAsMain')}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => openEdit(c)}
                 disabled={loading}
-                className="ml-1 rounded border border-input bg-muted/50 px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                className="rounded border border-input bg-muted/50 px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
               >
                 {t('editCharacter')}
               </button>

@@ -15,7 +15,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const { id } = await params;
-  let body: { name?: string; guildId?: string | null; mainSpec?: string; offSpec?: string | null };
+  let body: { name?: string; guildId?: string | null; mainSpec?: string; offSpec?: string | null; isMain?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -27,6 +27,12 @@ export async function PATCH(
   if (!existing) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
+  if (body.isMain === true && existing.guildId) {
+    await prisma.rfCharacter.updateMany({
+      where: { userId, guildId: existing.guildId, id: { not: id } },
+      data: { isMain: false },
+    });
+  }
   const updated = await prisma.rfCharacter.update({
     where: { id },
     data: {
@@ -34,6 +40,7 @@ export async function PATCH(
       ...(body.guildId !== undefined && { guildId: body.guildId || null }),
       ...(body.mainSpec != null && { mainSpec: body.mainSpec.trim() }),
       ...(body.offSpec !== undefined && { offSpec: body.offSpec?.trim() || null }),
+      ...(body.isMain !== undefined && { isMain: !!body.isMain }),
     },
     include: { guild: { select: { id: true, name: true } } },
   });
@@ -45,6 +52,7 @@ export async function PATCH(
       guildName: updated.guild?.name ?? null,
       mainSpec: updated.mainSpec,
       offSpec: updated.offSpec,
+      isMain: updated.isMain,
     },
   });
 }
