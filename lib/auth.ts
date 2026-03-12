@@ -25,33 +25,36 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
     async jwt({ token, account, profile }) {
-      // Beim ersten Login: User in DB anlegen/aktualisieren und DB-ID ins Token
-      const discordId = profile && typeof (profile as { id?: string }).id === 'string' ? (profile as { id: string }).id : null;
-      if (account && discordId) {
+      const t = token as { uid?: string; discordId?: string; sub?: string };
+      const discordIdFromProfile = profile && typeof (profile as { id?: string }).id === 'string' ? (profile as { id: string }).id : null;
+      const discordId = discordIdFromProfile ?? (typeof t.sub === 'string' ? t.sub : null);
+
+      // Immer DB-User ermitteln: beim ersten Login (account/profile) oder Fallback per token.sub (jeder Request)
+      if (discordId) {
         try {
           const dbUser = await prisma.rfUser.upsert({
             where: { discordId },
             create: { discordId },
             update: { updatedAt: new Date() },
           });
-          token.uid = dbUser.id;
-          token.discordId = dbUser.discordId;
-          // Discord access_token nur im JWT (nicht in Session), für API /api/discord/my-guilds
-          if (account.access_token) token.discordAccessToken = account.access_token;
+          t.uid = dbUser.id;
+          t.discordId = dbUser.discordId;
+          if (account?.access_token) (token as { discordAccessToken?: string }).discordAccessToken = account.access_token;
         } catch (e) {
           console.error('[NextAuth] DB-Upsert fehlgeschlagen:', e);
-          token.uid = token.sub;
-          token.discordId = discordId;
-          if (account?.access_token) token.discordAccessToken = account.access_token;
+          if (discordIdFromProfile) {
+            t.uid = t.sub ?? undefined;
+            t.discordId = discordIdFromProfile;
+          }
         }
       }
+
       return token;
     },
     async session({ session, token }) {
-      // Immer userId/discordId aus Token in Session übernehmen (nicht nur bei session.user)
       const t = token as { uid?: string; discordId?: string };
-      if (t.uid !== undefined) (session as { userId?: string; discordId?: string }).userId = t.uid;
-      if (t.discordId !== undefined) (session as { userId?: string; discordId?: string }).discordId = t.discordId;
+      (session as { userId?: string; discordId?: string }).userId = t.uid ?? undefined;
+      (session as { userId?: string; discordId?: string }).discordId = t.discordId ?? undefined;
       return session;
     },
   },

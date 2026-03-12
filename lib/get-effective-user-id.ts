@@ -9,8 +9,10 @@ type SessionLike = { userId?: string; discordId?: string } | null;
  */
 export async function getEffectiveUserId(session: SessionLike): Promise<string | null> {
   if (!session || typeof session !== 'object') return null;
-  const discordId = typeof session.discordId === 'string' ? session.discordId : undefined;
-  const candidateId = typeof session.userId === 'string' ? session.userId : undefined;
+  const s = session as { userId?: string; discordId?: string; user?: { id?: string } };
+  let discordId = typeof s.discordId === 'string' && s.discordId ? s.discordId : undefined;
+  if (!discordId && s.user?.id) discordId = String(s.user.id);
+  const candidateId = typeof s.userId === 'string' && s.userId ? s.userId : undefined;
 
   /** UUID-Format (rf_user.id); Discord-IDs sind lange Zahlenstrings. */
   const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
