@@ -349,39 +349,49 @@ export function ProfileCharacters({
       {list.length === 0 && (
         <p className="text-muted-foreground text-sm mb-2">{t('noCharacters')}</p>
       )}
-      <div className="flex flex-wrap gap-2 mb-4">
+      <div className="mb-4 space-y-2">
         {list.map((c) => {
           const cClassId = getClassIdForSpec(c.mainSpec);
           const twinkLabel = c.guildId && !c.isMain && charsInSameGuild(c.guildId).length > 1;
           return (
             <div
               key={c.id}
-              className="inline-flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
+              className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
+              style={{ gridTemplateColumns: '32px 24px minmax(80px, 1fr) 28px 100px 88px' }}
             >
-              {cClassId && <ClassIcon classId={cClassId} size={20} title={c.mainSpec} />}
-              <span className="font-medium">{c.name}</span>
-              <span className="text-sm text-muted-foreground inline-flex items-center gap-0.5">
-                <SpecIcon spec={c.mainSpec} size={16} />
-                <span>{c.mainSpec}</span>
-                {c.offSpec && <span className="ml-0.5">({c.offSpec})</span>}
-                {twinkLabel && <span className="ml-1 text-muted-foreground/80">(Twink)</span>}
-                {c.isMain && c.guildId && <span className="ml-1 font-medium text-foreground">(Main)</span>}
+              <div className="flex shrink-0 items-center justify-center w-8 h-8">
+                {cClassId && <ClassIcon classId={cClassId} size={24} title={c.mainSpec} />}
+              </div>
+              <div className="flex shrink-0 items-center w-6">
+                <SpecIcon spec={c.mainSpec} size={20} />
+              </div>
+              <span className="font-medium truncate min-w-0" title={c.name}>
+                {c.name}
+                {twinkLabel && <span className="ml-1 text-muted-foreground/80 text-sm">(Twink)</span>}
+                {c.isMain && c.guildId && <span className="ml-1 font-medium text-foreground text-sm">(Main)</span>}
               </span>
-              {canSetMain(c) && (
-                <button
-                  type="button"
-                  onClick={() => handleSetMain(c.id)}
-                  disabled={loading}
-                  className="rounded border border-input bg-muted/50 px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
-                >
-                  {t('setAsMain')}
-                </button>
-              )}
+              <div className="flex shrink-0 items-center justify-center w-7">
+                {c.offSpec ? <SpecIcon spec={c.offSpec} size={16} /> : null}
+              </div>
+              <div className="min-w-0">
+                {canSetMain(c) ? (
+                  <button
+                    type="button"
+                    onClick={() => handleSetMain(c.id)}
+                    disabled={loading}
+                    className="w-full min-w-[100px] rounded border border-input bg-muted/50 px-2 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                  >
+                    {t('setAsMain')}
+                  </button>
+                ) : (
+                  <span className="inline-block w-full min-w-[100px]" aria-hidden />
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => openEdit(c)}
                 disabled={loading}
-                className="rounded border border-input bg-muted/50 px-2 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                className="w-full min-w-[88px] rounded border border-input bg-muted/50 px-2 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
               >
                 {t('editCharacter')}
               </button>

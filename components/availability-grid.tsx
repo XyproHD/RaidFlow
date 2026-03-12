@@ -133,9 +133,10 @@ export function AvailabilityGrid({
       )}
 
       <div
-        className={`grid gap-6 sm:grid-cols-[1fr_auto] ${saving ? 'pointer-events-none select-none opacity-60' : ''}`}
+        className={`grid sm:grid-cols-[1fr_auto] ${saving ? 'pointer-events-none select-none opacity-60' : ''}`}
+        style={{ gap: '50px' }}
       >
-        {/* Linke Spalte: Zeitslot-Tabelle + Legende */}
+        {/* Linke Spalte: Zeitslot-Tabelle + Legende (nur Quadrat + Bedeutung) */}
         <div className="space-y-3">
           <div className="overflow-x-auto -mx-2 w-max max-w-full">
             <table
@@ -153,7 +154,7 @@ export function AvailabilityGrid({
                   {WEEKDAYS.map((day) => (
                     <th
                       key={day}
-                      className="w-7 min-w-[28px] max-w-[32px] border border-border bg-muted/50 p-0.5 text-center font-medium text-muted-foreground"
+                      className="w-10 min-w-[42px] max-w-[48px] border border-border bg-muted/50 p-0.5 text-center font-medium text-muted-foreground"
                     >
                       {day}
                     </th>
@@ -171,14 +172,14 @@ export function AvailabilityGrid({
                       return (
                         <td
                           key={day}
-                          className="w-7 min-w-[28px] max-w-[32px] h-5 sm:h-6 border border-border p-0"
+                          className="w-10 min-w-[42px] max-w-[48px] h-5 sm:h-6 border border-border p-0"
                           onMouseDown={() => handleMouseDown(day, slot)}
                           onMouseEnter={() => handleMouseEnter(day, slot)}
                           role="gridcell"
                           aria-selected={!!val}
                         >
                           <span
-                            className={`block h-full min-h-[20px] min-w-[24px] cursor-pointer ${
+                            className={`block h-full min-h-[20px] min-w-[36px] cursor-pointer ${
                               val === 'likely'
                                 ? 'bg-green-500/80 hover:bg-green-500'
                                 : val === 'maybe'
@@ -194,38 +195,34 @@ export function AvailabilityGrid({
               </tbody>
             </table>
           </div>
-          <p className="text-muted-foreground text-xs" role="note">
-            <span className="inline-block w-3 h-3 bg-amber-500/80 rounded-sm align-middle mr-1" aria-hidden />
-            {t('legendMaybe')} |{' '}
-            <span className="inline-block w-3 h-3 bg-green-500/80 rounded-sm align-middle mr-1" aria-hidden />
-            {t('legendLikely')}
+          <p className="text-muted-foreground text-xs flex items-center gap-3 flex-wrap" role="note">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 bg-amber-500/80 rounded-sm shrink-0" aria-hidden />
+              <span>{t('preferenceMaybe')}</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 bg-green-500/80 rounded-sm shrink-0" aria-hidden />
+              <span>{t('preferenceLikely')}</span>
+            </span>
           </p>
         </div>
 
-        {/* Rechte Spalte: Markieren als (übereinander), Fokus, Speichern */}
+        {/* Rechte Spalte: Markieren als (Switch wie Fokus), Fokus, Speichern */}
         <div className="flex flex-col gap-4 min-w-[140px]">
           <div>
             <p className="text-sm font-medium text-foreground mb-2">{t('markAs')}</p>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
               <button
                 type="button"
                 onClick={() => setPreference('likely')}
-                className={`rounded-md border px-3 py-2 text-sm text-left w-full ${
-                  preference === 'likely'
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'border-border bg-muted/30 text-muted-foreground hover:bg-muted/50'
-                }`}
+                className={`rounded-md px-3 py-1.5 text-sm flex-1 ${preference === 'likely' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
               >
                 {t('preferenceLikely')}
               </button>
               <button
                 type="button"
                 onClick={() => setPreference('maybe')}
-                className={`rounded-md border px-3 py-2 text-sm text-left w-full ${
-                  preference === 'maybe'
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'border-border bg-muted/30 text-muted-foreground hover:bg-muted/50'
-                }`}
+                className={`rounded-md px-3 py-1.5 text-sm flex-1 ${preference === 'maybe' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
               >
                 {t('preferenceMaybe')}
               </button>
