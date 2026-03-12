@@ -22,6 +22,7 @@ export function ProfileRaidTimes({ initialData }: { initialData: RaidTimeRow[] }
   /** Nach Speichern: gespeicherte Slots anzeigen, damit die Auswahl nicht verschwindet (bis Reload). */
   const [lastSavedSlots, setLastSavedSlots] = useState<Slot[] | null>(null);
   const [lastSavedWeekFocus, setLastSavedWeekFocus] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const serverSlots = useMemo(
     () =>
@@ -39,6 +40,7 @@ export function ProfileRaidTimes({ initialData }: { initialData: RaidTimeRow[] }
 
   const handleSave = async (slots: Slot[], weekFocus: string | null) => {
     setSaving(true);
+    setSaveError(null);
     try {
       const res = await fetch('/api/user/raid-times/bulk', {
         method: 'PUT',
@@ -51,9 +53,20 @@ export function ProfileRaidTimes({ initialData }: { initialData: RaidTimeRow[] }
         setLastSavedWeekFocus(weekFocus);
         router.refresh();
       } else {
-        const err = await res.json().catch(() => ({}));
-        console.error('Raidzeiten speichern fehlgeschlagen:', res.status, err);
+        const text = await res.text();
+        let msg = 'Raidzeiten speichern fehlgeschlagen.';
+        try {
+          const data = JSON.parse(text);
+          if (data?.error) msg = data.error;
+        } catch {
+          if (text) msg = text;
+        }
+        setSaveError(msg);
+        console.error('Raidzeiten speichern fehlgeschlagen:', res.status, msg);
       }
+    } catch (err) {
+      setSaveError('Raidzeiten speichern fehlgeschlagen.');
+      console.error(err);
     } finally {
       setSaving(false);
     }
@@ -65,6 +78,11 @@ export function ProfileRaidTimes({ initialData }: { initialData: RaidTimeRow[] }
         {t('raidTimes')}
       </h2>
       <p className="text-muted-foreground text-sm mb-4">{t('raidTimesDescription')}</p>
+      {saveError && (
+        <p className="text-destructive text-sm mb-2" role="alert">
+          {saveError}
+        </p>
+      )}
       <AvailabilityGrid
         initialSlots={initialSlots}
         initialWeekFocus={initialWeekFocus}

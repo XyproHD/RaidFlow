@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 
 /** GET: Charaktere des eingeloggten Users */
 export async function GET() {
   const session = await getServerSession(authOptions);
-  const userId = (session as { userId?: string } | null)?.userId;
+  const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -30,7 +31,7 @@ export async function GET() {
 /** POST: Neuen Charakter anlegen */
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
-  const userId = (session as { userId?: string } | null)?.userId;
+  const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

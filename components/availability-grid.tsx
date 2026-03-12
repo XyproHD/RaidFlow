@@ -129,9 +129,9 @@ export function AvailabilityGrid({
         </div>
       </div>
 
-      <div className="overflow-x-auto -mx-2">
+      <div className="overflow-x-auto -mx-2 w-max max-w-full">
         <table
-          className="w-full border-collapse select-none text-[10px] sm:text-xs"
+          className="border-collapse select-none text-[10px] sm:text-xs"
           role="grid"
           aria-label={t('raidTimes')}
           onMouseLeave={handleMouseUp}

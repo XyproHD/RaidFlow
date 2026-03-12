@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getGuildsForUser } from '@/lib/user-guilds';
+import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { ProfileRaidTimes } from './profile-raid-times';
 import { ProfileCharacters } from './profile-characters';
 
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export default async function ProfilePage() {
   const t = await getTranslations('profile');
   const session = await getServerSession(authOptions);
-  const userId = (session as { userId?: string } | null)?.userId;
+  const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
   const discordId = (session as { discordId?: string } | null)?.discordId;
 
   if (!userId) {
