@@ -133,11 +133,11 @@ export function AvailabilityGrid({
       )}
 
       <div
-        className={`grid gap-4 sm:grid-cols-[1fr_auto] ${saving ? 'pointer-events-none select-none opacity-60' : ''}`}
+        className={`flex flex-wrap items-start gap-3 ${saving ? 'pointer-events-none select-none opacity-60' : ''}`}
       >
-        {/* Linke Spalte: Zeitslot-Tabelle + Legende (nur Quadrat + Bedeutung) */}
-        <div className="space-y-3">
-          <div className="overflow-x-auto -mx-2 w-max max-w-full">
+        {/* Linke Spalte: Zeitslot-Tabelle + Legende, Breite nur so breit wie die Tabelle */}
+        <div className="w-max max-w-full space-y-3">
+          <div className="overflow-x-auto">
             <table
               className="border-collapse select-none text-[10px] sm:text-xs"
               role="grid"
@@ -194,7 +194,7 @@ export function AvailabilityGrid({
               </tbody>
             </table>
           </div>
-          <p className="text-muted-foreground text-xs flex items-center gap-3 flex-wrap" role="note">
+          <p className="text-muted-foreground text-xs flex items-center gap-3 flex-wrap w-full" role="note">
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block w-3 h-3 bg-amber-500/80 rounded-sm shrink-0" aria-hidden />
               <span>{t('preferenceMaybe')}</span>
@@ -206,8 +206,8 @@ export function AvailabilityGrid({
           </p>
         </div>
 
-        {/* Rechte Spalte: Markieren als (Switch wie Fokus), Fokus, Speichern */}
-        <div className="flex flex-col gap-4 min-w-[140px]">
+        {/* Rechte Spalte: direkt neben der Tabelle, Markieren als, Fokus, Speichern */}
+        <div className="flex flex-col gap-4 min-w-[140px] shrink-0">
           <div>
             <p className="text-sm font-medium text-foreground mb-2">{t('markAs')}</p>
             <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">

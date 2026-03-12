@@ -349,29 +349,39 @@ export function ProfileCharacters({
       {list.length === 0 && (
         <p className="text-muted-foreground text-sm mb-2">{t('noCharacters')}</p>
       )}
-      <div className="mb-4 space-y-2 max-w-[22rem]">
+      <div className="mb-4 space-y-2 max-w-[44rem]">
         {list.map((c) => {
           const cClassId = getClassIdForSpec(c.mainSpec);
           const twinkLabel = c.guildId && !c.isMain && charsInSameGuild(c.guildId).length > 1;
           const mainOrAltTitle = c.isMain && c.guildId ? t('mainLabel') : twinkLabel ? t('altLabel') : undefined;
+          const ICON_SIZE = 24;
           return (
             <div
               key={c.id}
-              className="grid items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-2 shadow-sm"
-              style={{ gridTemplateColumns: '20px 28px auto 1fr 60px 52px' }}
+              className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
+              style={{ gridTemplateColumns: `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr 72px 64px` }}
             >
-              <div className="flex shrink-0 items-center justify-center text-base" title={mainOrAltTitle}>
-                {c.isMain && c.guildId ? <span aria-label={t('mainLabel')}>★</span> : twinkLabel ? <span aria-label={t('altLabel')}>−</span> : <span className="w-4" aria-hidden />}
+              <div className="flex shrink-0 items-center justify-center w-8 h-8 mr-0.5" title={mainOrAltTitle}>
+                {c.isMain && c.guildId ? (
+                  <span className="inline-flex items-center justify-center text-[22px] leading-none text-amber-400" aria-label={t('mainLabel')}>⭐</span>
+                ) : twinkLabel ? (
+                  <span className="inline-flex items-center justify-center text-[22px] leading-none text-muted-foreground" aria-label={t('altLabel')}>➖</span>
+                ) : (
+                  <span className="w-8 h-8" aria-hidden />
+                )}
               </div>
-              <div className="flex shrink-0 items-center justify-center">
-                {cClassId && <ClassIcon classId={cClassId} size={28} title={c.mainSpec} />}
+              <div className="flex shrink-0 items-center justify-center w-7 h-7">
+                {cClassId && <ClassIcon classId={cClassId} size={ICON_SIZE} title={c.mainSpec} />}
               </div>
-              <div className="flex shrink-0 items-center gap-0.5 min-w-0">
-                <SpecIcon spec={c.mainSpec} size={22} />
+              <div className="flex shrink-0 items-center gap-1 min-w-0">
+                <SpecIcon spec={c.mainSpec} size={ICON_SIZE} />
                 {c.offSpec && (
-                  <span className="inline-flex items-center text-muted-foreground">
-                    (<SpecIcon spec={c.offSpec} size={16} />)
-                  </span>
+                  <>
+                    <span className="text-muted-foreground text-xs font-medium">/</span>
+                    <span className="grayscale contrast-90 inline-flex">
+                      <SpecIcon spec={c.offSpec} size={ICON_SIZE} className="opacity-90" />
+                    </span>
+                  </>
                 )}
               </div>
               <span className="font-medium text-base truncate min-w-0" title={c.name}>
@@ -383,19 +393,19 @@ export function ProfileCharacters({
                     type="button"
                     onClick={() => handleSetMain(c.id)}
                     disabled={loading}
-                    className="w-full min-w-[60px] rounded border border-input bg-muted/50 px-1.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                    className="w-full min-w-[72px] rounded border border-input bg-muted/50 px-2 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
                   >
                     {t('setAsMain')}
                   </button>
                 ) : (
-                  <span className="inline-block w-full min-w-[60px]" aria-hidden />
+                  <span className="inline-block w-full min-w-[72px]" aria-hidden />
                 )}
               </div>
               <button
                 type="button"
                 onClick={() => openEdit(c)}
                 disabled={loading}
-                className="w-full min-w-[52px] rounded border border-input bg-muted/50 px-1.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                className="w-full min-w-[64px] rounded border border-input bg-muted/50 px-2 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
               >
                 {t('editCharacter')}
               </button>
