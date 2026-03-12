@@ -439,9 +439,11 @@ function RaidGroupsSection({
                   <li className="text-muted-foreground text-sm pl-0">—</li>
                 ) : (
                   groupMembers.map((m) => {
-                    const visibleChars = charsFiltered(m.characters);
+                    const sortedChars = sortCharsMainFirst(m.characters);
+                    const visibleChars = charsFiltered(sortedChars);
+                    const hasTwinksInGuild = m.characters.length > 1;
                     return (
-                      <li key={m.id} className="flex flex-wrap items-center gap-2">
+                      <li key={m.id} className="rounded-lg border border-border bg-muted/20 p-2 flex flex-wrap items-center gap-2">
                         <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
                           {visibleChars.length === 0 ? (
                             m.characters.length === 0 ? (
@@ -457,7 +459,11 @@ function RaidGroupsSection({
                                   key={ch.id}
                                   className="flex items-center gap-2 flex-wrap"
                                 >
-                                  <CharacterCard ch={ch} />
+                                  <CharacterCard
+                                    ch={ch}
+                                    showMainTwink
+                                    hasTwinksInGuild={hasTwinksInGuild}
+                                  />
                                   <button
                                     type="button"
                                     role="switch"
@@ -506,13 +512,42 @@ function RaidGroupsSection({
   );
 }
 
-function CharacterCard({ ch }: { ch: GuildCharacter }) {
+function CharacterCard({
+  ch,
+  showMainTwink = false,
+  hasTwinksInGuild = false,
+  highlightMain = false,
+}: {
+  ch: GuildCharacter;
+  showMainTwink?: boolean;
+  hasTwinksInGuild?: boolean;
+  highlightMain?: boolean;
+}) {
+  const tProfile = useTranslations('profile');
   const classId = getClassIdForSpec(ch.mainSpec);
+  const twinkLabel = showMainTwink && !ch.isMain && hasTwinksInGuild;
+  const mainOrAltTitle = ch.isMain ? tProfile('mainLabel') : twinkLabel ? tProfile('altLabel') : undefined;
   return (
     <div
-      className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm min-w-[12rem]"
-      style={{ gridTemplateColumns: `${ICON_SIZE + 4}px auto 1fr` }}
+      className={cn(
+        'grid items-center gap-2 rounded-lg border px-3 py-2 shadow-sm min-w-[12rem]',
+        highlightMain && ch.isMain
+          ? 'border-amber-500/50 bg-amber-500/10 dark:bg-amber-500/15'
+          : 'border-border bg-card'
+      )}
+      style={{ gridTemplateColumns: showMainTwink ? `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr` : `${ICON_SIZE + 4}px auto 1fr` }}
     >
+      {showMainTwink && (
+        <div className="flex shrink-0 items-center justify-center w-8 h-8" title={mainOrAltTitle}>
+          {ch.isMain ? (
+            <span className="inline-flex items-center justify-center text-[22px] leading-none text-amber-400" aria-label={tProfile('mainLabel')}>⭐</span>
+          ) : twinkLabel ? (
+            <span className="inline-flex items-center justify-center text-[22px] leading-none text-muted-foreground" aria-label={tProfile('altLabel')}>➖</span>
+          ) : (
+            <span className="w-8 h-8" aria-hidden />
+          )}
+        </div>
+      )}
       <div className="flex shrink-0 items-center justify-center w-7 h-7">
         {classId && <ClassIcon classId={classId} size={ICON_SIZE} title={ch.mainSpec} />}
       </div>
@@ -650,18 +685,17 @@ function MembersSection({
                   {visibleChars.length === 0 ? (
                     <span className="text-muted-foreground text-sm">{m.discordId}</span>
                   ) : (
-                    <>
-                      <div className="flex flex-wrap gap-2">
-                        <CharacterCard ch={visibleChars[0]} />
-                      </div>
-                      {showTwinks && visibleChars.length > 1 && (
-                        <div className="pl-4 border-l-2 border-muted space-y-2">
-                          {visibleChars.slice(1).map((ch) => (
-                            <CharacterCard key={ch.id} ch={ch} />
-                          ))}
-                        </div>
-                      )}
-                    </>
+                    <div className="flex flex-wrap gap-2">
+                      {visibleChars.map((ch) => (
+                        <CharacterCard
+                          key={ch.id}
+                          ch={ch}
+                          showMainTwink
+                          hasTwinksInGuild={m.characters.length > 1}
+                          highlightMain={ch.isMain}
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0 flex-wrap sm:pt-0 pt-2 border-t border-border sm:border-0">

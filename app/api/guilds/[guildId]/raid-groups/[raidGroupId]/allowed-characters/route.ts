@@ -112,21 +112,19 @@ export async function PATCH(
       where: { userId: character.userId, guildId },
       select: { id: true },
     });
-    const allowedRows = await prisma.rfRaidGroupCharacter.findMany({
+    const allRows = await prisma.rfRaidGroupCharacter.findMany({
       where: {
         raidGroupId,
         characterId: { in: userCharsInGuild.map((c) => c.id) },
-        allowed: true,
       },
+      select: { characterId: true, allowed: true },
     });
-    const otherAllowed = allowedRows.filter((r) => r.characterId !== characterId);
-    const currentRow = await prisma.rfRaidGroupCharacter.findUnique({
-      where: {
-        raidGroupId_characterId: { raidGroupId, characterId },
-      },
-    });
-    const thisCharCurrentlyAllowed = currentRow?.allowed ?? true;
-    if (thisCharCurrentlyAllowed && otherAllowed.length === 0) {
+    const rowByChar = new Map(allRows.map((r) => [r.characterId, r.allowed]));
+    const isAllowed = (charId: string) => rowByChar.get(charId) ?? true;
+    const otherChars = userCharsInGuild.filter((c) => c.id !== characterId);
+    const otherAllowedCount = otherChars.filter((c) => isAllowed(c.id)).length;
+    const thisCharCurrentlyAllowed = isAllowed(characterId);
+    if (thisCharCurrentlyAllowed && otherAllowedCount === 0) {
       return NextResponse.json(
         { error: 'At least one character per user must remain allowed in this raid group' },
         { status: 400 }
