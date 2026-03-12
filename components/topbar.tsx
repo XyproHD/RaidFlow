@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { useState, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { ThemeSwitch } from '@/components/theme-switch';
+import type { UserGuildInfo } from '@/lib/user-guilds';
 
 const LOCALES = [
   { value: 'de', label: 'DE' },
@@ -19,6 +20,7 @@ export type TopbarProps = {
   isAdmin?: boolean;
   showGuildManagement?: boolean;
   botInviteUrl?: string;
+  userGuilds?: UserGuildInfo[];
 };
 
 /** Globale Topbar: Landing + geschützte Bereiche. Links RaidFlow, rechts Burger (eingeloggt), Sprach-Dropdown, Theme-Switch, Logout (eingeloggt). */
@@ -28,14 +30,26 @@ export function Topbar({
   isAdmin = false,
   showGuildManagement = false,
   botInviteUrl = '#',
+  userGuilds = [],
 }: TopbarProps) {
   const t = useTranslations('shell');
   const tCommon = useTranslations('common');
   const tTopbar = useTranslations('topbar');
+  const tDashboard = useTranslations('dashboard');
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [burgerOpen, setBurgerOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [guildMenuOpen, setGuildMenuOpen] = useState(false);
+
+  const isDashboard = pathname?.includes('/dashboard') ?? false;
+  const guildParam = searchParams?.get('guild') ?? null;
+  const activeGuild = guildParam && userGuilds.length > 0
+    ? userGuilds.find((g) => g.id === guildParam) ?? userGuilds[0]
+    : userGuilds[0] ?? null;
+  const showGuildInTopbar = isLoggedIn && isDashboard && userGuilds.length > 0;
+  const hasMultipleGuilds = userGuilds.length > 1;
 
   const basePath = pathname?.replace(/^\/[a-z]{2}/, '') || '';
   const switchLocaleUrl = (newLocale: string) => `/${newLocale}${basePath || (isLoggedIn ? 'dashboard' : '')}`;
@@ -52,11 +66,65 @@ export function Topbar({
       <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b border-border bg-background px-4">
         <Link
           href={isLoggedIn ? `/${locale}/dashboard` : `/${locale}`}
-          className="text-xl font-semibold text-foreground hover:opacity-90"
+          className="text-xl font-semibold text-foreground hover:opacity-90 shrink-0"
         >
           {tCommon('appName')}
         </Link>
-        <div className="flex-1" />
+        <div className="flex-1 min-w-0" />
+
+        {/* Mittig: aktive Gilde (nur auf Dashboard, eingeloggt, Gilden vorhanden) */}
+        {showGuildInTopbar && activeGuild && (
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
+            <span className="text-sm font-medium text-foreground truncate max-w-[180px] md:max-w-[240px]" title={activeGuild.name}>
+              {activeGuild.name}
+            </span>
+            {hasMultipleGuilds && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setGuildMenuOpen((o) => !o)}
+                  className="flex items-center justify-center p-1.5 rounded-full text-foreground hover:bg-accent min-h-[36px] min-w-[36px]"
+                  aria-label={tDashboard('selectGuild')}
+                  aria-haspopup="listbox"
+                  aria-expanded={guildMenuOpen}
+                >
+                  <span className="text-lg leading-none" aria-hidden>⋮</span>
+                </button>
+                {guildMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setGuildMenuOpen(false)} aria-hidden />
+                    <ul
+                      role="listbox"
+                      className="absolute right-0 top-full z-50 mt-1 min-w-[200px] max-h-[60vh] overflow-auto rounded-md border border-border bg-background py-1 shadow-lg"
+                    >
+                      {userGuilds.map((g) => (
+                        <li key={g.id} role="option" aria-selected={g.id === activeGuild.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setGuildMenuOpen(false);
+                              router.push(`/${locale}/dashboard?guild=${encodeURIComponent(g.id)}`);
+                            }}
+                            className={cn(
+                              'w-full px-4 py-2 text-left text-sm transition-colors truncate',
+                              g.id === activeGuild.id
+                                ? 'bg-accent text-accent-foreground font-medium'
+                                : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                            )}
+                          >
+                            {g.name}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="flex-1 min-w-0" />
 
         {/* Rechts: Burger (nur eingeloggt), Sprach-Dropdown, Theme-Switch, Logout (nur eingeloggt) */}
         {isLoggedIn && (

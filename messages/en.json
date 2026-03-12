@@ -28,8 +28,11 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "selectGuild": "Select guild",
     "guilds": "Guilds",
     "guildsEmpty": "No guilds. Set up the bot on a Discord server.",
+    "noGuildMembership": "No guild membership found",
+    "noRaiderRights": "You do not have Raider rights in this guild (yet)",
     "raids": "Raids",
     "raidsEmpty": "No raids.",
     "roleGuildmaster": "Guild Master",

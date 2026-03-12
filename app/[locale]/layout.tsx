@@ -8,6 +8,9 @@ import { Topbar } from '@/components/topbar';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getBotInviteUrl } from '@/lib/bot-invite';
+import { getEffectiveUserId } from '@/lib/get-effective-user-id';
+import { getGuildsForUser } from '@/lib/user-guilds';
+import type { UserGuildInfo } from '@/lib/user-guilds';
 import '../globals.css';
 
 export const metadata: Metadata = {
@@ -35,16 +38,24 @@ export default async function LocaleLayout({
   let isAdmin = false;
   let showGuildManagement = false;
   let botInviteUrl = '#';
+  let userGuilds: UserGuildInfo[] = [];
   try {
     session = await getServerSession(authOptions);
     const discordId = (session as { discordId?: string } | null)?.discordId;
-    const userId = (session as { userId?: string } | null)?.userId;
+    const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
     if (discordId) isAdmin = await isApplicationAdmin(discordId);
     if (userId) {
       const guildmaster = await prisma.rfUserGuild.findFirst({
         where: { userId, role: 'guildmaster' },
       });
       showGuildManagement = !!guildmaster;
+      if (discordId) {
+        try {
+          userGuilds = await getGuildsForUser(userId, discordId);
+        } catch (e) {
+          console.error('[Layout] getGuildsForUser:', e);
+        }
+      }
     }
     botInviteUrl = getBotInviteUrl();
   } catch (e) {
@@ -66,6 +77,7 @@ export default async function LocaleLayout({
                   isAdmin={isAdmin}
                   showGuildManagement={showGuildManagement}
                   botInviteUrl={botInviteUrl}
+                  userGuilds={userGuilds}
                 />
                 <main className="flex-1">{children}</main>
               </div>

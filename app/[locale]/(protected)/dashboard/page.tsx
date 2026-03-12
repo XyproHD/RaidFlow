@@ -6,11 +6,12 @@ import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getGuildsForUser, getRaidsForUser } from '@/lib/user-guilds';
 import { getLocale } from 'next-intl/server';
 
-/** Dashboard: Gilden- und Raid-Übersicht (Phase 3: echte Daten, nur Gilden des Users). */
-export default async function DashboardPage() {
+type SearchParams = Promise<{ guild?: string }>;
+
+/** Dashboard: Raid-Übersicht gefiltert nach aktiver Gilde (in Topbar). Empty-States bei keiner Gildenmitgliedschaft bzw. ohne Raider-Rechte. */
+export default async function DashboardPage(props: { searchParams?: SearchParams }) {
   try {
     const t = await getTranslations('dashboard');
-    const tShell = await getTranslations('shell');
     const locale = await getLocale();
     const session = await getServerSession(authOptions);
     const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
@@ -25,66 +26,48 @@ export default async function DashboardPage() {
       console.error('[Dashboard]', e);
     }
 
-    const roleKey: Record<string, string> = {
-    guildmaster: t('roleGuildmaster'),
-    raidleader: t('roleRaidleader'),
-    raider: t('roleRaider'),
-  };
+    const params = props.searchParams ? await props.searchParams : {};
+    const guildParam = params.guild ?? null;
+    const selectedGuild = guildParam && guilds.length > 0
+      ? guilds.find((g) => g.id === guildParam) ?? guilds[0]
+      : guilds[0] ?? null;
+    const raidsForGuild = selectedGuild ? raids.filter((r) => r.guildId === selectedGuild.id) : [];
 
-  function formatDate(d: Date) {
-    return new Intl.DateTimeFormat(locale, {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    }).format(new Date(d));
-  }
+    function formatDate(d: Date) {
+      return new Intl.DateTimeFormat(locale, {
+        dateStyle: 'short',
+        timeStyle: 'short',
+      }).format(new Date(d));
+    }
 
-  return (
-    <div className="p-6 md:p-8">
-      <h1 className="text-2xl font-bold text-foreground mb-6">{t('title')}</h1>
+    return (
+      <div className="p-6 md:p-8">
+        <h1 className="text-2xl font-bold text-foreground mb-6">{t('title')}</h1>
 
-      <section className="mb-8" aria-labelledby="guilds-heading">
-        <h2 id="guilds-heading" className="text-lg font-semibold text-foreground mb-3">
-          {t('guilds')}
-        </h2>
-        {guilds.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t('guildsEmpty')}</p>
-        ) : (
-          <ul className="space-y-2">
-            {guilds.map((g) => (
-              <li
-                key={g.id}
-                className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card"
-              >
-                <span className="font-medium text-foreground">{g.name}</span>
-                <span
-                  className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary"
-                  aria-label={roleKey[g.role]}
-                >
-                  {roleKey[g.role]}
-                </span>
-                {g.role === 'guildmaster' && (
-                  <Link
-                    href={`/${locale}/guilds?guild=${encodeURIComponent(g.id)}`}
-                    className="text-sm text-primary hover:underline"
-                  >
-                    {tShell('guildManagement')}
-                  </Link>
-                )}
-              </li>
-            ))}
-          </ul>
+        {guilds.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-center" role="status" aria-live="polite">
+            <span className="text-5xl mb-4" aria-hidden="true">😢</span>
+            <p className="text-muted-foreground">{t('noGuildMembership')}</p>
+          </div>
         )}
-      </section>
 
-      <section aria-labelledby="raids-heading">
-        <h2 id="raids-heading" className="text-lg font-semibold text-foreground mb-3">
-          {t('raids')}
-        </h2>
-        {raids.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t('raidsEmpty')}</p>
-        ) : (
-          <ul className="space-y-2">
-            {raids.map((r) => (
+        {guilds.length > 0 && selectedGuild?.role === 'member' && (
+          <div className="flex flex-col items-center justify-center py-16 text-center" role="status" aria-live="polite">
+            <span className="text-5xl mb-4" aria-hidden="true">😢</span>
+            <p className="text-muted-foreground">{t('noRaiderRights')}</p>
+          </div>
+        )}
+
+        {guilds.length > 0 && selectedGuild && selectedGuild.role !== 'member' && (
+          <section aria-labelledby="raids-heading">
+            <h2 id="raids-heading" className="text-lg font-semibold text-foreground mb-3">
+              {t('raids')}
+            </h2>
+            {raidsForGuild.length === 0 ? (
+              <p className="text-muted-foreground text-sm">{t('raidsEmpty')}</p>
+            ) : (
+              <ul className="space-y-2">
+                {raidsForGuild.map((r) => (
               <li
                 key={r.id}
                 className="flex flex-wrap items-center gap-x-4 gap-y-1 p-3 rounded-lg border border-border bg-card"
@@ -122,12 +105,13 @@ export default async function DashboardPage() {
                   </Link>
                 </div>
               </li>
-            ))}
-          </ul>
+                ))}
+              </ul>
+            )}
+          </section>
         )}
-      </section>
-    </div>
-  );
+      </div>
+    );
   } catch (err) {
     console.error('[DashboardPage]', err);
     return (

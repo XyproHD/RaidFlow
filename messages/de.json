@@ -28,8 +28,11 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "selectGuild": "Gilde auswählen",
     "guilds": "Gilden",
     "guildsEmpty": "Keine Gilden. Bot auf einem Discord-Server einrichten.",
+    "noGuildMembership": "Keine Gildenmitgliedschaft gefunden",
+    "noRaiderRights": "Du hast in dieser Gilde (noch) keine Raider Rechte",
     "raids": "Raids",
     "raidsEmpty": "Keine Raids.",
     "roleGuildmaster": "Gildenmeister",

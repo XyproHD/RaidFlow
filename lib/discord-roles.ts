@@ -22,28 +22,34 @@ export interface RfGuildWithRoles {
   raidGroups: Array<{ id: string; discordRoleId: string | null }>;
 }
 
+export interface MemberRolesResult {
+  roleIds: string[];
+  inGuild: boolean;
+}
+
 /**
  * Holt die Discord-Rollen-IDs eines Members auf einem Guild (über Bot-Token).
- * Wirft nie: bei Fehlern (fehlender Token, Netzwerk, ungültige Antwort) wird [] zurückgegeben.
+ * inGuild: false = User ist nicht Mitglied des Servers (404); true = Mitglied (evtl. ohne Rollen).
  */
 export async function getMemberRoleIds(
   discordGuildId: string,
   discordUserId: string
-): Promise<string[]> {
+): Promise<MemberRolesResult> {
   try {
     const botToken = process.env.DISCORD_BOT_TOKEN;
-    if (!botToken) return [];
+    if (!botToken) return { roleIds: [], inGuild: false };
 
     const res = await fetch(
       `${DISCORD_API_BASE}/guilds/${discordGuildId}/members/${discordUserId}`,
       { headers: { Authorization: `Bot ${botToken}` } }
     );
 
-    if (res.status === 404 || !res.ok) return [];
+    if (res.status === 404) return { roleIds: [], inGuild: false };
+    if (!res.ok) return { roleIds: [], inGuild: false };
     const data = (await res.json()) as { roles?: string[] };
-    return data.roles ?? [];
+    return { roleIds: data.roles ?? [], inGuild: true };
   } catch {
-    return [];
+    return { roleIds: [], inGuild: false };
   }
 }
 
@@ -54,6 +60,7 @@ export function resolveRaidFlowRole(
   guild: RfGuildWithRoles,
   discordRoleIds: string[]
 ): ResolvedGuildRole | null {
+  // Note: callers use empty array when user is not in guild
   const set = new Set(discordRoleIds);
   let role: RaidFlowRole | null = null;
   let raidGroupId: string | null = null;

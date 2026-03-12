@@ -6,11 +6,14 @@
 import { prisma } from '@/lib/prisma';
 import { getMemberRoleIds, resolveRaidFlowRole, type RaidFlowRole } from './discord-roles';
 
+/** RaidFlow-Rolle oder nur Discord-Mitglied ohne RaidFlow-Rolle. */
+export type UserGuildRole = RaidFlowRole | 'member';
+
 export interface UserGuildInfo {
   id: string;
   name: string;
   discordGuildId: string;
-  role: RaidFlowRole;
+  role: UserGuildRole;
   raidGroupId: string | null;
 }
 
@@ -29,9 +32,9 @@ export interface UserRaidInfo {
 }
 
 /**
- * Lädt alle RfGuild mit RaidGroups, prüft pro Gilde die Discord-Rollen des Users,
- * synchronisiert RfUserGuild und RfGuildMember und gibt nur Gilden zurück,
- * in denen der User mindestens eine RaidFlow-Rolle (Gildenmeister, Raidleader, Raider) hat.
+ * Lädt alle RfGuild mit RaidGroups, prüft pro Gilde ob der User Discord-Mitglied ist,
+ * synchronisiert RfUserGuild und RfGuildMember und gibt alle Gilden zurück, in denen
+ * der User Mitglied ist (inkl. role 'member' = keine RaidFlow-Rolle).
  */
 export async function getGuildsForUser(
   userId: string,
@@ -48,7 +51,9 @@ export async function getGuildsForUser(
 
   for (const guild of guilds) {
     try {
-      const roleIds = await getMemberRoleIds(guild.discordGuildId, discordId);
+      const { roleIds, inGuild } = await getMemberRoleIds(guild.discordGuildId, discordId);
+      if (!inGuild) continue;
+
       const resolved = resolveRaidFlowRole(
         {
           id: guild.id,
@@ -62,39 +67,42 @@ export async function getGuildsForUser(
         roleIds
       );
 
-      if (!resolved) continue;
+      const role: UserGuildRole = resolved ? resolved.role : 'member';
+      const raidGroupId = resolved?.raidGroupId ?? null;
 
-      await prisma.$transaction([
-        prisma.rfUserGuild.upsert({
-          where: {
-            userId_guildId: { userId, guildId: guild.id },
-          },
-          create: {
-            userId,
-            guildId: guild.id,
-            role: resolved.role,
-          },
-          update: { role: resolved.role },
-        }),
-        prisma.rfGuildMember.upsert({
-          where: {
-            userId_guildId: { userId, guildId: guild.id },
-          },
-          create: {
-            userId,
-            guildId: guild.id,
-            raidGroupId: resolved.raidGroupId,
-          },
-          update: { raidGroupId: resolved.raidGroupId },
-        }),
-      ]);
+      if (resolved) {
+        await prisma.$transaction([
+          prisma.rfUserGuild.upsert({
+            where: {
+              userId_guildId: { userId, guildId: guild.id },
+            },
+            create: {
+              userId,
+              guildId: guild.id,
+              role: resolved.role,
+            },
+            update: { role: resolved.role },
+          }),
+          prisma.rfGuildMember.upsert({
+            where: {
+              userId_guildId: { userId, guildId: guild.id },
+            },
+            create: {
+              userId,
+              guildId: guild.id,
+              raidGroupId: resolved.raidGroupId,
+            },
+            update: { raidGroupId: resolved.raidGroupId },
+          }),
+        ]);
+      }
 
       result.push({
         id: guild.id,
         name: guild.name,
         discordGuildId: guild.discordGuildId,
-        role: resolved.role,
-        raidGroupId: resolved.raidGroupId,
+        role,
+        raidGroupId,
       });
     } catch (e) {
       console.error('[getGuildsForUser] guild:', guild.id, guild.name, e);
@@ -106,12 +114,14 @@ export async function getGuildsForUser(
 
 /**
  * Raids aus den Gilden des Users, auf die er Zugriff hat (RaidFlow-Raider bzw. Raidgruppe bei Einschränkung).
+ * Gilden mit role 'member' (kein Raider-Recht) werden ausgeschlossen.
  */
 export async function getRaidsForUser(
   userGuilds: UserGuildInfo[]
 ): Promise<UserRaidInfo[]> {
-  const guildIds = userGuilds.map((g) => g.id);
-  const guildMap = new Map(userGuilds.map((g) => [g.id, g]));
+  const guildsWithAccess = userGuilds.filter((g) => g.role !== 'member');
+  const guildIds = guildsWithAccess.map((g) => g.id);
+  const guildMap = new Map(guildsWithAccess.map((g) => [g.id, g]));
 
   const raids = await prisma.rfRaid.findMany({
     where: { guildId: { in: guildIds } },
