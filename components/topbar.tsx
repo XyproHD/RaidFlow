@@ -44,11 +44,12 @@ export function Topbar({
   const [guildMenuOpen, setGuildMenuOpen] = useState(false);
 
   const isDashboard = pathname?.includes('/dashboard') ?? false;
+  const isGuildsPage = pathname?.includes('/guilds') ?? false;
   const guildParam = searchParams?.get('guild') ?? null;
   const activeGuild = guildParam && userGuilds.length > 0
     ? userGuilds.find((g) => g.id === guildParam) ?? userGuilds[0]
     : userGuilds[0] ?? null;
-  const showGuildInTopbar = isLoggedIn && isDashboard && userGuilds.length > 0;
+  const showGuildInTopbar = isLoggedIn && (isDashboard || isGuildsPage) && userGuilds.length > 0;
   const hasMultipleGuilds = userGuilds.length > 1;
 
   const basePath = pathname?.replace(/^\/[a-z]{2}/, '') || '';
@@ -103,7 +104,9 @@ export function Topbar({
                             type="button"
                             onClick={() => {
                               setGuildMenuOpen(false);
-                              router.push(`/${locale}/dashboard?guild=${encodeURIComponent(g.id)}`);
+                              const base = pathname ?? `/${locale}/dashboard`;
+                              const sep = base.includes('?') ? '&' : '?';
+                              router.push(`${base}${sep}guild=${encodeURIComponent(g.id)}`);
                             }}
                             className={cn(
                               'w-full px-4 py-2 text-left text-sm transition-colors truncate',

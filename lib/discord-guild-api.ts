@@ -131,6 +131,32 @@ export async function getGuildChannels(
 }
 
 /**
+ * Entfernt eine Rolle von einem Guild-Member (z. B. Raidflowgroup-Rolle beim Austritt).
+ * DELETE /guilds/{guild.id}/members/{user.id}/roles/{role.id}
+ */
+export async function removeRoleFromMember(
+  discordGuildId: string,
+  discordUserId: string,
+  discordRoleId: string
+): Promise<void> {
+  const token = getBotToken();
+  if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+
+  const res = await fetch(
+    `${DISCORD_API_BASE}/guilds/${discordGuildId}/members/${discordUserId}/roles/${discordRoleId}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bot ${token}` },
+    }
+  );
+
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text();
+    throw new Error(`Discord API remove role: ${res.status} ${text}`);
+  }
+}
+
+/**
  * Prüft, ob ein Channel auf dem Server noch existiert (GET channel).
  * Gibt true zurück wenn vorhanden, false bei 404 oder Fehler.
  */

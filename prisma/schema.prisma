@@ -77,11 +77,25 @@ model RfRaidGroup {
   discordRoleId  String?  @map("discord_role_id")
   sortOrder      Int      @default(0) @map("sort_order")
 
-  guild         RfGuild        @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  guildMembers  RfGuildMember[]
-  raids         RfRaid[]       @relation("RaidGroupRestriction")
+  guild               RfGuild                 @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  guildMembers        RfGuildMember[]
+  raids               RfRaid[]                 @relation("RaidGroupRestriction")
+  raidGroupCharacters RfRaidGroupCharacter[]
 
   @@map("rf_raid_group")
+}
+
+model RfRaidGroupCharacter {
+  id          String   @id @default(uuid())
+  raidGroupId String   @map("raid_group_id")
+  characterId String   @map("character_id")
+  allowed     Boolean  @default(true)
+
+  raidGroup RfRaidGroup  @relation(fields: [raidGroupId], references: [id], onDelete: Cascade)
+  character RfCharacter  @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([raidGroupId, characterId])
+  @@map("rf_raid_group_character")
 }
 
 model RfGuildMember {
@@ -115,11 +129,12 @@ model RfCharacter {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user          RfUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  guild         RfGuild? @relation(fields: [guildId], references: [id], onDelete: SetNull)
-  raidSignups   RfRaidSignup[]
-  raidCompletions RfRaidCompletion[]
-  loots         RfLoot[]
+  user                RfUser                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild                RfGuild?                @relation(fields: [guildId], references: [id], onDelete: SetNull)
+  raidSignups          RfRaidSignup[]
+  raidCompletions      RfRaidCompletion[]
+  loots                RfLoot[]
+  raidGroupCharacters  RfRaidGroupCharacter[]
 
   @@map("rf_character")
 }

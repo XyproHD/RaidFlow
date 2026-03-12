@@ -4,7 +4,6 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getGuildsForUser } from '@/lib/user-guilds';
-import { GuildSelector } from './guild-selector';
 import { GuildManagementContent } from './guild-management-content';
 
 type SearchParams = Promise<{ guild?: string }>;
@@ -49,13 +48,6 @@ export default async function GuildsPage(props: {
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
       <h1 className="text-2xl font-bold text-foreground mb-6">{t('title')}</h1>
-
-      {guildmasterGuilds.length > 1 && (
-        <GuildSelector
-          guilds={guildmasterGuilds}
-          selectedId={selectedGuild.id}
-        />
-      )}
 
       <GuildManagementContent
         guildId={selectedGuild.id}

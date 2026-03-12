@@ -138,6 +138,11 @@
     "createGroup": "Create group",
     "removeFromGroup": "Remove from group",
     "assignGroups": "Assign raid groups",
-    "noCharacters": "No characters in this guild"
+    "noCharacters": "No characters in this guild",
+    "showTwinks": "Show twinks",
+    "showTwinksOff": "Off",
+    "showTwinksOn": "On",
+    "characterAllowedInGroup": "Allowed in raid group (for raid filters)",
+    "characterAllowedErrorLast": "At least one character per user must remain allowed in the raid group."
   }
 }

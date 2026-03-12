@@ -138,6 +138,11 @@
     "createGroup": "Gruppe anlegen",
     "removeFromGroup": "Aus Gruppe entfernen",
     "assignGroups": "Raidgruppen zuordnen",
-    "noCharacters": "Keine Charaktere in dieser Gilde"
+    "noCharacters": "Keine Charaktere in dieser Gilde",
+    "showTwinks": "Twinks einblenden",
+    "showTwinksOff": "Aus",
+    "showTwinksOn": "An",
+    "characterAllowedInGroup": "In Raidgruppe zulässig (für Raid-Filter)",
+    "characterAllowedErrorLast": "Mindestens ein Character pro User muss in der Raidgruppe zulässig sein."
   }
 }

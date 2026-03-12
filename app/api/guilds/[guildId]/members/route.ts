@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireGuildMasterOrForbid } from '@/lib/guild-master';
+import { removeRoleFromMember } from '@/lib/discord-guild-api';
 
 /**
  * GET /api/guilds/[guildId]/members
@@ -107,9 +108,31 @@ export async function PATCH(
 
   const member = await prisma.rfGuildMember.findFirst({
     where: { id: memberId, guildId },
+    include: {
+      user: { select: { discordId: true } },
+      raidGroup: { select: { discordRoleId: true } },
+    },
   });
   if (!member) {
     return NextResponse.json({ error: 'Member not found' }, { status: 404 });
+  }
+
+  if (raidGroupId === null && member.raidGroupId && member.raidGroup?.discordRoleId) {
+    const guild = await prisma.rfGuild.findUnique({
+      where: { id: guildId },
+      select: { discordGuildId: true },
+    });
+    if (guild) {
+      try {
+        await removeRoleFromMember(
+          guild.discordGuildId,
+          member.user.discordId,
+          member.raidGroup.discordRoleId
+        );
+      } catch (e) {
+        console.error('[API guilds members PATCH] Discord remove role:', e);
+      }
+    }
   }
 
   const updated = await prisma.rfGuildMember.update({
