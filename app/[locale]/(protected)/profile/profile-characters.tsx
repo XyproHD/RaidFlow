@@ -349,49 +349,53 @@ export function ProfileCharacters({
       {list.length === 0 && (
         <p className="text-muted-foreground text-sm mb-2">{t('noCharacters')}</p>
       )}
-      <div className="mb-4 space-y-2">
+      <div className="mb-4 space-y-2 max-w-[22rem]">
         {list.map((c) => {
           const cClassId = getClassIdForSpec(c.mainSpec);
           const twinkLabel = c.guildId && !c.isMain && charsInSameGuild(c.guildId).length > 1;
+          const mainOrAltTitle = c.isMain && c.guildId ? t('mainLabel') : twinkLabel ? t('altLabel') : undefined;
           return (
             <div
               key={c.id}
-              className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
-              style={{ gridTemplateColumns: '32px 24px minmax(80px, 1fr) 28px 100px 88px' }}
+              className="grid items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-2 shadow-sm"
+              style={{ gridTemplateColumns: '20px 28px auto 1fr 60px 52px' }}
             >
-              <div className="flex shrink-0 items-center justify-center w-8 h-8">
-                {cClassId && <ClassIcon classId={cClassId} size={24} title={c.mainSpec} />}
+              <div className="flex shrink-0 items-center justify-center text-base" title={mainOrAltTitle}>
+                {c.isMain && c.guildId ? <span aria-label={t('mainLabel')}>★</span> : twinkLabel ? <span aria-label={t('altLabel')}>−</span> : <span className="w-4" aria-hidden />}
               </div>
-              <div className="flex shrink-0 items-center w-6">
-                <SpecIcon spec={c.mainSpec} size={20} />
+              <div className="flex shrink-0 items-center justify-center">
+                {cClassId && <ClassIcon classId={cClassId} size={28} title={c.mainSpec} />}
               </div>
-              <span className="font-medium truncate min-w-0" title={c.name}>
+              <div className="flex shrink-0 items-center gap-0.5 min-w-0">
+                <SpecIcon spec={c.mainSpec} size={22} />
+                {c.offSpec && (
+                  <span className="inline-flex items-center text-muted-foreground">
+                    (<SpecIcon spec={c.offSpec} size={16} />)
+                  </span>
+                )}
+              </div>
+              <span className="font-medium text-base truncate min-w-0" title={c.name}>
                 {c.name}
-                {twinkLabel && <span className="ml-1 text-muted-foreground/80 text-sm">(Twink)</span>}
-                {c.isMain && c.guildId && <span className="ml-1 font-medium text-foreground text-sm">(Main)</span>}
               </span>
-              <div className="flex shrink-0 items-center justify-center w-7">
-                {c.offSpec ? <SpecIcon spec={c.offSpec} size={16} /> : null}
-              </div>
               <div className="min-w-0">
                 {canSetMain(c) ? (
                   <button
                     type="button"
                     onClick={() => handleSetMain(c.id)}
                     disabled={loading}
-                    className="w-full min-w-[100px] rounded border border-input bg-muted/50 px-2 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                    className="w-full min-w-[60px] rounded border border-input bg-muted/50 px-1.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
                   >
                     {t('setAsMain')}
                   </button>
                 ) : (
-                  <span className="inline-block w-full min-w-[100px]" aria-hidden />
+                  <span className="inline-block w-full min-w-[60px]" aria-hidden />
                 )}
               </div>
               <button
                 type="button"
                 onClick={() => openEdit(c)}
                 disabled={loading}
-                className="w-full min-w-[88px] rounded border border-input bg-muted/50 px-2 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                className="w-full min-w-[52px] rounded border border-input bg-muted/50 px-1.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
               >
                 {t('editCharacter')}
               </button>

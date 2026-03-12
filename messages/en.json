@@ -76,6 +76,8 @@
     "editCharacter": "Edit",
     "deleteCharacter": "Delete",
     "setAsMain": "Set as main",
+    "mainLabel": "Main",
+    "altLabel": "Alt",
     "raidStats": "Raid stats",
     "raidStatsDescription": "Participations per dungeon and guild.",
     "participationCount": "Participations",

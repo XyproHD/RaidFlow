@@ -76,6 +76,8 @@
     "editCharacter": "Bearbeiten",
     "deleteCharacter": "Löschen",
     "setAsMain": "Als Main setzen",
+    "mainLabel": "Main",
+    "altLabel": "Alt",
     "raidStats": "Raidstatistik",
     "raidStatsDescription": "Teilnahmen je Dungeon und Gilde.",
     "participationCount": "Teilnahmen",

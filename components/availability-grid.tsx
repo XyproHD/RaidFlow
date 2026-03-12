@@ -133,8 +133,7 @@ export function AvailabilityGrid({
       )}
 
       <div
-        className={`grid sm:grid-cols-[1fr_auto] ${saving ? 'pointer-events-none select-none opacity-60' : ''}`}
-        style={{ gap: '50px' }}
+        className={`grid gap-4 sm:grid-cols-[1fr_auto] ${saving ? 'pointer-events-none select-none opacity-60' : ''}`}
       >
         {/* Linke Spalte: Zeitslot-Tabelle + Legende (nur Quadrat + Bedeutung) */}
         <div className="space-y-3">
