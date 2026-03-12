@@ -256,27 +256,29 @@ export function ProfileCharacters({
           {error}
         </p>
       )}
-      {/* Auswahlvorschau mit Icons */}
-      {(classId || selectedMainSpecDisplay) && (
-        <div className="flex flex-wrap items-center gap-3 mb-3 p-2 rounded-lg bg-muted/30 border border-border">
-          {classId && (
-            <span className="inline-flex items-center gap-1.5">
-              <ClassIcon classId={classId} size={24} title={TBC_CLASSES.find((c) => c.id === classId)?.name} />
-              <span className="text-sm font-medium">{TBC_CLASSES.find((c) => c.id === classId)?.name}</span>
-            </span>
-          )}
-          {selectedMainSpecDisplay && (
-            <span className="inline-flex items-center gap-1.5">
-              <SpecIcon spec={selectedMainSpecDisplay} size={20} />
-              <span className="text-sm text-muted-foreground">{selectedMainSpecDisplay}</span>
-            </span>
-          )}
-          {selectedOffSpecDisplay && (
-            <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-              <SpecIcon spec={selectedOffSpecDisplay} size={18} />
-              <span className="text-sm">({selectedOffSpecDisplay})</span>
-            </span>
-          )}
+      {/* Vorschau wie tatsächlicher Charakter-Button (ohne Main/Twink, ohne Burger-Menü) */}
+      {(classId || selectedMainSpecDisplay || name.trim()) && (
+        <div className="mb-3 grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm" style={{ gridTemplateColumns: '28px auto 1fr minmax(4rem, 1fr)' }}>
+          <div className="flex shrink-0 items-center justify-center w-7 h-7">
+            {classId ? <ClassIcon classId={classId} size={24} title={TBC_CLASSES.find((c) => c.id === classId)?.name} /> : null}
+          </div>
+          <div className="flex shrink-0 items-center gap-1 min-w-0">
+            {selectedMainSpecDisplay && <SpecIcon spec={selectedMainSpecDisplay} size={24} />}
+            {selectedOffSpecDisplay && (
+              <>
+                <span className="text-muted-foreground text-xs font-medium">/</span>
+                <span className="grayscale contrast-90 inline-flex">
+                  <SpecIcon spec={selectedOffSpecDisplay} size={24} className="opacity-90" />
+                </span>
+              </>
+            )}
+          </div>
+          <span className="font-medium text-base truncate min-w-0 text-muted-foreground">
+            {name.trim() || '…'}
+          </span>
+          <span className="text-sm text-muted-foreground text-center truncate min-w-0">
+            {guildId ? (guilds.find((g) => g.id === guildId)?.name ?? '–') : '–'}
+          </span>
         </div>
       )}
       <div className="grid gap-3">
