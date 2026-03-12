@@ -22,7 +22,7 @@ export async function GET(
   }
 
   const members = await prisma.rfGuildMember.findMany({
-    where: { guildId, raidGroupId },
+    where: { guildId, memberRaidGroups: { some: { raidGroupId } } },
     include: {
       user: {
         select: {
@@ -101,7 +101,7 @@ export async function PATCH(
   }
 
   const member = await prisma.rfGuildMember.findFirst({
-    where: { guildId, raidGroupId, userId: character.userId },
+    where: { guildId, userId: character.userId, memberRaidGroups: { some: { raidGroupId } } },
   });
   if (!member) {
     return NextResponse.json({ error: 'Character’s user is not in this raid group' }, { status: 400 });

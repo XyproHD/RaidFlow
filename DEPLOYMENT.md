@@ -53,6 +53,33 @@ Konfiguration von Branch → Service erfolgt in Vercel (Production/Preview) und 
 
 ---
 
+## Vercel verbinden
+
+1. **Projekt bei Vercel anlegen:** [vercel.com/new](https://vercel.com/new) → Repository (GitHub/GitLab/Bitbucket) auswählen, **RaidFlow**-Repo verbinden.
+2. **Root Directory** leer lassen (Webapp liegt im Repo-Root).
+3. **Build-Einstellungen** werden aus `vercel.json` gelesen (`framework: nextjs`, `buildCommand`, `installCommand`). Nicht im Dashboard überschreiben.
+4. **Environment Variables** für **Production** und **Preview** getrennt setzen: Vercel Dashboard → Projekt → **Settings** → **Environment Variables**. Für Preview alle Variablen aus `.env.example` eintragen und **Preview** (und ggf. Production) auswählen. Wichtig für den Build:
+   - **DATABASE_URL** und **DIRECT_URL** (Supabase): Ohne sie schlägt `prisma migrate deploy` fehl, der Build läuft trotzdem weiter (`Skipping migrate deploy`). Für laufende App und Migrationen müssen beide gesetzt sein.
+   - **NEXTAUTH_URL**: Für Preview z. B. `https://<dein-preview-subdomain>.vercel.app`, für Production `https://raidflow.vercel.app`.
+   - **NEXTAUTH_SECRET**, **DISCORD_*** etc. wie in `.env.example` dokumentiert.
+5. **Preview-Branch:** Unter **Settings** → **Git** den Branch für Preview Deployments auf `preview` setzen (oder den gewünschten Branch).
+
+---
+
+## Preview-Build: Fehlerbehebung
+
+**Häufige Ursachen für fehlgeschlagene Preview-Builds:**
+
+| Ursache | Lösung |
+|--------|--------|
+| **Type/Prisma-Fehler** (z. B. unbekannte Felder in `where`) | Lokal `npm run build` ausführen; Fehler beheben (z. B. Relation nutzen statt nicht existierendes Feld). |
+| **Fehlende Env-Variablen** | In Vercel → Settings → Environment Variables für **Preview** prüfen: mindestens `DATABASE_URL`, `DIRECT_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`. |
+| **`prisma migrate deploy` schlägt fehl** | Build sollte trotzdem durchlaufen (Fallback im Script). Wenn nicht: Env `DATABASE_URL`/`DIRECT_URL` für Preview setzen oder Build-Command anpassen. |
+
+Der letzte fehlgeschlagene Preview-Build wurde durch einen **TypeScript-Fehler** in `app/api/guilds/[guildId]/raid-groups/[raidGroupId]/allowed-characters/route.ts` verursacht: Es wurde `raidGroupId` in der `where`-Clause von `rfGuildMember.findMany` verwendet; im Prisma-Schema hat `RfGuildMember` kein Feld `raidGroupId`. Stattdessen muss die Relation `memberRaidGroups: { some: { raidGroupId } }` verwendet werden. Diese Anpassung ist im Repo vorgenommen – nach Push auf `preview` sollte der Build durchlaufen.
+
+---
+
 ## Referenz
 
 - **Manuelle Einrichtung** (Vercel Env-Variablen, Railway, Discord, Supabase): [manual_setup.md](manual_setup.md)
