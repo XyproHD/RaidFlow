@@ -18,9 +18,17 @@ export default async function ProfilePage() {
     const discordId = (session as { discordId?: string } | null)?.discordId;
 
     if (!userId) {
+      const hasSession = !!session && typeof session === 'object';
       return (
         <div className="p-6 md:p-8">
-          <p className="text-muted-foreground">{t('title')}</p>
+          <h1 className="text-2xl font-bold text-foreground mb-4">{t('title')}</h1>
+          {hasSession ? (
+            <p className="text-muted-foreground">
+              Sitzung konnte nicht zugeordnet werden. Bitte melde dich ab und erneut an, um Raidzeiten und Charaktere zu sehen.
+            </p>
+          ) : (
+            <p className="text-muted-foreground">{t('title')}</p>
+          )}
         </div>
       );
     }

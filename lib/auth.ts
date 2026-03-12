@@ -48,11 +48,10 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
-        (session as { userId: string; discordId: string }).userId = token.uid ?? '';
-        (session as { userId: string; discordId: string }).discordId = token.discordId ?? '';
-      }
-      // discordAccessToken nicht in Session (nur in JWT), wird nur serverseitig in API genutzt
+      // Immer userId/discordId aus Token in Session übernehmen (nicht nur bei session.user)
+      const t = token as { uid?: string; discordId?: string };
+      if (t.uid !== undefined) (session as { userId?: string; discordId?: string }).userId = t.uid;
+      if (t.discordId !== undefined) (session as { userId?: string; discordId?: string }).discordId = t.discordId;
       return session;
     },
   },
