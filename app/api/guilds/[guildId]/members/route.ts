@@ -17,7 +17,23 @@ export async function GET(
   const members = await prisma.rfGuildMember.findMany({
     where: { guildId },
     include: {
-      user: { select: { id: true, discordId: true } },
+      user: {
+        select: {
+          id: true,
+          discordId: true,
+          characters: {
+            where: { guildId },
+            select: {
+              id: true,
+              name: true,
+              mainSpec: true,
+              offSpec: true,
+              isMain: true,
+            },
+            orderBy: { name: 'asc' },
+          },
+        },
+      },
       raidGroup: { select: { id: true, name: true } },
     },
     orderBy: { joinedAt: 'asc' },
@@ -31,6 +47,13 @@ export async function GET(
       raidGroupId: m.raidGroupId,
       raidGroupName: m.raidGroup?.name ?? null,
       joinedAt: m.joinedAt,
+      characters: m.user.characters.map((c) => ({
+        id: c.id,
+        name: c.name,
+        mainSpec: c.mainSpec,
+        offSpec: c.offSpec,
+        isMain: c.isMain,
+      })),
     })),
   });
 }

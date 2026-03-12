@@ -132,6 +132,12 @@
     "savedAllowedList": "Saved allowed channels",
     "saved": "Saved.",
     "error": "Error",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "save": "Save",
+    "cancel": "Cancel",
+    "createGroup": "Create group",
+    "removeFromGroup": "Remove from group",
+    "assignGroups": "Assign raid groups",
+    "noCharacters": "No characters in this guild"
   }
 }

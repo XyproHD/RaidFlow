@@ -1,9 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslations } from 'next-intl';
+import { ClassIcon } from '@/components/class-icon';
+import { SpecIcon } from '@/components/spec-icon';
+import { getAllSpecDisplayNames } from '@/lib/wow-tbc-classes';
 
 type RaidGroup = { id: string; name: string; discordRoleId: string | null; sortOrder: number };
+type GuildCharacter = { id: string; name: string; mainSpec: string; offSpec: string | null; isMain: boolean };
 type Member = {
   id: string;
   userId: string;
@@ -11,6 +15,7 @@ type Member = {
   raidGroupId: string | null;
   raidGroupName: string | null;
   joinedAt: string;
+  characters: GuildCharacter[];
 };
 type AllowedChannel = {
   id: string;
@@ -19,6 +24,14 @@ type AllowedChannel = {
   lastValidatedAt: string | null;
 };
 type DiscordChannel = { id: string; name: string; type: number };
+
+const allSpecs = getAllSpecDisplayNames();
+function getClassIdForSpec(displayName: string): string | null {
+  const s = allSpecs.find((x) => x.displayName === displayName);
+  return s?.classId ?? null;
+}
+
+const ICON_SIZE = 24;
 
 export function GuildManagementContent({
   guildId,
@@ -79,18 +92,24 @@ export function GuildManagementContent({
   };
 
   if (loading) {
-    return <p className="text-muted-foreground">{t('loading')}</p>;
+    return (
+      <div className="max-w-5xl mx-auto">
+        <p className="text-muted-foreground">{t('loading')}</p>
+      </div>
+    );
   }
   if (error) {
     return (
-      <p className="text-destructive">
-        {t('error')}: {error}
-      </p>
+      <div className="max-w-5xl mx-auto">
+        <p className="text-destructive">
+          {t('error')}: {error}
+        </p>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-10">
+    <div className="max-w-5xl mx-auto space-y-10">
       {savedMessage && (
         <p className="text-sm text-green-600 dark:text-green-400" role="status">
           {savedMessage}
@@ -100,7 +119,8 @@ export function GuildManagementContent({
       <RaidGroupsSection
         guildId={guildId}
         raidGroups={raidGroups}
-        onUpdate={loadRaidGroups}
+        members={members}
+        onUpdate={() => { loadRaidGroups(); loadMembers(); }}
         onSaved={showSaved}
       />
 
@@ -128,11 +148,13 @@ export function GuildManagementContent({
 function RaidGroupsSection({
   guildId,
   raidGroups,
+  members,
   onUpdate,
   onSaved,
 }: {
   guildId: string;
   raidGroups: RaidGroup[];
+  members: Member[];
   onUpdate: () => void;
   onSaved: () => void;
 }) {
@@ -195,8 +217,28 @@ function RaidGroupsSection({
     setSubmitting(true);
     setErr(null);
     try {
-      const res = await fetch(`/api/guilds/${guildId}/raid-groups/${id}`, {
-        method: 'DELETE',
+      const res = await fetch(`/api/guilds/${guildId}/raid-groups/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || res.statusText);
+      }
+      await onUpdate();
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRemoveFromGroup = async (memberId: string) => {
+    setSubmitting(true);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/guilds/${guildId}/members`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId, raidGroupId: null }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -210,6 +252,13 @@ function RaidGroupsSection({
       setSubmitting(false);
     }
   };
+
+  const membersByGroup = new Map<string | null, Member[]>();
+  for (const m of members) {
+    const key = m.raidGroupId ?? '__none__';
+    if (!membersByGroup.has(key)) membersByGroup.set(key, []);
+    membersByGroup.get(key)!.push(m);
+  }
 
   return (
     <section aria-labelledby="raid-groups-heading">
@@ -226,7 +275,7 @@ function RaidGroupsSection({
         <button
           type="button"
           onClick={() => setAddOpen(true)}
-          className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 mb-4"
+          className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium hover:opacity-90 mb-4 min-w-[10rem]"
         >
           {t('addRaidGroup')}
         </button>
@@ -237,86 +286,162 @@ function RaidGroupsSection({
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder={t('raidGroupName')}
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm w-48"
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm w-full min-w-0 sm:w-48"
             disabled={submitting}
           />
           <button
             type="submit"
             disabled={submitting || !newName.trim()}
-            className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50"
+            className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-w-[8rem]"
           >
-            {submitting ? t('loading') : t('save')}
+            {submitting ? t('loading') : t('createGroup')}
           </button>
           <button
             type="button"
             onClick={() => { setAddOpen(false); setErr(null); }}
-            className="rounded-md border border-input px-4 py-2 text-sm"
+            className="rounded-md border border-input px-4 py-2.5 text-sm min-w-[6rem]"
             disabled={submitting}
           >
             {t('cancel')}
           </button>
         </form>
       )}
-      <ul className="space-y-2">
-        {raidGroups.length === 0 ? (
+      <ul className="space-y-6">
+        {raidGroups.length === 0 && membersByGroup.get('__none__')?.length === 0 && (
           <li className="text-muted-foreground text-sm">{t('noRaidGroups')}</li>
-        ) : (
-          raidGroups.map((g) => (
-            <li
-              key={g.id}
-              className="flex flex-wrap items-center gap-2 py-2 border-b border-border last:border-0"
-            >
-              {editId === g.id ? (
-                <>
-                  <input
-                    type="text"
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="rounded-md border border-input bg-background px-3 py-1.5 text-sm w-40"
-                    disabled={submitting}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleUpdate(g.id)}
-                    disabled={submitting || !editName.trim()}
-                    className="text-sm text-primary hover:underline disabled:opacity-50"
-                  >
-                    {t('save')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setEditId(null); setErr(null); }}
-                    className="text-sm text-muted-foreground hover:underline"
-                    disabled={submitting}
-                  >
-                    {t('cancel')}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span className="font-medium">{g.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => { setEditId(g.id); setEditName(g.name); }}
-                    className="text-sm text-primary hover:underline"
-                  >
-                    {t('editRaidGroup')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(g.id, g.name)}
-                    className="text-sm text-destructive hover:underline"
-                    disabled={submitting}
-                  >
-                    {t('deleteRaidGroup')}
-                  </button>
-                </>
-              )}
+        )}
+        {raidGroups.map((g) => {
+          const groupMembers = membersByGroup.get(g.id) ?? [];
+          return (
+            <li key={g.id} className="rounded-lg border border-border bg-card p-4">
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                {editId === g.id ? (
+                  <>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="rounded-md border border-input bg-background px-3 py-1.5 text-sm w-full min-w-0 sm:w-40"
+                      disabled={submitting}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleUpdate(g.id)}
+                      disabled={submitting || !editName.trim()}
+                      className="text-sm text-primary hover:underline disabled:opacity-50 min-w-[4rem]"
+                    >
+                      {t('save')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setEditId(null); setErr(null); }}
+                      className="text-sm text-muted-foreground hover:underline"
+                      disabled={submitting}
+                    >
+                      {t('cancel')}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-medium">{g.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => { setEditId(g.id); setEditName(g.name); }}
+                      className="text-sm text-primary hover:underline min-w-[4rem]"
+                    >
+                      {t('editRaidGroup')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(g.id, g.name)}
+                      className="text-sm text-destructive hover:underline min-w-[4rem]"
+                      disabled={submitting}
+                    >
+                      {t('deleteRaidGroup')}
+                    </button>
+                  </>
+                )}
+              </div>
+              <ul className="space-y-2">
+                {groupMembers.length === 0 ? (
+                  <li className="text-muted-foreground text-sm pl-0">—</li>
+                ) : (
+                  groupMembers.map((m) => (
+                    <li key={m.id} className="flex flex-wrap items-center gap-2">
+                      <div className="flex-1 min-w-0 flex flex-wrap gap-2">
+                        {m.characters.length === 0 ? (
+                          <span className="text-muted-foreground text-sm">{m.discordId}</span>
+                        ) : (
+                          m.characters.map((ch) => (
+                            <CharacterCard key={ch.id} ch={ch} />
+                          ))
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFromGroup(m.id)}
+                        disabled={submitting}
+                        className="shrink-0 p-1.5 rounded text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                        title={t('removeFromGroup')}
+                        aria-label={t('removeFromGroup')}
+                      >
+                        <span aria-hidden>⛔</span>
+                      </button>
+                    </li>
+                  ))
+                )}
+              </ul>
             </li>
-          ))
+          );
+        })}
+        {(membersByGroup.get('__none__')?.length ?? 0) > 0 && (
+          <li className="rounded-lg border border-border bg-muted/30 p-4">
+            <span className="text-sm font-medium text-muted-foreground">{t('noGroup')}</span>
+            <ul className="mt-2 space-y-2">
+              {membersByGroup.get('__none__')!.map((m) => (
+                <li key={m.id} className="flex flex-wrap items-center gap-2">
+                  <div className="flex-1 min-w-0 flex flex-wrap gap-2">
+                    {m.characters.length === 0 ? (
+                      <span className="text-muted-foreground text-sm">{m.discordId}</span>
+                    ) : (
+                      m.characters.map((ch) => <CharacterCard key={ch.id} ch={ch} />)
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </li>
         )}
       </ul>
     </section>
+  );
+}
+
+function CharacterCard({ ch }: { ch: GuildCharacter }) {
+  const classId = getClassIdForSpec(ch.mainSpec);
+  return (
+    <div
+      className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm min-w-[12rem]"
+      style={{ gridTemplateColumns: `${ICON_SIZE + 4}px auto 1fr` }}
+    >
+      <div className="flex shrink-0 items-center justify-center w-7 h-7">
+        {classId && <ClassIcon classId={classId} size={ICON_SIZE} title={ch.mainSpec} />}
+      </div>
+      <div className="flex shrink-0 items-center gap-1 min-w-0">
+        <SpecIcon spec={ch.mainSpec} size={ICON_SIZE} />
+        {ch.offSpec && (
+          <>
+            <span className="text-muted-foreground text-xs">/</span>
+            <span className="grayscale contrast-90 inline-flex">
+              <SpecIcon spec={ch.offSpec} size={ICON_SIZE} className="opacity-90" />
+            </span>
+          </>
+        )}
+      </div>
+      <span className="font-medium text-sm truncate min-w-0" title={ch.name}>
+        {ch.name}
+      </span>
+    </div>
   );
 }
 
@@ -335,10 +460,20 @@ function MembersSection({
 }) {
   const t = useTranslations('guildManagement');
   const [assigning, setAssigning] = useState<string | null>(null);
-  const [pendingGroupByMember, setPendingGroupByMember] = useState<Record<string, string | null>>({});
+  const [popupMemberId, setPopupMemberId] = useState<string | null>(null);
+  const [popupSelectedId, setPopupSelectedId] = useState<string | null>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
 
-  const handleSaveAssignment = async (memberId: string) => {
-    const raidGroupId = pendingGroupByMember[memberId] ?? members.find((m) => m.id === memberId)?.raidGroupId ?? null;
+  useEffect(() => {
+    if (!popupMemberId) return;
+    const close = (e: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(e.target as Node)) setPopupMemberId(null);
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [popupMemberId]);
+
+  const handleSaveAssignment = async (memberId: string, raidGroupId: string | null) => {
     setAssigning(memberId);
     try {
       const res = await fetch(`/api/guilds/${guildId}/members`, {
@@ -350,11 +485,7 @@ function MembersSection({
         const data = await res.json();
         throw new Error(data.error || res.statusText);
       }
-      setPendingGroupByMember((prev) => {
-        const next = { ...prev };
-        delete next[memberId];
-        return next;
-      });
+      setPopupMemberId(null);
       await onUpdate();
       onSaved();
     } catch (e) {
@@ -364,9 +495,22 @@ function MembersSection({
     }
   };
 
-  const setMemberGroup = (memberId: string, raidGroupId: string | null) => {
-    setPendingGroupByMember((prev) => ({ ...prev, [memberId]: raidGroupId }));
+  const openPopup = (m: Member) => {
+    setPopupMemberId(m.id);
+    setPopupSelectedId(m.raidGroupId);
   };
+
+  if (members.length === 0) {
+    return (
+      <section aria-labelledby="members-heading">
+        <h2 id="members-heading" className="text-lg font-semibold text-foreground mb-1">
+          {t('members')}
+        </h2>
+        <p className="text-sm text-muted-foreground mb-4">{t('membersDescription')}</p>
+        <p className="text-muted-foreground text-sm">{t('noMembers')}</p>
+      </section>
+    );
+  }
 
   return (
     <section aria-labelledby="members-heading">
@@ -374,55 +518,85 @@ function MembersSection({
         {t('members')}
       </h2>
       <p className="text-sm text-muted-foreground mb-4">{t('membersDescription')}</p>
-      {members.length === 0 ? (
-        <p className="text-muted-foreground text-sm">{t('noMembers')}</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left py-2 font-medium">{t('memberDiscordId')}</th>
-                <th className="text-left py-2 font-medium">{t('raidGroup')}</th>
-                <th className="w-32" />
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((m) => {
-                const currentGroupId = pendingGroupByMember[m.id] ?? m.raidGroupId ?? '';
-                return (
-                  <tr key={m.id} className="border-b border-border">
-                    <td className="py-2">{m.discordId}</td>
-                    <td className="py-2">
-                      <select
-                        value={currentGroupId}
-                        onChange={(e) => setMemberGroup(m.id, e.target.value || null)}
-                        className="rounded border border-input bg-background px-2 py-1 w-full max-w-[200px]"
+      <ul className="space-y-3">
+        {members.map((m) => (
+          <li
+            key={m.id}
+            className="flex flex-col sm:flex-row sm:items-center gap-2 rounded-lg border border-border bg-card p-3 shadow-sm"
+          >
+            <div className="flex-1 min-w-0 flex flex-wrap gap-2">
+              {m.characters.length === 0 ? (
+                <span className="text-muted-foreground text-sm">{m.discordId}</span>
+              ) : (
+                m.characters.map((ch) => <CharacterCard key={ch.id} ch={ch} />)
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+              <span
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-muted text-muted-foreground max-w-[12rem] truncate"
+                title={m.raidGroupName ?? undefined}
+              >
+                {m.raidGroupName ?? t('noGroup')}
+              </span>
+              <div className="relative" ref={popupMemberId === m.id ? popupRef : undefined}>
+                <button
+                  type="button"
+                  onClick={() => openPopup(m)}
+                  disabled={assigning === m.id}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50 text-foreground hover:bg-muted disabled:opacity-50 min-w-[2.25rem]"
+                  title={t('assignGroups')}
+                  aria-label={t('assignGroups')}
+                  aria-expanded={popupMemberId === m.id}
+                >
+                  <span aria-hidden>➕</span>
+                </button>
+                {popupMemberId === m.id && (
+                  <div className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-md border border-border bg-background py-2 shadow-lg">
+                    <p className="px-3 py-1 text-xs text-muted-foreground border-b border-border mb-2">
+                      {t('assignGroups')}
+                    </p>
+                    <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`group-${m.id}`}
+                        checked={popupSelectedId === null}
+                        onChange={() => setPopupSelectedId(null)}
+                        className="rounded-full"
+                      />
+                      <span className="text-sm">{t('noGroup')}</span>
+                    </label>
+                    {raidGroups.map((rg) => (
+                      <label
+                        key={rg.id}
+                        className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 cursor-pointer"
                       >
-                        <option value="">{t('noGroup')}</option>
-                        {raidGroups.map((rg) => (
-                          <option key={rg.id} value={rg.id}>
-                            {rg.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="py-2">
+                        <input
+                          type="radio"
+                          name={`group-${m.id}`}
+                          checked={popupSelectedId === rg.id}
+                          onChange={() => setPopupSelectedId(rg.id)}
+                          className="rounded-full"
+                        />
+                        <span className="text-sm">{rg.name}</span>
+                      </label>
+                    ))}
+                    <div className="mt-2 pt-2 border-t border-border px-3">
                       <button
                         type="button"
-                        onClick={() => handleSaveAssignment(m.id)}
+                        onClick={() => handleSaveAssignment(m.id, popupSelectedId)}
                         disabled={assigning === m.id}
-                        className="text-primary hover:underline text-sm disabled:opacity-50"
+                        className="w-full rounded bg-primary text-primary-foreground px-3 py-2 text-sm font-medium disabled:opacity-50 min-w-[6rem]"
                       >
-                        {assigning === m.id ? t('loading') : t('saveGroupAssignment')}
+                        {assigning === m.id ? t('loading') : t('save')}
                       </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -516,7 +690,7 @@ function ChannelsSection({
           type="button"
           onClick={handleFetchChannels}
           disabled={fetching}
-          className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
+          className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-50 min-w-[10rem]"
         >
           {fetching ? t('loading') : t('fetchChannels')}
         </button>
@@ -549,7 +723,7 @@ function ChannelsSection({
             type="button"
             onClick={handleSaveChannels}
             disabled={saving || selectedIds.size === 0}
-            className="rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50"
+            className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-w-[10rem]"
           >
             {saving ? t('loading') : t('saveChannels')}
           </button>

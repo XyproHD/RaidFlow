@@ -132,6 +132,12 @@
     "savedAllowedList": "Gespeicherte erlaubte Channels",
     "saved": "Gespeichert.",
     "error": "Fehler",
-    "loading": "Laden …"
+    "loading": "Laden …",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "createGroup": "Gruppe anlegen",
+    "removeFromGroup": "Aus Gruppe entfernen",
+    "assignGroups": "Raidgruppen zuordnen",
+    "noCharacters": "Keine Charaktere in dieser Gilde"
   }
 }
