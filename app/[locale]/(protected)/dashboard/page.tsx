@@ -2,28 +2,30 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getGuildsForUser, getRaidsForUser } from '@/lib/user-guilds';
 import { getLocale } from 'next-intl/server';
 
 /** Dashboard: Gilden- und Raid-Übersicht (Phase 3: echte Daten, nur Gilden des Users). */
 export default async function DashboardPage() {
-  const t = await getTranslations('dashboard');
-  const tShell = await getTranslations('shell');
-  const locale = await getLocale();
-  const session = await getServerSession(authOptions);
-  const userId = (session as { userId?: string } | null)?.userId;
-  const discordId = (session as { discordId?: string } | null)?.discordId;
-
-  let guilds: Awaited<ReturnType<typeof getGuildsForUser>> = [];
-  let raids: Awaited<ReturnType<typeof getRaidsForUser>> = [];
   try {
-    guilds = userId && discordId ? await getGuildsForUser(userId, discordId) : [];
-    raids = await getRaidsForUser(guilds);
-  } catch (e) {
-    console.error('[Dashboard]', e);
-  }
+    const t = await getTranslations('dashboard');
+    const tShell = await getTranslations('shell');
+    const locale = await getLocale();
+    const session = await getServerSession(authOptions);
+    const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
+    const discordId = (session as { discordId?: string } | null)?.discordId;
 
-  const roleKey: Record<string, string> = {
+    let guilds: Awaited<ReturnType<typeof getGuildsForUser>> = [];
+    let raids: Awaited<ReturnType<typeof getRaidsForUser>> = [];
+    try {
+      guilds = userId && discordId ? await getGuildsForUser(userId, discordId) : [];
+      raids = await getRaidsForUser(guilds);
+    } catch (e) {
+      console.error('[Dashboard]', e);
+    }
+
+    const roleKey: Record<string, string> = {
     guildmaster: t('roleGuildmaster'),
     raidleader: t('roleRaidleader'),
     raider: t('roleRaider'),
@@ -126,4 +128,12 @@ export default async function DashboardPage() {
       </section>
     </div>
   );
+  } catch (err) {
+    console.error('[DashboardPage]', err);
+    return (
+      <div className="p-6 md:p-8">
+        <p className="text-destructive">Fehler beim Laden des Dashboards. Bitte später erneut versuchen.</p>
+      </div>
+    );
+  }
 }

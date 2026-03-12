@@ -11,20 +11,21 @@ export const dynamic = 'force-dynamic';
 
 /** Mein Profil: Raidzeiten, Charaktere, Raidstatistik, Loot. Theme in Topbar. */
 export default async function ProfilePage() {
-  const t = await getTranslations('profile');
-  const session = await getServerSession(authOptions);
-  const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
-  const discordId = (session as { discordId?: string } | null)?.discordId;
+  try {
+    const t = await getTranslations('profile');
+    const session = await getServerSession(authOptions);
+    const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
+    const discordId = (session as { discordId?: string } | null)?.discordId;
 
-  if (!userId) {
-    return (
-      <div className="p-6 md:p-8">
-        <p className="text-muted-foreground">{t('title')}</p>
-      </div>
-    );
-  }
+    if (!userId) {
+      return (
+        <div className="p-6 md:p-8">
+          <p className="text-muted-foreground">{t('title')}</p>
+        </div>
+      );
+    }
 
-  const [raidTimes, characters, guilds, completions, loot] = await Promise.all([
+    const [raidTimes, characters, guilds, completions, loot] = await Promise.all([
     prisma.rfRaidTimePreference.findMany({
       where: { userId },
       orderBy: [{ weekday: 'asc' }, { timeSlot: 'asc' }],
@@ -194,4 +195,12 @@ export default async function ProfilePage() {
       </section>
     </div>
   );
+  } catch (err) {
+    console.error('[ProfilePage]', err);
+    return (
+      <div className="p-6 md:p-8">
+        <p className="text-destructive">Fehler beim Laden des Profils. Bitte später erneut versuchen.</p>
+      </div>
+    );
+  }
 }

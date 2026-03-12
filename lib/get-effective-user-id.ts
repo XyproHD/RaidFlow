@@ -8,22 +8,27 @@ type SessionLike = { userId?: string; discordId?: string } | null;
  * ermittelt bzw. angelegt. Behebt Foreign-Key-Fehler bei Character/Raidzeiten.
  */
 export async function getEffectiveUserId(session: SessionLike): Promise<string | null> {
-  if (!session) return null;
-  const discordId = session.discordId;
-  const candidateId = session.userId;
+  if (!session || typeof session !== 'object') return null;
+  const discordId = typeof session.discordId === 'string' ? session.discordId : undefined;
+  const candidateId = typeof session.userId === 'string' ? session.userId : undefined;
 
-  if (candidateId) {
-    const user = await prisma.rfUser.findUnique({ where: { id: candidateId } });
-    if (user) return user.id;
-  }
+  try {
+    if (candidateId) {
+      const user = await prisma.rfUser.findUnique({ where: { id: candidateId } });
+      if (user) return user.id;
+    }
 
-  if (discordId) {
-    const user = await prisma.rfUser.upsert({
-      where: { discordId },
-      create: { discordId },
-      update: { updatedAt: new Date() },
-    });
-    return user.id;
+    if (discordId) {
+      const user = await prisma.rfUser.upsert({
+        where: { discordId },
+        create: { discordId },
+        update: { updatedAt: new Date() },
+      });
+      return user.id;
+    }
+  } catch (e) {
+    console.error('[getEffectiveUserId]', e);
+    return null;
   }
 
   return null;
