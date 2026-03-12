@@ -52,8 +52,37 @@ export async function getGuildsForUser(
 
   for (const guild of guilds) {
     try {
-      const { roleIds, inGuild } = await getMemberRoleIds(guild.discordGuildId, discordId);
-      if (!inGuild) continue;
+      let roleIds: string[] = [];
+      let inGuild = false;
+      try {
+        const memberRoles = await getMemberRoleIds(guild.discordGuildId, discordId);
+        roleIds = memberRoles.roleIds;
+        inGuild = memberRoles.inGuild;
+      } catch (discordError) {
+        console.error('[getGuildsForUser] Discord API failed for guild:', guild.id, guild.name, discordError);
+      }
+
+      if (!inGuild) {
+        const existingUserGuild = await prisma.rfUserGuild.findUnique({
+          where: { userId_guildId: { userId, guildId: guild.id } },
+          select: { role: true },
+        });
+        if (existingUserGuild) {
+          const member = await prisma.rfGuildMember.findUnique({
+            where: { userId_guildId: { userId, guildId: guild.id } },
+            include: { memberRaidGroups: { select: { raidGroupId: true } } },
+          });
+          const raidGroupIds = member?.memberRaidGroups.map((rg) => rg.raidGroupId) ?? [];
+          result.push({
+            id: guild.id,
+            name: guild.name,
+            discordGuildId: guild.discordGuildId,
+            role: existingUserGuild.role as UserGuildRole,
+            raidGroupIds,
+          });
+        }
+        continue;
+      }
 
       const resolved = resolveRaidFlowRole(
         {
@@ -72,37 +101,42 @@ export async function getGuildsForUser(
       const raidGroupIdsFromDiscord = resolved?.raidGroupIds ?? [];
 
       if (resolved) {
-        const member = await prisma.rfGuildMember.upsert({
-          where: {
-            userId_guildId: { userId, guildId: guild.id },
-          },
-          create: {
-            userId,
-            guildId: guild.id,
-          },
-          update: {},
-        });
-        await prisma.$transaction([
-          prisma.rfUserGuild.upsert({
+        try {
+          const member = await prisma.rfGuildMember.upsert({
             where: {
               userId_guildId: { userId, guildId: guild.id },
             },
             create: {
               userId,
               guildId: guild.id,
-              role: resolved.role,
             },
-            update: { role: resolved.role },
-          }),
-          prisma.rfGuildMemberRaidGroup.deleteMany({
-            where: { guildMemberId: member.id },
-          }),
-          ...raidGroupIdsFromDiscord.map((raidGroupId) =>
-            prisma.rfGuildMemberRaidGroup.create({
-              data: { guildMemberId: member.id, raidGroupId },
-            })
-          ),
-        ]);
+            update: {},
+          });
+          await prisma.$transaction([
+            prisma.rfUserGuild.upsert({
+              where: {
+                userId_guildId: { userId, guildId: guild.id },
+              },
+              create: {
+                userId,
+                guildId: guild.id,
+                role: resolved.role,
+              },
+              update: { role: resolved.role },
+            }),
+            prisma.rfGuildMemberRaidGroup.deleteMany({
+              where: { guildMemberId: member.id },
+            }),
+            ...raidGroupIdsFromDiscord.map((raidGroupId) =>
+              prisma.rfGuildMemberRaidGroup.create({
+                data: { guildMemberId: member.id, raidGroupId },
+              })
+            ),
+          ]);
+        } catch (syncError) {
+          console.error('[getGuildsForUser] sync failed for guild:', guild.id, guild.name, syncError);
+          // Gilde trotzdem anzeigen – Nutzer soll nicht „Keine Gildenmitgliedschaft“ sehen
+        }
       }
 
       const member = await prisma.rfGuildMember.findUnique({
