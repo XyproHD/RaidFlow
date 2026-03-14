@@ -21,6 +21,8 @@ export type TopbarProps = {
   showGuildManagement?: boolean;
   botInviteUrl?: string;
   userGuilds?: UserGuildInfo[];
+  /** Wenn false, ist „Discord Bot einladen“ ausgegraut und nicht klickbar. */
+  discordBotInviteEnabled?: boolean;
 };
 
 /** Globale Topbar: Landing + geschützte Bereiche. Links RaidFlow, rechts Burger (eingeloggt), Sprach-Dropdown, Theme-Switch, Logout (eingeloggt). */
@@ -31,6 +33,7 @@ export function Topbar({
   showGuildManagement = false,
   botInviteUrl = '#',
   userGuilds = [],
+  discordBotInviteEnabled = true,
 }: TopbarProps) {
   const t = useTranslations('shell');
   const tCommon = useTranslations('common');
@@ -245,15 +248,24 @@ export function Topbar({
                   {t('guildManagement')}
                 </Link>
               )}
-              <a
-                href={botInviteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={closeBurger}
-                className="rounded-md px-4 py-3 text-foreground hover:bg-accent min-h-[44px] flex items-center"
-              >
-                {t('discordBotInvite')}
-              </a>
+              {discordBotInviteEnabled ? (
+                <a
+                  href={botInviteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={closeBurger}
+                  className="rounded-md px-4 py-3 text-foreground hover:bg-accent min-h-[44px] flex items-center"
+                >
+                  {t('discordBotInvite')}
+                </a>
+              ) : (
+                <span
+                  className="rounded-md px-4 py-3 text-muted-foreground cursor-not-allowed opacity-60 min-h-[44px] flex items-center"
+                  aria-disabled="true"
+                >
+                  {t('discordBotInvite')}
+                </span>
+              )}
               {isAdmin && (
                 <Link
                   href={`/${locale}/admin`}

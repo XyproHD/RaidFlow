@@ -3,12 +3,26 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { getBotInviteUrl } from '@/lib/bot-invite';
 import { LoginButton } from '@/components/login-button';
 
-export async function LandingPage({ error }: { error?: string }) {
+export type LandingPageProps = {
+  error?: string;
+  discordBotInviteEnabled?: boolean;
+  maintenanceMode?: boolean;
+  statusMessage?: string;
+};
+
+export async function LandingPage({
+  error,
+  discordBotInviteEnabled = true,
+  maintenanceMode = false,
+  statusMessage = '',
+}: LandingPageProps) {
   const t = await getTranslations('home');
   const tFooter = await getTranslations('footer');
   const tCommon = await getTranslations('common');
+  const tMaintenance = await getTranslations('maintenance');
   const locale = await getLocale();
   const botInviteUrl = getBotInviteUrl();
+  const hasStatusText = statusMessage.trim().length > 0;
 
   return (
     <main className="min-h-screen flex flex-col bg-background">
@@ -16,7 +30,19 @@ export async function LandingPage({ error }: { error?: string }) {
         <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-4 text-center">
           {tCommon('appName')}
         </h1>
-        <p className="text-muted-foreground mb-8 text-center">{t('welcome')}</p>
+        <p className="text-muted-foreground mb-4 text-center">{t('welcome')}</p>
+
+        {maintenanceMode && hasStatusText && (
+          <div className="mb-6 max-w-lg rounded-lg border border-border bg-muted/50 px-4 py-4 text-center">
+            <p className="font-semibold text-foreground mb-2">{tMaintenance('title')}</p>
+            <p className="text-muted-foreground whitespace-pre-wrap text-sm">{statusMessage.trim()}</p>
+          </div>
+        )}
+        {!maintenanceMode && hasStatusText && (
+          <p className="mb-6 max-w-lg text-center text-sm text-muted-foreground whitespace-pre-wrap">
+            {statusMessage.trim()}
+          </p>
+        )}
 
         {error === 'discord' && (
           <div className="mb-6 max-w-md rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -32,14 +58,23 @@ export async function LandingPage({ error }: { error?: string }) {
 
         <div className="flex flex-col sm:flex-row gap-4 items-center">
           <LoginButton text={t('loginWithDiscord')} callbackUrl={`/${locale}/dashboard`} />
-          <Link
-            href={botInviteUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-6 py-3 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground min-h-[44px] transition-colors"
-          >
-            {t('discordBotInvite')}
-          </Link>
+          {discordBotInviteEnabled ? (
+            <Link
+              href={botInviteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-6 py-3 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground min-h-[44px] transition-colors"
+            >
+              {t('discordBotInvite')}
+            </Link>
+          ) : (
+            <span
+              className="inline-flex items-center justify-center rounded-md border border-input bg-muted/50 px-6 py-3 text-base font-medium text-muted-foreground min-h-[44px] cursor-not-allowed opacity-60"
+              aria-disabled="true"
+            >
+              {t('discordBotInvite')}
+            </span>
+          )}
         </div>
       </div>
 

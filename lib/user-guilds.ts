@@ -4,6 +4,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { getAppConfig, filterGuildIdsByConfig } from '@/lib/app-config';
 import { getMemberRoleIds, resolveRaidFlowRole, type RaidFlowRole } from './discord-roles';
 
 /** RaidFlow-Rolle oder nur Discord-Mitglied ohne RaidFlow-Rolle. */
@@ -41,12 +42,22 @@ export async function getGuildsForUser(
   userId: string,
   discordId: string
 ): Promise<UserGuildInfo[]> {
-  const guilds = await prisma.rfGuild.findMany({
-    include: {
-      raidGroups: { select: { id: true, discordRoleId: true } },
-    },
-    orderBy: { name: 'asc' },
-  });
+  const [config, allGuilds] = await Promise.all([
+    getAppConfig(),
+    prisma.rfGuild.findMany({
+      include: {
+        raidGroups: { select: { id: true, discordRoleId: true } },
+      },
+      orderBy: { name: 'asc' },
+    }),
+  ]);
+  const allowedDiscordIds = new Set(
+    filterGuildIdsByConfig(
+      allGuilds.map((g) => g.discordGuildId),
+      config
+    )
+  );
+  const guilds = allGuilds.filter((g) => allowedDiscordIds.has(g.discordGuildId));
 
   const result: UserGuildInfo[] = [];
 

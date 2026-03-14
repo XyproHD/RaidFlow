@@ -144,5 +144,49 @@
     "showTwinksOn": "An",
     "characterAllowedInGroup": "In Raidgruppe zulässig (für Raid-Filter)",
     "characterAllowedErrorLast": "Mindestens ein Character pro User muss in der Raidgruppe zulässig sein."
+  },
+  "admin": {
+    "title": "Admin",
+    "forbidden": "Du hast keine Berechtigung für den Admin-Bereich. Nur Application-Admins können diese Seite nutzen.",
+    "guildsSection": "Gilden verwalten",
+    "guildsSectionDescription": "Gilden löschen (inkl. zugehörige Raids, Anmeldungen, Rollen-Daten).",
+    "guildName": "Gilde",
+    "guildDiscordId": "Discord-Server-ID",
+    "deleteGuild": "Gilde löschen",
+    "deleteGuildConfirm": "Gilde „{name}“ und alle zugehörigen Daten unwiderruflich löschen?",
+    "noGuilds": "Keine Gilden in der Datenbank.",
+    "whitelistBlacklistSection": "Whitelist / Blacklist",
+    "whitelistBlacklistDescription": "Whitelist: Nur erlaubte Server nutzen RaidFlow. Blacklist: Bestimmte Server ausschließen. Nur eine Option aktiv.",
+    "useWhitelist": "Whitelist aktiv",
+    "useBlacklist": "Blacklist aktiv",
+    "serverWhitelist": "Erlaubte Server-IDs (Discord-Gilden-ID, eine pro Zeile)",
+    "serverBlacklist": "Ausgeschlossene Server-IDs (Discord-Gilden-ID, eine pro Zeile)",
+    "saveConfig": "Einstellung speichern",
+    "adminsSection": "Admins verwalten",
+    "adminsSectionDescription": "Weitere Admins ernennen oder entfernen (über Discord-ID). Owner kann nicht entfernt werden.",
+    "owner": "Owner",
+    "ownerDescription": "Feste Discord-ID (nicht entfernbar).",
+    "adminsList": "Admins (Discord-ID)",
+    "addAdmin": "Admin hinzufügen",
+    "discordUserId": "Discord-User-ID",
+    "addAdminPlaceholder": "Discord-ID eingeben",
+    "removeAdmin": "Entfernen",
+    "saved": "Gespeichert.",
+    "error": "Fehler",
+    "loading": "Laden …",
+    "discordBotInviteSection": "Discord-Bot-Einladungen",
+    "discordBotInviteDescription": "Wenn inaktiv, sind die Funktionen zum Einladen des Discord-Bots ausgegraut und nicht nutzbar.",
+    "discordBotInviteEnabled": "Bot-Einladungen aktiv",
+    "maintenanceSection": "Wartungsmodus",
+    "maintenanceDescription": "Bei aktivem Wartungsmodus sehen Nutzer nach dem Login nur die Meldung unten. Admins/Owner haben vollen Zugriff. Der Text wird auch auf der Landing Page angezeigt. Wenn Wartungsmodus aus ist, erscheint der Text als Statusmeldung unterhalb der Topbar und auf der Landing Page.",
+    "maintenanceModeActive": "Wartungsmodus aktiv",
+    "statusMessageLabel": "Text (Wartungsmodus / Statusmeldung)",
+    "statusMessagePlaceholder": "Optionaler Hinweistext …"
+  },
+  "maintenance": {
+    "title": "Wartungsmodus"
+  },
+  "statusBanner": {
+    "label": "Hinweis"
   }
 }

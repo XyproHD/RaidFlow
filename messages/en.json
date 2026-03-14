@@ -144,5 +144,49 @@
     "showTwinksOn": "On",
     "characterAllowedInGroup": "Allowed in raid group (for raid filters)",
     "characterAllowedErrorLast": "At least one character per user must remain allowed in the raid group."
+  },
+  "admin": {
+    "title": "Admin",
+    "forbidden": "You do not have permission for the admin area. Only application admins can access this page.",
+    "guildsSection": "Manage guilds",
+    "guildsSectionDescription": "Delete guilds (including associated raids, signups, role data).",
+    "guildName": "Guild",
+    "guildDiscordId": "Discord server ID",
+    "deleteGuild": "Delete guild",
+    "deleteGuildConfirm": "Permanently delete guild \"{name}\" and all associated data?",
+    "noGuilds": "No guilds in database.",
+    "whitelistBlacklistSection": "Whitelist / Blacklist",
+    "whitelistBlacklistDescription": "Whitelist: Only allowed servers use RaidFlow. Blacklist: Exclude specific servers. Only one option active.",
+    "useWhitelist": "Whitelist active",
+    "useBlacklist": "Blacklist active",
+    "serverWhitelist": "Allowed server IDs (Discord guild ID, one per line)",
+    "serverBlacklist": "Excluded server IDs (Discord guild ID, one per line)",
+    "saveConfig": "Save settings",
+    "adminsSection": "Manage admins",
+    "adminsSectionDescription": "Add or remove admins (by Discord ID). Owner cannot be removed.",
+    "owner": "Owner",
+    "ownerDescription": "Fixed Discord ID (cannot be removed).",
+    "adminsList": "Admins (Discord ID)",
+    "addAdmin": "Add admin",
+    "discordUserId": "Discord user ID",
+    "addAdminPlaceholder": "Enter Discord ID",
+    "removeAdmin": "Remove",
+    "saved": "Saved.",
+    "error": "Error",
+    "loading": "Loading…",
+    "discordBotInviteSection": "Discord Bot invitations",
+    "discordBotInviteDescription": "When inactive, the Discord bot invite functions are grayed out and non-functional.",
+    "discordBotInviteEnabled": "Bot invitations active",
+    "maintenanceSection": "Maintenance mode",
+    "maintenanceDescription": "When maintenance mode is active, users see only the message below after login. Admins/Owners have full access. The text is also shown on the landing page. When maintenance mode is off, the text appears as a status message below the topbar and on the landing page.",
+    "maintenanceModeActive": "Maintenance mode active",
+    "statusMessageLabel": "Text (maintenance / status message)",
+    "statusMessagePlaceholder": "Optional notice text …"
+  },
+  "maintenance": {
+    "title": "Maintenance mode"
+  },
+  "statusBanner": {
+    "label": "Notice"
   }
 }

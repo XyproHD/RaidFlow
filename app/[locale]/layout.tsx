@@ -5,8 +5,10 @@ import { getServerSession } from 'next-auth';
 import { ThemeProvider } from '@/components/theme-provider';
 import { SessionProvider } from '@/components/session-provider';
 import { Topbar } from '@/components/topbar';
+import { StatusBanner } from '@/components/status-banner';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getAppConfig } from '@/lib/app-config';
 import { getBotInviteUrl } from '@/lib/bot-invite';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getGuildsForUser } from '@/lib/user-guilds';
@@ -39,6 +41,7 @@ export default async function LocaleLayout({
   let showGuildManagement = false;
   let botInviteUrl = '#';
   let userGuilds: UserGuildInfo[] = [];
+  let appConfig: Awaited<ReturnType<typeof getAppConfig>> | null = null;
   try {
     session = await getServerSession(authOptions);
     const discordId = (session as { discordId?: string } | null)?.discordId;
@@ -58,11 +61,16 @@ export default async function LocaleLayout({
       }
     }
     botInviteUrl = getBotInviteUrl();
+    appConfig = await getAppConfig();
   } catch (e) {
     console.error('[Layout] Session/DB/Env:', e);
     // Fallbacks: Seite rendern, Nutzer sieht z. B. Landing; Fehler in Vercel Logs
   }
   const isLoggedIn = !!session?.discordId;
+  const discordBotInviteEnabled = appConfig?.discordBotInviteEnabled ?? true;
+  const maintenanceMode = appConfig?.maintenanceMode ?? false;
+  const statusMessage = appConfig?.statusMessage ?? '';
+  const showStatusBanner = !maintenanceMode && statusMessage.trim().length > 0;
 
   return (
     <html lang={locale} suppressHydrationWarning>
@@ -78,7 +86,9 @@ export default async function LocaleLayout({
                   showGuildManagement={showGuildManagement}
                   botInviteUrl={botInviteUrl}
                   userGuilds={userGuilds}
+                  discordBotInviteEnabled={discordBotInviteEnabled}
                 />
+                {showStatusBanner && <StatusBanner message={statusMessage} />}
                 <main className="flex-1">{children}</main>
               </div>
             </NextIntlClientProvider>
