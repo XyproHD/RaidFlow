@@ -5,6 +5,9 @@
 
 import { prisma } from '@/lib/prisma';
 
+/** Feste Discord-ID des Application-Owners (immer Admin, nicht entfernbar). */
+export const OWNER_DISCORD_ID = '159383599001370625';
+
 const KEY_OWNER = 'owner_discord_id';
 const KEY_USE_WHITELIST = 'use_whitelist';
 const KEY_USE_BLACKLIST = 'use_blacklist';
@@ -62,7 +65,7 @@ export async function getAppConfig(): Promise<AppConfigState> {
     getConfigValue(KEY_STATUS_MESSAGE),
   ]);
   return {
-    ownerDiscordId: owner ?? null,
+    ownerDiscordId: OWNER_DISCORD_ID,
     useWhitelist: useWhitelist === 'true',
     useBlacklist: useBlacklist === 'true',
     serverWhitelist: parseJsonArray(whitelistRaw),

@@ -8,7 +8,7 @@ import { Topbar } from '@/components/topbar';
 import { StatusBanner } from '@/components/status-banner';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getAppConfig } from '@/lib/app-config';
+import { getAppConfig, OWNER_DISCORD_ID } from '@/lib/app-config';
 import { getBotInviteUrl } from '@/lib/bot-invite';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getGuildsForUser } from '@/lib/user-guilds';
@@ -21,11 +21,9 @@ export const metadata: Metadata = {
 };
 
 async function isApplicationAdmin(discordId: string): Promise<boolean> {
-  const [ownerConfig, adminEntry] = await Promise.all([
-    prisma.rfAppConfig.findUnique({ where: { key: 'owner_discord_id' } }),
-    prisma.rfAppAdmin.findUnique({ where: { discordUserId: discordId } }),
-  ]);
-  return ownerConfig?.value === discordId || !!adminEntry;
+  if (discordId === OWNER_DISCORD_ID) return true;
+  const adminEntry = await prisma.rfAppAdmin.findUnique({ where: { discordUserId: discordId } });
+  return !!adminEntry;
 }
 
 export default async function LocaleLayout({

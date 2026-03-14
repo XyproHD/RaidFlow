@@ -1,6 +1,7 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { OWNER_DISCORD_ID } from '@/lib/app-config';
 
 export interface AdminSession {
   userId: string;
@@ -13,12 +14,14 @@ export async function requireAdmin(): Promise<AdminSession | null> {
   const discordId = (session as { discordId?: string } | null)?.discordId;
   if (!discordId) return null;
 
-  const [ownerConfig, adminEntry] = await Promise.all([
-    prisma.rfAppConfig.findUnique({ where: { key: 'owner_discord_id' } }),
-    prisma.rfAppAdmin.findUnique({ where: { discordUserId: discordId } }),
-  ]);
-  const isAdmin = ownerConfig?.value === discordId || !!adminEntry;
-  if (!isAdmin) return null;
+  if (discordId === OWNER_DISCORD_ID) {
+    const user = await prisma.rfUser.findUnique({ where: { discordId }, select: { id: true } });
+    if (!user) return null;
+    return { userId: user.id, discordId };
+  }
+
+  const adminEntry = await prisma.rfAppAdmin.findUnique({ where: { discordUserId: discordId } });
+  if (!adminEntry) return null;
 
   const user = await prisma.rfUser.findUnique({ where: { discordId }, select: { id: true } });
   if (!user) return null;
