@@ -30,8 +30,13 @@ const commands = [
     .setDescription('RaidFlow: Server einrichten und Raidgruppen verwalten')
     .addSubcommand((sub) =>
       sub
+        .setName('help')
+        .setDescription('Zeigt eine Übersicht aller RaidFlow-Befehle mit Beschreibung')
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName('setup')
-        .setDescription('Server in RaidFlow einrichten und Basis-Rollen anlegen')
+        .setDescription('Server in RaidFlow einrichten: Standardrollen, bestehende Rollen zuordnen oder eigene Rollen anlegen')
     )
     .addSubcommand((sub) =>
       sub
