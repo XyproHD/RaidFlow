@@ -1,6 +1,6 @@
 # RaidFlow Discord-Bot
 
-Slash-Commands: `/raidflow setup`, `/raidflow group <groupname>`  
+Slash-Commands: **`/raidflow help`**, **`/raidflow setup`**, **`/raidflow group <groupname>`**  
 Rechte: Nur Server-Owner oder Nutzer mit **Administrator** bzw. **Server verwalten** (MANAGE_GUILD). Siehe [DiscordBot.md](../DiscordBot.md) Abschnitt 0.
 
 **Bot-Berechtigungen:** Die Einladungs-URL fordert die nötigen Rechte an (Manage Roles, View Channel, Send Messages, Threads erstellen/verwalten usw.). Details siehe [DiscordBot.md](../DiscordBot.md) Abschnitt „Bot-Berechtigungen (Einladungs-URL)“.
@@ -22,7 +22,7 @@ Rechte: Nur Server-Owner oder Nutzer mit **Administrator** bzw. **Server verwalt
    ```bash
    cd discord-bot && npm install && node deploy-commands.js
    ```
-   Es erscheint **/raidflow setup** und **/raidflow group** (mit Unterbefehl). Optional: `GUILD_ID` setzen (Test-Guild), dann erscheinen die Commands sofort; ohne `GUILD_ID` globale Registrierung (kann verzögert sein). Falls noch alte Namen wie `/raidflow_setup` angezeigt werden: deploy erneut ausführen, dann in Discord **/raidflow** eingeben – die Unterbefehle erscheinen dort.
+   Es erscheinen **/raidflow help**, **/raidflow setup** und **/raidflow group** (mit Unterbefehl). Optional: `GUILD_ID` setzen (Test-Guild), dann erscheinen die Commands sofort; ohne `GUILD_ID` globale Registrierung (kann verzögert sein). Falls noch alte Namen wie `/raidflow_setup` angezeigt werden: deploy erneut ausführen, dann in Discord **/raidflow** eingeben – die Unterbefehle erscheinen dort.
 
 4. **Bot starten:**
    ```bash
@@ -30,7 +30,19 @@ Rechte: Nur Server-Owner oder Nutzer mit **Administrator** bzw. **Server verwalt
    ```
    Die Webapp muss laufen und unter `WEBAPP_URL` erreichbar sein (für `/raidflow setup` und `group`).
 
-## Ablauf
+## Befehle und Ablauf
 
-- **`/raidflow setup`:** Prüft Rechte → erstellt drei Rollen (RaidFlow-Gildenmeister, RaidFlow-Raidleader, RaidFlow-Raider) → ruft Webapp `POST /api/bot/guild` auf.
+- **`/raidflow help`:** Zeigt eine Übersicht aller RaidFlow-Befehle mit Beschreibung (ephemeral). Nur für Nutzer mit Setup-Recht.
+
+- **`/raidflow setup`:** Prüft Rechte. Dann:
+  - **Falls Server noch nicht konfiguriert:** Auswahl zwischen **Standardrollen anlegen**, **Bestehende Rollen zuordnen**, **Eigene Rollen anlegen**.
+    - **Standardrollen anlegen:** Bot erstellt die drei Rollen (RaidFlow-Gildenmeister, RaidFlow-Raidleader, RaidFlow-Raider) und ruft Webapp `POST /api/bot/guild` auf.
+    - **Bestehende Rollen zuordnen:** Bot listet Server-Rollen (inkl. Option „Neue Rolle anlegen“). Pro RaidFlow-Rolle (Gildenmeister, Raidleader, Raider) wählt der Nutzer eine Rolle oder legt per Modal eine neue an. Anschließend `POST /api/bot/guild`.
+    - **Eigene Rollen anlegen:** Modal mit drei Namensfeldern (eine Rolle pro RaidFlow-Rolle). Bot erstellt die Rollen auf dem Server und ruft `POST /api/bot/guild` auf.
+  - **Falls Server bereits konfiguriert:** Auswahl **Rollen löschen und neu einrichten**, **Rollen ändern** oder **Abbrechen**.
+    - **Löschen:** Bisherige drei Rollen werden auf Discord gelöscht, danach erscheint wieder die Auswahl (Standard/Bestehende/Eigene) wie bei der Ersteinrichtung.
+    - **Ändern:** Nutzer wählt die RaidFlow-Rolle (Gildenmeister/Raidleader/Raider), dann die Aktion: **Umbenennen** (Modal für neuen Namen), **An andere bestehende Rolle zuweisen** (Auswahl aus Server-Rollen) oder **Neue Rolle anlegen** (Modal → Bot erstellt Rolle und speichert ID). Webapp wird per `POST /api/bot/guild` mit aktualisierten Rollen-IDs versehen.
+    - **Abbrechen:** Keine Änderungen.
+  Die Webapp wird vorab per `GET /api/bot/guild?discordGuildId=...` abgefragt, um zu prüfen, ob der Server bereits konfiguriert ist.
+
 - **`/raidflow group <Name>`:** Prüft Rechte → erstellt Rolle `Raidflowgroup-<Name>` → ruft Webapp `POST /api/bot/raid-group` auf.

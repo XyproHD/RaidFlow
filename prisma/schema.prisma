@@ -16,9 +16,11 @@ datasource db {
 // -----------------------------------------------------------------------------
 
 model RfUser {
-  id              String   @id @default(uuid())
-  discordId       String   @unique @map("discord_id")
-  themePreference String?  @map("theme_preference") // "light" | "dark" – Anzeige-Modus, wird auch per Cookie gespeichert
+  id              String    @id @default(uuid())
+  discordId       String    @unique @map("discord_id")
+  themePreference String?   @map("theme_preference") // "light" | "dark" – Anzeige-Modus, wird auch per Cookie gespeichert
+  lastActiveAt    DateTime? @map("last_active_at")  // Letzte Aktivität in RaidFlow
+  status          String   @default("aktiv")       // aktiv | inaktiv | deaktiviert
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -58,10 +60,12 @@ model RfGuild {
 }
 
 model RfUserGuild {
-  userId    String   @map("user_id")
-  guildId   String   @map("guild_id")
-  role      String
-  joinedAt  DateTime @default(now()) @map("joined_at")
+  userId       String    @map("user_id")
+  guildId     String    @map("guild_id")
+  role        String
+  joinedAt    DateTime  @default(now()) @map("joined_at")
+  lastActiveAt DateTime? @map("last_active_at") // Letzte Aktivität in dieser Gilde
+  status      String    @default("aktiv")       // aktiv | inaktiv | deaktiviert
 
   user   RfUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
   guild  RfGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)

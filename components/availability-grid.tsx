@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useEffect, useMemo } from 'react';
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { WEEKDAYS, TIME_SLOTS_30MIN, type PreferenceType, type WeekFocusType } from '@/lib/profile-constants';
 
@@ -23,13 +23,50 @@ function buildGridFromSlots(
       g[d][slot] = '';
     }
   }
+  const validSlots = TIME_SLOTS_30MIN as unknown as string[];
   for (const s of initialSlots) {
-    if (WEEKDAYS.includes(s.weekday as (typeof WEEKDAYS)[number]) && g[s.weekday]) {
+    if (
+      WEEKDAYS.includes(s.weekday as (typeof WEEKDAYS)[number]) &&
+      g[s.weekday] &&
+      validSlots.includes(s.timeSlot)
+    ) {
       const val = s.preference === 'likely' ? 'likely' : s.preference === 'maybe' ? 'maybe' : '';
       if (val) g[s.weekday][s.timeSlot] = val;
     }
   }
   return g;
+}
+
+/** Normierte Slots zu Set für Dirty-Vergleich (day|slot|preference). */
+function slotsToSet(
+  slots: { weekday: string; timeSlot: string; preference: string }[]
+): Set<string> {
+  const set = new Set<string>();
+  for (const s of slots) {
+    if (s.preference === 'likely' || s.preference === 'maybe') set.add(`${s.weekday}|${s.timeSlot}|${s.preference}`);
+  }
+  return set;
+}
+
+function collectSlotsFromGrid(
+  grid: Record<string, Record<string, CellValue>>
+): { weekday: string; timeSlot: string; preference: string }[] {
+  const slots: { weekday: string; timeSlot: string; preference: string }[] = [];
+  for (const day of WEEKDAYS) {
+    const row = grid[day];
+    if (!row) continue;
+    for (const slot of TIME_SLOTS_30MIN) {
+      const v = row[slot];
+      if (v === 'likely' || v === 'maybe') slots.push({ weekday: day, timeSlot: slot, preference: v });
+    }
+  }
+  return slots;
+}
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
 }
 
 export function AvailabilityGrid({
@@ -49,6 +86,9 @@ export function AvailabilityGrid({
   );
   const [isDragging, setIsDragging] = useState(false);
   const [dragMode, setDragMode] = useState<'mark' | 'clear' | null>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
+
+  const initialSet = useMemo(() => slotsToSet(initialSlots), [initialSlots]);
 
   useEffect(() => {
     setGrid(buildGridFromSlots(initialSlots));
@@ -64,52 +104,52 @@ export function AvailabilityGrid({
     });
   }, []);
 
-  const handleMouseDown = useCallback(
-    (day: string, slot: string) => {
+  const handlePointerDown = useCallback(
+    (day: string, slot: string) => (e: React.PointerEvent) => {
+      if (saving) return;
+      tableRef.current?.setPointerCapture?.(e.pointerId);
       const current = grid[day]?.[slot] ?? '';
       const willMark = current === '' ? true : current !== preference;
       setIsDragging(true);
       setDragMode(willMark ? 'mark' : 'clear');
       setCell(day, slot, willMark ? preference : '');
     },
-    [grid, preference, setCell]
+    [grid, preference, setCell, saving]
   );
 
-  const handleMouseEnter = useCallback(
-    (day: string, slot: string) => {
+  const handlePointerMoveOnCell = useCallback(
+    (day: string, slot: string) => () => {
       if (!isDragging || dragMode === null) return;
       setCell(day, slot, dragMode === 'mark' ? preference : '');
     },
     [isDragging, dragMode, preference, setCell]
   );
 
-  const handleMouseUp = useCallback(() => {
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isDragging || dragMode === null) return;
+      const td = (e.target as HTMLElement).closest?.('td[data-day][data-slot]') as HTMLElement | null;
+      if (!td) return;
+      const day = td.getAttribute('data-day');
+      const slot = td.getAttribute('data-slot');
+      if (day && slot) setCell(day, slot, dragMode === 'mark' ? preference : '');
+    },
+    [isDragging, dragMode, preference, setCell]
+  );
+
+  const handlePointerUp = useCallback(() => {
     setIsDragging(false);
     setDragMode(null);
   }, []);
 
-  const collectSlots = useCallback(() => {
-    const slots: { weekday: string; timeSlot: string; preference: string }[] = [];
-    for (const day of WEEKDAYS) {
-      const row = grid[day];
-      if (!row) continue;
-      for (const slot of TIME_SLOTS_30MIN) {
-        const v = row[slot];
-        if (v === 'likely' || v === 'maybe') slots.push({ weekday: day, timeSlot: slot, preference: v });
-      }
-    }
-    return slots;
-  }, [grid]);
+  const handlePointerLeave = useCallback(() => {
+    handlePointerUp();
+  }, [handlePointerUp]);
 
-  const isGridDirty = useMemo(() => {
-    const initial = buildGridFromSlots(initialSlots);
-    for (const day of WEEKDAYS) {
-      for (const slot of TIME_SLOTS_30MIN) {
-        if ((grid[day]?.[slot] ?? '') !== (initial[day]?.[slot] ?? '')) return true;
-      }
-    }
-    return false;
-  }, [grid, initialSlots]);
+  const collectSlots = useCallback(() => collectSlotsFromGrid(grid), [grid]);
+
+  const currentSet = useMemo(() => slotsToSet(collectSlotsFromGrid(grid)), [grid]);
+  const isGridDirty = !setsEqual(currentSet, initialSet);
 
   const isFocusDirty = weekFocus !== initialFocus;
   const isDirty = isGridDirty || isFocusDirty;
@@ -139,11 +179,14 @@ export function AvailabilityGrid({
         <div className="w-max max-w-full space-y-3">
           <div className="overflow-x-auto">
             <table
+              ref={tableRef}
               className="border-collapse select-none text-[10px] sm:text-xs"
               role="grid"
               aria-label={t('raidTimes')}
-              onMouseLeave={handleMouseUp}
-              onMouseUp={handleMouseUp}
+              onPointerLeave={handlePointerLeave}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            onPointerMove={handlePointerMove}
             >
               <thead>
                 <tr>
@@ -171,9 +214,12 @@ export function AvailabilityGrid({
                       return (
                         <td
                           key={day}
-                          className="w-10 min-w-[42px] max-w-[48px] h-5 sm:h-6 border border-border p-0"
-                          onMouseDown={() => handleMouseDown(day, slot)}
-                          onMouseEnter={() => handleMouseEnter(day, slot)}
+                          className="w-10 min-w-[42px] max-w-[48px] h-5 sm:h-6 border border-border p-0 touch-none"
+                          data-day={day}
+                          data-slot={slot}
+                          onPointerDown={handlePointerDown(day, slot)}
+                          onPointerEnter={handlePointerMoveOnCell(day, slot)}
+                          onPointerMove={handlePointerMove}
                           role="gridcell"
                           aria-selected={!!val}
                         >

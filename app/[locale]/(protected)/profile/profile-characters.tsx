@@ -19,6 +19,7 @@ type CharacterRow = {
   mainSpec: string;
   offSpec: string | null;
   isMain: boolean;
+  classId?: string | null;
 };
 
 type GuildOption = { id: string; name: string };
@@ -44,6 +45,8 @@ export function ProfileCharacters({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const openAddButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -109,6 +112,24 @@ export function ProfileCharacters({
     resetForm();
   }, [resetForm]);
 
+  useEffect(() => {
+    if (modalOpen !== 'add' && modalOpen !== 'edit') return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeModal();
+    };
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleEsc);
+    const firstFocusable = modalRef.current?.querySelector<HTMLElement>(
+      'input:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    firstFocusable?.focus();
+    return () => {
+      document.body.style.overflow = '';
+      document.removeEventListener('keydown', handleEsc);
+      openAddButtonRef.current?.focus({ preventScroll: true });
+    };
+  }, [modalOpen, closeModal]);
+
   const parseError = async (res: Response): Promise<string> => {
     const text = await res.text();
     try {
@@ -171,13 +192,12 @@ export function ProfileCharacters({
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         router.refresh();
+        const target = list.find((x) => x.id === id);
+        const sameGuildId = target?.guildId ?? null;
         setList((prev) =>
-          prev.map((r) => {
-            if (r.id === id) return { ...r, isMain: true };
-            const char = prev.find((x) => x.id === id);
-            if (char?.guildId && r.guildId === char.guildId) return { ...r, isMain: false };
-            return r;
-          })
+          prev.map((r) =>
+            r.id === id ? { ...r, isMain: true } : sameGuildId && r.guildId === sameGuildId ? { ...r, isMain: false } : r
+          )
         );
       } else {
         setError(await parseError(res));
@@ -363,9 +383,9 @@ export function ProfileCharacters({
       {list.length === 0 && (
         <p className="text-muted-foreground text-sm mb-2">{t('noCharacters')}</p>
       )}
-      <div className="mb-4 space-y-2 max-w-[44rem]">
+      <div className="mb-4 space-y-2 max-w-[44rem] min-w-0">
         {list.map((c) => {
-          const cClassId = getClassIdForSpec(c.mainSpec);
+          const cClassId = c.classId ?? getClassIdForSpec(c.mainSpec);
           const twinkLabel = c.guildId && !c.isMain && charsInSameGuild(c.guildId).length > 1;
           const mainOrAltTitle = c.isMain && c.guildId ? t('mainLabel') : twinkLabel ? t('altLabel') : undefined;
           const ICON_SIZE = 24;
@@ -373,8 +393,7 @@ export function ProfileCharacters({
           return (
             <div
               key={c.id}
-              className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
-              style={{ gridTemplateColumns: `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr minmax(4rem, 1fr) 40px` }}
+              className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm grid-cols-[32px_28px_1fr_44px] sm:grid-cols-[32px_28px_auto_1fr_minmax(4rem,1fr)_44px] min-w-0"
             >
               <div className="flex shrink-0 items-center justify-center w-8 h-8 mr-0.5" title={mainOrAltTitle}>
                 {c.isMain && c.guildId ? (
@@ -388,29 +407,29 @@ export function ProfileCharacters({
               <div className="flex shrink-0 items-center justify-center w-7 h-7">
                 {cClassId && <ClassIcon classId={cClassId} size={ICON_SIZE} title={c.mainSpec} />}
               </div>
-              <div className="flex shrink-0 items-center gap-1 min-w-0">
+              <div className="flex items-center gap-1 min-w-0 sm:col-span-2">
                 <SpecIcon spec={c.mainSpec} size={ICON_SIZE} />
                 {c.offSpec && (
                   <>
-                    <span className="text-muted-foreground text-xs font-medium">/</span>
-                    <span className="grayscale contrast-90 inline-flex">
+                    <span className="text-muted-foreground text-xs font-medium shrink-0">/</span>
+                    <span className="grayscale contrast-90 inline-flex shrink-0">
                       <SpecIcon spec={c.offSpec} size={ICON_SIZE} className="opacity-90" />
                     </span>
                   </>
                 )}
+                <span className="font-medium text-base truncate min-w-0" title={c.name}>
+                  {c.name}
+                </span>
               </div>
-              <span className="font-medium text-base truncate min-w-0" title={c.name}>
-                {c.name}
-              </span>
-              <span className="text-sm text-muted-foreground text-center truncate min-w-0" title={c.guildName ?? undefined}>
+              <span className="text-sm text-muted-foreground truncate min-w-0 hidden sm:block text-center" title={c.guildName ?? undefined}>
                 {c.guildName ?? '–'}
               </span>
-              <div className="relative flex justify-end" ref={menuOpen ? menuRef : undefined}>
+              <div className="relative flex justify-end shrink-0 col-start-4 row-start-1 sm:col-start-auto sm:row-start-auto" ref={menuOpen ? menuRef : undefined}>
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setOpenMenuId(menuOpen ? null : c.id); }}
                   disabled={loading}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50 text-foreground hover:bg-muted disabled:opacity-50"
+                  className="flex h-11 w-11 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50 text-foreground hover:bg-muted disabled:opacity-50"
                   aria-label={t('characterMenu')}
                   aria-expanded={menuOpen}
                 >
@@ -439,12 +458,16 @@ export function ProfileCharacters({
                   </div>
                 )}
               </div>
+              <span className="text-xs text-muted-foreground col-span-4 sm:hidden" title={c.guildName ?? undefined}>
+                {c.guildName ? `${t('guild')}: ${c.guildName}` : '–'}
+              </span>
             </div>
           );
         })}
       </div>
 
       <button
+        ref={openAddButtonRef}
         type="button"
         onClick={openAdd}
         className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm font-medium"
@@ -454,8 +477,18 @@ export function ProfileCharacters({
 
       {/* Modal: Charakter anlegen oder bearbeiten */}
       {(modalOpen === 'add' || modalOpen === 'edit') && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" role="dialog" aria-modal="true" aria-labelledby="modal-character-title">
-          <div className="bg-background border border-border rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-character-title"
+          onClick={closeModal}
+        >
+          <div
+            ref={modalRef}
+            className="bg-background border border-border rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="p-4 border-b border-border flex justify-between items-center">
               <h3 id="modal-character-title" className="text-lg font-semibold">
                 {modalOpen === 'add' ? t('addCharacter') : t('editCharacter')}

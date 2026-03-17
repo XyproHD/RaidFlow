@@ -1,14 +1,17 @@
-import { getTranslations } from 'next-intl/server';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getGuildsForUser } from '@/lib/user-guilds';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { expandRaidTimeSlot } from '@/lib/profile-constants';
+import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { ProfileRaidTimes } from './profile-raid-times';
 import { ProfileCharacters } from './profile-characters';
+import { ProfileLoot } from './profile-loot';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
+const LOOT_PAGE_SIZE = 20;
 
 /**
  * Mein Profil (UI 4.1): Raidzeiten (AvailabilityGrid), Charakterliste, Raidstatistik, Loottabelle.
@@ -16,8 +19,11 @@ export const dynamic = 'force-dynamic';
  */
 export default async function ProfilePage() {
   try {
-    const t = await getTranslations('profile');
-    const session = await getServerSession(authOptions);
+    const [t, locale, session] = await Promise.all([
+      getTranslations('profile'),
+      getLocale(),
+      getServerSession(authOptions),
+    ]);
     const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
     const discordId = (session as { discordId?: string } | null)?.discordId;
 
@@ -61,15 +67,19 @@ export default async function ProfilePage() {
           },
         },
       }),
-      prisma.rfLoot.findMany({
-        where: { userId },
-        include: {
-          guild: { select: { name: true } },
-          dungeon: { select: { name: true } },
-          character: { select: { name: true } },
-        },
-        orderBy: { receivedAt: 'desc' },
-      }),
+      Promise.all([
+        prisma.rfLoot.findMany({
+          where: { userId },
+          include: {
+            guild: { select: { name: true } },
+            dungeon: { select: { name: true } },
+            character: { select: { name: true } },
+          },
+          orderBy: { receivedAt: 'desc' },
+          take: LOOT_PAGE_SIZE,
+        }),
+        prisma.rfLoot.count({ where: { userId } }),
+      ]),
     ]);
 
     const statsMap = new Map<
@@ -94,6 +104,15 @@ export default async function ProfilePage() {
       (a, b) => a.guildName.localeCompare(b.guildName) || a.dungeonName.localeCompare(b.dungeonName)
     );
 
+    const [lootFirstPage, lootTotalCount] = loot;
+    const initialLoot = lootFirstPage.map((l) => ({
+      id: l.id,
+      itemRef: l.itemRef,
+      receivedAt: l.receivedAt.toISOString(),
+      guildName: l.guild.name,
+      dungeonName: l.dungeon.name,
+    }));
+
     const raidTimeRows = raidTimes.flatMap((r) =>
       expandRaidTimeSlot(r.timeSlot).map((timeSlot) => ({
         id: r.id,
@@ -104,15 +123,19 @@ export default async function ProfilePage() {
       }))
     );
 
-    const characterRows = characters.map((c) => ({
-      id: c.id,
-      name: c.name,
-      guildId: c.guildId,
-      guildName: c.guild?.name ?? null,
-      mainSpec: c.mainSpec,
-      offSpec: c.offSpec,
-      isMain: c.isMain,
-    }));
+    const characterRows = characters.map((c) => {
+      const specInfo = getSpecByDisplayName(c.mainSpec);
+      return {
+        id: c.id,
+        name: c.name,
+        guildId: c.guildId,
+        guildName: c.guild?.name ?? null,
+        mainSpec: c.mainSpec,
+        offSpec: c.offSpec,
+        isMain: c.isMain,
+        classId: specInfo?.classId ?? null,
+      };
+    });
 
     const guildOptions = guilds.map((g) => ({ id: g.id, name: g.name }));
 
@@ -158,40 +181,18 @@ export default async function ProfilePage() {
           )}
         </section>
 
-        {/* 4.1 Loottabelle: Erhaltener Loot je Gilde je Dungeon */}
+        {/* 4.1 Loottabelle: Erhaltener Loot je Gilde je Dungeon (Pagination + Locale) */}
         <section aria-labelledby="loot-heading">
           <h2 id="loot-heading" className="text-lg font-semibold text-foreground mb-2">
             {t('lootTable')}
           </h2>
           <p className="text-muted-foreground text-sm mb-4">{t('lootTableDescription')}</p>
-          {loot.length === 0 ? (
-            <p className="text-muted-foreground text-sm">{t('noLoot')}</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse border border-border min-w-[280px]">
-                <thead>
-                  <tr className="bg-muted/50">
-                    <th className="border border-border p-2 text-left">{t('itemRef')}</th>
-                    <th className="border border-border p-2 text-left">{t('guild')}</th>
-                    <th className="border border-border p-2 text-left">{t('dungeon')}</th>
-                    <th className="border border-border p-2 text-left">{t('receivedAt')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loot.map((l) => (
-                    <tr key={l.id}>
-                      <td className="border border-border p-2">{l.itemRef}</td>
-                      <td className="border border-border p-2">{l.guild.name}</td>
-                      <td className="border border-border p-2">{l.dungeon.name}</td>
-                      <td className="border border-border p-2">
-                        {new Date(l.receivedAt).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <ProfileLoot
+            initialLoot={initialLoot}
+            totalCount={lootTotalCount}
+            locale={locale}
+            pageSize={LOOT_PAGE_SIZE}
+          />
         </section>
       </div>
     );
