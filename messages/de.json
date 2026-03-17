@@ -96,6 +96,8 @@
     "noLoot": "Noch kein Loot erfasst.",
     "loadMoreLoot": "Weitere Loot-Einträge laden",
     "loading": "Laden …",
+    "withoutGuild": "Ohne Gilde",
+    "saveWithoutGuild": "Ohne Gildenzuordnung speichern",
     "weekdayAll": "Alle Tage",
     "save": "Speichern",
     "cancel": "Abbrechen",

@@ -43,7 +43,26 @@ export default async function ProfilePage() {
       );
     }
 
-    const [raidTimes, characters, guilds, completions, loot] = await Promise.all([
+    const guilds = discordId ? await getGuildsForUser(userId, discordId) : [];
+
+    // Charakter-Gilden-Zuordnung bereinigen: Wenn User nicht mehr in der Gilde ist / keine Rechte hat,
+    // wird guildId entfernt (und isMain zurückgesetzt). Neue Zuweisung erfolgt über "Bearbeiten".
+    if (discordId) {
+      const allowedGuildIds = guilds.map((g) => g.id);
+      if (allowedGuildIds.length === 0) {
+        await prisma.rfCharacter.updateMany({
+          where: { userId, guildId: { not: null } },
+          data: { guildId: null, isMain: false },
+        });
+      } else {
+        await prisma.rfCharacter.updateMany({
+          where: { userId, guildId: { not: null, notIn: allowedGuildIds } },
+          data: { guildId: null, isMain: false },
+        });
+      }
+    }
+
+    const [raidTimes, characters, completions, loot] = await Promise.all([
       prisma.rfRaidTimePreference.findMany({
         where: { userId },
         orderBy: [{ weekday: 'asc' }, { timeSlot: 'asc' }],
@@ -53,7 +72,6 @@ export default async function ProfilePage() {
         include: { guild: { select: { id: true, name: true } } },
         orderBy: { name: 'asc' },
       }),
-      discordId ? getGuildsForUser(userId, discordId) : Promise.resolve([]),
       prisma.rfRaidCompletion.findMany({
         where: { userId },
         include: {

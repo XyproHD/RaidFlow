@@ -96,6 +96,8 @@
     "noLoot": "No loot recorded yet.",
     "loadMoreLoot": "Load more loot",
     "loading": "Loading…",
+    "withoutGuild": "Without guild",
+    "saveWithoutGuild": "Save without guild assignment",
     "weekdayAll": "All days",
     "save": "Save",
     "cancel": "Cancel",

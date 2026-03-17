@@ -40,6 +40,7 @@ export function ProfileCharacters({
 }) {
   const t = useTranslations('profile');
   const router = useRouter();
+  const singleGuild = guilds.length === 1 ? guilds[0] : null;
   const [list, setList] = useState(initialData);
   const [modalOpen, setModalOpen] = useState<'add' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -58,6 +59,7 @@ export function ProfileCharacters({
   }, [openMenuId]);
   const [name, setName] = useState('');
   const [guildId, setGuildId] = useState('');
+  const [saveWithoutGuild, setSaveWithoutGuild] = useState(false);
   const [classId, setClassId] = useState('');
   const [mainSpecId, setMainSpecId] = useState('');
   const [offSpecId, setOffSpecId] = useState('');
@@ -72,6 +74,7 @@ export function ProfileCharacters({
   const resetForm = useCallback(() => {
     setName('');
     setGuildId('');
+    setSaveWithoutGuild(false);
     setClassId('');
     setMainSpecId('');
     setOffSpecId('');
@@ -81,13 +84,17 @@ export function ProfileCharacters({
   const openAdd = useCallback(() => {
     setEditingId(null);
     resetForm();
+    if (guilds.length >= 1) {
+      setGuildId(guilds[0].id);
+    }
     setModalOpen('add');
-  }, [resetForm]);
+  }, [resetForm, guilds]);
 
   const openEdit = useCallback((c: CharacterRow) => {
     setEditingId(c.id);
     setName(c.name);
     setGuildId(c.guildId || '');
+    setSaveWithoutGuild(!c.guildId);
     const parsed = allSpecs.find((s) => s.displayName === c.mainSpec);
     if (parsed) {
       setClassId(parsed.classId);
@@ -267,6 +274,37 @@ export function ProfileCharacters({
     guildId ? list.filter((c) => c.guildId === guildId) : [];
   const canSetMain = (c: CharacterRow) => !!c.guildId && !c.isMain;
 
+  const groupedCharacters = useMemo(() => {
+    const map = new Map<
+      string,
+      { guildId: string | null; guildName: string; characters: CharacterRow[] }
+    >();
+
+    for (const c of list) {
+      const key = c.guildId ?? '__no_guild__';
+      const guildName = c.guildName ?? t('withoutGuild');
+      const existing = map.get(key);
+      if (existing) existing.characters.push(c);
+      else map.set(key, { guildId: c.guildId, guildName, characters: [c] });
+    }
+
+    const groups = Array.from(map.values()).sort((a, b) => {
+      const aNo = a.guildId == null;
+      const bNo = b.guildId == null;
+      if (aNo !== bNo) return aNo ? 1 : -1; // "Ohne Gilde" zuletzt
+      return a.guildName.localeCompare(b.guildName);
+    });
+
+    for (const g of groups) {
+      g.characters.sort((a, b) => {
+        if (a.isMain !== b.isMain) return a.isMain ? -1 : 1; // Main zuerst
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    return groups;
+  }, [list, t]);
+
   const selectedMainSpecDisplay = classId && mainSpecId ? getSpecDisplayName(classId, mainSpecId) : null;
   const selectedOffSpecDisplay = classId && offSpecId ? getSpecDisplayName(classId, offSpecId) : null;
 
@@ -313,19 +351,42 @@ export function ProfileCharacters({
           placeholder={t('characterName')}
           className="rounded border border-input bg-background px-3 py-2 w-full"
         />
-        <label className="text-sm font-medium">{t('guild')} ({t('optional')})</label>
-        <select
-          value={guildId}
-          onChange={(e) => setGuildId(e.target.value)}
-          className="rounded border border-input bg-background px-3 py-2 w-full"
-        >
-          <option value="">–</option>
-          {guilds.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name}
-            </option>
-          ))}
-        </select>
+        {guilds.length > 1 ? (
+          <>
+            <label className="text-sm font-medium">{t('guild')} ({t('optional')})</label>
+            <select
+              value={guildId}
+              onChange={(e) => setGuildId(e.target.value)}
+              className="rounded border border-input bg-background px-3 py-2 w-full"
+            >
+              {guilds.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+              <option value="">{t('withoutGuild')}</option>
+            </select>
+          </>
+        ) : guilds.length === 1 && singleGuild ? (
+          <>
+            <div className="grid gap-1">
+              <p className="text-sm font-medium">{t('guild')} ({t('optional')})</p>
+              <p className="text-sm text-muted-foreground">{singleGuild.name}</p>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={saveWithoutGuild}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setSaveWithoutGuild(checked);
+                  setGuildId(checked ? '' : singleGuild.id);
+                }}
+              />
+              {t('saveWithoutGuild')}
+            </label>
+          </>
+        ) : null}
         <label className="text-sm font-medium">{t('class')} <span className="text-destructive">*</span></label>
         <select
           value={classId}
@@ -384,86 +445,114 @@ export function ProfileCharacters({
         <p className="text-muted-foreground text-sm mb-2">{t('noCharacters')}</p>
       )}
       <div className="mb-4 space-y-2 max-w-[44rem] min-w-0">
-        {list.map((c) => {
-          const cClassId = c.classId ?? getClassIdForSpec(c.mainSpec);
-          const twinkLabel = c.guildId && !c.isMain && charsInSameGuild(c.guildId).length > 1;
-          const mainOrAltTitle = c.isMain && c.guildId ? t('mainLabel') : twinkLabel ? t('altLabel') : undefined;
-          const ICON_SIZE = 24;
-          const menuOpen = openMenuId === c.id;
-          return (
-            <div
-              key={c.id}
-              className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm grid-cols-[32px_28px_1fr_44px] sm:grid-cols-[32px_28px_auto_1fr_minmax(4rem,1fr)_44px] min-w-0"
-            >
-              <div className="flex shrink-0 items-center justify-center w-8 h-8 mr-0.5" title={mainOrAltTitle}>
-                {c.isMain && c.guildId ? (
-                  <span className="inline-flex items-center justify-center text-[22px] leading-none text-amber-400" aria-label={t('mainLabel')}>⭐</span>
-                ) : twinkLabel ? (
-                  <span className="inline-flex items-center justify-center text-[22px] leading-none text-muted-foreground" aria-label={t('altLabel')}>➖</span>
-                ) : (
-                  <span className="w-8 h-8" aria-hidden />
-                )}
-              </div>
-              <div className="flex shrink-0 items-center justify-center w-7 h-7">
-                {cClassId && <ClassIcon classId={cClassId} size={ICON_SIZE} title={c.mainSpec} />}
-              </div>
-              <div className="flex items-center gap-1 min-w-0 sm:col-span-2">
-                <SpecIcon spec={c.mainSpec} size={ICON_SIZE} />
-                {c.offSpec && (
-                  <>
-                    <span className="text-muted-foreground text-xs font-medium shrink-0">/</span>
-                    <span className="grayscale contrast-90 inline-flex shrink-0">
-                      <SpecIcon spec={c.offSpec} size={ICON_SIZE} className="opacity-90" />
-                    </span>
-                  </>
-                )}
-                <span className="font-medium text-base truncate min-w-0" title={c.name}>
-                  {c.name}
-                </span>
-              </div>
-              <span className="text-sm text-muted-foreground truncate min-w-0 hidden sm:block text-center" title={c.guildName ?? undefined}>
-                {c.guildName ?? '–'}
-              </span>
-              <div className="relative flex justify-end shrink-0 col-start-4 row-start-1 sm:col-start-auto sm:row-start-auto" ref={menuOpen ? menuRef : undefined}>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setOpenMenuId(menuOpen ? null : c.id); }}
-                  disabled={loading}
-                  className="flex h-11 w-11 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50 text-foreground hover:bg-muted disabled:opacity-50"
-                  aria-label={t('characterMenu')}
-                  aria-expanded={menuOpen}
+        {groupedCharacters.map((group) => (
+          <div key={group.guildId ?? '__no_guild__'} className="space-y-2">
+            <div className="pt-2">
+              <h3 className="text-sm font-semibold text-foreground">{group.guildName}</h3>
+            </div>
+            {group.characters.map((c) => {
+              const cClassId = c.classId ?? getClassIdForSpec(c.mainSpec);
+              const twinkLabel = c.guildId && !c.isMain && charsInSameGuild(c.guildId).length > 1;
+              const mainOrAltTitle = c.isMain && c.guildId ? t('mainLabel') : twinkLabel ? t('altLabel') : undefined;
+              const ICON_SIZE = 24;
+              const menuOpen = openMenuId === c.id;
+              return (
+                <div
+                  key={c.id}
+                  className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm grid-cols-[32px_28px_1fr_44px] sm:grid-cols-[32px_28px_auto_1fr_minmax(4rem,1fr)_44px] min-w-0"
                 >
-                  <span className="text-lg leading-none" aria-hidden>⋮</span>
-                </button>
-                {menuOpen && (
-                  <div className="absolute right-0 top-full z-20 mt-1 min-w-[140px] rounded-md border border-border bg-background py-1 shadow-md">
-                    {canSetMain(c) && (
-                      <button
-                        type="button"
-                        onClick={() => { handleSetMain(c.id); setOpenMenuId(null); }}
-                        disabled={loading}
-                        className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
-                      >
-                        {t('setAsMain')}
-                      </button>
+                  <div className="flex shrink-0 items-center justify-center w-8 h-8 mr-0.5" title={mainOrAltTitle}>
+                    {c.isMain && c.guildId ? (
+                      <span className="inline-flex items-center justify-center text-[22px] leading-none text-amber-400" aria-label={t('mainLabel')}>
+                        ⭐
+                      </span>
+                    ) : twinkLabel ? (
+                      <span className="inline-flex items-center justify-center text-[22px] leading-none text-muted-foreground" aria-label={t('altLabel')}>
+                        ➖
+                      </span>
+                    ) : (
+                      <span className="w-8 h-8" aria-hidden />
                     )}
+                  </div>
+                  <div className="flex shrink-0 items-center justify-center w-7 h-7">
+                    {cClassId && <ClassIcon classId={cClassId} size={ICON_SIZE} title={c.mainSpec} />}
+                  </div>
+                  <div className="flex items-center gap-1 min-w-0 sm:col-span-2">
+                    <SpecIcon spec={c.mainSpec} size={ICON_SIZE} />
+                    {c.offSpec && (
+                      <>
+                        <span className="text-muted-foreground text-xs font-medium shrink-0">/</span>
+                        <span className="grayscale contrast-90 inline-flex shrink-0">
+                          <SpecIcon spec={c.offSpec} size={ICON_SIZE} className="opacity-90" />
+                        </span>
+                      </>
+                    )}
+                    <span className="font-medium text-base truncate min-w-0" title={c.name}>
+                      {c.name}
+                    </span>
+                  </div>
+                  <span
+                    className="text-sm text-muted-foreground truncate min-w-0 hidden sm:block text-center"
+                    title={c.guildName ?? undefined}
+                  >
+                    {c.guildName ?? '–'}
+                  </span>
+                  <div
+                    className="relative flex justify-end shrink-0 col-start-4 row-start-1 sm:col-start-auto sm:row-start-auto"
+                    ref={menuOpen ? menuRef : undefined}
+                  >
                     <button
                       type="button"
-                      onClick={() => { openEdit(c); setOpenMenuId(null); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenMenuId(menuOpen ? null : c.id);
+                      }}
                       disabled={loading}
-                      className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                      className="flex h-11 w-11 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50 text-foreground hover:bg-muted disabled:opacity-50"
+                      aria-label={t('characterMenu')}
+                      aria-expanded={menuOpen}
                     >
-                      {t('editCharacter')}
+                      <span className="text-lg leading-none" aria-hidden>
+                        ⋮
+                      </span>
                     </button>
+                    {menuOpen && (
+                      <div className="absolute right-0 top-full z-20 mt-1 min-w-[140px] rounded-md border border-border bg-background py-1 shadow-md">
+                        {canSetMain(c) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleSetMain(c.id);
+                              setOpenMenuId(null);
+                            }}
+                            disabled={loading}
+                            className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                          >
+                            {t('setAsMain')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            openEdit(c);
+                            setOpenMenuId(null);
+                          }}
+                          disabled={loading}
+                          className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                        >
+                          {t('editCharacter')}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <span className="text-xs text-muted-foreground col-span-4 sm:hidden" title={c.guildName ?? undefined}>
-                {c.guildName ? `${t('guild')}: ${c.guildName}` : '–'}
-              </span>
-            </div>
-          );
-        })}
+                  <span className="text-xs text-muted-foreground col-span-4 sm:hidden" title={c.guildName ?? undefined}>
+                    {c.guildName ? `${t('guild')}: ${c.guildName}` : '–'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
 
       <button
