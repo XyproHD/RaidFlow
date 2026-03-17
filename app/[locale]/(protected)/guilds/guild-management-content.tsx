@@ -49,6 +49,16 @@ export function GuildManagementContent({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [dirtyBySection, setDirtyBySection] = useState<Record<string, boolean>>({});
+
+  const setSectionDirty = useCallback((key: string, dirty: boolean) => {
+    setDirtyBySection((prev) => {
+      if (prev[key] === dirty) return prev;
+      return { ...prev, [key]: dirty };
+    });
+  }, []);
+
+  const hasUnsavedChanges = Object.values(dirtyBySection).some(Boolean);
 
   const loadRaidGroups = useCallback(async () => {
     const res = await fetch(`/api/guilds/${guildId}/raid-groups`);
@@ -92,6 +102,38 @@ export function GuildManagementContent({
     setTimeout(() => setSavedMessage(null), 3000);
   };
 
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    const onDocumentClick = (e: MouseEvent) => {
+      if (e.defaultPrevented) return;
+      const target = e.target as Element | null;
+      const a = target?.closest?.('a[href]') as HTMLAnchorElement | null;
+      if (!a) return;
+      const href = a.getAttribute('href');
+      if (!href) return;
+      if (href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+      if (a.target && a.target !== '_self') return;
+
+      if (!confirm(t('unsavedChangesLeaveConfirm'))) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('click', onDocumentClick, true);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.removeEventListener('click', onDocumentClick, true);
+    };
+  }, [hasUnsavedChanges, t]);
+
   if (loading) {
     return (
       <div className="max-w-5xl mx-auto">
@@ -123,6 +165,7 @@ export function GuildManagementContent({
         members={members}
         onUpdate={() => { loadRaidGroups(); loadMembers(); }}
         onSaved={showSaved}
+        onDirtyChange={(dirty) => setSectionDirty('raidGroupsAllowedChars', dirty)}
       />
 
       <MembersSection
@@ -141,6 +184,7 @@ export function GuildManagementContent({
         setDiscordChannels={setDiscordChannels}
         onUpdate={loadAllowedChannels}
         onSaved={showSaved}
+        onDirtyChange={(dirty) => setSectionDirty('allowedChannels', dirty)}
       />
     </div>
   );
@@ -152,21 +196,25 @@ function RaidGroupsSection({
   members,
   onUpdate,
   onSaved,
+  onDirtyChange,
 }: {
   guildId: string;
   raidGroups: RaidGroup[];
   members: Member[];
   onUpdate: () => void;
   onSaved: () => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const t = useTranslations('guildManagement');
   const [showTwinks, setShowTwinks] = useState(true);
   const [allowedByGroup, setAllowedByGroup] = useState<Record<string, Record<string, boolean>>>({});
+  const [initialAllowedByGroup, setInitialAllowedByGroup] = useState<Record<string, Record<string, boolean>>>({});
   const [addOpen, setAddOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [savingAllowed, setSavingAllowed] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
@@ -183,10 +231,18 @@ function RaidGroupsSection({
           if (!cancelled) next[rg.id] = {};
         }
       }
-      if (!cancelled) setAllowedByGroup(next);
+      if (!cancelled) {
+        setAllowedByGroup(next);
+        setInitialAllowedByGroup(next);
+      }
     })();
     return () => { cancelled = true; };
   }, [guildId, raidGroups]);
+
+  const hasUnsavedAllowedChanges = !areAllowedMapsEqual(allowedByGroup, initialAllowedByGroup);
+  useEffect(() => {
+    onDirtyChange(hasUnsavedAllowedChanges);
+  }, [hasUnsavedAllowedChanges, onDirtyChange]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -253,29 +309,38 @@ function RaidGroupsSection({
     }
   };
 
-  const handleSetCharacterAllowed = async (raidGroupId: string, characterId: string, allowed: boolean) => {
+  const handleToggleCharacterAllowedDraft = (raidGroupId: string, characterId: string, allowed: boolean) => {
+    setErr(null);
+    setAllowedByGroup((prev) => ({
+      ...prev,
+      [raidGroupId]: { ...(prev[raidGroupId] ?? {}), [characterId]: allowed },
+    }));
+  };
+
+  const handleSaveAllowedChanges = async () => {
+    if (!hasUnsavedAllowedChanges) return;
+    setSavingAllowed(true);
     setErr(null);
     try {
-      const res = await fetch(`/api/guilds/${guildId}/raid-groups/${raidGroupId}/allowed-characters`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ characterId, allowed }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        if (res.status === 400) {
-          setErr(t('characterAllowedErrorLast'));
-          return;
+      const changes = diffAllowedMaps(initialAllowedByGroup, allowedByGroup);
+      for (const ch of changes) {
+        const res = await fetch(`/api/guilds/${guildId}/raid-groups/${ch.raidGroupId}/allowed-characters`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ characterId: ch.characterId, allowed: ch.allowed }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (res.status === 400) throw new Error(t('characterAllowedErrorLast'));
+          throw new Error((data as { error?: string; detail?: string }).error || (data as { detail?: string }).detail || res.statusText);
         }
-        throw new Error(data.error || res.statusText);
       }
-      setAllowedByGroup((prev) => ({
-        ...prev,
-        [raidGroupId]: { ...(prev[raidGroupId] ?? {}), [characterId]: allowed },
-      }));
+      setInitialAllowedByGroup(allowedByGroup);
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingAllowed(false);
     }
   };
 
@@ -321,26 +386,37 @@ function RaidGroupsSection({
         {t('raidGroups')}
       </h2>
       <p className="text-sm text-muted-foreground mb-4">{t('raidGroupsDescription')}</p>
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-sm font-medium">{t('showTwinks')}:</span>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">{t('showTwinks')}:</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showTwinks}
+            onClick={() => setShowTwinks((v) => !v)}
+            className={cn(
+              'relative inline-flex h-6 w-11 shrink-0 rounded-full border border-input transition-colors',
+              showTwinks ? 'bg-primary' : 'bg-muted'
+            )}
+          >
+            <span
+              className={cn(
+                'pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow ring-0 transition translate-x-0.5',
+                showTwinks && 'translate-x-5'
+              )}
+            />
+          </button>
+          <span className="text-sm text-muted-foreground">{showTwinks ? t('showTwinksOn') : t('showTwinksOff')}</span>
+        </div>
+
         <button
           type="button"
-          role="switch"
-          aria-checked={showTwinks}
-          onClick={() => setShowTwinks((v) => !v)}
-          className={cn(
-            'relative inline-flex h-6 w-11 shrink-0 rounded-full border border-input transition-colors',
-            showTwinks ? 'bg-primary' : 'bg-muted'
-          )}
+          onClick={handleSaveAllowedChanges}
+          disabled={!hasUnsavedAllowedChanges || savingAllowed}
+          className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-w-[10rem]"
         >
-          <span
-            className={cn(
-              'pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow ring-0 transition translate-x-0.5',
-              showTwinks && 'translate-x-5'
-            )}
-          />
+          {savingAllowed ? t('saving') : t('save')}
         </button>
-        <span className="text-sm text-muted-foreground">{showTwinks ? t('showTwinksOn') : t('showTwinksOff')}</span>
       </div>
       {err && (
         <p className="text-sm text-destructive mb-2" role="alert">
@@ -363,11 +439,11 @@ function RaidGroupsSection({
             onChange={(e) => setNewName(e.target.value)}
             placeholder={t('raidGroupName')}
             className="rounded-md border border-input bg-background px-3 py-2 text-sm w-full min-w-0 sm:w-48"
-            disabled={submitting}
+            disabled={submitting || savingAllowed}
           />
           <button
             type="submit"
-            disabled={submitting || !newName.trim()}
+            disabled={submitting || savingAllowed || !newName.trim()}
             className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-w-[8rem]"
           >
             {submitting ? t('loading') : t('createGroup')}
@@ -376,13 +452,19 @@ function RaidGroupsSection({
             type="button"
             onClick={() => { setAddOpen(false); setErr(null); }}
             className="rounded-md border border-input px-4 py-2.5 text-sm min-w-[6rem]"
-            disabled={submitting}
+            disabled={submitting || savingAllowed}
           >
             {t('cancel')}
           </button>
         </form>
       )}
-      <ul className="space-y-6">
+      <div className="relative">
+        {savingAllowed && (
+          <div className="absolute inset-0 z-10 rounded-lg bg-background/70 backdrop-blur-sm flex items-center justify-center">
+            <p className="text-sm text-muted-foreground">{t('saving')}</p>
+          </div>
+        )}
+        <ul className={cn('space-y-6', savingAllowed && 'opacity-30 pointer-events-none')}>
         {raidGroups.length === 0 && (
           <li className="text-muted-foreground text-sm">{t('noRaidGroups')}</li>
         )}
@@ -398,12 +480,12 @@ function RaidGroupsSection({
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       className="rounded-md border border-input bg-background px-3 py-1.5 text-sm w-full min-w-0 sm:w-40"
-                      disabled={submitting}
+                      disabled={submitting || savingAllowed}
                     />
                     <button
                       type="button"
                       onClick={() => handleUpdate(g.id)}
-                      disabled={submitting || !editName.trim()}
+                      disabled={submitting || savingAllowed || !editName.trim()}
                       className="text-sm text-primary hover:underline disabled:opacity-50 min-w-[4rem]"
                     >
                       {t('save')}
@@ -412,7 +494,7 @@ function RaidGroupsSection({
                       type="button"
                       onClick={() => { setEditId(null); setErr(null); }}
                       className="text-sm text-muted-foreground hover:underline"
-                      disabled={submitting}
+                      disabled={submitting || savingAllowed}
                     >
                       {t('cancel')}
                     </button>
@@ -431,7 +513,7 @@ function RaidGroupsSection({
                       type="button"
                       onClick={() => handleDelete(g.id, g.name)}
                       className="text-sm text-destructive hover:underline min-w-[4rem]"
-                      disabled={submitting}
+                      disabled={submitting || savingAllowed}
                     >
                       {t('deleteRaidGroup')}
                     </button>
@@ -471,8 +553,8 @@ function RaidGroupsSection({
                                       aria-checked={allowed}
                                       aria-label={t('characterAllowedInGroup')}
                                       title={t('characterAllowedInGroup')}
-                                      disabled={submitting}
-                                      onClick={() => handleSetCharacterAllowed(g.id, ch.id, !allowed)}
+                                      disabled={submitting || savingAllowed}
+                                      onClick={() => handleToggleCharacterAllowedDraft(g.id, ch.id, !allowed)}
                                       className={cn(
                                         'relative inline-flex h-6 w-11 shrink-0 rounded-full border border-input transition-colors',
                                         allowed ? 'bg-primary' : 'bg-muted'
@@ -494,7 +576,7 @@ function RaidGroupsSection({
                         <button
                           type="button"
                           onClick={() => handleRemoveFromGroup(m, g.id)}
-                          disabled={submitting}
+                          disabled={submitting || savingAllowed}
                           className="shrink-0 p-1.5 rounded text-destructive hover:bg-destructive/10 disabled:opacity-50"
                           title={t('removeFromGroup')}
                           aria-label={t('removeFromGroup')}
@@ -509,7 +591,8 @@ function RaidGroupsSection({
             </li>
           );
         })}
-      </ul>
+        </ul>
+      </div>
     </section>
   );
 }
@@ -826,6 +909,7 @@ function ChannelsSection({
   setDiscordChannels,
   onUpdate,
   onSaved,
+  onDirtyChange,
 }: {
   guildId: string;
   discordGuildId: string;
@@ -834,10 +918,12 @@ function ChannelsSection({
   setDiscordChannels: (ch: DiscordChannel[] | null) => void;
   onUpdate: () => void;
   onSaved: () => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const t = useTranslations('guildManagement');
   const [fetching, setFetching] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [initialSelectedIds, setInitialSelectedIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -849,7 +935,9 @@ function ChannelsSection({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.detail || res.statusText);
       setDiscordChannels(data.channels ?? []);
-      setSelectedIds(new Set(allowedChannels.map((c) => c.discordChannelId)));
+      const initial = new Set(allowedChannels.map((c) => c.discordChannelId));
+      setSelectedIds(initial);
+      setInitialSelectedIds(initial);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -867,7 +955,7 @@ function ChannelsSection({
   };
 
   const handleSaveChannels = async () => {
-    if (selectedIds.size === 0 && allowedChannels.length === 0) return;
+    if (areSetsEqual(selectedIds, initialSelectedIds)) return;
     setSaving(true);
     setErr(null);
     try {
@@ -883,6 +971,7 @@ function ChannelsSection({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
       await onUpdate();
+      setInitialSelectedIds(selectedIds);
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -890,6 +979,11 @@ function ChannelsSection({
       setSaving(false);
     }
   };
+
+  const hasUnsaved = !areSetsEqual(selectedIds, initialSelectedIds);
+  useEffect(() => {
+    onDirtyChange(hasUnsaved);
+  }, [hasUnsaved, onDirtyChange]);
 
   return (
     <section aria-labelledby="channels-heading">
@@ -906,7 +1000,7 @@ function ChannelsSection({
         <button
           type="button"
           onClick={handleFetchChannels}
-          disabled={fetching}
+          disabled={fetching || saving}
           className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-50 min-w-[10rem]"
         >
           {fetching ? t('loading') : t('fetchChannels')}
@@ -920,29 +1014,37 @@ function ChannelsSection({
         <p className="text-muted-foreground text-sm">{t('noChannelsFetched')}</p>
       ) : (
         <>
-          <ul className="space-y-1 mb-4 max-h-48 overflow-y-auto border border-border rounded-md p-2">
-            {discordChannels.map((ch) => (
-              <li key={ch.id} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id={`ch-${ch.id}`}
-                  checked={selectedIds.has(ch.id)}
-                  onChange={() => toggleChannel(ch.id)}
-                  className="rounded border-input"
-                />
-                <label htmlFor={`ch-${ch.id}`} className="text-sm cursor-pointer">
-                  #{ch.name}
-                </label>
-              </li>
-            ))}
-          </ul>
+          <div className="relative">
+            {saving && (
+              <div className="absolute inset-0 z-10 rounded-md bg-background/70 backdrop-blur-sm flex items-center justify-center">
+                <p className="text-sm text-muted-foreground">{t('saving')}</p>
+              </div>
+            )}
+            <ul className={cn('space-y-1 mb-4 max-h-48 overflow-y-auto border border-border rounded-md p-2', saving && 'opacity-30 pointer-events-none')}>
+              {discordChannels.map((ch) => (
+                <li key={ch.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`ch-${ch.id}`}
+                    checked={selectedIds.has(ch.id)}
+                    onChange={() => toggleChannel(ch.id)}
+                    className="rounded border-input"
+                    disabled={saving || fetching}
+                  />
+                  <label htmlFor={`ch-${ch.id}`} className="text-sm cursor-pointer">
+                    #{ch.name}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
           <button
             type="button"
             onClick={handleSaveChannels}
-            disabled={saving || selectedIds.size === 0}
+            disabled={saving || fetching || !hasUnsaved}
             className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-w-[10rem]"
           >
-            {saving ? t('loading') : t('saveChannels')}
+            {saving ? t('saving') : t('saveChannels')}
           </button>
         </>
       )}
@@ -955,4 +1057,49 @@ function ChannelsSection({
       )}
     </section>
   );
+}
+
+function areSetsEqual(a: Set<string>, b: Set<string>) {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
+}
+
+function areAllowedMapsEqual(
+  a: Record<string, Record<string, boolean>>,
+  b: Record<string, Record<string, boolean>>
+) {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  for (const raidGroupId of aKeys) {
+    const aMap = a[raidGroupId] ?? {};
+    const bMap = b[raidGroupId] ?? {};
+    const aCharIds = Object.keys(aMap);
+    const bCharIds = Object.keys(bMap);
+    if (aCharIds.length !== bCharIds.length) return false;
+    for (const cid of aCharIds) {
+      if ((aMap[cid] ?? false) !== (bMap[cid] ?? false)) return false;
+    }
+  }
+  return true;
+}
+
+function diffAllowedMaps(
+  initial: Record<string, Record<string, boolean>>,
+  current: Record<string, Record<string, boolean>>
+): { raidGroupId: string; characterId: string; allowed: boolean }[] {
+  const changes: { raidGroupId: string; characterId: string; allowed: boolean }[] = [];
+  const groupIds = new Set([...Object.keys(initial), ...Object.keys(current)]);
+  for (const raidGroupId of groupIds) {
+    const a = initial[raidGroupId] ?? {};
+    const b = current[raidGroupId] ?? {};
+    const charIds = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const characterId of charIds) {
+      const prev = a[characterId] ?? true;
+      const next = b[characterId] ?? true;
+      if (prev !== next) changes.push({ raidGroupId, characterId, allowed: next });
+    }
+  }
+  return changes;
 }

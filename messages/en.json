@@ -133,6 +133,7 @@
     "saved": "Saved.",
     "error": "Error",
     "loading": "Loading…",
+    "saving": "Saving…",
     "save": "Save",
     "cancel": "Cancel",
     "createGroup": "Create group",
@@ -143,7 +144,8 @@
     "showTwinksOff": "Off",
     "showTwinksOn": "On",
     "characterAllowedInGroup": "Allowed in raid group (for raid filters)",
-    "characterAllowedErrorLast": "At least one character per user must remain allowed in the raid group."
+    "characterAllowedErrorLast": "At least one character per user must remain allowed in the raid group.",
+    "unsavedChangesLeaveConfirm": "You have unsaved changes. Discard changes and leave the page?"
   },
   "admin": {
     "title": "Admin",
