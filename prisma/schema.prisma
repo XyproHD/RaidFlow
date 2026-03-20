@@ -149,6 +149,7 @@ model RfCharacter {
   raidCompletions      RfRaidCompletion[]
   loots                RfLoot[]
   raidGroupCharacters  RfRaidGroupCharacter[]
+  battlenetProfile     RfBattlenetCharacterProfile?
 
   @@map("rf_character")
 }
@@ -168,14 +169,32 @@ model RfRaidTimePreference {
 }
 
 model RfDungeon {
-  id        String  @id @default(uuid())
-  name      String
-  expansion String
+  id             String   @id @default(uuid())
+  name           String   // Fallback/Default-Name (z. B. en)
+  expansion      String
+  instanceType   String   @map("instance_type")   // "dungeon" | "raid"
+  maxPlayers     Int      @map("max_players")    // 5 = Dungeon, 10/25 = Schlachtzug
+  resetType      String?  @map("reset_type")     // "weekly" | "daily" | "per_run"
+  resetWeekday   Int?     @map("reset_weekday")  // 0=Sonntag .. 6=Samstag (EU weekly: 3=Mittwoch)
+  resetTimeUtc   String?  @map("reset_time_utc") // HH:MM UTC (z. B. "04:00")
+  addonNames     Json?    @map("addon_names")    // ["AtlasLoot","InstanceID","Atlas"]
 
-  raids RfRaid[]
-  loots RfLoot[]
+  names  RfDungeonName[]
+  raids  RfRaid[]
+  loots  RfLoot[]
 
   @@map("rf_dungeon")
+}
+
+model RfDungeonName {
+  dungeonId String @map("dungeon_id")
+  locale    String // de, en, fr, …
+  name      String
+
+  dungeon RfDungeon @relation(fields: [dungeonId], references: [id], onDelete: Cascade)
+
+  @@id([dungeonId, locale])
+  @@map("rf_dungeon_name")
 }
 
 // -----------------------------------------------------------------------------
@@ -294,6 +313,56 @@ model RfAppConfig {
   value String @db.Text
 
   @@map("rf_app_config")
+}
+
+model RfBattlenetApiConfig {
+  id                  String   @id @default(uuid())
+  region              String   @unique
+  clientId            String   @map("client_id")
+  clientSecret        String   @map("client_secret")
+  locale              String   @default("de_DE")
+  namespaceProfile    String   @map("namespace_profile")
+  namespaceDynamic    String   @map("namespace_dynamic")
+  oauthTokenUrl       String   @map("oauth_token_url")
+  apiBaseUrl          String   @map("api_base_url")
+  searchCharacterPath String   @default("/data/wow/search/character") @map("search_character_path")
+  searchGuildPath     String   @default("/data/wow/search/guild") @map("search_guild_path")
+  profileCharacterPath String  @default("/profile/wow/character") @map("profile_character_path")
+  profileGuildPath     String  @default("/data/wow/guild") @map("profile_guild_path")
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  characterProfiles   RfBattlenetCharacterProfile[]
+
+  @@map("rf_battlenet_api_config")
+}
+
+model RfBattlenetCharacterProfile {
+  id                   String    @id @default(uuid())
+  characterId          String    @unique @map("character_id")
+  battlenetConfigId    String?   @map("battlenet_config_id")
+  region               String
+  realmSlug            String    @map("realm_slug")
+  realmName            String?   @map("realm_name")
+  characterNameLower   String    @map("character_name_lower")
+  battlenetCharacterId BigInt?   @map("battlenet_character_id")
+  level                Int?
+  raceName             String?   @map("race_name")
+  className            String?   @map("class_name")
+  activeSpecName       String?   @map("active_spec_name")
+  guildName            String?   @map("guild_name")
+  faction              String?
+  profileUrl           String?   @map("profile_url")
+  rawProfile           Json?     @map("raw_profile")
+  lastSyncedAt         DateTime  @default(now()) @map("last_synced_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  character       RfCharacter            @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  battlenetConfig RfBattlenetApiConfig?  @relation(fields: [battlenetConfigId], references: [id], onDelete: SetNull)
+
+  @@unique([region, realmSlug, characterNameLower])
+  @@map("rf_battlenet_character_profile")
 }
 
 model RfAuditLog {

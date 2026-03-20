@@ -42,7 +42,7 @@ export function ProfileCharacters({
   const router = useRouter();
   const singleGuild = guilds.length === 1 ? guilds[0] : null;
   const [list, setList] = useState(initialData);
-  const [modalOpen, setModalOpen] = useState<'add' | 'edit' | null>(null);
+  const [modalOpen, setModalOpen] = useState<'add' | 'edit' | 'auto' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -65,6 +65,10 @@ export function ProfileCharacters({
   const [offSpecId, setOffSpecId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoServer, setAutoServer] = useState('');
+  const [autoName, setAutoName] = useState('');
+  const [autoGuildId, setAutoGuildId] = useState('');
+  const [autoSaveWithoutGuild, setAutoSaveWithoutGuild] = useState(false);
 
   const mainSpecOptions = useMemo(() => {
     if (!classId) return [];
@@ -81,6 +85,14 @@ export function ProfileCharacters({
     setError(null);
   }, []);
 
+  const resetAutoForm = useCallback(() => {
+    setAutoServer('');
+    setAutoName('');
+    setAutoGuildId('');
+    setAutoSaveWithoutGuild(false);
+    setError(null);
+  }, []);
+
   const openAdd = useCallback(() => {
     setEditingId(null);
     resetForm();
@@ -89,6 +101,15 @@ export function ProfileCharacters({
     }
     setModalOpen('add');
   }, [resetForm, guilds]);
+
+  const openAutoAdd = useCallback(() => {
+    setEditingId(null);
+    resetAutoForm();
+    if (guilds.length >= 1) {
+      setAutoGuildId(guilds[0].id);
+    }
+    setModalOpen('auto');
+  }, [resetAutoForm, guilds]);
 
   const openEdit = useCallback((c: CharacterRow) => {
     setEditingId(c.id);
@@ -117,10 +138,11 @@ export function ProfileCharacters({
     setModalOpen(null);
     setEditingId(null);
     resetForm();
-  }, [resetForm]);
+    resetAutoForm();
+  }, [resetForm, resetAutoForm]);
 
   useEffect(() => {
-    if (modalOpen !== 'add' && modalOpen !== 'edit') return;
+    if (modalOpen !== 'add' && modalOpen !== 'edit' && modalOpen !== 'auto') return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeModal();
     };
@@ -171,6 +193,43 @@ export function ProfileCharacters({
           router.refresh();
           setList((prev) => [...prev, data.character]);
           resetForm();
+          setModalOpen(null);
+        } else {
+          setError(t('errorSave'));
+        }
+      } else {
+        setError(await parseError(res));
+      }
+    } catch (err) {
+      setError(t('errorSave'));
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAutoAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    if (!autoServer.trim() || !autoName.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/user/characters/auto-add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          server: autoServer.trim(),
+          name: autoName.trim(),
+          guildId: autoGuildId || null,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.character) {
+          router.refresh();
+          setList((prev) => [...prev, data.character]);
+          resetAutoForm();
           setModalOpen(null);
         } else {
           setError(t('errorSave'));
@@ -555,17 +614,26 @@ export function ProfileCharacters({
         ))}
       </div>
 
-      <button
-        ref={openAddButtonRef}
-        type="button"
-        onClick={openAdd}
-        className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm font-medium"
-      >
-        {t('addCharacter')}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          ref={openAddButtonRef}
+          type="button"
+          onClick={openAdd}
+          className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm font-medium"
+        >
+          {t('addCharacter')}
+        </button>
+        <button
+          type="button"
+          onClick={openAutoAdd}
+          className="rounded border border-input bg-background px-4 py-2 text-sm font-medium"
+        >
+          {t('autoAddCharacter')}
+        </button>
+      </div>
 
       {/* Modal: Charakter anlegen oder bearbeiten */}
-      {(modalOpen === 'add' || modalOpen === 'edit') && (
+      {(modalOpen === 'add' || modalOpen === 'edit' || modalOpen === 'auto') && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
           role="dialog"
@@ -580,14 +648,105 @@ export function ProfileCharacters({
           >
             <div className="p-4 border-b border-border flex justify-between items-center">
               <h3 id="modal-character-title" className="text-lg font-semibold">
-                {modalOpen === 'add' ? t('addCharacter') : t('editCharacter')}
+                {modalOpen === 'add'
+                  ? t('addCharacter')
+                  : modalOpen === 'edit'
+                  ? t('editCharacter')
+                  : t('autoAddCharacter')}
               </h3>
               <button type="button" onClick={closeModal} className="text-muted-foreground hover:text-foreground p-1" aria-label={t('close')}>×</button>
             </div>
-            <form onSubmit={modalOpen === 'add' ? handleAdd : handleSaveEdit} className="p-4">
-              {formContent}
+            <form
+              onSubmit={
+                modalOpen === 'add'
+                  ? handleAdd
+                  : modalOpen === 'edit'
+                  ? handleSaveEdit
+                  : handleAutoAdd
+              }
+              className="p-4"
+            >
+              {modalOpen === 'auto' ? (
+                <>
+                  {error && (
+                    <p className="text-destructive text-sm mb-2" role="alert">
+                      {error}
+                    </p>
+                  )}
+                  <p className="text-sm text-muted-foreground mb-3">{t('autoAddDescription')}</p>
+                  <div className="grid gap-3">
+                    <label className="text-sm font-medium">
+                      {t('server')} <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={autoServer}
+                      onChange={(e) => setAutoServer(e.target.value)}
+                      placeholder={t('serverPlaceholder')}
+                      className="rounded border border-input bg-background px-3 py-2 w-full"
+                    />
+                    <label className="text-sm font-medium">
+                      {t('characterName')} <span className="text-destructive">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={autoName}
+                      onChange={(e) => setAutoName(e.target.value)}
+                      placeholder={t('characterName')}
+                      className="rounded border border-input bg-background px-3 py-2 w-full"
+                    />
+                    {guilds.length > 1 ? (
+                      <>
+                        <label className="text-sm font-medium">{t('guild')} ({t('optional')})</label>
+                        <select
+                          value={autoGuildId}
+                          onChange={(e) => setAutoGuildId(e.target.value)}
+                          className="rounded border border-input bg-background px-3 py-2 w-full"
+                        >
+                          {guilds.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.name}
+                            </option>
+                          ))}
+                          <option value="">{t('withoutGuild')}</option>
+                        </select>
+                      </>
+                    ) : guilds.length === 1 && singleGuild ? (
+                      <>
+                        <div className="grid gap-1">
+                          <p className="text-sm font-medium">{t('guild')} ({t('optional')})</p>
+                          <p className="text-sm text-muted-foreground">{singleGuild.name}</p>
+                        </div>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={autoSaveWithoutGuild}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setAutoSaveWithoutGuild(checked);
+                              setAutoGuildId(checked ? '' : singleGuild.id);
+                            }}
+                          />
+                          {t('saveWithoutGuild')}
+                        </label>
+                      </>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                formContent
+              )}
               <div className="flex flex-wrap gap-2 mt-4">
-                <button type="submit" disabled={loading || !name.trim() || !classId || !mainSpecId} className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm disabled:opacity-50">
+                <button
+                  type="submit"
+                  disabled={
+                    loading ||
+                    (modalOpen === 'auto'
+                      ? !autoServer.trim() || !autoName.trim()
+                      : !name.trim() || !classId || !mainSpecId)
+                  }
+                  className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm disabled:opacity-50"
+                >
                   {t('save')}
                 </button>
                 <button type="button" onClick={closeModal} className="rounded border border-input px-4 py-2 text-sm">
