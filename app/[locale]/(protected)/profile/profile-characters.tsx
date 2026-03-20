@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { SpecIcon } from '@/components/spec-icon';
 import { ClassIcon } from '@/components/class-icon';
@@ -48,6 +48,7 @@ export function ProfileCharacters({
   guilds: GuildOption[];
 }) {
   const t = useTranslations('profile');
+  const locale = useLocale();
   const router = useRouter();
   const singleGuild = guilds.length === 1 ? guilds[0] : null;
   const [list, setList] = useState(initialData);
@@ -245,6 +246,7 @@ export function ProfileCharacters({
           realmId: autoRealmId,
           name: autoName.trim(),
           guildId: autoGuildId || null,
+          appLocale: locale,
         }),
       });
       if (res.ok) {
@@ -455,7 +457,7 @@ export function ProfileCharacters({
       setRealmsLoading(true);
       setRealmsLoadError(null);
       try {
-        const res = await fetch('/api/wow/realms', {
+        const res = await fetch(`/api/wow/realms?locale=${encodeURIComponent(locale)}`, {
           credentials: 'include',
           cache: 'no-store',
         });
@@ -498,7 +500,7 @@ export function ProfileCharacters({
     return () => {
       cancelled = true;
     };
-  }, [modalOpen, t]);
+  }, [modalOpen, t, locale]);
 
   const formContent = (
     <>

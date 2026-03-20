@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { TBC_CLASSES, getSpecDisplayName } from '@/lib/wow-tbc-classes';
 import type { WowPreset, WowRegion } from '@/lib/wow-classic-realms';
+import { dynamicNamespaceToProfileNamespace } from '@/lib/wow-realm-name';
 
 type BattlenetProfile = {
   id?: number;
@@ -351,15 +352,18 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
   }
 
   const charName = normalizeName(characterName);
-  if (!realm.slug || !charName) {
+  const realmSlug = realm.slug.trim().toLowerCase();
+  if (!realmSlug || !charName) {
     throw new Error('Server und Charaktername sind erforderlich.');
   }
 
   const accessToken = await getAccessToken(config);
   const apiBaseUrl = realm.region === config.region ? config.apiBaseUrl : `https://${realm.region}.api.blizzard.com`;
-  const profilePath = `${config.profileCharacterPath}/${realm.slug}/${charName}`;
+  /** Character profile API requires `profile-*` namespaces, not `dynamic-*` from realm search rows. */
+  const profileNamespace = dynamicNamespaceToProfileNamespace(realm.namespace);
+  const profilePath = `${config.profileCharacterPath}/${realmSlug}/${charName}`;
   const profileParams = new URLSearchParams({
-    namespace: realm.namespace,
+    namespace: profileNamespace,
     locale: config.locale,
     access_token: accessToken,
   });
@@ -382,8 +386,8 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
     configId: config.id,
     region: realm.region,
     wowVersion: wowVersionToInternal(realm.version),
-    realmSlug: profile.realm?.slug ?? realm.slug,
-    realmName: profile.realm?.name ?? realm.name ?? realm.slug,
+    realmSlug: profile.realm?.slug ?? realmSlug,
+    realmName: profile.realm?.name ?? realm.name ?? realmSlug,
     characterName: profile.name ?? characterName.trim(),
     characterNameLower: charName,
     battlenetCharacterId: profile.id ? BigInt(profile.id) : null,

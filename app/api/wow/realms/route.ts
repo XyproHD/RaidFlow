@@ -3,32 +3,19 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { prisma } from '@/lib/prisma';
-
-function pickRealmName(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (!value || typeof value !== 'object') return '';
-
-  const names = value as Record<string, unknown>;
-  const preferredLocales = ['de_DE', 'en_US', 'en_GB', 'fr_FR', 'es_ES'];
-  for (const locale of preferredLocales) {
-    const localized = names[locale];
-    if (typeof localized === 'string' && localized.trim().length > 0) {
-      return localized;
-    }
-  }
-
-  for (const localized of Object.values(names)) {
-    if (typeof localized === 'string' && localized.trim().length > 0) {
-      return localized;
-    }
-  }
-  return '';
-}
+import {
+  appLocaleToBnetLocale,
+  pickRealmNameFromJson,
+  titleCaseFromSlug,
+} from '@/lib/wow-realm-name';
 
 export async function GET(request: NextRequest) {
   const session = await getServerSession(authOptions);
   const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const appLocale = request.nextUrl.searchParams.get('locale') ?? 'en';
+  const bnetLocale = appLocaleToBnetLocale(appLocale);
 
   try {
     const rows = await prisma.rfBattlenetRealm.findMany({
@@ -36,13 +23,17 @@ export async function GET(request: NextRequest) {
       orderBy: [{ region: 'asc' }, { slug: 'asc' }],
       take: 10000,
     });
-    const realms = rows.map((r) => ({
-      id: r.id,
-      region: r.region,
-      slug: r.slug,
-      name: pickRealmName(r.name),
-      wowVersion: r.version,
-    }));
+    const realms = rows.map((r) => {
+      const fromJson = pickRealmNameFromJson(r.name, bnetLocale);
+      const displayName = fromJson || titleCaseFromSlug(r.slug);
+      return {
+        id: r.id,
+        region: r.region,
+        slug: r.slug,
+        name: displayName,
+        wowVersion: r.version,
+      };
+    });
 
     return NextResponse.json({ realms });
   } catch (err) {

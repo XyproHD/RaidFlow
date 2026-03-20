@@ -84,6 +84,35 @@ function normalizeType(realm) {
   return 'unknown';
 }
 
+function titleFromSlug(slug) {
+  return String(slug || '')
+    .split('-')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/** Merge Blizzard `realm.name` (string or localized object) into namesObj for this request locale. */
+function mergeLocalizedRealmName(namesObj, bnetLocale, raw) {
+  if (raw == null) return;
+  if (typeof raw === 'string') {
+    const t = raw.trim();
+    if (t) namesObj[bnetLocale] = t;
+    return;
+  }
+  if (typeof raw !== 'object' || Array.isArray(raw)) return;
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v === 'string' && v.trim() && /^[a-z]{2}_[A-Z]{2}$/.test(k)) {
+      namesObj[k] = v.trim();
+    }
+  }
+  if (typeof raw.display_string === 'string' && raw.display_string.trim()) {
+    namesObj[bnetLocale] = raw.display_string.trim();
+  } else if (typeof raw.name === 'string' && raw.name.trim()) {
+    namesObj[bnetLocale] = raw.name.trim();
+  }
+}
+
 function versionAndNamespaceFromInternal(internalWowVersion, region) {
   const v = String(internalWowVersion || '').toLowerCase();
   if (v === 'anniversary' || v === 'tbc') {
@@ -142,9 +171,7 @@ async function main() {
                 type: normalizeType(realm),
                 name: {},
               };
-              if (typeof realm?.name === 'string' && realm.name.trim().length > 0) {
-                current.name[locale] = realm.name.trim();
-              }
+              mergeLocalizedRealmName(current.name, locale, realm.name);
               current.slug = realm.slug;
               current.type = normalizeType(realm);
               merged.set(key, current);
@@ -171,6 +198,14 @@ async function main() {
     }
     if (!namespaceReachable) {
       console.warn(`Skip namespace ${entry.namespace} (${entry.region}) - nicht erreichbar.`);
+    }
+  }
+
+  for (const realm of merged.values()) {
+    if (Object.keys(realm.name).length === 0) {
+      const label = titleFromSlug(realm.slug);
+      realm.name.de_DE = label;
+      realm.name.en_US = label;
     }
   }
 

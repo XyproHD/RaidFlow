@@ -5,21 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { fetchClassicCharacterFromBattlenetByRealm } from '@/lib/battlenet';
 import type { WowRegion } from '@/lib/wow-classic-realms';
-
-function pickRealmName(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (!value || typeof value !== 'object') return '';
-  const names = value as Record<string, unknown>;
-  const preferredLocales = ['de_DE', 'en_US', 'en_GB', 'fr_FR', 'es_ES'];
-  for (const locale of preferredLocales) {
-    const localized = names[locale];
-    if (typeof localized === 'string' && localized.trim().length > 0) return localized;
-  }
-  for (const localized of Object.values(names)) {
-    if (typeof localized === 'string' && localized.trim().length > 0) return localized;
-  }
-  return '';
-}
+import { appLocaleToBnetLocale, pickRealmNameFromJson, titleCaseFromSlug } from '@/lib/wow-realm-name';
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -32,6 +18,8 @@ export async function POST(request: NextRequest) {
     realmId?: string;
     name?: string;
     guildId?: string | null;
+    /** next-intl locale, e.g. `de` / `en` — used for realm display name fallback only */
+    appLocale?: string;
   };
   try {
     body = await request.json();
@@ -54,12 +42,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ausgewaehlter Realm wurde nicht gefunden.' }, { status: 400 });
     }
 
+    const bnetLocale = appLocaleToBnetLocale(body.appLocale ?? 'en');
+    const realmDisplay =
+      pickRealmNameFromJson(realm.name, bnetLocale) || titleCaseFromSlug(realm.slug);
+
     const profile = await fetchClassicCharacterFromBattlenetByRealm({
       region: (realm?.region as WowRegion | undefined) ?? 'eu',
       namespace: realm.namespace,
       slug: realm.slug,
       version: realm.version,
-      name: pickRealmName(realm.name),
+      name: realmDisplay,
     }, name);
 
     const created = await prisma.$transaction(async (tx) => {
