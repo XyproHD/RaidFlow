@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { fetchClassicRealmsFromBattlenet } from '@/lib/battlenet';
+import { prisma } from '@/lib/prisma';
 import type { WowRegion, WowVersion } from '@/lib/wow-classic-realms';
+import { WOW_VERSION_OPTIONS } from '@/lib/wow-classic-realms';
 
 function parseRegion(v: string | null): WowRegion {
   if (v === 'us' || v === 'kr' || v === 'tw' || v === 'eu') return v;
@@ -34,7 +35,27 @@ export async function GET(request: NextRequest) {
   const wowVersion = parseVersion(url.searchParams.get('wowVersion'));
 
   try {
-    const realms = await fetchClassicRealmsFromBattlenet(region, wowVersion);
+    const wowVersions = WOW_VERSION_OPTIONS.map((v) => v.id);
+    const rows = await prisma.rfBattlenetRealm.findMany({
+      where: wowVersion
+        ? { region, wowVersion }
+        : {
+          region,
+          wowVersion: { in: wowVersions },
+        },
+      select: { region: true, realmSlug: true, realmName: true },
+      orderBy: { realmName: 'asc' },
+      take: 10000,
+    });
+
+    const seen = new Set<string>();
+    const realms = [];
+    for (const r of rows) {
+      if (seen.has(r.realmSlug)) continue;
+      seen.add(r.realmSlug);
+      realms.push({ region: r.region as WowRegion, slug: r.realmSlug, name: r.realmName });
+    }
+
     return NextResponse.json({ realms });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Realm-Liste konnte nicht geladen werden.';

@@ -366,6 +366,19 @@ model RfBattlenetCharacterProfile {
   @@map("rf_battlenet_character_profile")
 }
 
+model RfBattlenetRealm {
+  id           String   @id @default(uuid())
+  region       String
+  wowVersion   String   @map("wow_version")
+  realmSlug    String   @map("realm_slug")
+  realmName    String   @map("realm_name")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([region, wowVersion, realmSlug])
+  @@map("rf_battlenet_realm")
+}
+
 model RfAuditLog {
   id                String   @id @default(uuid())
   entityType        String   @map("entity_type")
