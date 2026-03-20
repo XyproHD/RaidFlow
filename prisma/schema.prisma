@@ -342,6 +342,7 @@ model RfBattlenetCharacterProfile {
   characterId          String    @unique @map("character_id")
   battlenetConfigId    String?   @map("battlenet_config_id")
   region               String
+  wowVersion           String?   @map("wow_version")
   realmSlug            String    @map("realm_slug")
   realmName            String?   @map("realm_name")
   characterNameLower   String    @map("character_name_lower")

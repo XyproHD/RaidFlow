@@ -3,7 +3,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { fetchClassicCharacterFromBattlenet } from '@/lib/battlenet';
+import { fetchClassicCharacterFromBattlenetWithFilters } from '@/lib/battlenet';
+import type { WowRegion, WowVersion } from '@/lib/wow-classic-realms';
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -12,7 +13,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  let body: { server?: string; name?: string; guildId?: string | null };
+  let body: {
+    server?: string;
+    name?: string;
+    guildId?: string | null;
+    region?: WowRegion;
+    wowVersion?: WowVersion | null;
+  };
   try {
     body = await request.json();
   } catch {
@@ -26,7 +33,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const profile = await fetchClassicCharacterFromBattlenet(server, name);
+    const profile = await fetchClassicCharacterFromBattlenetWithFilters(
+      server,
+      name,
+      body.region ?? 'eu',
+      body.wowVersion ?? null
+    );
 
     const created = await prisma.$transaction(async (tx) => {
       const character = await tx.rfCharacter.create({
@@ -46,6 +58,7 @@ export async function POST(request: NextRequest) {
           characterId: character.id,
           battlenetConfigId: profile.configId,
           region: profile.region,
+          wowVersion: profile.wowVersion,
           realmSlug: profile.realmSlug,
           realmName: profile.realmName,
           characterNameLower: profile.characterNameLower,
