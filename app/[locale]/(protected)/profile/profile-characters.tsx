@@ -72,7 +72,7 @@ export function ProfileCharacters({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoServer, setAutoServer] = useState('');
-  const [autoServerSearch, setAutoServerSearch] = useState('');
+  const [autoServerDropdownOpen, setAutoServerDropdownOpen] = useState(false);
   const [autoName, setAutoName] = useState('');
   const [autoGuildId, setAutoGuildId] = useState('');
   const [autoSaveWithoutGuild, setAutoSaveWithoutGuild] = useState(false);
@@ -98,7 +98,7 @@ export function ProfileCharacters({
 
   const resetAutoForm = useCallback(() => {
     setAutoServer('');
-    setAutoServerSearch('');
+    setAutoServerDropdownOpen(false);
     setAutoName('');
     setAutoGuildId('');
     setAutoSaveWithoutGuild(false);
@@ -382,11 +382,11 @@ export function ProfileCharacters({
 
   const selectedMainSpecDisplay = classId && mainSpecId ? getSpecDisplayName(classId, mainSpecId) : null;
   const selectedOffSpecDisplay = classId && offSpecId ? getSpecDisplayName(classId, offSpecId) : null;
-  const realmOptionsByPrefix = useMemo(() => {
-    const q = autoServerSearch.trim().toLowerCase();
+  const filteredRealmOptions = useMemo(() => {
+    const q = autoServer.trim().toLowerCase();
     if (!q) return realmOptions;
-    return realmOptions.filter((realm) => realm.name.toLowerCase().startsWith(q));
-  }, [realmOptions, autoServerSearch]);
+    return realmOptions.filter((realm) => realm.name.toLowerCase().includes(q));
+  }, [realmOptions, autoServer]);
 
   useEffect(() => {
     if (modalOpen !== 'auto') return;
@@ -760,32 +760,43 @@ export function ProfileCharacters({
                     <label className="text-sm font-medium">
                       {t('server')} <span className="text-destructive">*</span>
                     </label>
-                    <input
-                      type="text"
-                      value={autoServerSearch}
-                      onChange={(e) => setAutoServerSearch(e.target.value)}
-                      placeholder={t('serverSearchPlaceholder')}
-                      className="rounded border border-input bg-background px-3 py-2 w-full"
-                    />
-                    <input
-                      type="text"
-                      value={autoServer}
-                      onChange={(e) => setAutoServer(e.target.value)}
-                      placeholder={t('serverPlaceholder')}
-                      list="realm-options"
-                      className="rounded border border-input bg-background px-3 py-2 w-full"
-                    />
-                    <datalist id="realm-options">
-                      {realmOptionsByPrefix.map((realm) => (
-                        <option key={`${realm.region}-${realm.slug}`} value={realm.name}>
-                          {realm.region.toUpperCase()}
-                        </option>
-                      ))}
-                    </datalist>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={autoServer}
+                        onChange={(e) => {
+                          setAutoServer(e.target.value);
+                          setAutoServerDropdownOpen(true);
+                        }}
+                        onFocus={() => setAutoServerDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setAutoServerDropdownOpen(false), 120)}
+                        placeholder={t('serverPlaceholder')}
+                        className="rounded border border-input bg-background px-3 py-2 w-full"
+                      />
+                      {autoServerDropdownOpen && filteredRealmOptions.length > 0 && (
+                        <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-md border border-border bg-background shadow-md">
+                          {filteredRealmOptions.slice(0, 120).map((realm) => (
+                            <button
+                              key={`${realm.region}-${realm.slug}`}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setAutoServer(realm.name);
+                                setAutoServerDropdownOpen(false);
+                              }}
+                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
+                            >
+                              <span>{realm.name}</span>
+                              <span className="text-xs text-muted-foreground">{realm.region.toUpperCase()}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {realmsLoading
                         ? t('loadingRealms')
-                        : t('realmFilterHint', { count: realmOptionsByPrefix.length })}
+                        : t('realmFilterHint', { count: filteredRealmOptions.length })}
                     </p>
                     <label className="text-sm font-medium">
                       {t('characterName')} <span className="text-destructive">*</span>
