@@ -150,9 +150,14 @@ function namespaceForVersion(region: WowRegion, wowVersion: WowVersion | null, f
   return `profile-classic1x-${region}`;
 }
 
-function dynamicNamespaceForVersion(region: WowRegion, wowVersion: WowVersion | null): string {
-  if (!wowVersion || wowVersion === 'progression') return `dynamic-classic-${region}`;
-  return `dynamic-classic1x-${region}`;
+function dynamicNamespacesForVersion(region: WowRegion, wowVersion: WowVersion | null): string[] {
+  if (!wowVersion) {
+    // "All" / not specified: try Classic 1x first (Era/SoD/Hardcore/Anniversary),
+    // then fall back to progression namespace.
+    return [`dynamic-classic1x-${region}`, `dynamic-classic-${region}`];
+  }
+  if (wowVersion === 'progression') return [`dynamic-classic-${region}`];
+  return [`dynamic-classic1x-${region}`];
 }
 
 async function getBattlenetConfigForRegion(region: WowRegion) {
@@ -237,28 +242,29 @@ export async function fetchClassicRealmsFromBattlenet(region: WowRegion, wowVers
   if (!config) throw new Error('Keine aktive Battle.net API Konfiguration gefunden.');
 
   const token = await getAccessToken(config);
-  const namespace = dynamicNamespaceForVersion(region, wowVersion);
   const apiBaseUrl = region === config.region ? config.apiBaseUrl : `https://${region}.api.blizzard.com`;
-
-  const params = new URLSearchParams({
-    namespace,
-    locale: config.locale,
-    access_token: token,
-  });
 
   const endpoints = ['/data/wow/realm/index', '/data/wow/search/realm?_page=1&_pageSize=2000'];
   let lastError: string | null = null;
 
-  for (const endpoint of endpoints) {
-    const joiner = endpoint.includes('?') ? '&' : '?';
-    const res = await fetch(`${apiBaseUrl}${endpoint}${joiner}${params.toString()}`, { cache: 'no-store' });
-    if (!res.ok) {
-      lastError = `HTTP ${res.status}`;
-      continue;
+  for (const namespace of dynamicNamespacesForVersion(region, wowVersion)) {
+    const params = new URLSearchParams({
+      namespace,
+      locale: config.locale,
+      access_token: token,
+    });
+
+    for (const endpoint of endpoints) {
+      const joiner = endpoint.includes('?') ? '&' : '?';
+      const res = await fetch(`${apiBaseUrl}${endpoint}${joiner}${params.toString()}`, { cache: 'no-store' });
+      if (!res.ok) {
+        lastError = `HTTP ${res.status}`;
+        continue;
+      }
+      const payload = await res.json();
+      const realms = parseRealmItems(payload, region);
+      if (realms.length > 0) return realms;
     }
-    const payload = await res.json();
-    const realms = parseRealmItems(payload, region);
-    if (realms.length > 0) return realms;
   }
 
   throw new Error(`Realm-Liste konnte nicht geladen werden (${lastError ?? 'unknown'}).`);
