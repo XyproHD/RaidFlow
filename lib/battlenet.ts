@@ -191,6 +191,20 @@ async function getAccessToken(config: {
 
 function parseRealmItems(payload: unknown, region: WowRegion): WowRealm[] {
   const list: WowRealm[] = [];
+  const resolveLocalizedName = (nameValue: unknown, fallback: string): string => {
+    if (typeof nameValue === 'string') return nameValue;
+    if (nameValue && typeof nameValue === 'object') {
+      const dict = nameValue as Record<string, unknown>;
+      const preferred = ['de_DE', 'en_GB', 'en_US', 'ko_KR', 'zh_TW'];
+      for (const key of preferred) {
+        if (typeof dict[key] === 'string' && dict[key]) return dict[key] as string;
+      }
+      for (const val of Object.values(dict)) {
+        if (typeof val === 'string' && val) return val;
+      }
+    }
+    return fallback;
+  };
   const p = payload as
     | { realms?: Array<{ slug?: string; name?: { en_US?: string; de_DE?: string } | string }> }
     | { results?: Array<{ data?: { slug?: string; name?: { en_US?: string; de_DE?: string } | string } }> };
@@ -198,11 +212,7 @@ function parseRealmItems(payload: unknown, region: WowRegion): WowRealm[] {
   if (Array.isArray((p as { realms?: unknown[] }).realms)) {
     for (const realm of (p as { realms: Array<{ slug?: string; name?: { en_US?: string; de_DE?: string } | string }> }).realms) {
       const slug = realm.slug?.trim();
-      const nameValue = realm.name;
-      const name =
-        typeof nameValue === 'string'
-          ? nameValue
-          : nameValue?.de_DE ?? nameValue?.en_US ?? slug ?? '';
+      const name = resolveLocalizedName(realm.name, slug ?? '');
       if (!slug || !name) continue;
       list.push({ slug, name, region });
     }
@@ -211,11 +221,7 @@ function parseRealmItems(payload: unknown, region: WowRegion): WowRealm[] {
   if (Array.isArray((p as { results?: unknown[] }).results)) {
     for (const row of (p as { results: Array<{ data?: { slug?: string; name?: { en_US?: string; de_DE?: string } | string } }> }).results) {
       const slug = row.data?.slug?.trim();
-      const nameValue = row.data?.name;
-      const name =
-        typeof nameValue === 'string'
-          ? nameValue
-          : nameValue?.de_DE ?? nameValue?.en_US ?? slug ?? '';
+      const name = resolveLocalizedName(row.data?.name, slug ?? '');
       if (!slug || !name) continue;
       list.push({ slug, name, region });
     }
