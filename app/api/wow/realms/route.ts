@@ -43,11 +43,17 @@ export async function GET(request: NextRequest) {
       take: 10000,
     });
 
-    const realms = rows.map((r) => ({
-      region: r.region as WowRegion,
-      slug: r.realmSlug,
-      name: r.realmName,
-    }));
+    const seen = new Set<string>();
+    const realms = [];
+    for (const r of rows) {
+      if (seen.has(r.realmSlug)) continue;
+      seen.add(r.realmSlug);
+      realms.push({
+        region: r.region as WowRegion,
+        slug: r.realmSlug,
+        name: r.realmName,
+      });
+    }
 
     return NextResponse.json({ realms });
   } catch (err) {

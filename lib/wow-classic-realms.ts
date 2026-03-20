@@ -12,19 +12,20 @@ export type WowRealm = {
 };
 
 export const WOW_VERSION_OPTIONS: { id: WowPreset; label: string }[] = [
-  { id: 'retail', label: 'Retail' },
-  { id: 'classic', label: 'Classic' },
-  { id: 'tbc', label: 'TBC' },
-  { id: 'mop', label: 'MoP' },
+  { id: 'retail', label: 'WoW' },
+  { id: 'classic', label: 'WoW Classic' },
+  { id: 'tbc', label: 'Jubilaeum von Burning Crusade' },
+  { id: 'mop', label: 'Mists of Pandaria Classic' },
 ];
 
 // Maps UI preset -> internal values stored in rf_battlenet_realm.wow_version
 export const WOW_PRESET_TO_INTERNAL_WOW_VERSIONS: Record<WowPreset, string[]> = {
   // The realm index table currently only contains Classic-family variants.
   retail: [],
-  classic: ['classic_era', 'hardcore', 'season_of_discovery', 'anniversary'],
+  classic: ['classic_era', 'anniversary'],
   // In our seed data, "progression" is used for the TBC/Tier we care about.
   tbc: ['progression'],
-  mop: [],
+  // MoP Classic currently shares progression realm pool in our dataset.
+  mop: ['progression'],
 };
 

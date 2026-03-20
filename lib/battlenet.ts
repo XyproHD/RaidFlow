@@ -150,7 +150,7 @@ type ProfileNamespaceCandidate = {
 };
 
 function profileNamespacesForPreset(region: WowRegion, wowPreset: WowPreset): ProfileNamespaceCandidate[] {
-  if (wowPreset === 'tbc') {
+  if (wowPreset === 'tbc' || wowPreset === 'mop') {
     // Our internal seed uses rf_battlenet_realm.wow_version='progression' for this category.
     return [{ namespace: `profile-classic-${region}`, internalWowVersion: 'progression' }];
   }
@@ -158,8 +158,8 @@ function profileNamespacesForPreset(region: WowRegion, wowPreset: WowPreset): Pr
     // Classic Anniversary is explicitly a different profile namespace:
     // namespace=profile-classicann-{region}
     return [
-      { namespace: `profile-classic1x-${region}`, internalWowVersion: 'classic_era' },
       { namespace: `profile-classicann-${region}`, internalWowVersion: 'anniversary' },
+      { namespace: `profile-classic1x-${region}`, internalWowVersion: 'classic_era' },
     ];
   }
 
@@ -167,8 +167,8 @@ function profileNamespacesForPreset(region: WowRegion, wowPreset: WowPreset): Pr
 }
 
 function dynamicNamespacesForPreset(region: WowRegion, wowPreset: WowPreset): string[] {
-  if (wowPreset === 'tbc') return [`dynamic-classic-${region}`];
-  if (wowPreset === 'classic') return [`dynamic-classic1x-${region}`, `dynamic-classicann-${region}`];
+  if (wowPreset === 'tbc' || wowPreset === 'mop') return [`dynamic-classic-${region}`];
+  if (wowPreset === 'classic') return [`dynamic-classicann-${region}`, `dynamic-classic1x-${region}`];
   throw new Error(`Unsupported wow preset: ${wowPreset}`);
 }
 
