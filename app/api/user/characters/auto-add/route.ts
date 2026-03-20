@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { fetchClassicCharacterFromBattlenetWithFilters } from '@/lib/battlenet';
-import type { WowRegion, WowVersion } from '@/lib/wow-classic-realms';
+import type { WowPreset, WowRegion } from '@/lib/wow-classic-realms';
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     name?: string;
     guildId?: string | null;
     region?: WowRegion;
-    wowVersion?: WowVersion | null;
+    wowVersion?: WowPreset | null;
   };
   try {
     body = await request.json();

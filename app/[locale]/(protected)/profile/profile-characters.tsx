@@ -14,7 +14,7 @@ import {
   WOW_VERSION_OPTIONS,
   type WowRealm,
   type WowRegion,
-  type WowVersion,
+  type WowPreset,
 } from '@/lib/wow-classic-realms';
 
 type CharacterRow = {
@@ -77,7 +77,7 @@ export function ProfileCharacters({
   const [autoGuildId, setAutoGuildId] = useState('');
   const [autoSaveWithoutGuild, setAutoSaveWithoutGuild] = useState(false);
   const [autoRegion, setAutoRegion] = useState<WowRegion>('eu');
-  const [autoWowVersion, setAutoWowVersion] = useState<WowVersion>('anniversary');
+  const [autoWowVersion, setAutoWowVersion] = useState<WowPreset>('classic');
   const [realmOptions, setRealmOptions] = useState<WowRealm[]>([]);
   const [realmsLoading, setRealmsLoading] = useState(false);
 
@@ -103,7 +103,7 @@ export function ProfileCharacters({
     setAutoGuildId('');
     setAutoSaveWithoutGuild(false);
     setAutoRegion('eu');
-    setAutoWowVersion('anniversary');
+    setAutoWowVersion('classic');
     setError(null);
   }, []);
 
@@ -744,7 +744,7 @@ export function ProfileCharacters({
                         <label className="text-sm font-medium">{t('wowVersion')} ({t('optional')})</label>
                         <select
                           value={autoWowVersion}
-                          onChange={(e) => setAutoWowVersion(e.target.value as WowVersion)}
+                          onChange={(e) => setAutoWowVersion(e.target.value as WowPreset)}
                           className="rounded border border-input bg-background px-3 py-2 w-full"
                         >
                           {WOW_VERSION_OPTIONS.map((v) => (

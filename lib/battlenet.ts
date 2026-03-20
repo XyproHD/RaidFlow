@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { TBC_CLASSES, getSpecDisplayName } from '@/lib/wow-tbc-classes';
-import type { WowRegion, WowRealm, WowVersion } from '@/lib/wow-classic-realms';
+import type { WowPreset, WowRegion, WowRealm } from '@/lib/wow-classic-realms';
 
 type BattlenetProfile = {
   id?: number;
@@ -144,32 +144,32 @@ export async function fetchClassicCharacterFromBattlenet(server: string, charact
     mainSpec: getSpecDisplayName(classId, specId),
   };
 }
-function namespaceForVersion(region: WowRegion, wowVersion: WowVersion | null): string {
-  if (!wowVersion) return `profile-classic-${region}`;
-  if (wowVersion === 'progression') return `profile-classic-${region}`;
-  if (
-    wowVersion === 'classic_era' ||
-    wowVersion === 'hardcore' ||
-    wowVersion === 'season_of_discovery' ||
-    wowVersion === 'anniversary'
-  ) {
-    return `profile-classic1x-${region}`;
+type ProfileNamespaceCandidate = {
+  namespace: string;
+  internalWowVersion: string; // stored in rf_battlenet_character_profile.wow_version
+};
+
+function profileNamespacesForPreset(region: WowRegion, wowPreset: WowPreset): ProfileNamespaceCandidate[] {
+  if (wowPreset === 'tbc') {
+    // Our internal seed uses rf_battlenet_realm.wow_version='progression' for this category.
+    return [{ namespace: `profile-classic-${region}`, internalWowVersion: 'progression' }];
   }
-  return `profile-classic-${region}`;
+  if (wowPreset === 'classic') {
+    // Classic Anniversary is explicitly a different profile namespace:
+    // namespace=profile-classicann-{region}
+    return [
+      { namespace: `profile-classic1x-${region}`, internalWowVersion: 'classic_era' },
+      { namespace: `profile-classicann-${region}`, internalWowVersion: 'anniversary' },
+    ];
+  }
+
+  throw new Error(`Unsupported wow preset: ${wowPreset}`);
 }
 
-function dynamicNamespaceForVersion(region: WowRegion, wowVersion: WowVersion | null): string {
-  if (!wowVersion) return `dynamic-classic-${region}`;
-  if (wowVersion === 'progression') return `dynamic-classic-${region}`;
-  if (
-    wowVersion === 'classic_era' ||
-    wowVersion === 'hardcore' ||
-    wowVersion === 'season_of_discovery' ||
-    wowVersion === 'anniversary'
-  ) {
-    return `dynamic-classic1x-${region}`;
-  }
-  return `dynamic-classic-${region}`;
+function dynamicNamespacesForPreset(region: WowRegion, wowPreset: WowPreset): string[] {
+  if (wowPreset === 'tbc') return [`dynamic-classic-${region}`];
+  if (wowPreset === 'classic') return [`dynamic-classic1x-${region}`, `dynamic-classicann-${region}`];
+  throw new Error(`Unsupported wow preset: ${wowPreset}`);
 }
 
 async function getBattlenetConfigForRegion(region: WowRegion) {
@@ -249,7 +249,7 @@ function parseRealmItems(payload: unknown, region: WowRegion): WowRealm[] {
   return Array.from(dedup.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function fetchClassicRealmsFromBattlenet(region: WowRegion, wowVersion: WowVersion | null) {
+export async function fetchClassicRealmsFromBattlenet(region: WowRegion, wowPreset: WowPreset | null) {
   const config = await getBattlenetConfigForRegion(region);
   if (!config) throw new Error('Keine aktive Battle.net API Konfiguration gefunden.');
 
@@ -259,22 +259,26 @@ export async function fetchClassicRealmsFromBattlenet(region: WowRegion, wowVers
   const endpoints = ['/data/wow/realm/index', '/data/wow/search/realm?_page=1&_pageSize=2000'];
   let lastError: string | null = null;
 
-  const params = new URLSearchParams({
-    namespace: dynamicNamespaceForVersion(region, wowVersion),
-    locale: config.locale,
-    access_token: token,
-  });
+  const namespaces = wowPreset ? dynamicNamespacesForPreset(region, wowPreset) : [`dynamic-classic1x-${region}`, `dynamic-classicann-${region}`];
 
-  for (const endpoint of endpoints) {
-    const joiner = endpoint.includes('?') ? '&' : '?';
-    const res = await fetch(`${apiBaseUrl}${endpoint}${joiner}${params.toString()}`, { cache: 'no-store' });
-    if (!res.ok) {
-      lastError = `HTTP ${res.status}`;
-      continue;
+  for (const namespace of namespaces) {
+    const params = new URLSearchParams({
+      namespace,
+      locale: config.locale,
+      access_token: token,
+    });
+
+    for (const endpoint of endpoints) {
+      const joiner = endpoint.includes('?') ? '&' : '?';
+      const res = await fetch(`${apiBaseUrl}${endpoint}${joiner}${params.toString()}`, { cache: 'no-store' });
+      if (!res.ok) {
+        lastError = `HTTP ${res.status}`;
+        continue;
+      }
+      const payload = await res.json();
+      const realms = parseRealmItems(payload, region);
+      if (realms.length > 0) return realms;
     }
-    const payload = await res.json();
-    const realms = parseRealmItems(payload, region);
-    if (realms.length > 0) return realms;
   }
 
   throw new Error(`Realm-Liste konnte nicht geladen werden (${lastError ?? 'unknown'}).`);
@@ -284,7 +288,7 @@ export async function fetchClassicCharacterFromBattlenetWithFilters(
   server: string,
   characterName: string,
   region: WowRegion,
-  wowVersion: WowVersion | null
+  wowPreset: WowPreset | null
 ) {
   const config = await getBattlenetConfigForRegion(region);
 
@@ -300,52 +304,61 @@ export async function fetchClassicCharacterFromBattlenetWithFilters(
 
   const accessToken = await getAccessToken(config);
 
-  const namespace = namespaceForVersion(region, wowVersion);
+  const preset: WowPreset = wowPreset ?? 'classic';
+  const candidates = profileNamespacesForPreset(region, preset);
   const apiBaseUrl = region === config.region ? config.apiBaseUrl : `https://${region}.api.blizzard.com`;
   const profilePath = `${config.profileCharacterPath}/${realmSlug}/${charName}`;
-  const params = new URLSearchParams({
-    namespace,
-    locale: config.locale,
-    access_token: accessToken,
-  });
 
-  const profileRes = await fetch(`${apiBaseUrl}${profilePath}?${params.toString()}`, { cache: 'no-store' });
-  if (profileRes.status === 404) {
-    throw new Error('Charakter auf dem angegebenen Server nicht gefunden.');
-  }
-  if (!profileRes.ok) {
-    throw new Error('Battle.net Charakterabfrage fehlgeschlagen.');
+  let lastErr: string | null = null;
+  for (const candidate of candidates) {
+    const params = new URLSearchParams({
+      namespace: candidate.namespace,
+      locale: config.locale,
+      access_token: accessToken,
+    });
+
+    const profileRes = await fetch(`${apiBaseUrl}${profilePath}?${params.toString()}`, { cache: 'no-store' });
+    if (profileRes.status === 404) {
+      lastErr = `Not found (${candidate.namespace})`;
+      continue;
+    }
+    if (!profileRes.ok) {
+      lastErr = `HTTP ${profileRes.status} (${candidate.namespace})`;
+      continue;
+    }
+
+    const profile = (await profileRes.json()) as BattlenetProfile;
+    const classId = mapClassNameToId(profile.character_class?.name);
+    if (!classId) {
+      throw new Error('Klasse des Charakters konnte nicht zugeordnet werden.');
+    }
+    const specId =
+      mapSpecNameToId(classId, profile.active_spec?.name) ??
+      TBC_CLASSES.find((c) => c.id === classId)?.specs[0]?.id;
+    if (!specId) {
+      throw new Error('Spec des Charakters konnte nicht zugeordnet werden.');
+    }
+
+    return {
+      configId: config.id,
+      region,
+      wowVersion: candidate.internalWowVersion,
+      realmSlug: profile.realm?.slug ?? realmSlug,
+      realmName: profile.realm?.name ?? server.trim(),
+      characterName: profile.name ?? characterName.trim(),
+      characterNameLower: charName,
+      battlenetCharacterId: profile.id ? BigInt(profile.id) : null,
+      level: profile.level ?? null,
+      raceName: profile.race?.name ?? null,
+      className: profile.character_class?.name ?? null,
+      activeSpecName: profile.active_spec?.name ?? null,
+      guildName: profile.guild?.name ?? null,
+      faction: profile.faction?.name ?? profile.faction?.type ?? null,
+      profileUrl: `${apiBaseUrl}${profilePath}`,
+      rawProfile: profile,
+      mainSpec: getSpecDisplayName(classId, specId),
+    };
   }
 
-  const profile = (await profileRes.json()) as BattlenetProfile;
-  const classId = mapClassNameToId(profile.character_class?.name);
-  if (!classId) {
-    throw new Error('Klasse des Charakters konnte nicht zugeordnet werden.');
-  }
-  const specId =
-    mapSpecNameToId(classId, profile.active_spec?.name) ??
-    TBC_CLASSES.find((c) => c.id === classId)?.specs[0]?.id;
-  if (!specId) {
-    throw new Error('Spec des Charakters konnte nicht zugeordnet werden.');
-  }
-
-  return {
-    configId: config.id,
-    region,
-    wowVersion,
-    realmSlug: profile.realm?.slug ?? realmSlug,
-    realmName: profile.realm?.name ?? server.trim(),
-    characterName: profile.name ?? characterName.trim(),
-    characterNameLower: charName,
-    battlenetCharacterId: profile.id ? BigInt(profile.id) : null,
-    level: profile.level ?? null,
-    raceName: profile.race?.name ?? null,
-    className: profile.character_class?.name ?? null,
-    activeSpecName: profile.active_spec?.name ?? null,
-    guildName: profile.guild?.name ?? null,
-    faction: profile.faction?.name ?? profile.faction?.type ?? null,
-    profileUrl: `${apiBaseUrl}${profilePath}`,
-    rawProfile: profile,
-    mainSpec: getSpecDisplayName(classId, specId),
-  };
+  throw new Error(`Battle.net Charakterabfrage fehlgeschlagen. ${lastErr ?? ''}`.trim());
 }
