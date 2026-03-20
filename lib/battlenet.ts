@@ -144,20 +144,32 @@ export async function fetchClassicCharacterFromBattlenet(server: string, charact
     mainSpec: getSpecDisplayName(classId, specId),
   };
 }
-function namespaceForVersion(region: WowRegion, wowVersion: WowVersion | null, fallback: string): string {
-  if (!wowVersion) return fallback;
+function namespaceForVersion(region: WowRegion, wowVersion: WowVersion | null): string {
+  if (!wowVersion) return `profile-classic-${region}`;
   if (wowVersion === 'progression') return `profile-classic-${region}`;
-  return `profile-classic1x-${region}`;
+  if (
+    wowVersion === 'classic_era' ||
+    wowVersion === 'hardcore' ||
+    wowVersion === 'season_of_discovery' ||
+    wowVersion === 'anniversary'
+  ) {
+    return `profile-classic1x-${region}`;
+  }
+  return `profile-classic-${region}`;
 }
 
-function dynamicNamespacesForVersion(region: WowRegion, wowVersion: WowVersion | null): string[] {
-  if (!wowVersion) {
-    // "All" / not specified: try Classic 1x first (Era/SoD/Hardcore/Anniversary),
-    // then fall back to progression namespace.
-    return [`dynamic-classic1x-${region}`, `dynamic-classic-${region}`];
+function dynamicNamespaceForVersion(region: WowRegion, wowVersion: WowVersion | null): string {
+  if (!wowVersion) return `dynamic-classic-${region}`;
+  if (wowVersion === 'progression') return `dynamic-classic-${region}`;
+  if (
+    wowVersion === 'classic_era' ||
+    wowVersion === 'hardcore' ||
+    wowVersion === 'season_of_discovery' ||
+    wowVersion === 'anniversary'
+  ) {
+    return `dynamic-classic1x-${region}`;
   }
-  if (wowVersion === 'progression') return [`dynamic-classic-${region}`];
-  return [`dynamic-classic1x-${region}`];
+  return `dynamic-classic-${region}`;
 }
 
 async function getBattlenetConfigForRegion(region: WowRegion) {
@@ -247,24 +259,22 @@ export async function fetchClassicRealmsFromBattlenet(region: WowRegion, wowVers
   const endpoints = ['/data/wow/realm/index', '/data/wow/search/realm?_page=1&_pageSize=2000'];
   let lastError: string | null = null;
 
-  for (const namespace of dynamicNamespacesForVersion(region, wowVersion)) {
-    const params = new URLSearchParams({
-      namespace,
-      locale: config.locale,
-      access_token: token,
-    });
+  const params = new URLSearchParams({
+    namespace: dynamicNamespaceForVersion(region, wowVersion),
+    locale: config.locale,
+    access_token: token,
+  });
 
-    for (const endpoint of endpoints) {
-      const joiner = endpoint.includes('?') ? '&' : '?';
-      const res = await fetch(`${apiBaseUrl}${endpoint}${joiner}${params.toString()}`, { cache: 'no-store' });
-      if (!res.ok) {
-        lastError = `HTTP ${res.status}`;
-        continue;
-      }
-      const payload = await res.json();
-      const realms = parseRealmItems(payload, region);
-      if (realms.length > 0) return realms;
+  for (const endpoint of endpoints) {
+    const joiner = endpoint.includes('?') ? '&' : '?';
+    const res = await fetch(`${apiBaseUrl}${endpoint}${joiner}${params.toString()}`, { cache: 'no-store' });
+    if (!res.ok) {
+      lastError = `HTTP ${res.status}`;
+      continue;
     }
+    const payload = await res.json();
+    const realms = parseRealmItems(payload, region);
+    if (realms.length > 0) return realms;
   }
 
   throw new Error(`Realm-Liste konnte nicht geladen werden (${lastError ?? 'unknown'}).`);
@@ -290,7 +300,7 @@ export async function fetchClassicCharacterFromBattlenetWithFilters(
 
   const accessToken = await getAccessToken(config);
 
-  const namespace = namespaceForVersion(region, wowVersion, config.namespaceProfile);
+  const namespace = namespaceForVersion(region, wowVersion);
   const apiBaseUrl = region === config.region ? config.apiBaseUrl : `https://${region}.api.blizzard.com`;
   const profilePath = `${config.profileCharacterPath}/${realmSlug}/${charName}`;
   const params = new URLSearchParams({

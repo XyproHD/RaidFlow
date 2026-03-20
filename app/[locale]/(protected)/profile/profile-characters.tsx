@@ -76,8 +76,8 @@ export function ProfileCharacters({
   const [autoName, setAutoName] = useState('');
   const [autoGuildId, setAutoGuildId] = useState('');
   const [autoSaveWithoutGuild, setAutoSaveWithoutGuild] = useState(false);
-  const [autoRegion, setAutoRegion] = useState<WowRegion | 'all'>('all');
-  const [autoWowVersion, setAutoWowVersion] = useState<WowVersion | 'all'>('all');
+  const [autoRegion, setAutoRegion] = useState<WowRegion>('eu');
+  const [autoWowVersion, setAutoWowVersion] = useState<WowVersion>('anniversary');
   const [realmOptions, setRealmOptions] = useState<WowRealm[]>([]);
   const [realmsLoading, setRealmsLoading] = useState(false);
 
@@ -102,8 +102,8 @@ export function ProfileCharacters({
     setAutoName('');
     setAutoGuildId('');
     setAutoSaveWithoutGuild(false);
-    setAutoRegion('all');
-    setAutoWowVersion('all');
+    setAutoRegion('eu');
+    setAutoWowVersion('anniversary');
     setError(null);
   }, []);
 
@@ -236,8 +236,8 @@ export function ProfileCharacters({
           server: autoServer.trim(),
           name: autoName.trim(),
           guildId: autoGuildId || null,
-          region: autoRegion === 'all' ? 'eu' : autoRegion,
-          wowVersion: autoWowVersion === 'all' ? null : autoWowVersion,
+          region: autoRegion,
+          wowVersion: autoWowVersion,
         }),
       });
       if (res.ok) {
@@ -396,8 +396,8 @@ export function ProfileCharacters({
       setRealmsLoading(true);
       try {
         const params = new URLSearchParams();
-        if (autoRegion !== 'all') params.set('region', autoRegion);
-        if (autoWowVersion !== 'all') params.set('wowVersion', autoWowVersion);
+        params.set('region', autoRegion);
+        params.set('wowVersion', autoWowVersion);
         const qs = params.toString();
         const res = await fetch(`/api/wow/realms${qs ? `?${qs}` : ''}`, {
           credentials: 'include',
@@ -731,10 +731,9 @@ export function ProfileCharacters({
                         <label className="text-sm font-medium">{t('region')} ({t('optional')})</label>
                         <select
                           value={autoRegion}
-                          onChange={(e) => setAutoRegion(e.target.value as WowRegion | 'all')}
+                          onChange={(e) => setAutoRegion(e.target.value as WowRegion)}
                           className="rounded border border-input bg-background px-3 py-2 w-full"
                         >
-                          <option value="all">{t('all')}</option>
                           <option value="eu">EU</option>
                           <option value="us">US</option>
                           <option value="kr">KR</option>
@@ -745,10 +744,9 @@ export function ProfileCharacters({
                         <label className="text-sm font-medium">{t('wowVersion')} ({t('optional')})</label>
                         <select
                           value={autoWowVersion}
-                          onChange={(e) => setAutoWowVersion(e.target.value as WowVersion | 'all')}
+                          onChange={(e) => setAutoWowVersion(e.target.value as WowVersion)}
                           className="rounded border border-input bg-background px-3 py-2 w-full"
                         >
-                          <option value="all">{t('all')}</option>
                           {WOW_VERSION_OPTIONS.map((v) => (
                             <option key={v.id} value={v.id}>
                               {v.label}
