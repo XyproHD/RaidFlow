@@ -22,9 +22,10 @@ export const WOW_VERSION_OPTIONS: { id: WowPreset; label: string }[] = [
 export const WOW_PRESET_TO_INTERNAL_WOW_VERSIONS: Record<WowPreset, string[]> = {
   // The realm index table currently only contains Classic-family variants.
   retail: [],
-  classic: ['classic_era', 'anniversary'],
-  // In our seed data, "progression" is used for the TBC/Tier we care about.
-  tbc: ['progression'],
+  // "WoW Classic" = Era/Hardcore/SoD (NOT anniversary).
+  classic: ['classic_era', 'hardcore', 'season_of_discovery'],
+  // "Jubilaeum von Burning Crusade" currently maps to classic anniversary realms.
+  tbc: ['anniversary'],
   // MoP Classic currently shares progression realm pool in our dataset.
   mop: ['progression'],
 };
