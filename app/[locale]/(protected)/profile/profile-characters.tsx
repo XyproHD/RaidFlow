@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
 import { SpecIcon } from '@/components/spec-icon';
 import { ClassIcon } from '@/components/class-icon';
 import {
@@ -32,6 +32,12 @@ const allSpecs = getAllSpecDisplayNames();
 function getClassIdForSpec(displayName: string): string | null {
   const s = allSpecs.find((x) => x.displayName === displayName);
   return s?.classId ?? null;
+}
+
+function formatRealmLabel(realm: WowRealm): string {
+  const n = (realm.name || realm.slug || '').trim();
+  const v = (realm.wowVersion || '').trim();
+  return v ? `${n} ${v}`.trim() : n;
 }
 
 export function ProfileCharacters({
@@ -69,7 +75,15 @@ export function ProfileCharacters({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoRealmId, setAutoRealmId] = useState('');
-  const [autoRealmQuery, setAutoRealmQuery] = useState('');
+  /** Single combobox: search text + shows selected realm label after pick */
+  const [realmComboInput, setRealmComboInput] = useState('');
+  const [realmMenuOpen, setRealmMenuOpen] = useState(false);
+  const [realmsLoadError, setRealmsLoadError] = useState<string | null>(null);
+  const realmPickerRef = useRef<HTMLDivElement>(null);
+  const realmInputRef = useRef<HTMLInputElement>(null);
+  const [realmListBox, setRealmListBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(
+    null
+  );
   const [autoName, setAutoName] = useState('');
   const [autoGuildId, setAutoGuildId] = useState('');
   const [autoSaveWithoutGuild, setAutoSaveWithoutGuild] = useState(false);
@@ -93,7 +107,9 @@ export function ProfileCharacters({
 
   const resetAutoForm = useCallback(() => {
     setAutoRealmId('');
-    setAutoRealmQuery('');
+    setRealmComboInput('');
+    setRealmMenuOpen(false);
+    setRealmsLoadError(null);
     setAutoName('');
     setAutoGuildId('');
     setAutoSaveWithoutGuild(false);
@@ -373,24 +389,63 @@ export function ProfileCharacters({
 
   const selectedMainSpecDisplay = classId && mainSpecId ? getSpecDisplayName(classId, mainSpecId) : null;
   const selectedOffSpecDisplay = classId && offSpecId ? getSpecDisplayName(classId, offSpecId) : null;
-  const filteredRealmOptions = useMemo(() => {
-    const q = autoRealmQuery.trim().toLowerCase();
+
+  const selectedRealm = useMemo(
+    () => (autoRealmId ? realmOptions.find((r) => r.id === autoRealmId) ?? null : null),
+    [realmOptions, autoRealmId]
+  );
+
+  const filteredRealmSuggestions = useMemo(() => {
+    const q = realmComboInput.trim().toLowerCase();
     if (!q) return realmOptions;
     return realmOptions.filter((realm) => {
-      const label = `${realm.name} ${realm.wowVersion}`.toLowerCase();
+      const label = formatRealmLabel(realm).toLowerCase();
       return (
         label.includes(q) ||
         realm.slug.toLowerCase().includes(q) ||
         realm.region.toLowerCase().includes(q)
       );
     });
-  }, [realmOptions, autoRealmQuery]);
+  }, [realmOptions, realmComboInput]);
+
+  const realmHintCount = realmComboInput.trim() ? filteredRealmSuggestions.length : realmOptions.length;
+
+  useLayoutEffect(() => {
+    if (!realmMenuOpen) {
+      setRealmListBox(null);
+      return;
+    }
+    const el = realmInputRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      const margin = 8;
+      const maxHeight = Math.min(280, Math.max(margin, window.innerHeight - r.bottom - margin));
+      setRealmListBox({
+        top: r.bottom + margin / 2,
+        left: r.left,
+        width: r.width,
+        maxHeight,
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [realmMenuOpen, realmComboInput, filteredRealmSuggestions.length, realmsLoading]);
 
   useEffect(() => {
-    if (!autoRealmId) return;
-    const exists = filteredRealmOptions.some((r) => r.id === autoRealmId);
-    if (!exists) setAutoRealmId('');
-  }, [autoRealmId, filteredRealmOptions]);
+    if (!realmMenuOpen) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (realmPickerRef.current?.contains(e.target as Node)) return;
+      setRealmMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [realmMenuOpen]);
 
   useEffect(() => {
     if (modalOpen !== 'auto') return;
@@ -398,14 +453,41 @@ export function ProfileCharacters({
 
     const loadRealms = async () => {
       setRealmsLoading(true);
+      setRealmsLoadError(null);
       try {
         const res = await fetch('/api/wow/realms', {
           credentials: 'include',
+          cache: 'no-store',
         });
-        if (!res.ok) return;
-        const data = (await res.json()) as { realms?: WowRealm[] };
+        const text = await res.text();
+        let data: { realms?: WowRealm[]; error?: string } = {};
+        try {
+          data = text ? (JSON.parse(text) as { realms?: WowRealm[]; error?: string }) : {};
+        } catch {
+          if (!cancelled) {
+            setRealmOptions([]);
+            setRealmsLoadError(t('realmsLoadFailed'));
+          }
+          return;
+        }
+        if (!res.ok) {
+          if (!cancelled) {
+            setRealmOptions([]);
+            if (res.status === 401) {
+              setRealmsLoadError(t('realmsLoadUnauthorized'));
+            } else {
+              setRealmsLoadError(data.error || t('realmsLoadFailed'));
+            }
+          }
+          return;
+        }
         if (!cancelled) {
           setRealmOptions(Array.isArray(data.realms) ? data.realms : []);
+        }
+      } catch {
+        if (!cancelled) {
+          setRealmOptions([]);
+          setRealmsLoadError(t('realmsLoadFailed'));
         }
       } finally {
         if (!cancelled) setRealmsLoading(false);
@@ -416,7 +498,7 @@ export function ProfileCharacters({
     return () => {
       cancelled = true;
     };
-  }, [modalOpen]);
+  }, [modalOpen, t]);
 
   const formContent = (
     <>
@@ -726,33 +808,89 @@ export function ProfileCharacters({
                   )}
                   <p className="text-sm text-muted-foreground mb-3">{t('autoAddDescription')}</p>
                   <div className="grid gap-3">
-                    <label className="text-sm font-medium">
+                    <label className="text-sm font-medium" htmlFor="auto-realm-combobox">
                       {t('server')} <span className="text-destructive">*</span>
                     </label>
-                    <input
-                      type="text"
-                      value={autoRealmQuery}
-                      onChange={(e) => setAutoRealmQuery(e.target.value)}
-                      placeholder={t('serverPlaceholder')}
-                      className="rounded border border-input bg-background px-3 py-2 w-full"
-                    />
-                    <select
-                      value={autoRealmId}
-                      onChange={(e) => setAutoRealmId(e.target.value)}
-                      className="rounded border border-input bg-background px-3 py-2 w-full"
-                    >
-                      <option value="">{t('serverPlaceholder')}</option>
-                      {filteredRealmOptions.map((realm) => (
-                        <option key={realm.id} value={realm.id}>
-                          {`${realm.name} ${realm.wowVersion}`}
-                        </option>
-                      ))}
-                    </select>
+                    {realmsLoadError && (
+                      <p className="text-destructive text-sm" role="alert">
+                        {realmsLoadError}
+                      </p>
+                    )}
+                    <div className="relative" ref={realmPickerRef}>
+                      <input
+                        ref={realmInputRef}
+                        id="auto-realm-combobox"
+                        type="text"
+                        value={realmComboInput}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setRealmComboInput(v);
+                          setRealmMenuOpen(true);
+                          if (selectedRealm && formatRealmLabel(selectedRealm) !== v.trim()) {
+                            setAutoRealmId('');
+                          }
+                        }}
+                        onFocus={() => setRealmMenuOpen(true)}
+                        placeholder={t('serverSearchPlaceholder')}
+                        autoComplete="off"
+                        aria-expanded={realmMenuOpen}
+                        aria-controls="realm-suggestion-list"
+                        aria-autocomplete="list"
+                        className="rounded border border-input bg-background px-3 py-2 w-full"
+                      />
+                      {realmMenuOpen && realmListBox && (
+                        <ul
+                          id="realm-suggestion-list"
+                          role="listbox"
+                          style={{
+                            position: 'fixed',
+                            top: realmListBox.top,
+                            left: realmListBox.left,
+                            width: realmListBox.width,
+                            maxHeight: realmListBox.maxHeight,
+                            zIndex: 100,
+                          }}
+                          className="overflow-auto rounded-md border border-border bg-background py-1 shadow-md"
+                        >
+                          {realmsLoading && (
+                            <li className="px-3 py-2 text-sm text-muted-foreground">{t('loadingRealms')}</li>
+                          )}
+                          {!realmsLoading &&
+                            filteredRealmSuggestions.map((realm) => (
+                              <li key={realm.id} role="option">
+                                <button
+                                  type="button"
+                                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => {
+                                    setAutoRealmId(realm.id);
+                                    setRealmComboInput(formatRealmLabel(realm));
+                                    setRealmMenuOpen(false);
+                                  }}
+                                >
+                                  {formatRealmLabel(realm)}
+                                </button>
+                              </li>
+                            ))}
+                          {!realmsLoading && filteredRealmSuggestions.length === 0 && realmOptions.length > 0 && (
+                            <li className="px-3 py-2 text-sm text-muted-foreground">{t('realmNoMatches')}</li>
+                          )}
+                          {!realmsLoading && realmOptions.length === 0 && !realmsLoadError && (
+                            <li className="px-3 py-2 text-sm text-muted-foreground">{t('realmListEmpty')}</li>
+                          )}
+                        </ul>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
                       {realmsLoading
                         ? t('loadingRealms')
-                        : t('realmFilterHint', { count: filteredRealmOptions.length })}
+                        : realmsLoadError
+                          ? t('realmPickFromList')
+                          : t('realmFilterHint', { count: realmHintCount })}
                     </p>
+                    {!autoRealmId && realmComboInput.trim().length > 0 && !realmsLoadError && (
+                      <p className="text-xs text-amber-600 dark:text-amber-500">{t('realmPickFromList')}</p>
+                    )}
                     <label className="text-sm font-medium">
                       {t('characterName')} <span className="text-destructive">*</span>
                     </label>
