@@ -12,6 +12,18 @@ type BattlenetProfile = {
   race?: { name?: string };
   character_class?: { name?: string };
   active_spec?: { name?: string };
+  _links?: {
+    self?: { href?: string };
+    specializations?: { href?: string };
+  };
+};
+
+type BattlenetSpecializations = {
+  active_specialization?: { specialization?: { name?: string } };
+  specializations?: Array<{
+    specialization?: { name?: string };
+    playable_class?: { name?: string };
+  }>;
 };
 
 function slugifyRealm(input: string): string {
@@ -197,6 +209,53 @@ async function getAccessToken(config: {
   return tokenData.access_token;
 }
 
+function wowVersionToInternal(version: string): string {
+  const normalized = version.trim().toLowerCase();
+  if (normalized === 'tbc') return 'anniversary';
+  if (normalized === 'mop') return 'progression';
+  return 'classic_era';
+}
+
+async function fetchSpecializations(
+  specializationsHref: string | undefined,
+  locale: string,
+  accessToken: string
+): Promise<BattlenetSpecializations | null> {
+  if (!specializationsHref) return null;
+  try {
+    const url = new URL(specializationsHref);
+    url.searchParams.set('locale', locale);
+    url.searchParams.set('access_token', accessToken);
+    const res = await fetch(url.toString(), { cache: 'no-store' });
+    if (!res.ok) return null;
+    return (await res.json()) as BattlenetSpecializations;
+  } catch {
+    return null;
+  }
+}
+
+function resolveClassAndSpec(profile: BattlenetProfile, specializations: BattlenetSpecializations | null) {
+  const classNameFromProfile = profile.character_class?.name;
+  const classNameFromSpecs =
+    specializations?.specializations?.find((s) => typeof s?.playable_class?.name === 'string')
+      ?.playable_class?.name ?? null;
+  const className = classNameFromProfile ?? classNameFromSpecs ?? undefined;
+  const specNameFromProfile = profile.active_spec?.name;
+  const specNameFromSpecs = specializations?.active_specialization?.specialization?.name;
+  const specName = specNameFromProfile ?? specNameFromSpecs ?? undefined;
+
+  const classId = mapClassNameToId(className);
+  if (!classId) {
+    throw new Error('Klasse des Charakters konnte nicht zugeordnet werden.');
+  }
+  const specId =
+    mapSpecNameToId(classId, specName) ?? TBC_CLASSES.find((c) => c.id === classId)?.specs[0]?.id;
+  if (!specId) {
+    throw new Error('Spec des Charakters konnte nicht zugeordnet werden.');
+  }
+  return { className, specName, classId, specId };
+}
+
 export async function fetchClassicCharacterFromBattlenetWithFilters(
   server: string,
   characterName: string,
@@ -274,4 +333,71 @@ export async function fetchClassicCharacterFromBattlenetWithFilters(
   }
 
   throw new Error(`Battle.net Charakterabfrage fehlgeschlagen. ${lastErr ?? ''}`.trim());
+}
+
+export async function fetchClassicCharacterFromBattlenetByRealm(
+  realm: {
+    region: WowRegion;
+    namespace: string;
+    version: string;
+    slug: string;
+    name?: string;
+  },
+  characterName: string
+) {
+  const config = await getBattlenetConfigForRegion(realm.region);
+  if (!config) {
+    throw new Error('Keine aktive Battle.net API Konfiguration gefunden.');
+  }
+
+  const charName = normalizeName(characterName);
+  if (!realm.slug || !charName) {
+    throw new Error('Server und Charaktername sind erforderlich.');
+  }
+
+  const accessToken = await getAccessToken(config);
+  const apiBaseUrl = realm.region === config.region ? config.apiBaseUrl : `https://${realm.region}.api.blizzard.com`;
+  const profilePath = `${config.profileCharacterPath}/${realm.slug}/${charName}`;
+  const profileParams = new URLSearchParams({
+    namespace: realm.namespace,
+    locale: config.locale,
+    access_token: accessToken,
+  });
+
+  const profileRes = await fetch(`${apiBaseUrl}${profilePath}?${profileParams.toString()}`, {
+    cache: 'no-store',
+  });
+  if (profileRes.status === 404) {
+    throw new Error('Charakter auf dem angegebenen Server nicht gefunden.');
+  }
+  if (!profileRes.ok) {
+    throw new Error(`Battle.net Charakterabfrage fehlgeschlagen (HTTP ${profileRes.status}).`);
+  }
+
+  const profile = (await profileRes.json()) as BattlenetProfile;
+  const specializations = await fetchSpecializations(profile?._links?.specializations?.href, config.locale, accessToken);
+  const resolved = resolveClassAndSpec(profile, specializations);
+
+  return {
+    configId: config.id,
+    region: realm.region,
+    wowVersion: wowVersionToInternal(realm.version),
+    realmSlug: profile.realm?.slug ?? realm.slug,
+    realmName: profile.realm?.name ?? realm.name ?? realm.slug,
+    characterName: profile.name ?? characterName.trim(),
+    characterNameLower: charName,
+    battlenetCharacterId: profile.id ? BigInt(profile.id) : null,
+    level: profile.level ?? null,
+    raceName: profile.race?.name ?? null,
+    className: resolved.className ?? null,
+    activeSpecName: resolved.specName ?? null,
+    guildName: profile.guild?.name ?? null,
+    faction: profile.faction?.name ?? profile.faction?.type ?? null,
+    profileUrl: `${apiBaseUrl}${profilePath}`,
+    rawProfile: {
+      profile,
+      specializations,
+    },
+    mainSpec: getSpecDisplayName(resolved.classId, resolved.specId),
+  };
 }

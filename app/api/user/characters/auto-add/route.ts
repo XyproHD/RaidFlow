@@ -3,13 +3,22 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { fetchClassicCharacterFromBattlenetWithFilters } from '@/lib/battlenet';
-import type { WowPreset, WowRegion } from '@/lib/wow-classic-realms';
+import { fetchClassicCharacterFromBattlenetByRealm } from '@/lib/battlenet';
+import type { WowRegion } from '@/lib/wow-classic-realms';
 
-function presetFromInternalWowVersion(v: string | null): WowPreset {
-  if (v === 'anniversary') return 'tbc';
-  if (v === 'progression') return 'mop';
-  return 'classic';
+function pickRealmName(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return '';
+  const names = value as Record<string, unknown>;
+  const preferredLocales = ['de_DE', 'en_US', 'en_GB', 'fr_FR', 'es_ES'];
+  for (const locale of preferredLocales) {
+    const localized = names[locale];
+    if (typeof localized === 'string' && localized.trim().length > 0) return localized;
+  }
+  for (const localized of Object.values(names)) {
+    if (typeof localized === 'string' && localized.trim().length > 0) return localized;
+  }
+  return '';
 }
 
 export async function POST(request: NextRequest) {
@@ -39,18 +48,19 @@ export async function POST(request: NextRequest) {
   try {
     const realm = await prisma.rfBattlenetRealm.findUnique({
       where: { id: realmId },
-      select: { region: true, wowVersion: true, realmName: true },
+      select: { region: true, version: true, name: true, slug: true, namespace: true },
     });
     if (!realm) {
       return NextResponse.json({ error: 'Ausgewaehlter Realm wurde nicht gefunden.' }, { status: 400 });
     }
 
-    const profile = await fetchClassicCharacterFromBattlenetWithFilters(
-      realm.realmName,
-      name,
-      (realm?.region as WowRegion | undefined) ?? 'eu',
-      presetFromInternalWowVersion(realm?.wowVersion ?? null)
-    );
+    const profile = await fetchClassicCharacterFromBattlenetByRealm({
+      region: (realm?.region as WowRegion | undefined) ?? 'eu',
+      namespace: realm.namespace,
+      slug: realm.slug,
+      version: realm.version,
+      name: pickRealmName(realm.name),
+    }, name);
 
     const created = await prisma.$transaction(async (tx) => {
       const character = await tx.rfCharacter.create({

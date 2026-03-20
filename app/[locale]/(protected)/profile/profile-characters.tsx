@@ -69,6 +69,7 @@ export function ProfileCharacters({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoRealmId, setAutoRealmId] = useState('');
+  const [autoRealmQuery, setAutoRealmQuery] = useState('');
   const [autoName, setAutoName] = useState('');
   const [autoGuildId, setAutoGuildId] = useState('');
   const [autoSaveWithoutGuild, setAutoSaveWithoutGuild] = useState(false);
@@ -92,6 +93,7 @@ export function ProfileCharacters({
 
   const resetAutoForm = useCallback(() => {
     setAutoRealmId('');
+    setAutoRealmQuery('');
     setAutoName('');
     setAutoGuildId('');
     setAutoSaveWithoutGuild(false);
@@ -371,6 +373,25 @@ export function ProfileCharacters({
 
   const selectedMainSpecDisplay = classId && mainSpecId ? getSpecDisplayName(classId, mainSpecId) : null;
   const selectedOffSpecDisplay = classId && offSpecId ? getSpecDisplayName(classId, offSpecId) : null;
+  const filteredRealmOptions = useMemo(() => {
+    const q = autoRealmQuery.trim().toLowerCase();
+    if (!q) return realmOptions;
+    return realmOptions.filter((realm) => {
+      const label = `${realm.name} ${realm.wowVersion}`.toLowerCase();
+      return (
+        label.includes(q) ||
+        realm.slug.toLowerCase().includes(q) ||
+        realm.region.toLowerCase().includes(q)
+      );
+    });
+  }, [realmOptions, autoRealmQuery]);
+
+  useEffect(() => {
+    if (!autoRealmId) return;
+    const exists = filteredRealmOptions.some((r) => r.id === autoRealmId);
+    if (!exists) setAutoRealmId('');
+  }, [autoRealmId, filteredRealmOptions]);
+
   useEffect(() => {
     if (modalOpen !== 'auto') return;
     let cancelled = false;
@@ -708,22 +729,29 @@ export function ProfileCharacters({
                     <label className="text-sm font-medium">
                       {t('server')} <span className="text-destructive">*</span>
                     </label>
+                    <input
+                      type="text"
+                      value={autoRealmQuery}
+                      onChange={(e) => setAutoRealmQuery(e.target.value)}
+                      placeholder={t('serverPlaceholder')}
+                      className="rounded border border-input bg-background px-3 py-2 w-full"
+                    />
                     <select
                       value={autoRealmId}
                       onChange={(e) => setAutoRealmId(e.target.value)}
                       className="rounded border border-input bg-background px-3 py-2 w-full"
                     >
                       <option value="">{t('serverPlaceholder')}</option>
-                      {realmOptions.map((realm) => (
+                      {filteredRealmOptions.map((realm) => (
                         <option key={realm.id} value={realm.id}>
-                          {`${realm.name} (${realm.region.toUpperCase()})`}
+                          {`${realm.name} ${realm.wowVersion}`}
                         </option>
                       ))}
                     </select>
                     <p className="text-xs text-muted-foreground">
                       {realmsLoading
                         ? t('loadingRealms')
-                        : t('realmFilterHint', { count: realmOptions.length })}
+                        : t('realmFilterHint', { count: filteredRealmOptions.length })}
                     </p>
                     <label className="text-sm font-medium">
                       {t('characterName')} <span className="text-destructive">*</span>

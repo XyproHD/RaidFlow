@@ -367,15 +367,19 @@ model RfBattlenetCharacterProfile {
 }
 
 model RfBattlenetRealm {
-  id           String   @id @default(uuid())
-  region       String
-  wowVersion   String   @map("wow_version")
-  realmSlug    String   @map("realm_slug")
-  realmName    String   @map("realm_name")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id         String   @id @default(uuid())
+  realmId    BigInt   @map("realm_id")
+  name       Json
+  slug       String
+  region     String
+  namespace  String
+  version    String
+  type       String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  @@unique([region, wowVersion, realmSlug])
+  @@unique([region, namespace, realmId])
+  @@unique([region, namespace, slug])
   @@map("rf_battlenet_realm")
 }
 
