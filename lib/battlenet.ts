@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { TBC_CLASSES, getSpecDisplayName } from '@/lib/wow-tbc-classes';
-import type { WowPreset, WowRegion, WowRealm } from '@/lib/wow-classic-realms';
+import type { WowPreset, WowRegion } from '@/lib/wow-classic-realms';
 
 type BattlenetProfile = {
   id?: number;
@@ -163,13 +163,6 @@ function profileNamespacesForPreset(region: WowRegion, wowPreset: WowPreset): Pr
   throw new Error(`Unsupported wow preset: ${wowPreset}`);
 }
 
-function dynamicNamespacesForPreset(region: WowRegion, wowPreset: WowPreset): string[] {
-  if (wowPreset === 'tbc') return [`dynamic-classicann-${region}`];
-  if (wowPreset === 'mop') return [`dynamic-classic-${region}`];
-  if (wowPreset === 'classic') return [`dynamic-classic1x-${region}`];
-  throw new Error(`Unsupported wow preset: ${wowPreset}`);
-}
-
 async function getBattlenetConfigForRegion(region: WowRegion) {
   return (
     (await prisma.rfBattlenetApiConfig.findFirst({
@@ -202,84 +195,6 @@ async function getAccessToken(config: {
   const tokenData = (await tokenRes.json()) as { access_token?: string };
   if (!tokenData.access_token) throw new Error('Battle.net Access Token fehlt.');
   return tokenData.access_token;
-}
-
-function parseRealmItems(payload: unknown, region: WowRegion): WowRealm[] {
-  const list: WowRealm[] = [];
-  const resolveLocalizedName = (nameValue: unknown, fallback: string): string => {
-    if (typeof nameValue === 'string') return nameValue;
-    if (nameValue && typeof nameValue === 'object') {
-      const dict = nameValue as Record<string, unknown>;
-      const preferred = ['de_DE', 'en_GB', 'en_US', 'ko_KR', 'zh_TW'];
-      for (const key of preferred) {
-        if (typeof dict[key] === 'string' && dict[key]) return dict[key] as string;
-      }
-      for (const val of Object.values(dict)) {
-        if (typeof val === 'string' && val) return val;
-      }
-    }
-    return fallback;
-  };
-  const p = payload as
-    | { realms?: Array<{ slug?: string; name?: { en_US?: string; de_DE?: string } | string }> }
-    | { results?: Array<{ data?: { slug?: string; name?: { en_US?: string; de_DE?: string } | string } }> };
-
-  if (Array.isArray((p as { realms?: unknown[] }).realms)) {
-    for (const realm of (p as { realms: Array<{ slug?: string; name?: { en_US?: string; de_DE?: string } | string }> }).realms) {
-      const slug = realm.slug?.trim();
-      const name = resolveLocalizedName(realm.name, slug ?? '');
-      if (!slug || !name) continue;
-      list.push({ slug, name, region });
-    }
-  }
-
-  if (Array.isArray((p as { results?: unknown[] }).results)) {
-    for (const row of (p as { results: Array<{ data?: { slug?: string; name?: { en_US?: string; de_DE?: string } | string } }> }).results) {
-      const slug = row.data?.slug?.trim();
-      const name = resolveLocalizedName(row.data?.name, slug ?? '');
-      if (!slug || !name) continue;
-      list.push({ slug, name, region });
-    }
-  }
-
-  const dedup = new Map<string, WowRealm>();
-  for (const realm of list) dedup.set(realm.slug, realm);
-  return Array.from(dedup.values()).sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export async function fetchClassicRealmsFromBattlenet(region: WowRegion, wowPreset: WowPreset | null) {
-  const config = await getBattlenetConfigForRegion(region);
-  if (!config) throw new Error('Keine aktive Battle.net API Konfiguration gefunden.');
-
-  const token = await getAccessToken(config);
-  const apiBaseUrl = region === config.region ? config.apiBaseUrl : `https://${region}.api.blizzard.com`;
-
-  const endpoints = ['/data/wow/realm/index', '/data/wow/search/realm?_page=1&_pageSize=2000'];
-  let lastError: string | null = null;
-
-  const namespaces = wowPreset ? dynamicNamespacesForPreset(region, wowPreset) : [`dynamic-classic1x-${region}`, `dynamic-classicann-${region}`];
-
-  for (const namespace of namespaces) {
-    const params = new URLSearchParams({
-      namespace,
-      locale: config.locale,
-      access_token: token,
-    });
-
-    for (const endpoint of endpoints) {
-      const joiner = endpoint.includes('?') ? '&' : '?';
-      const res = await fetch(`${apiBaseUrl}${endpoint}${joiner}${params.toString()}`, { cache: 'no-store' });
-      if (!res.ok) {
-        lastError = `HTTP ${res.status}`;
-        continue;
-      }
-      const payload = await res.json();
-      const realms = parseRealmItems(payload, region);
-      if (realms.length > 0) return realms;
-    }
-  }
-
-  throw new Error(`Realm-Liste konnte nicht geladen werden (${lastError ?? 'unknown'}).`);
 }
 
 export async function fetchClassicCharacterFromBattlenetWithFilters(

@@ -82,64 +82,50 @@ async function main() {
 
   const existingRealmsCount = await prisma.rfBattlenetRealm.count();
   if (existingRealmsCount > 0) {
-    console.log(`Seed: Battle.net Realms übersprungen (bereits vorhanden: ${existingRealmsCount}).`);
-    return;
+    console.log(`Seed: Battle.net Realms vorhanden (${existingRealmsCount}) - ergänze fehlende Einträge aus fester Liste.`);
   }
 
-  const wowVersions = ['progression', 'classic_era', 'hardcore', 'season_of_discovery', 'anniversary'];
+  const FIXED_REALMS = [
+    // EU - WoW Classic (Era / Hardcore / SoD)
+    { region: 'eu', wowVersion: 'classic_era', realmSlug: 'everlook', realmName: 'Everlook' },
+    { region: 'eu', wowVersion: 'classic_era', realmSlug: 'lakeshire', realmName: 'Lakeshire' },
+    { region: 'eu', wowVersion: 'classic_era', realmSlug: 'pyrewood-village', realmName: 'Pyrewood Village' },
+    { region: 'eu', wowVersion: 'classic_era', realmSlug: 'hydraxian-waterlords', realmName: 'Hydraxian Waterlords' },
+    { region: 'eu', wowVersion: 'hardcore', realmSlug: 'stitches', realmName: 'Stitches' },
+    { region: 'eu', wowVersion: 'hardcore', realmSlug: 'nekrosh', realmName: "Nek'Rosh" },
+    { region: 'eu', wowVersion: 'season_of_discovery', realmSlug: 'lone-wolf', realmName: 'Lone Wolf' },
+    { region: 'eu', wowVersion: 'season_of_discovery', realmSlug: 'living-flame', realmName: 'Living Flame' },
 
-  const slugifyRealm = (input) =>
-    input
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
+    // EU - Jubilaeum von Burning Crusade
+    { region: 'eu', wowVersion: 'anniversary', realmSlug: 'thunderstrike', realmName: 'Thunderstrike' },
 
-  const resolveLocalizedName = (nameValue, fallback) => {
-    if (typeof nameValue === 'string') return nameValue;
-    if (nameValue && typeof nameValue === 'object') {
-      const dict = nameValue;
-      const preferred = ['de_DE', 'en_GB', 'en_US', 'ko_KR', 'zh_TW'];
-      for (const key of preferred) {
-        if (typeof dict[key] === 'string' && dict[key]) return dict[key];
-      }
-      for (const val of Object.values(dict)) {
-        if (typeof val === 'string' && val) return val;
-      }
-    }
-    return fallback;
-  };
+    // EU - MoP/TBC progression bucket
+    { region: 'eu', wowVersion: 'progression', realmSlug: 'firemaw', realmName: 'Firemaw' },
+    { region: 'eu', wowVersion: 'progression', realmSlug: 'gehennas', realmName: 'Gehennas' },
+    { region: 'eu', wowVersion: 'progression', realmSlug: 'mograine', realmName: 'Mograine' },
+    { region: 'eu', wowVersion: 'progression', realmSlug: 'venoxis', realmName: 'Venoxis' },
 
-  const parseRealmItems = (payload) => {
-    const list = [];
+    // US
+    { region: 'us', wowVersion: 'classic_era', realmSlug: 'whitemane', realmName: 'Whitemane' },
+    { region: 'us', wowVersion: 'classic_era', realmSlug: 'mankrik', realmName: 'Mankrik' },
+    { region: 'us', wowVersion: 'classic_era', realmSlug: 'pagle', realmName: 'Pagle' },
+    { region: 'us', wowVersion: 'hardcore', realmSlug: 'defias-pillager', realmName: 'Defias Pillager' },
+    { region: 'us', wowVersion: 'hardcore', realmSlug: 'skull-rock', realmName: 'Skull Rock' },
+    { region: 'us', wowVersion: 'season_of_discovery', realmSlug: 'crusader-strike', realmName: 'Crusader Strike' },
+    { region: 'us', wowVersion: 'season_of_discovery', realmSlug: 'lava-lash', realmName: 'Lava Lash' },
+    { region: 'us', wowVersion: 'progression', realmSlug: 'faerlina', realmName: 'Faerlina' },
+    { region: 'us', wowVersion: 'progression', realmSlug: 'benediction', realmName: 'Benediction' },
+    { region: 'us', wowVersion: 'progression', realmSlug: 'grobbulus', realmName: 'Grobbulus' },
 
-    if (Array.isArray(payload?.realms)) {
-      for (const realm of payload.realms) {
-        const slug = realm?.slug?.trim();
-        const name = resolveLocalizedName(realm?.name, slug || '');
-        if (!slug || !name) continue;
-        list.push({ slug, name });
-      }
-    } else if (Array.isArray(payload?.results)) {
-      for (const row of payload.results) {
-        const slug = row?.data?.slug?.trim();
-        const name = resolveLocalizedName(row?.data?.name, slug || '');
-        if (!slug || !name) continue;
-        list.push({ slug, name });
-      }
-    }
-
-    // Dedupe by slug (API payload can contain duplicates).
-    const seen = new Set();
-    const out = [];
-    for (const r of list) {
-      if (seen.has(r.slug)) continue;
-      seen.add(r.slug);
-      out.push(r);
-    }
-    return out;
-  };
+    // KR / TW (small fixed baseline)
+    { region: 'kr', wowVersion: 'progression', realmSlug: 'iceblood', realmName: 'Iceblood' },
+    { region: 'kr', wowVersion: 'season_of_discovery', realmSlug: 'shimmering-flats', realmName: 'Shimmering Flats' },
+    { region: 'kr', wowVersion: 'hardcore', realmSlug: 'makgora', realmName: 'Makgora' },
+    { region: 'tw', wowVersion: 'progression', realmSlug: 'arugal', realmName: 'Arugal' },
+    { region: 'tw', wowVersion: 'classic_era', realmSlug: 'remulos', realmName: 'Remulos' },
+    { region: 'tw', wowVersion: 'season_of_discovery', realmSlug: 'shadowstrike', realmName: 'Shadowstrike' },
+    { region: 'tw', wowVersion: 'hardcore', realmSlug: 'soulseeker', realmName: 'Soulseeker' },
+  ];
 
   const chunk = (arr, size) => {
     const out = [];
@@ -147,97 +133,14 @@ async function main() {
     return out;
   };
 
-  const configs = await prisma.rfBattlenetApiConfig.findMany({
-    where: { isActive: true },
-    orderBy: { createdAt: 'asc' },
-    select: { region: true, clientId: true, clientSecret: true, locale: true, oauthTokenUrl: true, apiBaseUrl: true },
-  });
-
-  if (!configs.length) {
-    console.warn('Seed: Keine aktiven Battle.net API Konfigurationen gefunden.');
-    return;
-  }
-
-  const getAccessToken = async (cfg) => {
-    const auth = Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString('base64');
-    const tokenRes = await fetch(cfg.oauthTokenUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${auth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'grant_type=client_credentials',
-      cache: 'no-store',
+  console.log('Seed: Battle.net Realms werden als feste Liste geladen…');
+  for (const part of chunk(FIXED_REALMS, 5000)) {
+    await prisma.rfBattlenetRealm.createMany({
+      data: part,
+      skipDuplicates: true,
     });
-    if (!tokenRes.ok) {
-      let errText = '';
-      try {
-        errText = await tokenRes.text();
-      } catch {
-        errText = '';
-      }
-      console.error('Seed: Battle.net Auth fehlgeschlagen.', {
-        status: tokenRes.status,
-        body: errText?.slice(0, 600),
-      });
-      throw new Error('Battle.net Auth fehlgeschlagen.');
-    }
-    const tokenData = await tokenRes.json();
-    if (!tokenData.access_token) throw new Error('Battle.net Access Token fehlt.');
-    return tokenData.access_token;
-  };
-
-  console.log('Seed: Battle.net Realms werden initial geladen (dies kann dauern)…');
-
-  for (const cfg of configs) {
-    const token = await getAccessToken(cfg);
-    for (const wowVersion of wowVersions) {
-      const namespace =
-        wowVersion === 'progression' ? `dynamic-classic-${cfg.region}` : `dynamic-classic1x-${cfg.region}`;
-
-      const params = new URLSearchParams({
-        namespace,
-        locale: cfg.locale,
-        access_token: token,
-      });
-
-      const endpoints = ['/data/wow/realm/index', '/data/wow/search/realm?_page=1&_pageSize=2000'];
-      let realms = [];
-
-      for (const endpoint of endpoints) {
-        const joiner = endpoint.includes('?') ? '&' : '?';
-        const url = `${cfg.apiBaseUrl}${endpoint}${joiner}${params.toString()}`;
-        const res = await fetch(url, { cache: 'no-store' });
-        if (!res.ok) continue;
-        const payload = await res.json();
-        realms = parseRealmItems(payload);
-        if (realms.length > 0) break;
-      }
-
-      if (!realms.length) {
-        console.warn(`Seed: Realm-Liste leer für region=${cfg.region}, wowVersion=${wowVersion} (API liefert keine Realms).`);
-        continue;
-      }
-
-      const records = realms.map((r) => ({
-        region: cfg.region,
-        wowVersion,
-        realmSlug: r.slug,
-        realmName: r.name,
-      }));
-
-      for (const part of chunk(records, 5000)) {
-        await prisma.rfBattlenetRealm.createMany({
-          data: part,
-          skipDuplicates: true,
-        });
-      }
-
-      console.log(`Seed: Realms geladen: region=${cfg.region} wowVersion=${wowVersion} count=${records.length}`);
-    }
   }
-
-  console.log('Seed: Battle.net Realms Tabelle befüllt.');
+  console.log(`Seed: Battle.net Realms Tabelle befüllt (${FIXED_REALMS.length} Einträge geprüft).`);
 }
 
 main()
