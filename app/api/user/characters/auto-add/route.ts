@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   }
 
   let body: {
-    server?: string;
+    realmId?: string;
     name?: string;
     guildId?: string | null;
   };
@@ -30,20 +30,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const server = body.server?.trim();
+  const realmId = body.realmId?.trim();
   const name = body.name?.trim();
-  if (!server || !name) {
-    return NextResponse.json({ error: 'Server und Charaktername sind erforderlich.' }, { status: 400 });
+  if (!realmId || !name) {
+    return NextResponse.json({ error: 'Realm und Charaktername sind erforderlich.' }, { status: 400 });
   }
 
   try {
-    const realm = await prisma.rfBattlenetRealm.findFirst({
-      where: { realmName: { equals: server, mode: 'insensitive' } },
-      select: { region: true, wowVersion: true },
+    const realm = await prisma.rfBattlenetRealm.findUnique({
+      where: { id: realmId },
+      select: { region: true, wowVersion: true, realmName: true },
     });
+    if (!realm) {
+      return NextResponse.json({ error: 'Ausgewaehlter Realm wurde nicht gefunden.' }, { status: 400 });
+    }
 
     const profile = await fetchClassicCharacterFromBattlenetWithFilters(
-      server,
+      realm.realmName,
       name,
       (realm?.region as WowRegion | undefined) ?? 'eu',
       presetFromInternalWowVersion(realm?.wowVersion ?? null)

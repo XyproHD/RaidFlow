@@ -6,9 +6,11 @@ export type WowRegion = 'eu' | 'us' | 'kr' | 'tw';
 export type WowPreset = 'retail' | 'classic' | 'tbc' | 'mop';
 
 export type WowRealm = {
+  id: string;
   name: string;
   slug: string;
   region: WowRegion;
+  wowVersion: string;
 };
 
 export const WOW_VERSION_OPTIONS: { id: WowPreset; label: string }[] = [

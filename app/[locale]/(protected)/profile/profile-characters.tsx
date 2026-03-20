@@ -68,7 +68,7 @@ export function ProfileCharacters({
   const [offSpecId, setOffSpecId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [autoServer, setAutoServer] = useState('');
+  const [autoRealmId, setAutoRealmId] = useState('');
   const [autoName, setAutoName] = useState('');
   const [autoGuildId, setAutoGuildId] = useState('');
   const [autoSaveWithoutGuild, setAutoSaveWithoutGuild] = useState(false);
@@ -91,7 +91,7 @@ export function ProfileCharacters({
   }, []);
 
   const resetAutoForm = useCallback(() => {
-    setAutoServer('');
+    setAutoRealmId('');
     setAutoName('');
     setAutoGuildId('');
     setAutoSaveWithoutGuild(false);
@@ -216,7 +216,7 @@ export function ProfileCharacters({
   const handleAutoAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!autoServer.trim() || !autoName.trim()) return;
+    if (!autoRealmId || !autoName.trim()) return;
     setLoading(true);
     try {
       const res = await fetch('/api/user/characters/auto-add', {
@@ -224,7 +224,7 @@ export function ProfileCharacters({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          server: autoServer.trim(),
+          realmId: autoRealmId,
           name: autoName.trim(),
           guildId: autoGuildId || null,
         }),
@@ -709,13 +709,13 @@ export function ProfileCharacters({
                       {t('server')} <span className="text-destructive">*</span>
                     </label>
                     <select
-                      value={autoServer}
-                      onChange={(e) => setAutoServer(e.target.value)}
+                      value={autoRealmId}
+                      onChange={(e) => setAutoRealmId(e.target.value)}
                       className="rounded border border-input bg-background px-3 py-2 w-full"
                     >
                       <option value="">{t('serverPlaceholder')}</option>
                       {realmOptions.map((realm) => (
-                        <option key={`${realm.region}-${realm.slug}`} value={realm.name}>
+                        <option key={realm.id} value={realm.id}>
                           {`${realm.name} (${realm.region.toUpperCase()})`}
                         </option>
                       ))}
@@ -782,7 +782,7 @@ export function ProfileCharacters({
                   disabled={
                     loading ||
                     (modalOpen === 'auto'
-                      ? !autoServer.trim() || !autoName.trim()
+                      ? !autoRealmId || !autoName.trim()
                       : !name.trim() || !classId || !mainSpecId)
                   }
                   className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm disabled:opacity-50"

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const rows = await prisma.rfBattlenetRealm.findMany({
-      select: { region: true, realmSlug: true, realmName: true, wowVersion: true },
+      select: { id: true, region: true, realmSlug: true, realmName: true, wowVersion: true },
       orderBy: [{ region: 'asc' }, { realmName: 'asc' }],
       take: 10000,
     });
@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
       if (seen.has(key)) continue;
       seen.add(key);
       realms.push({
+        id: r.id,
         region: r.region,
         slug: r.realmSlug,
         name: r.realmName,
