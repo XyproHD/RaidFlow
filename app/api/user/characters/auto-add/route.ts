@@ -6,6 +6,12 @@ import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { fetchClassicCharacterFromBattlenetWithFilters } from '@/lib/battlenet';
 import type { WowPreset, WowRegion } from '@/lib/wow-classic-realms';
 
+function presetFromInternalWowVersion(v: string | null): WowPreset {
+  if (v === 'anniversary') return 'tbc';
+  if (v === 'progression') return 'mop';
+  return 'classic';
+}
+
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
   const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
@@ -17,8 +23,6 @@ export async function POST(request: NextRequest) {
     server?: string;
     name?: string;
     guildId?: string | null;
-    region?: WowRegion;
-    wowVersion?: WowPreset | null;
   };
   try {
     body = await request.json();
@@ -33,11 +37,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const realm = await prisma.rfBattlenetRealm.findFirst({
+      where: { realmName: { equals: server, mode: 'insensitive' } },
+      select: { region: true, wowVersion: true },
+    });
+
     const profile = await fetchClassicCharacterFromBattlenetWithFilters(
       server,
       name,
-      body.region ?? 'eu',
-      body.wowVersion ?? null
+      (realm?.region as WowRegion | undefined) ?? 'eu',
+      presetFromInternalWowVersion(realm?.wowVersion ?? null)
     );
 
     const created = await prisma.$transaction(async (tx) => {

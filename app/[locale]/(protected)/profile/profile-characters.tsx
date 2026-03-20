@@ -11,10 +11,7 @@ import {
   getAllSpecDisplayNames,
 } from '@/lib/wow-tbc-classes';
 import {
-  WOW_VERSION_OPTIONS,
   type WowRealm,
-  type WowRegion,
-  type WowPreset,
 } from '@/lib/wow-classic-realms';
 
 type CharacterRow = {
@@ -72,12 +69,9 @@ export function ProfileCharacters({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoServer, setAutoServer] = useState('');
-  const [autoServerDropdownOpen, setAutoServerDropdownOpen] = useState(false);
   const [autoName, setAutoName] = useState('');
   const [autoGuildId, setAutoGuildId] = useState('');
   const [autoSaveWithoutGuild, setAutoSaveWithoutGuild] = useState(false);
-  const [autoRegion, setAutoRegion] = useState<WowRegion>('eu');
-  const [autoWowVersion, setAutoWowVersion] = useState<WowPreset>('classic');
   const [realmOptions, setRealmOptions] = useState<WowRealm[]>([]);
   const [realmsLoading, setRealmsLoading] = useState(false);
 
@@ -98,12 +92,9 @@ export function ProfileCharacters({
 
   const resetAutoForm = useCallback(() => {
     setAutoServer('');
-    setAutoServerDropdownOpen(false);
     setAutoName('');
     setAutoGuildId('');
     setAutoSaveWithoutGuild(false);
-    setAutoRegion('eu');
-    setAutoWowVersion('classic');
     setError(null);
   }, []);
 
@@ -236,8 +227,6 @@ export function ProfileCharacters({
           server: autoServer.trim(),
           name: autoName.trim(),
           guildId: autoGuildId || null,
-          region: autoRegion,
-          wowVersion: autoWowVersion,
         }),
       });
       if (res.ok) {
@@ -382,12 +371,6 @@ export function ProfileCharacters({
 
   const selectedMainSpecDisplay = classId && mainSpecId ? getSpecDisplayName(classId, mainSpecId) : null;
   const selectedOffSpecDisplay = classId && offSpecId ? getSpecDisplayName(classId, offSpecId) : null;
-  const filteredRealmOptions = useMemo(() => {
-    const q = autoServer.trim().toLowerCase();
-    if (!q) return realmOptions;
-    return realmOptions.filter((realm) => realm.name.toLowerCase().includes(q));
-  }, [realmOptions, autoServer]);
-
   useEffect(() => {
     if (modalOpen !== 'auto') return;
     let cancelled = false;
@@ -395,11 +378,7 @@ export function ProfileCharacters({
     const loadRealms = async () => {
       setRealmsLoading(true);
       try {
-        const params = new URLSearchParams();
-        params.set('region', autoRegion);
-        params.set('wowVersion', autoWowVersion);
-        const qs = params.toString();
-        const res = await fetch(`/api/wow/realms${qs ? `?${qs}` : ''}`, {
+        const res = await fetch('/api/wow/realms', {
           credentials: 'include',
         });
         if (!res.ok) return;
@@ -416,7 +395,7 @@ export function ProfileCharacters({
     return () => {
       cancelled = true;
     };
-  }, [modalOpen, autoRegion, autoWowVersion]);
+  }, [modalOpen]);
 
   const formContent = (
     <>
@@ -726,75 +705,25 @@ export function ProfileCharacters({
                   )}
                   <p className="text-sm text-muted-foreground mb-3">{t('autoAddDescription')}</p>
                   <div className="grid gap-3">
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <div className="grid gap-1">
-                        <label className="text-sm font-medium">{t('region')} ({t('optional')})</label>
-                        <select
-                          value={autoRegion}
-                          onChange={(e) => setAutoRegion(e.target.value as WowRegion)}
-                          className="rounded border border-input bg-background px-3 py-2 w-full"
-                        >
-                          <option value="eu">EU</option>
-                          <option value="us">US</option>
-                          <option value="kr">KR</option>
-                          <option value="tw">TW</option>
-                        </select>
-                      </div>
-                      <div className="grid gap-1">
-                        <label className="text-sm font-medium">{t('wowVersion')} ({t('optional')})</label>
-                        <select
-                          value={autoWowVersion}
-                          onChange={(e) => setAutoWowVersion(e.target.value as WowPreset)}
-                          className="rounded border border-input bg-background px-3 py-2 w-full"
-                        >
-                          {WOW_VERSION_OPTIONS.map((v) => (
-                            <option key={v.id} value={v.id}>
-                              {v.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
                     <label className="text-sm font-medium">
                       {t('server')} <span className="text-destructive">*</span>
                     </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={autoServer}
-                        onChange={(e) => {
-                          setAutoServer(e.target.value);
-                          setAutoServerDropdownOpen(true);
-                        }}
-                        onFocus={() => setAutoServerDropdownOpen(true)}
-                        onBlur={() => setTimeout(() => setAutoServerDropdownOpen(false), 120)}
-                        placeholder={t('serverPlaceholder')}
-                        className="rounded border border-input bg-background px-3 py-2 w-full"
-                      />
-                      {autoServerDropdownOpen && filteredRealmOptions.length > 0 && (
-                        <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-md border border-border bg-background shadow-md">
-                          {filteredRealmOptions.slice(0, 120).map((realm) => (
-                            <button
-                              key={`${realm.region}-${realm.slug}`}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                setAutoServer(realm.name);
-                                setAutoServerDropdownOpen(false);
-                              }}
-                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
-                            >
-                              <span>{realm.name}</span>
-                              <span className="text-xs text-muted-foreground">{realm.region.toUpperCase()}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <select
+                      value={autoServer}
+                      onChange={(e) => setAutoServer(e.target.value)}
+                      className="rounded border border-input bg-background px-3 py-2 w-full"
+                    >
+                      <option value="">{t('serverPlaceholder')}</option>
+                      {realmOptions.map((realm) => (
+                        <option key={`${realm.region}-${realm.slug}`} value={realm.name}>
+                          {`${realm.name} (${realm.region.toUpperCase()})`}
+                        </option>
+                      ))}
+                    </select>
                     <p className="text-xs text-muted-foreground">
                       {realmsLoading
                         ? t('loadingRealms')
-                        : t('realmFilterHint', { count: filteredRealmOptions.length })}
+                        : t('realmFilterHint', { count: realmOptions.length })}
                     </p>
                     <label className="text-sm font-medium">
                       {t('characterName')} <span className="text-destructive">*</span>
