@@ -4,6 +4,7 @@ import {
   battlenetBearerInit,
   profileQueryString,
 } from '@/lib/battlenet';
+import { dynamicNamespaceToProfileNamespace } from '@/lib/wow-realm-name';
 import type { WowRegion } from '@/lib/wow-classic-realms';
 
 export type WowGuildSearchHit = {
@@ -119,6 +120,8 @@ async function getGameDataClient(region: WowRegion) {
 
 /**
  * GET /data/wow/guild/{realmSlug}/{guildSlug} — liefert die Battle.net-Gilden-ID.
+ * Wichtig: Query-Parameter `namespace` muss **profile-*** sein (z. B. profile-classicann-eu),
+ * nicht dynamic-* wie in rf_battlenet_realm — siehe _links.self im Blizzard-Response.
  */
 export async function fetchWowGuildProfileBySlug(
   realm: { region: WowRegion; slug: string; namespace: string },
@@ -129,7 +132,8 @@ export async function fetchWowGuildProfileBySlug(
 
   const { config, accessToken, apiBaseUrl } = await getGameDataClient(realm.region);
   const path = `${config.profileGuildPath}/${encodeURIComponent(realm.slug)}/${encodeURIComponent(slug)}`;
-  const qs = profileQueryString(realm.namespace, config.locale);
+  const profileNs = dynamicNamespaceToProfileNamespace(realm.namespace);
+  const qs = profileQueryString(profileNs, config.locale);
   const url = `${apiBaseUrl}${path}?${qs}`;
   const res = await fetch(url, battlenetBearerInit(accessToken));
   if (res.status === 404) return null;

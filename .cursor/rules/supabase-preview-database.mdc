@@ -1,0 +1,25 @@
+---
+description: Supabase-Preview-Datenbank für dieses Cursor-Projekt (RaidFlow)
+globs:
+alwaysApply: true
+---
+
+# Supabase Preview-Datenbank (RaidFlow)
+
+Dieses Cursor-Projekt nutzt die **Preview-Datenbank** des Supabase-Projekts **supabase-raidflow-preview**.
+
+## Verbindung
+
+- **Supabase-Projekt:** supabase-raidflow-preview  
+- **Projekt-ID (für MCP/API):** `obewcnxrkatwcsjyqhdd`  
+- **Projekt-URL:** `https://obewcnxrkatwcsjyqhdd.supabase.co`
+
+## Verhalten für alle Datenbanktätigkeiten
+
+- **SQL ausführen:** Supabase-MCP-Tool `execute_sql` immer mit `project_id: "obewcnxrkatwcsjyqhdd"` aufrufen.
+- **Migrationen:** `apply_migration`, `list_migrations` mit dieser Projekt-ID nutzen.
+- **Tabellen/Schema:** `list_tables`, `list_extensions` für dieses Projekt.
+- **TypeScript-Typen:** `generate_typescript_types` für Projekt `obewcnxrkatwcsjyqhdd` verwenden.
+- **Branches/Logs/Advisors:** Alle Supabase-MCP-Aufrufe, die eine `project_id` verlangen, mit `obewcnxrkatwcsjyqhdd` ausführen.
+
+Kurz: Alle Datenbank- und Supabase-Operationen in diesem Repo beziehen sich auf die **Preview-Datenbank** (supabase-raidflow-preview, ID `obewcnxrkatwcsjyqhdd`), sofern der User nichts anderes sagt.

@@ -1,0 +1,46 @@
+---
+description: WoW Classic (Battle.net) — Namespaces, Game-Data vs. Profile-APIs, OAuth
+globs:
+alwaysApply: true
+---
+
+# WoW Classic – Battle.net API (RaidFlow)
+
+Offizielle Einstiege (Community Developer Portal):
+
+- **Game Data APIs:** [World of Warcraft Classic – Game Data APIs](https://community.developer.battle.net/documentation/world-of-warcraft-classic/game-data-apis) — Suchindizes, Spiel-Daten, oft **`dynamic-*`‑Namespaces**.
+- **Profile APIs:** [World of Warcraft Classic – Profile APIs](https://community.developer.battle.net/documentation/world-of-warcraft-classic/profile-apis) — Charakter- und **Gilden**-Profile, **`profile-*`‑Namespaces**.
+
+Region-Platzhalter: `{region}` = z. B. `eu`, `us` (siehe auch `WowRegion` im Code).
+
+## Namespace-Muster (Classic-Familie, vergleiche `wowrealms.md` / Realm-Sync)
+
+| WoW-Preset / Produktlinie | Game Data (`dynamic-*`) | Profile (`profile-*`) |
+|----------------------------|-------------------------|------------------------|
+| WoW Classic (Era / 1.x)    | `dynamic-classic1x-{region}` | `profile-classic1x-{region}` |
+| TBC Classic (Jubiläum etc.) | `dynamic-classicann-{region}` | `profile-classicann-{region}` |
+| Mists of Pandaria Classic  | `dynamic-classic-{region}` | `profile-classic-{region}` |
+
+In **`rf_battlenet_realm`** ist typischerweise der **`dynamic-*`‑Namespace** gespeichert (Realm-/Connected-Realm-Import).
+
+## Game Data vs. Profile — welcher Namespace?
+
+- **Game Data** (`/data/wow/...` mit **Search**, **Connected Realm**, viele **static/dynamic**-Ressourcen): Query-Parameter `namespace` = passendes **`dynamic-*`** (oder laut Dokumentation zum Endpoint).
+- **Profile** (Charakterprofil, **Gilde** `/data/wow/guild/{realmSlug}/{guildSlug}`): Query-Parameter `namespace` = passendes **`profile-*`**, **nicht** das `dynamic-*` aus der Realm-Zeile 1:1 übernehmen.
+
+Konvertierung im Code: `dynamicNamespaceToProfileNamespace()` in `lib/wow-realm-name.ts` ersetzt `dynamic-` durch `profile-` (analog zu `_links.self` in Blizzard-Antworten).
+
+## Authentifizierung
+
+- **Client Credentials** gegen die regionale OAuth-URL (z. B. `https://eu.battle.net/oauth/token`), Credentials aus **`rf_battlenet_api_config`**.
+- Blizzard-Requests: **`Authorization: Bearer <access_token>`** (kein `access_token` in der Query-String für Profil-/Game-Data-Calls, siehe `lib/battlenet.ts`).
+
+## Typische Pfade (Konfiguration in `rf_battlenet_api_config`)
+
+- Charakterprofil: `profileCharacterPath` + Realm-Slug + Name (kleingeschrieben).
+- Gilde: `profileGuildPath` + Realm-Slug + Gilden-Slug; **`namespace=profile-*`**.
+- Gildensuche: `searchGuildPath` — meist **`dynamic-*`** für den Suchindex.
+
+## Agenten-Hinweis
+
+Neue Endpoints immer an der **offiziellen Doku** zum jeweiligen Produkt (Classic Retail vs. Classic-Familie) ausrichten; Namespace und Pfad können sich zwischen Game Data und Profile unterscheiden — **nicht** nur `realm.namespace` aus der DB blind verwenden, wenn die Doku **`profile-*`** verlangt.
