@@ -2,7 +2,22 @@ import { prisma } from '@/lib/prisma';
 import { TBC_CLASSES, getSpecDisplayName } from '@/lib/wow-tbc-classes';
 import type { WowPreset, WowRegion } from '@/lib/wow-classic-realms';
 
-/** Safe to log (no secrets): full URL without Authorization header. */
+/** URL for logs/client debug: same query as the real request but token redacted. */
+function battleNetCharacterRequestUrlForLog(
+  apiBaseUrl: string,
+  profilePath: string,
+  namespace: string,
+  locale: string
+): string {
+  const p = new URLSearchParams({
+    namespace,
+    locale,
+    access_token: '***',
+  });
+  return `${apiBaseUrl}${profilePath}?${p.toString()}`;
+}
+
+/** Safe to log (no secrets): full URL shape; access_token shown as ***. */
 export type BattlenetRequestDebug = {
   requestUrl: string;
   httpStatus: number;
@@ -249,10 +264,8 @@ async function fetchSpecializations(
   try {
     const url = new URL(specializationsHref);
     url.searchParams.set('locale', locale);
-    const res = await fetch(url.toString(), {
-      cache: 'no-store',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    url.searchParams.set('access_token', accessToken);
+    const res = await fetch(url.toString(), { cache: 'no-store' });
     if (!res.ok) return null;
     return (await res.json()) as BattlenetSpecializations;
   } catch {
@@ -385,26 +398,31 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
   const accessToken = await getAccessToken(config);
   const apiBaseUrl = realm.region === config.region ? config.apiBaseUrl : `https://${realm.region}.api.blizzard.com`;
   const profilePath = `${config.profileCharacterPath}/${realmSlug}/${charName}`;
+  /** Profile API: same auth as `fetchClassicCharacterFromBattlenetWithFilters` — token in query (Bearer alone returns 403 for many clients). */
   const profileParams = new URLSearchParams({
     namespace: realm.namespace,
     locale: config.locale,
+    access_token: accessToken,
   });
-  const requestUrl = `${apiBaseUrl}${profilePath}?${profileParams.toString()}`;
+  const requestUrlFetch = `${apiBaseUrl}${profilePath}?${profileParams.toString()}`;
+  const requestUrlLog = battleNetCharacterRequestUrlForLog(
+    apiBaseUrl,
+    profilePath,
+    realm.namespace,
+    config.locale
+  );
 
-  const profileRes = await fetch(requestUrl, {
-    cache: 'no-store',
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const profileRes = await fetch(requestUrlFetch, { cache: 'no-store' });
   if (profileRes.status === 404) {
     throw new BattlenetCharacterRequestError('Charakter auf dem angegebenen Server nicht gefunden.', {
-      requestUrl,
+      requestUrl: requestUrlLog,
       httpStatus: 404,
     });
   }
   if (!profileRes.ok) {
     throw new BattlenetCharacterRequestError(
       `Battle.net Charakterabfrage fehlgeschlagen (HTTP ${profileRes.status}).`,
-      { requestUrl, httpStatus: profileRes.status }
+      { requestUrl: requestUrlLog, httpStatus: profileRes.status }
     );
   }
 
@@ -443,7 +461,7 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
     if (e instanceof BattlenetCharacterRequestError) throw e;
     const msg = e instanceof Error ? e.message : 'Unbekannter Fehler nach Battle.net Antwort.';
     throw new BattlenetCharacterRequestError(msg, {
-      requestUrl,
+      requestUrl: requestUrlLog,
       httpStatus: profileRes.status,
     });
   }
