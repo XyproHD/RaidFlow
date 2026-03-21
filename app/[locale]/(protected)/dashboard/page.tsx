@@ -60,9 +60,19 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
 
         {guilds.length > 0 && selectedGuild && selectedGuild.role !== 'member' && (
           <section aria-labelledby="raids-heading">
-            <h2 id="raids-heading" className="text-lg font-semibold text-foreground mb-3">
-              {t('raids')}
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <h2 id="raids-heading" className="text-lg font-semibold text-foreground">
+                {t('raids')}
+              </h2>
+              {(selectedGuild.role === 'raidleader' || selectedGuild.role === 'guildmaster') && (
+                <Link
+                  href={`/${locale}/guild/${selectedGuild.id}/raid/new`}
+                  className="text-sm font-medium rounded-md bg-primary px-3 py-1.5 text-primary-foreground hover:opacity-90"
+                >
+                  {t('newRaid')}
+                </Link>
+              )}
+            </div>
             {raidsForGuild.length === 0 ? (
               <p className="text-muted-foreground text-sm">{t('raidsEmpty')}</p>
             ) : (

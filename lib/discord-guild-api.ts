@@ -201,3 +201,41 @@ export async function channelExists(
 
   return res.ok;
 }
+
+/**
+ * Erstellt einen öffentlichen Thread in einem Text-/News-Channel (Raid-Thread).
+ * Discord: POST /channels/{channel.id}/threads, type 11 = GUILD_PUBLIC_THREAD.
+ */
+export async function createPublicThreadInChannel(
+  parentDiscordChannelId: string,
+  threadName: string
+): Promise<{ threadId: string }> {
+  const token = getBotToken();
+  if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+
+  const name = threadName.slice(0, 100);
+  const res = await fetch(
+    `${DISCORD_API_BASE}/channels/${parentDiscordChannelId}/threads`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name,
+        auto_archive_duration: 1440,
+        type: 11,
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Discord API threads: ${res.status} ${text}`);
+  }
+
+  const data = (await res.json()) as { id?: string };
+  if (!data.id) throw new Error('Discord API threads: missing id');
+  return { threadId: data.id };
+}
