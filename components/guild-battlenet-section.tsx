@@ -13,11 +13,13 @@ function formatRealmLabel(realm: WowRealm): string {
 type LinkState = {
   discordGuildName: string;
   battlenetRealmId: string | null;
+  battlenetProfileRealmSlug: string | null;
+  battlenetProfileRealmId: string | null;
   battlenetGuildId: string | null;
   battlenetGuildName: string | null;
 };
 
-type SearchHit = { id: string; name: string; realmSlug: string };
+type SearchHit = { id: string; name: string; realmSlug: string; realmNumericId?: string | null };
 
 export function GuildBattlenetSection({
   guildId,
@@ -61,6 +63,8 @@ export function GuildBattlenetSection({
     let data: LinkState & { error?: string } = {
       discordGuildName: '',
       battlenetRealmId: null,
+      battlenetProfileRealmSlug: null,
+      battlenetProfileRealmId: null,
       battlenetGuildId: null,
       battlenetGuildName: null,
     };
@@ -73,6 +77,8 @@ export function GuildBattlenetSection({
     setLink({
       discordGuildName: data.discordGuildName,
       battlenetRealmId: data.battlenetRealmId,
+      battlenetProfileRealmSlug: data.battlenetProfileRealmSlug ?? null,
+      battlenetProfileRealmId: data.battlenetProfileRealmId ?? null,
       battlenetGuildId: data.battlenetGuildId,
       battlenetGuildName: data.battlenetGuildName,
     });
@@ -285,6 +291,8 @@ export function GuildBattlenetSection({
           battlenetRealmId: selectedRealmId,
           battlenetGuildId: selectedHit.id,
           battlenetGuildName: selectedHit.name,
+          profileRealmSlug: selectedHit.realmSlug || undefined,
+          profileRealmId: selectedHit.realmNumericId || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -352,10 +360,23 @@ export function GuildBattlenetSection({
             <span className="font-medium">{link.discordGuildName}</span>
           </p>
           {link.battlenetGuildId && (
-            <p>
-              <span className="text-muted-foreground">{t('battlenetLinked')}:</span>{' '}
-              {link.battlenetGuildName ?? '—'} — ID {link.battlenetGuildId}
-            </p>
+            <>
+              {(link.battlenetProfileRealmSlug || link.battlenetProfileRealmId) && (
+                <p>
+                  <span className="text-muted-foreground">{t('battlenetLinkedRealm')}:</span>{' '}
+                  <span className="font-medium">
+                    {link.battlenetProfileRealmSlug ?? '—'}
+                    {link.battlenetProfileRealmId
+                      ? ` (${t('battlenetRealmIdLabel')}: ${link.battlenetProfileRealmId})`
+                      : ''}
+                  </span>
+                </p>
+              )}
+              <p>
+                <span className="text-muted-foreground">{t('battlenetLinked')}:</span>{' '}
+                {link.battlenetGuildName ?? '—'} — ID {link.battlenetGuildId}
+              </p>
+            </>
           )}
           {!link.battlenetGuildId && (
             <p className="text-muted-foreground">{t('battlenetNotLinked')}</p>

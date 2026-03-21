@@ -170,6 +170,8 @@
     "battlenetSectionDescription": "Wähle den Realm, auf dem eure Gilde spielt. RaidFlow sucht die Gilde über die Battle.net API und speichert die Gilden-ID. Wenn der automatische Treffer fehlschlägt (z. B. anderer Servername als im Spiel), kannst du den Gildennamen manuell suchen und das richtige Ergebnis auswählen.",
     "battlenetDiscordName": "Discord-Gildenname",
     "battlenetLinked": "Verknüpft mit WoW",
+    "battlenetLinkedRealm": "Battle.net-Realm",
+    "battlenetRealmIdLabel": "Realm-ID",
     "battlenetNotLinked": "Noch keine WoW-Gilde verknüpft.",
     "battlenetRealm": "Battle.net Realm",
     "battlenetRealmPlaceholder": "Realm suchen …",

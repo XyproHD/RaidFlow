@@ -11,6 +11,8 @@ export type WowGuildSearchHit = {
   id: bigint;
   name: string;
   realmSlug: string;
+  /** Blizzard `realm.id` aus dem Gilden-Profil (z. B. 6409), falls vorhanden */
+  realmNumericId?: bigint | null;
 };
 
 /** Blizzard: Gildenname in der URL — kleingeschrieben, Leerzeichen als Bindestrich. */
@@ -92,8 +94,9 @@ function parseGuildPayload(data: Record<string, unknown>): WowGuildSearchHit | n
   const name = extractGuildNameFromPayload(data);
   const realm = data.realm && typeof data.realm === 'object' ? (data.realm as Record<string, unknown>) : null;
   const realmSlug = typeof realm?.slug === 'string' ? realm.slug : '';
+  const realmNumericId = idToBigInt(realm?.id);
   if (id == null || name == null) return null;
-  return { id, name, realmSlug };
+  return { id, name, realmSlug, realmNumericId: realmNumericId ?? null };
 }
 
 function parseGuildSearchRow(raw: unknown): WowGuildSearchHit | null {

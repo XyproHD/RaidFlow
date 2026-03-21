@@ -170,6 +170,8 @@
     "battlenetSectionDescription": "Pick the realm your guild plays on. RaidFlow looks up the guild via the Battle.net API and stores the guild ID. If automatic lookup fails (e.g. the realm name differs from in-game), search by guild name manually and select the correct match.",
     "battlenetDiscordName": "Discord guild name",
     "battlenetLinked": "Linked to WoW",
+    "battlenetLinkedRealm": "Battle.net realm",
+    "battlenetRealmIdLabel": "Realm ID",
     "battlenetNotLinked": "No WoW guild linked yet.",
     "battlenetRealm": "Battle.net realm",
     "battlenetRealmPlaceholder": "Search realm…",

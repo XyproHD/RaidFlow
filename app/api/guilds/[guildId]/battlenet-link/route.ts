@@ -18,6 +18,7 @@ function hitToJson(hit: WowGuildSearchHit) {
     id: hit.id.toString(),
     name: hit.name,
     realmSlug: hit.realmSlug,
+    realmNumericId: hit.realmNumericId != null ? hit.realmNumericId.toString() : null,
   };
 }
 
@@ -37,6 +38,8 @@ export async function GET(
     select: {
       name: true,
       battlenetRealmId: true,
+      battlenetProfileRealmSlug: true,
+      battlenetProfileRealmId: true,
       battlenetGuildId: true,
       battlenetGuildName: true,
     },
@@ -48,6 +51,8 @@ export async function GET(
   return NextResponse.json({
     discordGuildName: guild.name,
     battlenetRealmId: guild.battlenetRealmId,
+    battlenetProfileRealmSlug: guild.battlenetProfileRealmSlug,
+    battlenetProfileRealmId: guild.battlenetProfileRealmId?.toString() ?? null,
     battlenetGuildId: guild.battlenetGuildId?.toString() ?? null,
     battlenetGuildName: guild.battlenetGuildName,
   });
@@ -145,6 +150,9 @@ export async function PATCH(
     battlenetRealmId?: string | null;
     battlenetGuildId?: string | null;
     battlenetGuildName?: string | null;
+    /** Aus Gilden-Profil-API; optional, Fallback rf_battlenet_realm */
+    profileRealmSlug?: string | null;
+    profileRealmId?: string | null;
   };
   try {
     body = await request.json();
@@ -163,17 +171,23 @@ export async function PATCH(
         where: { id: guildId },
         data: {
           battlenetRealmId: null,
+          battlenetProfileRealmSlug: null,
+          battlenetProfileRealmId: null,
           battlenetGuildId: null,
           battlenetGuildName: null,
         },
         select: {
           battlenetRealmId: true,
+          battlenetProfileRealmSlug: true,
+          battlenetProfileRealmId: true,
           battlenetGuildId: true,
           battlenetGuildName: true,
         },
       });
       return NextResponse.json({
         battlenetRealmId: updated.battlenetRealmId,
+        battlenetProfileRealmSlug: null,
+        battlenetProfileRealmId: null,
         battlenetGuildId: null,
         battlenetGuildName: null,
       });
@@ -192,11 +206,11 @@ export async function PATCH(
     );
   }
 
-  const exists = await prisma.rfBattlenetRealm.findUnique({
+  const realmRow = await prisma.rfBattlenetRealm.findUnique({
     where: { id: realmId },
-    select: { id: true },
+    select: { id: true, slug: true, realmId: true },
   });
-  if (!exists) {
+  if (!realmRow) {
     return NextResponse.json({ error: 'Realm not found' }, { status: 400 });
   }
 
@@ -217,16 +231,35 @@ export async function PATCH(
     return NextResponse.json({ error: 'battlenetGuildName is required' }, { status: 400 });
   }
 
+  const slugFromBody =
+    typeof body.profileRealmSlug === 'string' ? body.profileRealmSlug.trim() : '';
+  const profileRealmSlug = slugFromBody || realmRow.slug;
+
+  let profileRealmNumeric: bigint | null = null;
+  if (body.profileRealmId !== undefined && body.profileRealmId !== null && body.profileRealmId !== '') {
+    try {
+      profileRealmNumeric = BigInt(String(body.profileRealmId).trim());
+    } catch {
+      return NextResponse.json({ error: 'Invalid profileRealmId' }, { status: 400 });
+    }
+  } else {
+    profileRealmNumeric = realmRow.realmId;
+  }
+
   try {
     const updated = await prisma.rfGuild.update({
       where: { id: guildId },
       data: {
         battlenetRealmId: realmId,
+        battlenetProfileRealmSlug: profileRealmSlug || null,
+        battlenetProfileRealmId: profileRealmNumeric,
         battlenetGuildId: guildIdBn,
         battlenetGuildName: guildNameBn,
       },
       select: {
         battlenetRealmId: true,
+        battlenetProfileRealmSlug: true,
+        battlenetProfileRealmId: true,
         battlenetGuildId: true,
         battlenetGuildName: true,
       },
@@ -234,6 +267,8 @@ export async function PATCH(
 
     return NextResponse.json({
       battlenetRealmId: updated.battlenetRealmId,
+      battlenetProfileRealmSlug: updated.battlenetProfileRealmSlug,
+      battlenetProfileRealmId: updated.battlenetProfileRealmId?.toString() ?? null,
       battlenetGuildId: updated.battlenetGuildId?.toString() ?? null,
       battlenetGuildName: updated.battlenetGuildName,
     });
