@@ -182,7 +182,7 @@
     "battlenetAutoNotFound": "No unique guild found. Use manual search with the exact in-game name.",
     "battlenetManualSearch": "Manual search (guild name)",
     "battlenetManualPlaceholder": "Name as in WoW (e.g. punctuation)",
-    "battlenetManualHint": "Searches the Battle.net index for the selected realm. Use the exact guild name if needed.",
+    "battlenetManualHint": "Searches the Battle.net index; display name and URL slug often differ (e.g. spaces vs. compact). Multiple variants are tried automatically.",
     "battlenetSearchButton": "Search",
     "battlenetSearchQueryRequired": "Enter a search term.",
     "battlenetSearchNoResults": "No guilds found.",

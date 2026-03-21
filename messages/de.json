@@ -182,7 +182,7 @@
     "battlenetAutoNotFound": "Keine eindeutige Gilde gefunden. Nutze die manuelle Suche mit dem exakten Namen aus dem Spiel.",
     "battlenetManualSearch": "Manuelle Suche (Gildenname)",
     "battlenetManualPlaceholder": "Name wie in WoW (z. B. mit Sonderzeichen)",
-    "battlenetManualHint": "Sucht im Battle.net-Index für den gewählten Realm. Bei Bedarf exakten Gildennamen verwenden.",
+    "battlenetManualHint": "Sucht im Battle.net-Index; Slug und Anzeigename weichen oft ab (z. B. Leerzeichen vs. kompakt). Mehrere Varianten werden automatisch probiert.",
     "battlenetSearchButton": "Suchen",
     "battlenetSearchQueryRequired": "Bitte einen Suchbegriff eingeben.",
     "battlenetSearchNoResults": "Keine Gilden gefunden.",

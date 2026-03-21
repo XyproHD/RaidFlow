@@ -20,7 +20,48 @@ export function slugifyGuildNameForApi(name: string): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '');
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
+ * Mögliche URL-Slugs für /data/wow/guild/{realm}/{slug}.
+ * Im Spiel z. B. "A V I D" → oft "a-v-i-d" (Leerzeichen → -) oder kompakt "avid" (ohne Leerzeichen).
+ */
+export function guildSlugCandidates(displayName: string): string[] {
+  const raw = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  if (!raw) return [];
+  const lower = raw.toLowerCase();
+  const seen = new Set<string>();
+
+  const add = (s: string) => {
+    const v = slugifyGuildNameForApi(s);
+    if (v) seen.add(v);
+  };
+
+  add(raw);
+  const compact = lower.replace(/\s+/g, '').replace(/[^a-z0-9]/g, '');
+  if (compact) seen.add(compact);
+
+  return Array.from(seen);
+}
+
+/** Suchbegriffe für den Suchindex (nicht 1:1 mit URL-Slug). */
+function guildSearchNameCandidates(displayName: string): string[] {
+  const raw = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  if (!raw) return [];
+  const lower = raw.toLowerCase();
+  const seen = new Set<string>();
+  const add = (s: string) => {
+    const t = s.trim();
+    if (t) seen.add(t);
+  };
+  add(raw);
+  add(lower);
+  add(lower.replace(/\s+/g, ''));
+  add(lower.replace(/\s+/g, ' ').trim());
+  return Array.from(seen);
 }
 
 function idToBigInt(v: unknown): bigint | null {
@@ -159,43 +200,42 @@ export async function searchWowGuildsOnRealm(
     },
   ];
 
-  const nameVariants: { key: string; val: string }[] = [
-    { key: 'name', val: q },
-    { key: `name.${config.locale}`, val: q },
-  ];
-
-  let lastErr = '';
-  for (const nv of nameVariants) {
-    for (const addOrder of orderVariants) {
-      const params = baseParams(nv.key, nv.val);
-      addOrder(params);
-      const url = `${apiBaseUrl}${config.searchGuildPath}?${params.toString()}`;
-      const res = await fetch(url, battlenetBearerInit(accessToken));
-      const text = await res.text();
-      if (res.ok) {
-        const json = parseSearchGuildResponseBody(text);
-        const hits = hitsFromSearchJson(json);
-        if (hits.length > 0) return hits;
-        continue;
-      }
-      if (res.status === 400 || res.status === 404) {
-        lastErr = text.slice(0, 300);
-        continue;
-      }
-      throw new Error(
-        `Battle.net Gildensuche fehlgeschlagen (HTTP ${res.status}).${text ? ` ${text.slice(0, 200)}` : ''}`
-      );
-    }
-  }
-
-  /** Fallback: direkter /data/wow/guild/{realm}/{slug}-Aufruf (ohne Suchindex). */
-  const slug = slugifyGuildNameForApi(q);
-  if (slug) {
+  /** Zuerst direkter Profil-Endpunkt: mehrere Slug-Varianten (Anzeige ≠ URL). */
+  for (const slug of guildSlugCandidates(q)) {
     try {
       const direct = await fetchWowGuildProfileBySlug(realm, slug);
       if (direct) return [direct];
     } catch {
-      /* ignorieren — unten ggf. lastErr melden */
+      /* nächste Slug-Variante */
+    }
+  }
+
+  const searchNames = guildSearchNameCandidates(q);
+  const nameKeys = ['name', `name.${config.locale}`] as const;
+
+  let lastErr = '';
+  for (const nameVal of searchNames) {
+    for (const nameKey of nameKeys) {
+      for (const addOrder of orderVariants) {
+        const params = baseParams(nameKey, nameVal);
+        addOrder(params);
+        const url = `${apiBaseUrl}${config.searchGuildPath}?${params.toString()}`;
+        const res = await fetch(url, battlenetBearerInit(accessToken));
+        const text = await res.text();
+        if (res.ok) {
+          const json = parseSearchGuildResponseBody(text);
+          const hits = hitsFromSearchJson(json);
+          if (hits.length > 0) return hits;
+          continue;
+        }
+        if (res.status === 400 || res.status === 404) {
+          lastErr = text.slice(0, 300);
+          continue;
+        }
+        throw new Error(
+          `Battle.net Gildensuche fehlgeschlagen (HTTP ${res.status}).${text ? ` ${text.slice(0, 200)}` : ''}`
+        );
+      }
     }
   }
 
@@ -225,13 +265,12 @@ export async function autoResolveWowGuild(
   const rawName = discordOrIngameGuildName.trim();
   if (!rawName) return { status: 'not_found' };
 
-  const slug = slugifyGuildNameForApi(rawName);
-  if (slug) {
+  for (const slug of guildSlugCandidates(rawName)) {
     try {
       const direct = await fetchWowGuildProfileBySlug(realm, slug);
       if (direct) return { status: 'ok', guild: direct };
     } catch {
-      // Suche als Fallback
+      /* nächste Slug-Variante */
     }
   }
 
