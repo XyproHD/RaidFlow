@@ -3,7 +3,10 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { fetchClassicCharacterFromBattlenetByRealm } from '@/lib/battlenet';
+import {
+  BattlenetCharacterRequestError,
+  fetchClassicCharacterFromBattlenetByRealm,
+} from '@/lib/battlenet';
 import type { WowRegion } from '@/lib/wow-classic-realms';
 import { appLocaleToBnetLocale, pickRealmNameFromJson, titleCaseFromSlug } from '@/lib/wow-realm-name';
 
@@ -104,6 +107,15 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (err) {
+    if (err instanceof BattlenetCharacterRequestError) {
+      return NextResponse.json(
+        {
+          error: err.message,
+          battlenetDebug: err.battlenetDebug,
+        },
+        { status: 400 }
+      );
+    }
     const message = err instanceof Error ? err.message : 'Auto Add fehlgeschlagen';
     return NextResponse.json({ error: message }, { status: 400 });
   }

@@ -266,7 +266,25 @@ export function ProfileCharacters({
           setError(t('errorSave'));
         }
       } else {
-        setError(await parseError(res));
+        const text = await res.text();
+        let data: {
+          error?: string;
+          battlenetDebug?: { requestUrl: string; httpStatus: number; method: string };
+        } = {};
+        try {
+          data = text ? (JSON.parse(text) as typeof data) : {};
+        } catch {
+          /* ignore */
+        }
+        if (data.battlenetDebug?.requestUrl) {
+          console.error('[RaidFlow][Battle.net] Character request failed', {
+            method: data.battlenetDebug.method,
+            url: data.battlenetDebug.requestUrl,
+            httpStatus: data.battlenetDebug.httpStatus,
+            message: data.error,
+          });
+        }
+        setError(data.error ?? text || t('errorSave'));
       }
     } catch (err) {
       setError(t('errorSave'));

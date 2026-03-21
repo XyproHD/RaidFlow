@@ -2,6 +2,30 @@ import { prisma } from '@/lib/prisma';
 import { TBC_CLASSES, getSpecDisplayName } from '@/lib/wow-tbc-classes';
 import type { WowPreset, WowRegion } from '@/lib/wow-classic-realms';
 
+/** Safe to log (no secrets): full URL without Authorization header. */
+export type BattlenetRequestDebug = {
+  requestUrl: string;
+  httpStatus: number;
+  method: string;
+};
+
+export class BattlenetCharacterRequestError extends Error {
+  readonly battlenetDebug: BattlenetRequestDebug;
+
+  constructor(
+    message: string,
+    init: { requestUrl: string; httpStatus: number; method?: string }
+  ) {
+    super(message);
+    this.name = 'BattlenetCharacterRequestError';
+    this.battlenetDebug = {
+      requestUrl: init.requestUrl,
+      httpStatus: init.httpStatus,
+      method: init.method ?? 'GET',
+    };
+  }
+}
+
 type BattlenetProfile = {
   id?: number;
   name?: string;
@@ -365,42 +389,62 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
     namespace: realm.namespace,
     locale: config.locale,
   });
+  const requestUrl = `${apiBaseUrl}${profilePath}?${profileParams.toString()}`;
 
-  const profileRes = await fetch(`${apiBaseUrl}${profilePath}?${profileParams.toString()}`, {
+  const profileRes = await fetch(requestUrl, {
     cache: 'no-store',
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (profileRes.status === 404) {
-    throw new Error('Charakter auf dem angegebenen Server nicht gefunden.');
+    throw new BattlenetCharacterRequestError('Charakter auf dem angegebenen Server nicht gefunden.', {
+      requestUrl,
+      httpStatus: 404,
+    });
   }
   if (!profileRes.ok) {
-    throw new Error(`Battle.net Charakterabfrage fehlgeschlagen (HTTP ${profileRes.status}).`);
+    throw new BattlenetCharacterRequestError(
+      `Battle.net Charakterabfrage fehlgeschlagen (HTTP ${profileRes.status}).`,
+      { requestUrl, httpStatus: profileRes.status }
+    );
   }
 
-  const profile = (await profileRes.json()) as BattlenetProfile;
-  const specializations = await fetchSpecializations(profile?._links?.specializations?.href, config.locale, accessToken);
-  const resolved = resolveClassAndSpec(profile, specializations);
+  try {
+    const profile = (await profileRes.json()) as BattlenetProfile;
+    const specializations = await fetchSpecializations(
+      profile?._links?.specializations?.href,
+      config.locale,
+      accessToken
+    );
+    const resolved = resolveClassAndSpec(profile, specializations);
 
-  return {
-    configId: config.id,
-    region: realm.region,
-    wowVersion: wowVersionToInternal(realm.version),
-    realmSlug: profile.realm?.slug ?? realmSlug,
-    realmName: profile.realm?.name ?? realm.name ?? realmSlug,
-    characterName: profile.name ?? characterName.trim(),
-    characterNameLower: charName,
-    battlenetCharacterId: profile.id ? BigInt(profile.id) : null,
-    level: profile.level ?? null,
-    raceName: profile.race?.name ?? null,
-    className: resolved.className ?? null,
-    activeSpecName: resolved.specName ?? null,
-    guildName: profile.guild?.name ?? null,
-    faction: profile.faction?.name ?? profile.faction?.type ?? null,
-    profileUrl: `${apiBaseUrl}${profilePath}`,
-    rawProfile: {
-      profile,
-      specializations,
-    },
-    mainSpec: getSpecDisplayName(resolved.classId, resolved.specId),
-  };
+    return {
+      configId: config.id,
+      region: realm.region,
+      wowVersion: wowVersionToInternal(realm.version),
+      realmSlug: profile.realm?.slug ?? realmSlug,
+      realmName: profile.realm?.name ?? realm.name ?? realmSlug,
+      characterName: profile.name ?? characterName.trim(),
+      characterNameLower: charName,
+      battlenetCharacterId: profile.id ? BigInt(profile.id) : null,
+      level: profile.level ?? null,
+      raceName: profile.race?.name ?? null,
+      className: resolved.className ?? null,
+      activeSpecName: resolved.specName ?? null,
+      guildName: profile.guild?.name ?? null,
+      faction: profile.faction?.name ?? profile.faction?.type ?? null,
+      profileUrl: `${apiBaseUrl}${profilePath}`,
+      rawProfile: {
+        profile,
+        specializations,
+      },
+      mainSpec: getSpecDisplayName(resolved.classId, resolved.specId),
+    };
+  } catch (e) {
+    if (e instanceof BattlenetCharacterRequestError) throw e;
+    const msg = e instanceof Error ? e.message : 'Unbekannter Fehler nach Battle.net Antwort.';
+    throw new BattlenetCharacterRequestError(msg, {
+      requestUrl,
+      httpStatus: profileRes.status,
+    });
+  }
 }
