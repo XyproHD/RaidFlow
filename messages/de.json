@@ -128,7 +128,7 @@
     "forbidden": "Du hast keine Berechtigung für die Gildenverwaltung. Nur RaidFlow-Gildenmeister können diese Seite nutzen.",
     "selectGuild": "Gilde auswählen",
     "raidGroups": "Raidgruppen",
-    "raidGroupsDescription": "Raidgruppen anlegen, bearbeiten oder löschen. Auf Discord wird die Rolle „Raidflowgroup-<Name>“ erstellt.",
+    "raidGroupsDescription": "Raidgruppen anlegen, bearbeiten oder löschen. Auf Discord wird die Rolle „Raidflowgroup-(Name)“ erstellt.",
     "addRaidGroup": "Raidgruppe anlegen",
     "raidGroupName": "Name",
     "editRaidGroup": "Bearbeiten",

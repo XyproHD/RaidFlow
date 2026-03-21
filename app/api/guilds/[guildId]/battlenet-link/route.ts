@@ -1,3 +1,8 @@
+/**
+ * Battle.net: OAuth client_credentials (DB: rf_battlenet_api_config) → access_token;
+ * Blizzard Game Data wird mit Authorization: Bearer <access_token> aufgerufen.
+ * Der Browser sendet nur die Session an RaidFlow, kein Bearer an Blizzard.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireGuildMasterOrForbid } from '@/lib/guild-master';
@@ -119,10 +124,8 @@ export async function POST(
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error('[battlenet-link POST]', e);
-    return NextResponse.json(
-      { error: message },
-      { status: 502 }
-    );
+    /** 502 = Upstream/Battle.net oder Konfiguration; Body enthält error-Text für die UI */
+    return NextResponse.json({ error: message }, { status: 502 });
   }
 }
 

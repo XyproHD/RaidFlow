@@ -128,7 +128,7 @@
     "forbidden": "You do not have permission for guild management. Only RaidFlow Guild Masters can access this page.",
     "selectGuild": "Select guild",
     "raidGroups": "Raid groups",
-    "raidGroupsDescription": "Create, edit or delete raid groups. The Discord role \"Raidflowgroup-<Name>\" will be created.",
+    "raidGroupsDescription": "Create, edit or delete raid groups. The Discord role \"Raidflowgroup-(Name)\" will be created.",
     "addRaidGroup": "Add raid group",
     "raidGroupName": "Name",
     "editRaidGroup": "Edit",

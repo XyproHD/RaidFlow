@@ -30,9 +30,24 @@ function idToBigInt(v: unknown): bigint | null {
   return null;
 }
 
+function extractGuildNameFromPayload(data: Record<string, unknown>): string | null {
+  const n = data.name;
+  if (typeof n === 'string' && n.trim()) return n.trim();
+  if (n && typeof n === 'object' && !Array.isArray(n)) {
+    const o = n as Record<string, unknown>;
+    if (typeof o.exact === 'string' && o.exact.trim()) return o.exact.trim();
+    if (typeof o.string === 'string' && o.string.trim()) return o.string.trim();
+    for (const loc of ['de_DE', 'en_US', 'en_GB', 'fr_FR', 'es_ES']) {
+      const v = o[loc];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+  }
+  return null;
+}
+
 function parseGuildPayload(data: Record<string, unknown>): WowGuildSearchHit | null {
   const id = idToBigInt(data.id);
-  const name = typeof data.name === 'string' ? data.name : null;
+  const name = extractGuildNameFromPayload(data);
   const realm = data.realm && typeof data.realm === 'object' ? (data.realm as Record<string, unknown>) : null;
   const realmSlug = typeof realm?.slug === 'string' ? realm.slug : '';
   if (id == null || name == null) return null;
@@ -85,8 +100,31 @@ export async function fetchWowGuildProfileBySlug(
   return hit;
 }
 
+function parseSearchGuildResponseBody(text: string): { results?: unknown[]; result?: unknown[] } {
+  const t = text.trim();
+  if (!t) return {};
+  try {
+    return JSON.parse(t) as { results?: unknown[]; result?: unknown[] };
+  } catch {
+    throw new Error(
+      `Battle.net Gildensuche: Antwort ist kein JSON (Vorschau: ${text.slice(0, 120)}).`
+    );
+  }
+}
+
+function hitsFromSearchJson(json: { results?: unknown[]; result?: unknown[] }): WowGuildSearchHit[] {
+  const rows = json.results ?? json.result ?? [];
+  const out: WowGuildSearchHit[] = [];
+  for (const row of rows) {
+    const hit = parseGuildSearchRow(row);
+    if (hit) out.push(hit);
+  }
+  return out;
+}
+
 /**
- * Suchindex /data/wow/search/guild — Filter realm.slug + name (exakter Index, je nach Region).
+ * Suchindex /data/wow/search/guild — Filter realm.slug + name.
+ * OAuth: Server holt per Client Credentials ein access_token; Blizzard wird mit Authorization: Bearer aufgerufen.
  */
 export async function searchWowGuildsOnRealm(
   realm: { region: WowRegion; slug: string; namespace: string },
@@ -96,39 +134,77 @@ export async function searchWowGuildsOnRealm(
   if (!q) return [];
 
   const { config, accessToken, apiBaseUrl } = await getGameDataClient(realm.region);
-  const baseParams = () => {
+
+  const baseParams = (nameKey: string, nameVal: string) => {
     const params = new URLSearchParams({
       namespace: realm.namespace,
       locale: config.locale,
       'realm.slug': realm.slug,
-      name: q,
     });
+    params.set(nameKey, nameVal);
     params.set('_page', '1');
     return params;
   };
-  let params = baseParams();
-  params.set('orderby', 'id');
-  let url = `${apiBaseUrl}${config.searchGuildPath}?${params.toString()}`;
-  let res = await fetch(url, battlenetBearerInit(accessToken));
-  if (!res.ok && res.status === 400) {
-    params = baseParams();
-    url = `${apiBaseUrl}${config.searchGuildPath}?${params.toString()}`;
-    res = await fetch(url, battlenetBearerInit(accessToken));
+
+  /** Blizzard akzeptiert je nach Endpoint `orderby` oder `order_by`; manche Builds brauchen kein Sortierfeld. */
+  const orderVariants = [
+    (p: URLSearchParams) => {
+      p.set('orderby', 'id');
+    },
+    (p: URLSearchParams) => {
+      p.set('order_by', 'id');
+    },
+    (_p: URLSearchParams) => {
+      /* no order */
+    },
+  ];
+
+  const nameVariants: { key: string; val: string }[] = [
+    { key: 'name', val: q },
+    { key: `name.${config.locale}`, val: q },
+  ];
+
+  let lastErr = '';
+  for (const nv of nameVariants) {
+    for (const addOrder of orderVariants) {
+      const params = baseParams(nv.key, nv.val);
+      addOrder(params);
+      const url = `${apiBaseUrl}${config.searchGuildPath}?${params.toString()}`;
+      const res = await fetch(url, battlenetBearerInit(accessToken));
+      const text = await res.text();
+      if (res.ok) {
+        const json = parseSearchGuildResponseBody(text);
+        const hits = hitsFromSearchJson(json);
+        if (hits.length > 0) return hits;
+        continue;
+      }
+      if (res.status === 400 || res.status === 404) {
+        lastErr = text.slice(0, 300);
+        continue;
+      }
+      throw new Error(
+        `Battle.net Gildensuche fehlgeschlagen (HTTP ${res.status}).${text ? ` ${text.slice(0, 200)}` : ''}`
+      );
+    }
   }
-  if (!res.ok) {
-    const body = await res.text();
+
+  /** Fallback: direkter /data/wow/guild/{realm}/{slug}-Aufruf (ohne Suchindex). */
+  const slug = slugifyGuildNameForApi(q);
+  if (slug) {
+    try {
+      const direct = await fetchWowGuildProfileBySlug(realm, slug);
+      if (direct) return [direct];
+    } catch {
+      /* ignorieren — unten ggf. lastErr melden */
+    }
+  }
+
+  if (lastErr) {
     throw new Error(
-      `Battle.net Gildensuche fehlgeschlagen (HTTP ${res.status}).${body ? ` ${body.slice(0, 200)}` : ''}`
+      `Battle.net Gildensuche: keine gültige Parameterkombination. Letzte Blizzard-Antwort: ${lastErr}`
     );
   }
-  const json = (await res.json()) as { results?: unknown[]; result?: unknown[] };
-  const rows = json.results ?? json.result ?? [];
-  const out: WowGuildSearchHit[] = [];
-  for (const row of rows) {
-    const hit = parseGuildSearchRow(row);
-    if (hit) out.push(hit);
-  }
-  return out;
+  return [];
 }
 
 /**
@@ -159,7 +235,13 @@ export async function autoResolveWowGuild(
     }
   }
 
-  const fromSearch = await searchWowGuildsOnRealm(realm, rawName);
+  let fromSearch: WowGuildSearchHit[] = [];
+  try {
+    fromSearch = await searchWowGuildsOnRealm(realm, rawName);
+  } catch {
+    /** Suchindex optional; direkter Slug-Versuch war oben schon gelaufen */
+    fromSearch = [];
+  }
   if (fromSearch.length === 1) return { status: 'ok', guild: fromSearch[0]! };
   if (fromSearch.length > 1) return { status: 'ambiguous', guilds: fromSearch };
   return { status: 'not_found' };
