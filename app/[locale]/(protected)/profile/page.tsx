@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { getGuildsForUser } from '@/lib/user-guilds';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { expandRaidTimeSlot } from '@/lib/profile-constants';
-import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
+import { characterToClientDto } from '@/lib/character-api-dto';
 import { ProfileRaidTimes } from './profile-raid-times';
 import { ProfileCharacters } from './profile-characters';
 import { ProfileLoot } from './profile-loot';
@@ -69,7 +69,10 @@ export default async function ProfilePage() {
       }),
       prisma.rfCharacter.findMany({
         where: { userId },
-        include: { guild: { select: { id: true, name: true } } },
+        include: {
+          guild: { select: { id: true, name: true } },
+          battlenetProfile: { select: { battlenetCharacterId: true, realmSlug: true } },
+        },
         orderBy: { name: 'asc' },
       }),
       prisma.rfRaidCompletion.findMany({
@@ -141,22 +144,13 @@ export default async function ProfilePage() {
       }))
     );
 
-    const characterRows = characters.map((c) => {
-      const specInfo = getSpecByDisplayName(c.mainSpec);
-      return {
-        id: c.id,
-        name: c.name,
-        guildId: c.guildId,
-        guildName: c.guild?.name ?? null,
-        guildDiscordDisplayName: c.guildDiscordDisplayName,
-        mainSpec: c.mainSpec,
-        offSpec: c.offSpec,
-        isMain: c.isMain,
-        classId: specInfo?.classId ?? null,
-      };
-    });
+    const characterRows = characters.map((c) => characterToClientDto(c));
 
-    const guildOptions = guilds.map((g) => ({ id: g.id, name: g.name }));
+    const guildOptions = guilds.map((g) => ({
+      id: g.id,
+      name: g.name,
+      battlenetRealmId: g.battlenetRealmId,
+    }));
 
     return (
       <div className="p-6 md:p-8 max-w-5xl mx-auto">

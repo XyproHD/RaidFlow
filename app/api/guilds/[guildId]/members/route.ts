@@ -31,6 +31,7 @@ export async function GET(
               offSpec: true,
               isMain: true,
               guildDiscordDisplayName: true,
+              battlenetProfile: { select: { battlenetCharacterId: true } },
             },
             orderBy: { name: 'asc' },
           },
@@ -61,6 +62,7 @@ export async function GET(
         offSpec: c.offSpec,
         isMain: c.isMain,
         guildDiscordDisplayName: c.guildDiscordDisplayName,
+        hasBattlenet: !!c.battlenetProfile?.battlenetCharacterId,
       })),
     })),
   });

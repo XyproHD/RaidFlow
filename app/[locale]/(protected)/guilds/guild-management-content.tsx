@@ -17,6 +17,7 @@ type GuildCharacter = {
   offSpec: string | null;
   isMain: boolean;
   guildDiscordDisplayName?: string | null;
+  hasBattlenet?: boolean;
 };
 type Member = {
   id: string;
@@ -663,9 +664,19 @@ function CharacterCard({
           </>
         )}
       </div>
-      <CharacterDiscordNameHint discordName={ch.guildDiscordDisplayName} className="font-medium text-sm min-w-0">
-        {ch.name}
-      </CharacterDiscordNameHint>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <CharacterDiscordNameHint discordName={ch.guildDiscordDisplayName} className="font-medium text-sm min-w-0">
+          {ch.name}
+        </CharacterDiscordNameHint>
+        {ch.hasBattlenet ? (
+          <span
+            className="shrink-0 rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+            title={tProfile('bnetLinkedBadgeTitle')}
+          >
+            {tProfile('bnetLinkedBadge')}
+          </span>
+        ) : null}
+      </div>
       {trailingAction != null && <div className="flex items-center shrink-0">{trailingAction}</div>}
     </div>
   );

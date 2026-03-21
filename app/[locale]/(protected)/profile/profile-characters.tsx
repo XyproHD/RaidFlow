@@ -9,7 +9,9 @@ import {
   TBC_CLASSES,
   getSpecDisplayName,
   getAllSpecDisplayNames,
+  getSpecByDisplayName,
 } from '@/lib/wow-tbc-classes';
+import type { BattlenetProfileJson } from '@/lib/battlenet-character-persist';
 import {
   type WowRealm,
 } from '@/lib/wow-classic-realms';
@@ -26,9 +28,11 @@ type CharacterRow = {
   offSpec: string | null;
   isMain: boolean;
   classId?: string | null;
+  hasBattlenet?: boolean;
+  battlenetRealmSlug?: string | null;
 };
 
-type GuildOption = { id: string; name: string };
+type GuildOption = { id: string; name: string; battlenetRealmId?: string | null };
 
 const allSpecs = getAllSpecDisplayNames();
 
@@ -61,7 +65,7 @@ export function ProfileCharacters({
   const router = useRouter();
   const singleGuild = guilds.length === 1 ? guilds[0] : null;
   const [list, setList] = useState(initialData);
-  const [modalOpen, setModalOpen] = useState<'add' | 'edit' | 'auto' | null>(null);
+  const [modalOpen, setModalOpen] = useState<'add' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -94,11 +98,11 @@ export function ProfileCharacters({
   const [realmListBox, setRealmListBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(
     null
   );
-  const [autoName, setAutoName] = useState('');
-  const [autoGuildId, setAutoGuildId] = useState('');
-  const [autoSaveWithoutGuild, setAutoSaveWithoutGuild] = useState(false);
   const [realmOptions, setRealmOptions] = useState<WowRealm[]>([]);
   const [realmsLoading, setRealmsLoading] = useState(false);
+  const [pendingBattlenetProfile, setPendingBattlenetProfile] = useState<BattlenetProfileJson | null>(null);
+  const [bnetSyncHint, setBnetSyncHint] = useState<string | null>(null);
+  const [bnetSyncLoading, setBnetSyncLoading] = useState(false);
 
   const mainSpecOptions = useMemo(() => {
     if (!classId) return [];
@@ -113,17 +117,13 @@ export function ProfileCharacters({
     setMainSpecId('');
     setOffSpecId('');
     setError(null);
-  }, []);
-
-  const resetAutoForm = useCallback(() => {
     setAutoRealmId('');
     setRealmComboInput('');
     setRealmMenuOpen(false);
     setRealmsLoadError(null);
-    setAutoName('');
-    setAutoGuildId('');
-    setAutoSaveWithoutGuild(false);
-    setError(null);
+    setPendingBattlenetProfile(null);
+    setBnetSyncHint(null);
+    setBnetSyncLoading(false);
   }, []);
 
   const openAdd = useCallback(() => {
@@ -134,15 +134,6 @@ export function ProfileCharacters({
     }
     setModalOpen('add');
   }, [resetForm, guilds]);
-
-  const openAutoAdd = useCallback(() => {
-    setEditingId(null);
-    resetAutoForm();
-    if (guilds.length >= 1) {
-      setAutoGuildId(guilds[0].id);
-    }
-    setModalOpen('auto');
-  }, [resetAutoForm, guilds]);
 
   const openEdit = useCallback((c: CharacterRow) => {
     setEditingId(c.id);
@@ -163,6 +154,13 @@ export function ProfileCharacters({
     } else {
       setOffSpecId('');
     }
+    setPendingBattlenetProfile(null);
+    setBnetSyncHint(null);
+    setBnetSyncLoading(false);
+    setAutoRealmId('');
+    setRealmComboInput('');
+    setRealmMenuOpen(false);
+    setRealmsLoadError(null);
     setError(null);
     setModalOpen('edit');
   }, []);
@@ -171,11 +169,10 @@ export function ProfileCharacters({
     setModalOpen(null);
     setEditingId(null);
     resetForm();
-    resetAutoForm();
-  }, [resetForm, resetAutoForm]);
+  }, [resetForm]);
 
   useEffect(() => {
-    if (modalOpen !== 'add' && modalOpen !== 'edit' && modalOpen !== 'auto') return;
+    if (modalOpen !== 'add' && modalOpen !== 'edit') return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeModal();
     };
@@ -202,6 +199,65 @@ export function ProfileCharacters({
     }
   };
 
+  const handleBnetSync = async () => {
+    setBnetSyncHint(null);
+    setError(null);
+    if (!autoRealmId || !name.trim()) return;
+    setBnetSyncLoading(true);
+    try {
+      const res = await fetch('/api/user/characters/battlenet-fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          realmId: autoRealmId,
+          name: name.trim(),
+          appLocale: locale,
+        }),
+      });
+      const text = await res.text();
+      let data: {
+        characterName?: string;
+        mainSpec?: string;
+        profile?: BattlenetProfileJson;
+        error?: string;
+        notFound?: boolean;
+        battlenetDebug?: { requestUrl: string; httpStatus: number; method: string };
+      } = {};
+      try {
+        data = text ? (JSON.parse(text) as typeof data) : {};
+      } catch {
+        /* ignore */
+      }
+      if (res.ok && data.profile && data.characterName != null && data.mainSpec) {
+        setPendingBattlenetProfile(data.profile);
+        setName(data.characterName);
+        const specParsed = getSpecByDisplayName(data.mainSpec);
+        if (specParsed) {
+          setClassId(specParsed.classId);
+          setMainSpecId(specParsed.specId);
+          setOffSpecId('');
+        }
+        return;
+      }
+      if (data.battlenetDebug?.requestUrl) {
+        console.error('[RaidFlow][Battle.net] Character fetch failed', {
+          method: data.battlenetDebug.method,
+          url: data.battlenetDebug.requestUrl,
+          httpStatus: data.battlenetDebug.httpStatus,
+          message: data.error,
+        });
+      }
+      setError((data.error ?? text) || t('errorSave'));
+      if (data.notFound) setBnetSyncHint(t('bnetExactSpellingHint'));
+    } catch (err) {
+      setError(t('errorSave'));
+      console.error(err);
+    } finally {
+      setBnetSyncLoading(false);
+    }
+  };
+
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -218,6 +274,7 @@ export function ProfileCharacters({
           guildId: guildId || null,
           mainSpec,
           offSpec: offSpecId ? getSpecDisplayName(classId, offSpecId) : null,
+          ...(pendingBattlenetProfile ? { battlenetProfile: pendingBattlenetProfile } : {}),
         }),
       });
       if (res.ok) {
@@ -232,62 +289,6 @@ export function ProfileCharacters({
         }
       } else {
         setError(await parseError(res));
-      }
-    } catch (err) {
-      setError(t('errorSave'));
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAutoAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    if (!autoRealmId || !autoName.trim()) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/user/characters/auto-add', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          realmId: autoRealmId,
-          name: autoName.trim(),
-          guildId: autoGuildId || null,
-          appLocale: locale,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.character) {
-          router.refresh();
-          setList((prev) => [...prev, data.character]);
-          resetAutoForm();
-          setModalOpen(null);
-        } else {
-          setError(t('errorSave'));
-        }
-      } else {
-        const text = await res.text();
-        let data: {
-          error?: string;
-          battlenetDebug?: { requestUrl: string; httpStatus: number; method: string };
-        } = {};
-        try {
-          data = text ? (JSON.parse(text) as typeof data) : {};
-        } catch {
-          /* ignore */
-        }
-        if (data.battlenetDebug?.requestUrl) {
-          console.error('[RaidFlow][Battle.net] Character request failed', {
-            method: data.battlenetDebug.method,
-            url: data.battlenetDebug.requestUrl,
-            httpStatus: data.battlenetDebug.httpStatus,
-            message: data.error,
-          });
-        }
-        setError((data.error ?? text) || t('errorSave'));
       }
     } catch (err) {
       setError(t('errorSave'));
@@ -343,6 +344,7 @@ export function ProfileCharacters({
           guildId: guildId || null,
           mainSpec,
           offSpec: offSpecId ? getSpecDisplayName(classId, offSpecId) : null,
+          ...(pendingBattlenetProfile ? { battlenetProfile: pendingBattlenetProfile } : {}),
         }),
       });
       if (res.ok) {
@@ -477,7 +479,39 @@ export function ProfileCharacters({
   }, [realmMenuOpen]);
 
   useEffect(() => {
-    if (modalOpen !== 'auto') return;
+    setPendingBattlenetProfile(null);
+  }, [autoRealmId]);
+
+  useEffect(() => {
+    if (modalOpen !== 'add' && modalOpen !== 'edit') return;
+    if (realmOptions.length === 0) return;
+    if (!guildId || saveWithoutGuild) return;
+    const g = guilds.find((x) => x.id === guildId);
+    const rid = g?.battlenetRealmId;
+    if (!rid) return;
+    const realm = realmOptions.find((r) => r.id === rid);
+    if (realm) {
+      setAutoRealmId(realm.id);
+      setRealmComboInput(formatRealmLabel(realm));
+    }
+  }, [guildId, saveWithoutGuild, guilds, realmOptions, modalOpen]);
+
+  useEffect(() => {
+    if (modalOpen !== 'edit' || !editingId) return;
+    if (realmOptions.length === 0) return;
+    if (guildId && !saveWithoutGuild) return;
+    const c = list.find((x) => x.id === editingId);
+    const slug = c?.battlenetRealmSlug;
+    if (!slug) return;
+    const realm = realmOptions.find((r) => r.slug.toLowerCase() === slug.toLowerCase());
+    if (realm) {
+      setAutoRealmId(realm.id);
+      setRealmComboInput(formatRealmLabel(realm));
+    }
+  }, [modalOpen, editingId, list, realmOptions, guildId, saveWithoutGuild]);
+
+  useEffect(() => {
+    if (modalOpen !== 'add' && modalOpen !== 'edit') return;
     let cancelled = false;
 
     const loadRealms = async () => {
@@ -536,6 +570,12 @@ export function ProfileCharacters({
           {error}
         </p>
       )}
+      {bnetSyncHint && (
+        <p className="text-amber-600 dark:text-amber-500 text-sm mb-2" role="status">
+          {bnetSyncHint}
+        </p>
+      )}
+      <p className="text-sm text-muted-foreground mb-3">{t('characterAddBnetHint')}</p>
       {/* Vorschau wie tatsächlicher Charakter-Button (ohne Main/Twink, ohne Burger-Menü) */}
       {(classId || selectedMainSpecDisplay || name.trim()) && (
         <div className="mb-3 grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm" style={{ gridTemplateColumns: '28px auto 1fr minmax(4rem, 1fr)' }}>
@@ -562,16 +602,6 @@ export function ProfileCharacters({
         </div>
       )}
       <div className="grid gap-3">
-        <label className="text-sm font-medium">
-          {t('characterName')} <span className="text-destructive">*</span>
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={t('characterName')}
-          className="rounded border border-input bg-background px-3 py-2 w-full"
-        />
         {guilds.length > 1 ? (
           <>
             <label className="text-sm font-medium">{t('guild')} ({t('optional')})</label>
@@ -607,6 +637,120 @@ export function ProfileCharacters({
               {t('saveWithoutGuild')}
             </label>
           </>
+        ) : null}
+        <label className="text-sm font-medium" htmlFor="character-realm-combobox">
+          {t('server')} <span className="text-muted-foreground font-normal">({t('optional')})</span>
+        </label>
+        {realmsLoadError && (
+          <p className="text-destructive text-sm" role="alert">
+            {realmsLoadError}
+          </p>
+        )}
+        <div className="relative" ref={realmPickerRef}>
+          <input
+            ref={realmInputRef}
+            id="character-realm-combobox"
+            type="text"
+            value={realmComboInput}
+            onChange={(e) => {
+              const v = e.target.value;
+              setRealmComboInput(v);
+              setRealmMenuOpen(true);
+              if (selectedRealm && formatRealmLabel(selectedRealm) !== v.trim()) {
+                setAutoRealmId('');
+              }
+            }}
+            onFocus={() => setRealmMenuOpen(true)}
+            placeholder={t('serverSearchPlaceholder')}
+            autoComplete="off"
+            aria-expanded={realmMenuOpen}
+            aria-controls="realm-suggestion-list"
+            aria-autocomplete="list"
+            className="rounded border border-input bg-background px-3 py-2 w-full"
+          />
+          {realmMenuOpen && realmListBox && (
+            <ul
+              id="realm-suggestion-list"
+              role="listbox"
+              style={{
+                position: 'fixed',
+                top: realmListBox.top,
+                left: realmListBox.left,
+                width: realmListBox.width,
+                maxHeight: realmListBox.maxHeight,
+                zIndex: 100,
+              }}
+              className="overflow-auto rounded-md border border-border bg-background py-1 shadow-md"
+            >
+              {realmsLoading && (
+                <li className="px-3 py-2 text-sm text-muted-foreground">{t('loadingRealms')}</li>
+              )}
+              {!realmsLoading &&
+                filteredRealmSuggestions.map((realm) => {
+                  const { name: rn, version } = realmNameAndVersion(realm);
+                  return (
+                    <li key={realm.id} role="option">
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setAutoRealmId(realm.id);
+                          setRealmComboInput(formatRealmLabel(realm));
+                          setRealmMenuOpen(false);
+                        }}
+                      >
+                        <span>{rn}</span>
+                        {version && (
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                            {version}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              {!realmsLoading && filteredRealmSuggestions.length === 0 && realmOptions.length > 0 && (
+                <li className="px-3 py-2 text-sm text-muted-foreground">{t('realmNoMatches')}</li>
+              )}
+              {!realmsLoading && realmOptions.length === 0 && !realmsLoadError && (
+                <li className="px-3 py-2 text-sm text-muted-foreground">{t('realmListEmpty')}</li>
+              )}
+            </ul>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {realmsLoading
+            ? t('loadingRealms')
+            : realmsLoadError
+              ? t('realmPickFromList')
+              : t('realmFilterHint', { count: realmHintCount })}
+        </p>
+        {!autoRealmId && realmComboInput.trim().length > 0 && !realmsLoadError && (
+          <p className="text-xs text-amber-600 dark:text-amber-500">{t('realmPickFromList')}</p>
+        )}
+        <label className="text-sm font-medium">
+          {t('characterName')} <span className="text-destructive">*</span>
+        </label>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t('characterName')}
+            className="rounded border border-input bg-background px-3 py-2 w-full min-w-0 flex-1"
+          />
+          <button
+            type="button"
+            onClick={() => void handleBnetSync()}
+            disabled={loading || bnetSyncLoading || !autoRealmId || !name.trim()}
+            className="rounded border border-input bg-background px-3 py-2 text-sm font-medium whitespace-nowrap shrink-0 disabled:opacity-50"
+          >
+            {bnetSyncLoading ? t('bnetSyncLoading') : t('bnetSync')}
+          </button>
+        </div>
+        {pendingBattlenetProfile ? (
+          <p className="text-xs text-muted-foreground">{t('bnetPendingSaveHint')}</p>
         ) : null}
         <label className="text-sm font-medium">{t('class')} <span className="text-destructive">*</span></label>
         <select
@@ -708,12 +852,22 @@ export function ProfileCharacters({
                         </span>
                       </>
                     )}
-                    <CharacterDiscordNameHint
-                      discordName={c.guildDiscordDisplayName}
-                      className="font-medium text-base min-w-0"
-                    >
-                      {c.name}
-                    </CharacterDiscordNameHint>
+                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                      <CharacterDiscordNameHint
+                        discordName={c.guildDiscordDisplayName}
+                        className="font-medium text-base min-w-0"
+                      >
+                        {c.name}
+                      </CharacterDiscordNameHint>
+                      {c.hasBattlenet ? (
+                        <span
+                          className="shrink-0 rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                          title={t('bnetLinkedBadgeTitle')}
+                        >
+                          {t('bnetLinkedBadge')}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <span
                     className="text-sm text-muted-foreground truncate min-w-0 hidden sm:block text-center"
@@ -788,17 +942,10 @@ export function ProfileCharacters({
         >
           {t('addCharacter')}
         </button>
-        <button
-          type="button"
-          onClick={openAutoAdd}
-          className="rounded border border-input bg-background px-4 py-2 text-sm font-medium"
-        >
-          {t('autoAddCharacter')}
-        </button>
       </div>
 
       {/* Modal: Charakter anlegen oder bearbeiten */}
-      {(modalOpen === 'add' || modalOpen === 'edit' || modalOpen === 'auto') && (
+      {(modalOpen === 'add' || modalOpen === 'edit') && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
           role="dialog"
@@ -813,184 +960,19 @@ export function ProfileCharacters({
           >
             <div className="p-4 border-b border-border flex justify-between items-center">
               <h3 id="modal-character-title" className="text-lg font-semibold">
-                {modalOpen === 'add'
-                  ? t('addCharacter')
-                  : modalOpen === 'edit'
-                  ? t('editCharacter')
-                  : t('autoAddCharacter')}
+                {modalOpen === 'add' ? t('addCharacter') : t('editCharacter')}
               </h3>
               <button type="button" onClick={closeModal} className="text-muted-foreground hover:text-foreground p-1" aria-label={t('close')}>×</button>
             </div>
             <form
-              onSubmit={
-                modalOpen === 'add'
-                  ? handleAdd
-                  : modalOpen === 'edit'
-                  ? handleSaveEdit
-                  : handleAutoAdd
-              }
+              onSubmit={modalOpen === 'add' ? handleAdd : handleSaveEdit}
               className="p-4"
             >
-              {modalOpen === 'auto' ? (
-                <>
-                  {error && (
-                    <p className="text-destructive text-sm mb-2" role="alert">
-                      {error}
-                    </p>
-                  )}
-                  <p className="text-sm text-muted-foreground mb-3">{t('autoAddDescription')}</p>
-                  <div className="grid gap-3">
-                    <label className="text-sm font-medium" htmlFor="auto-realm-combobox">
-                      {t('server')} <span className="text-destructive">*</span>
-                    </label>
-                    {realmsLoadError && (
-                      <p className="text-destructive text-sm" role="alert">
-                        {realmsLoadError}
-                      </p>
-                    )}
-                    <div className="relative" ref={realmPickerRef}>
-                      <input
-                        ref={realmInputRef}
-                        id="auto-realm-combobox"
-                        type="text"
-                        value={realmComboInput}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setRealmComboInput(v);
-                          setRealmMenuOpen(true);
-                          if (selectedRealm && formatRealmLabel(selectedRealm) !== v.trim()) {
-                            setAutoRealmId('');
-                          }
-                        }}
-                        onFocus={() => setRealmMenuOpen(true)}
-                        placeholder={t('serverSearchPlaceholder')}
-                        autoComplete="off"
-                        aria-expanded={realmMenuOpen}
-                        aria-controls="realm-suggestion-list"
-                        aria-autocomplete="list"
-                        className="rounded border border-input bg-background px-3 py-2 w-full"
-                      />
-                      {realmMenuOpen && realmListBox && (
-                        <ul
-                          id="realm-suggestion-list"
-                          role="listbox"
-                          style={{
-                            position: 'fixed',
-                            top: realmListBox.top,
-                            left: realmListBox.left,
-                            width: realmListBox.width,
-                            maxHeight: realmListBox.maxHeight,
-                            zIndex: 100,
-                          }}
-                          className="overflow-auto rounded-md border border-border bg-background py-1 shadow-md"
-                        >
-                          {realmsLoading && (
-                            <li className="px-3 py-2 text-sm text-muted-foreground">{t('loadingRealms')}</li>
-                          )}
-                          {!realmsLoading &&
-                            filteredRealmSuggestions.map((realm) => {
-                              const { name, version } = realmNameAndVersion(realm);
-                              return (
-                                <li key={realm.id} role="option">
-                                  <button
-                                    type="button"
-                                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={() => {
-                                      setAutoRealmId(realm.id);
-                                      setRealmComboInput(formatRealmLabel(realm));
-                                      setRealmMenuOpen(false);
-                                    }}
-                                  >
-                                    <span>{name}</span>
-                                    {version && (
-                                      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                                        {version}
-                                      </span>
-                                    )}
-                                  </button>
-                                </li>
-                              );
-                            })}
-                          {!realmsLoading && filteredRealmSuggestions.length === 0 && realmOptions.length > 0 && (
-                            <li className="px-3 py-2 text-sm text-muted-foreground">{t('realmNoMatches')}</li>
-                          )}
-                          {!realmsLoading && realmOptions.length === 0 && !realmsLoadError && (
-                            <li className="px-3 py-2 text-sm text-muted-foreground">{t('realmListEmpty')}</li>
-                          )}
-                        </ul>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {realmsLoading
-                        ? t('loadingRealms')
-                        : realmsLoadError
-                          ? t('realmPickFromList')
-                          : t('realmFilterHint', { count: realmHintCount })}
-                    </p>
-                    {!autoRealmId && realmComboInput.trim().length > 0 && !realmsLoadError && (
-                      <p className="text-xs text-amber-600 dark:text-amber-500">{t('realmPickFromList')}</p>
-                    )}
-                    <label className="text-sm font-medium">
-                      {t('characterName')} <span className="text-destructive">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={autoName}
-                      onChange={(e) => setAutoName(e.target.value)}
-                      placeholder={t('characterName')}
-                      className="rounded border border-input bg-background px-3 py-2 w-full"
-                    />
-                    {guilds.length > 1 ? (
-                      <>
-                        <label className="text-sm font-medium">{t('guild')} ({t('optional')})</label>
-                        <select
-                          value={autoGuildId}
-                          onChange={(e) => setAutoGuildId(e.target.value)}
-                          className="rounded border border-input bg-background px-3 py-2 w-full"
-                        >
-                          {guilds.map((g) => (
-                            <option key={g.id} value={g.id}>
-                              {g.name}
-                            </option>
-                          ))}
-                          <option value="">{t('withoutGuild')}</option>
-                        </select>
-                      </>
-                    ) : guilds.length === 1 && singleGuild ? (
-                      <>
-                        <div className="grid gap-1">
-                          <p className="text-sm font-medium">{t('guild')} ({t('optional')})</p>
-                          <p className="text-sm text-muted-foreground">{singleGuild.name}</p>
-                        </div>
-                        <label className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={autoSaveWithoutGuild}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setAutoSaveWithoutGuild(checked);
-                              setAutoGuildId(checked ? '' : singleGuild.id);
-                            }}
-                          />
-                          {t('saveWithoutGuild')}
-                        </label>
-                      </>
-                    ) : null}
-                  </div>
-                </>
-              ) : (
-                formContent
-              )}
+              {formContent}
               <div className="flex flex-wrap gap-2 mt-4">
                 <button
                   type="submit"
-                  disabled={
-                    loading ||
-                    (modalOpen === 'auto'
-                      ? !autoRealmId || !autoName.trim()
-                      : !name.trim() || !classId || !mainSpecId)
-                  }
+                  disabled={loading || !name.trim() || !classId || !mainSpecId}
                   className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm disabled:opacity-50"
                 >
                   {t('save')}

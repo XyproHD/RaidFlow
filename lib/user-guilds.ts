@@ -17,6 +17,8 @@ export interface UserGuildInfo {
   role: UserGuildRole;
   /** Raidgruppen, in denen der User ist (aus Discord-Sync oder UI-Zuordnung). */
   raidGroupIds: string[];
+  /** WoW-Realm-Zeile der Gilde (Charakter-Modal: Server-Vorbelegung für Battle.net). */
+  battlenetRealmId: string | null;
 }
 
 export interface UserRaidInfo {
@@ -100,6 +102,7 @@ export async function getGuildsForUser(
             discordGuildId: guild.discordGuildId,
             role: existingUserGuild.role as UserGuildRole,
             raidGroupIds,
+            battlenetRealmId: guild.battlenetRealmId,
           });
         }
         continue;
@@ -181,6 +184,7 @@ export async function getGuildsForUser(
         discordGuildId: guild.discordGuildId,
         role,
         raidGroupIds,
+        battlenetRealmId: guild.battlenetRealmId,
       });
     } catch (e) {
       console.error('[getGuildsForUser] guild:', guild.id, guild.name, e);
