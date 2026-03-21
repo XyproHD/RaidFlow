@@ -5,10 +5,19 @@ import { useTranslations } from 'next-intl';
 import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { cn } from '@/lib/utils';
+import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
+import { GuildBattlenetSection } from '@/components/guild-battlenet-section';
 import { getAllSpecDisplayNames } from '@/lib/wow-tbc-classes';
 
 type RaidGroup = { id: string; name: string; discordRoleId: string | null; sortOrder: number };
-type GuildCharacter = { id: string; name: string; mainSpec: string; offSpec: string | null; isMain: boolean };
+type GuildCharacter = {
+  id: string;
+  name: string;
+  mainSpec: string;
+  offSpec: string | null;
+  isMain: boolean;
+  guildDiscordDisplayName?: string | null;
+};
 type Member = {
   id: string;
   userId: string;
@@ -158,6 +167,8 @@ export function GuildManagementContent({
           {savedMessage}
         </p>
       )}
+
+      <GuildBattlenetSection guildId={guildId} onSaved={showSaved} />
 
       <RaidGroupsSection
         guildId={guildId}
@@ -652,9 +663,9 @@ function CharacterCard({
           </>
         )}
       </div>
-      <span className="font-medium text-sm truncate min-w-0" title={ch.name}>
+      <CharacterDiscordNameHint discordName={ch.guildDiscordDisplayName} className="font-medium text-sm min-w-0">
         {ch.name}
-      </span>
+      </CharacterDiscordNameHint>
       {trailingAction != null && <div className="flex items-center shrink-0">{trailingAction}</div>}
     </div>
   );

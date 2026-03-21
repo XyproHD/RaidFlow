@@ -4,14 +4,14 @@ import type { WowPreset, WowRegion } from '@/lib/wow-classic-realms';
 import { dynamicNamespaceToProfileNamespace } from '@/lib/wow-realm-name';
 
 /** Blizzard profile/specialization endpoints need Bearer; `access_token` in the query often yields 404. */
-function battlenetBearerInit(accessToken: string): RequestInit {
+export function battlenetBearerInit(accessToken: string): RequestInit {
   return {
     cache: 'no-store',
     headers: { Authorization: `Bearer ${accessToken}` },
   };
 }
 
-function profileQueryString(namespace: string, locale: string): string {
+export function profileQueryString(namespace: string, locale: string): string {
   return new URLSearchParams({ namespace, locale }).toString();
 }
 
@@ -216,7 +216,7 @@ function profileNamespacesForPreset(region: WowRegion, wowPreset: WowPreset): Pr
   throw new Error(`Unsupported wow preset: ${wowPreset}`);
 }
 
-async function getBattlenetConfigForRegion(region: WowRegion) {
+export async function getBattlenetConfigForRegion(region: WowRegion) {
   return (
     (await prisma.rfBattlenetApiConfig.findFirst({
       where: { region, isActive: true },
@@ -229,7 +229,7 @@ async function getBattlenetConfigForRegion(region: WowRegion) {
   );
 }
 
-async function getAccessToken(config: {
+export async function getBattlenetAccessToken(config: {
   clientId: string;
   clientSecret: string;
   oauthTokenUrl: string;
@@ -315,7 +315,7 @@ export async function fetchClassicCharacterFromBattlenetWithFilters(
     throw new Error('Server und Charaktername sind erforderlich.');
   }
 
-  const accessToken = await getAccessToken(config);
+  const accessToken = await getBattlenetAccessToken(config);
 
   const preset: WowPreset = wowPreset ?? 'classic';
   const candidates = profileNamespacesForPreset(region, preset);
@@ -398,7 +398,7 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
     ...config,
     oauthTokenUrl: `https://${realm.region}.battle.net/oauth/token`,
   };
-  const accessToken = await getAccessToken(tokenConfig);
+  const accessToken = await getBattlenetAccessToken(tokenConfig);
   const apiBaseUrl = realm.region === config.region ? config.apiBaseUrl : `https://${realm.region}.api.blizzard.com`;
   const profilePath = `${config.profileCharacterPath}/${realmSlug}/${charName}`;
   /** DB stores `dynamic-*` for realm search; profile character endpoint needs `profile-*` (Blizzard `_links.self`). */

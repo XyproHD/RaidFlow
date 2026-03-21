@@ -44,9 +44,14 @@ model RfGuild {
   discordRoleGuildmasterId    String?  @map("discord_role_guildmaster_id")
   discordRoleRaidleaderId     String?  @map("discord_role_raidleader_id")
   discordRoleRaiderId         String?  @map("discord_role_raider_id")
+  // Optional: WoW-Realm-Zeile + Battle.net-Gilden-ID (Gildenverwaltung)
+  battlenetRealmId           String?  @map("battlenet_realm_id")
+  battlenetGuildId            BigInt?  @map("battlenet_guild_id")
+  battlenetGuildName          String?  @map("battlenet_guild_name")
   createdAt                   DateTime @default(now()) @map("created_at")
   updatedAt                   DateTime @updatedAt @map("updated_at")
 
+  battlenetRealm        RfBattlenetRealm? @relation(fields: [battlenetRealmId], references: [id], onDelete: SetNull)
   userGuilds            RfUserGuild[]
   raidGroups            RfRaidGroup[]
   guildMembers          RfGuildMember[]
@@ -133,15 +138,17 @@ model RfGuildMember {
 // -----------------------------------------------------------------------------
 
 model RfCharacter {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  guildId   String?  @map("guild_id")
-  name      String
-  mainSpec  String   @map("main_spec")
-  offSpec   String?  @map("off_spec")
-  isMain    Boolean  @default(false) @map("is_main")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                       String   @id @default(uuid())
+  userId                   String   @map("user_id")
+  guildId                  String?  @map("guild_id")
+  name                     String
+  mainSpec                 String   @map("main_spec")
+  offSpec                  String?  @map("off_spec")
+  isMain                   Boolean  @default(false) @map("is_main")
+  /// Anzeigename auf dem Discord-Server der Gilde; Sync beim Login
+  guildDiscordDisplayName  String?  @map("guild_discord_display_name")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
 
   user                RfUser                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   guild                RfGuild?                @relation(fields: [guildId], references: [id], onDelete: SetNull)
@@ -377,6 +384,8 @@ model RfBattlenetRealm {
   type       String
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
+
+  guilds RfGuild[]
 
   @@unique([region, namespace, realmId])
   @@unique([region, namespace, slug])

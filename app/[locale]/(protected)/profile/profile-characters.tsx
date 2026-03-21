@@ -13,12 +13,15 @@ import {
 import {
   type WowRealm,
 } from '@/lib/wow-classic-realms';
+import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
 
 type CharacterRow = {
   id: string;
   name: string;
   guildId: string | null;
   guildName: string | null;
+  /** Gespeicherter Anzeigename auf dem Discord der Gilde (Sync beim Login) */
+  guildDiscordDisplayName?: string | null;
   mainSpec: string;
   offSpec: string | null;
   isMain: boolean;
@@ -705,9 +708,12 @@ export function ProfileCharacters({
                         </span>
                       </>
                     )}
-                    <span className="font-medium text-base truncate min-w-0" title={c.name}>
+                    <CharacterDiscordNameHint
+                      discordName={c.guildDiscordDisplayName}
+                      className="font-medium text-base min-w-0"
+                    >
                       {c.name}
-                    </span>
+                    </CharacterDiscordNameHint>
                   </div>
                   <span
                     className="text-sm text-muted-foreground truncate min-w-0 hidden sm:block text-center"

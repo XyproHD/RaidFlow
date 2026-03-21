@@ -52,12 +52,12 @@ export default async function ProfilePage() {
       if (allowedGuildIds.length === 0) {
         await prisma.rfCharacter.updateMany({
           where: { userId, guildId: { not: null } },
-          data: { guildId: null, isMain: false },
+          data: { guildId: null, isMain: false, guildDiscordDisplayName: null },
         });
       } else {
         await prisma.rfCharacter.updateMany({
           where: { userId, guildId: { not: null, notIn: allowedGuildIds } },
-          data: { guildId: null, isMain: false },
+          data: { guildId: null, isMain: false, guildDiscordDisplayName: null },
         });
       }
     }
@@ -148,6 +148,7 @@ export default async function ProfilePage() {
         name: c.name,
         guildId: c.guildId,
         guildName: c.guild?.name ?? null,
+        guildDiscordDisplayName: c.guildDiscordDisplayName,
         mainSpec: c.mainSpec,
         offSpec: c.offSpec,
         isMain: c.isMain,

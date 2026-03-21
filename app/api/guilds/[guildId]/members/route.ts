@@ -30,6 +30,7 @@ export async function GET(
               mainSpec: true,
               offSpec: true,
               isMain: true,
+              guildDiscordDisplayName: true,
             },
             orderBy: { name: 'asc' },
           },
@@ -59,6 +60,7 @@ export async function GET(
         mainSpec: c.mainSpec,
         offSpec: c.offSpec,
         isMain: c.isMain,
+        guildDiscordDisplayName: c.guildDiscordDisplayName,
       })),
     })),
   });

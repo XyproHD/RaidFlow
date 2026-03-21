@@ -101,6 +101,7 @@ export async function POST(request: NextRequest) {
         name: created.name,
         guildId: created.guildId,
         guildName: created.guild?.name ?? null,
+        guildDiscordDisplayName: created.guildDiscordDisplayName,
         mainSpec: created.mainSpec,
         offSpec: created.offSpec,
         isMain: created.isMain,

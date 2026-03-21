@@ -65,15 +65,25 @@ export async function getGuildsForUser(
     try {
       let roleIds: string[] = [];
       let inGuild = false;
+      let displayNameInGuild: string | null = null;
+      let membershipKnown = false;
       try {
         const memberRoles = await getMemberRoleIds(guild.discordGuildId, discordId);
         roleIds = memberRoles.roleIds;
         inGuild = memberRoles.inGuild;
+        displayNameInGuild = memberRoles.displayNameInGuild;
+        membershipKnown = memberRoles.membershipKnown;
       } catch (discordError) {
         console.error('[getGuildsForUser] Discord API failed for guild:', guild.id, guild.name, discordError);
       }
 
       if (!inGuild) {
+        if (membershipKnown) {
+          await prisma.rfCharacter.updateMany({
+            where: { userId, guildId: guild.id },
+            data: { guildDiscordDisplayName: null },
+          });
+        }
         const existingUserGuild = await prisma.rfUserGuild.findUnique({
           where: { userId_guildId: { userId, guildId: guild.id } },
           select: { role: true },
@@ -93,6 +103,13 @@ export async function getGuildsForUser(
           });
         }
         continue;
+      }
+
+      if (membershipKnown) {
+        await prisma.rfCharacter.updateMany({
+          where: { userId, guildId: guild.id },
+          data: { guildDiscordDisplayName: displayNameInGuild },
+        });
       }
 
       const resolved = resolveRaidFlowRole(

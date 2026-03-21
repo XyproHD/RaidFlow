@@ -28,6 +28,35 @@ export interface RfGuildWithRoles {
 export interface MemberRolesResult {
   roleIds: string[];
   inGuild: boolean;
+  /** Wie der User auf diesem Discord-Server angezeigt wird (Server-Nickname oder globaler Name). */
+  displayNameInGuild: string | null;
+  /**
+   * true nur wenn die Discord-API eine klare Antwort geliefert hat (200 = Mitglied, 404 = kein Mitglied).
+   * false bei fehlendem Bot-Token oder Request-Fehler — dann weder Namen setzen noch löschen.
+   */
+  membershipKnown: boolean;
+}
+
+/**
+ * Parst die Discord-API-Antwort GET /guilds/.../members/... (Guild-Member-Objekt).
+ */
+export function discordDisplayNameFromGuildMemberPayload(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const m = data as { nick?: unknown; user?: unknown };
+  const nickRaw = m.nick;
+  if (typeof nickRaw === 'string') {
+    const nick = nickRaw.trim();
+    if (nick) return nick;
+  }
+  const u = m.user;
+  if (!u || typeof u !== 'object') return null;
+  const user = u as { global_name?: unknown; username?: unknown; discriminator?: unknown };
+  const globalName = typeof user.global_name === 'string' ? user.global_name.trim() : '';
+  if (globalName) return globalName;
+  const username = typeof user.username === 'string' ? user.username : '';
+  const disc = typeof user.discriminator === 'string' ? user.discriminator : '0';
+  if (username && disc && disc !== '0') return `${username}#${disc}`;
+  return username || null;
 }
 
 /**
@@ -38,21 +67,35 @@ export async function getMemberRoleIds(
   discordGuildId: string,
   discordUserId: string
 ): Promise<MemberRolesResult> {
+  const unknown: MemberRolesResult = {
+    roleIds: [],
+    inGuild: false,
+    displayNameInGuild: null,
+    membershipKnown: false,
+  };
   try {
     const botToken = process.env.DISCORD_BOT_TOKEN;
-    if (!botToken) return { roleIds: [], inGuild: false };
+    if (!botToken) return unknown;
 
     const res = await fetch(
       `${DISCORD_API_BASE}/guilds/${discordGuildId}/members/${discordUserId}`,
       { headers: { Authorization: `Bot ${botToken}` } }
     );
 
-    if (res.status === 404) return { roleIds: [], inGuild: false };
-    if (!res.ok) return { roleIds: [], inGuild: false };
+    if (res.status === 404) {
+      return { roleIds: [], inGuild: false, displayNameInGuild: null, membershipKnown: true };
+    }
+    if (!res.ok) return unknown;
     const data = (await res.json()) as { roles?: string[] };
-    return { roleIds: data.roles ?? [], inGuild: true };
+    const displayNameInGuild = discordDisplayNameFromGuildMemberPayload(data);
+    return {
+      roleIds: data.roles ?? [],
+      inGuild: true,
+      displayNameInGuild,
+      membershipKnown: true,
+    };
   } catch {
-    return { roleIds: [], inGuild: false };
+    return unknown;
   }
 }
 

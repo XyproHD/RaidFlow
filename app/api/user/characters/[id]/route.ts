@@ -27,6 +27,9 @@ export async function PATCH(
   if (!existing) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
+  const nextGuildId =
+    body.guildId !== undefined ? body.guildId || null : existing.guildId;
+  const guildIdChanged = body.guildId !== undefined && nextGuildId !== existing.guildId;
   if (body.isMain === true && existing.guildId) {
     await prisma.rfCharacter.updateMany({
       where: { userId, guildId: existing.guildId, id: { not: id } },
@@ -38,6 +41,7 @@ export async function PATCH(
     data: {
       ...(body.name != null && { name: body.name.trim() }),
       ...(body.guildId !== undefined && { guildId: body.guildId || null }),
+      ...(guildIdChanged && { guildDiscordDisplayName: null }),
       ...(body.mainSpec != null && { mainSpec: body.mainSpec.trim() }),
       ...(body.offSpec !== undefined && { offSpec: body.offSpec?.trim() || null }),
       ...(body.isMain !== undefined && { isMain: !!body.isMain }),
@@ -50,6 +54,7 @@ export async function PATCH(
       name: updated.name,
       guildId: updated.guildId,
       guildName: updated.guild?.name ?? null,
+      guildDiscordDisplayName: updated.guildDiscordDisplayName,
       mainSpec: updated.mainSpec,
       offSpec: updated.offSpec,
       isMain: updated.isMain,
