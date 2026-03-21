@@ -3,6 +3,7 @@
  */
 
 import { TIME_SLOTS_30MIN } from '@/lib/profile-constants';
+import { raidSlotToLocalDate } from '@/lib/raid-planner-time';
 
 /** Wochentags-Kürzel wie im Profil-Grid: Mo … So */
 const JS_DAY_TO_RF: Record<number, string> = {
@@ -41,7 +42,7 @@ export interface PrefSlot {
   preference: string;
 }
 
-function toneForSlot(
+export function toneForSlot(
   slots: PrefSlot[],
   weekday: string,
   timeSlot: string
@@ -51,6 +52,42 @@ function toneForSlot(
   if (hit.preference === 'likely') return 'likely';
   if (hit.preference === 'maybe') return 'maybe';
   return 'empty';
+}
+
+/**
+ * Verfügbarkeit über mehrere 30-Min-Slots (Raid-Zeitfenster).
+ * Grau, sobald ein Slot leer ist; sonst Orange wenn mind. ein „eventuell“.
+ */
+export function availabilityColorForSlotRange(
+  prefSlots: PrefSlot[],
+  weekday: string,
+  timeSlots: string[]
+): AvailabilityRowColor {
+  if (timeSlots.length === 0) return 'gray';
+  let sawMaybe = false;
+  for (const slot of timeSlots) {
+    const t = toneForSlot(prefSlots, weekday, slot);
+    if (t === 'empty') return 'gray';
+    if (t === 'maybe') sawMaybe = true;
+  }
+  return sawMaybe ? 'orange' : 'green';
+}
+
+/** Mehrere Slots mit korrektem Wochentag pro Slot (über Mitternacht). */
+export function availabilityColorForRaidWindow(
+  prefSlots: PrefSlot[],
+  baseYmd: string,
+  timeSlots: string[]
+): AvailabilityRowColor {
+  if (timeSlots.length === 0) return 'gray';
+  let sawMaybe = false;
+  for (const slot of timeSlots) {
+    const wd = dateToRfWeekday(raidSlotToLocalDate(baseYmd, slot));
+    const t = toneForSlot(prefSlots, wd, slot);
+    if (t === 'empty') return 'gray';
+    if (t === 'maybe') sawMaybe = true;
+  }
+  return sawMaybe ? 'orange' : 'green';
 }
 
 /**
@@ -70,4 +107,20 @@ export function availabilityColorForRaidStart(
   if (t === 'likely') return 'green';
   if (t === 'maybe') return 'orange';
   return 'gray';
+}
+
+export type SlotHeat = 'green' | 'yellow' | 'orange' | 'red';
+
+/** Erfüllungsgrad der Mindest-Spec-Zeilen (nur Zeilen mit count > 0). */
+export function specFulfillmentRatio(
+  counts: Record<string, number>,
+  minSpecRows: { spec: string; count: number }[]
+): number {
+  const rows = minSpecRows.filter((r) => r.spec && r.count > 0);
+  if (rows.length === 0) return 1;
+  let met = 0;
+  for (const r of rows) {
+    if ((counts[r.spec] ?? 0) >= r.count) met += 1;
+  }
+  return met / rows.length;
 }

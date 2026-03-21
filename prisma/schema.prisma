@@ -227,6 +227,7 @@ model RfRaid {
   note                    String?   @db.Text
   maxPlayers              Int       @map("max_players")
   scheduledAt             DateTime  @map("scheduled_at")
+  scheduledEndAt          DateTime? @map("scheduled_end_at")
   signupUntil             DateTime  @map("signup_until")
   signupVisibility        String    @map("signup_visibility")
   status                  String

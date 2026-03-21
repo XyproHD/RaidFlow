@@ -59,10 +59,15 @@ export async function POST(
       : NaN;
 
   const scheduledAtRaw = body.scheduledAt;
+  const scheduledEndAtRaw = body.scheduledEndAt;
   const signupUntilRaw = body.signupUntil;
   const scheduledAt =
     typeof scheduledAtRaw === 'string' || scheduledAtRaw instanceof Date
       ? new Date(scheduledAtRaw as string | Date)
+      : null;
+  let scheduledEndAt: Date | null =
+    typeof scheduledEndAtRaw === 'string' || scheduledEndAtRaw instanceof Date
+      ? new Date(scheduledEndAtRaw as string | Date)
       : null;
   const signupUntil =
     typeof signupUntilRaw === 'string' || signupUntilRaw instanceof Date
@@ -112,6 +117,18 @@ export async function POST(
   }
   if (!scheduledAt || Number.isNaN(scheduledAt.getTime())) {
     return NextResponse.json({ error: 'Invalid scheduledAt' }, { status: 400 });
+  }
+  if (scheduledEndAt && Number.isNaN(scheduledEndAt.getTime())) {
+    return NextResponse.json({ error: 'Invalid scheduledEndAt' }, { status: 400 });
+  }
+  if (!scheduledEndAt || Number.isNaN(scheduledEndAt.getTime())) {
+    scheduledEndAt = new Date(scheduledAt.getTime() + 30 * 60 * 1000);
+  }
+  if (scheduledEndAt.getTime() <= scheduledAt.getTime()) {
+    return NextResponse.json(
+      { error: 'scheduledEndAt must be after scheduledAt' },
+      { status: 400 }
+    );
   }
   if (!signupUntil || Number.isNaN(signupUntil.getTime())) {
     return NextResponse.json({ error: 'Invalid signupUntil' }, { status: 400 });
@@ -196,6 +213,7 @@ export async function POST(
       note,
       maxPlayers,
       scheduledAt,
+      scheduledEndAt,
       signupUntil,
       signupVisibility,
       status: 'open',
