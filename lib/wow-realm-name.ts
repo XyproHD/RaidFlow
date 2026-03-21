@@ -15,6 +15,14 @@ export function appLocaleToBnetLocale(appLocale: string): string {
   return map[base] ?? 'en_US';
 }
 
+/**
+ * Realm rows use `dynamic-*` (search/game data). Character profile uses `profile-*`
+ * (see `_links.self` in Blizzard responses).
+ */
+export function dynamicNamespaceToProfileNamespace(ns: string): string {
+  return ns.replace(/^dynamic-/, 'profile-');
+}
+
 function firstNonEmptyString(obj: Record<string, unknown>): string {
   for (const v of Object.values(obj)) {
     if (typeof v === 'string' && v.trim().length > 0) return v.trim();

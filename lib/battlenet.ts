@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { TBC_CLASSES, getSpecDisplayName } from '@/lib/wow-tbc-classes';
 import type { WowPreset, WowRegion } from '@/lib/wow-classic-realms';
+import { dynamicNamespaceToProfileNamespace } from '@/lib/wow-realm-name';
 
 /** URL for logs/client debug: same query as the real request but token redacted. */
 function battleNetCharacterRequestUrlForLog(
@@ -398,9 +399,11 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
   const accessToken = await getAccessToken(config);
   const apiBaseUrl = realm.region === config.region ? config.apiBaseUrl : `https://${realm.region}.api.blizzard.com`;
   const profilePath = `${config.profileCharacterPath}/${realmSlug}/${charName}`;
-  /** Profile API: same auth as `fetchClassicCharacterFromBattlenetWithFilters` — token in query (Bearer alone returns 403 for many clients). */
+  /** DB stores `dynamic-*` for realm search; profile character endpoint needs `profile-*` (Blizzard `_links.self`). */
+  const profileNamespace = dynamicNamespaceToProfileNamespace(realm.namespace);
+  /** Profile API: `access_token` in query (same as `fetchClassicCharacterFromBattlenetWithFilters`). */
   const profileParams = new URLSearchParams({
-    namespace: realm.namespace,
+    namespace: profileNamespace,
     locale: config.locale,
     access_token: accessToken,
   });
@@ -408,7 +411,7 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
   const requestUrlLog = battleNetCharacterRequestUrlForLog(
     apiBaseUrl,
     profilePath,
-    realm.namespace,
+    profileNamespace,
     config.locale
   );
 
