@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest) {
           guildName: profile.guildName,
           faction: profile.faction,
           profileUrl: profile.profileUrl,
-          rawProfile: profile.rawProfile,
+          rawProfile: profile.rawProfile as Prisma.InputJsonValue,
           lastSyncedAt: new Date(),
         },
       });
