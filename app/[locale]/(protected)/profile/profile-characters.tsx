@@ -284,7 +284,7 @@ export function ProfileCharacters({
             message: data.error,
           });
         }
-        setError(data.error ?? text || t('errorSave'));
+        setError((data.error ?? text) || t('errorSave'));
       }
     } catch (err) {
       setError(t('errorSave'));
