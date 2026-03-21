@@ -15,11 +15,6 @@ export function appLocaleToBnetLocale(appLocale: string): string {
   return map[base] ?? 'en_US';
 }
 
-/** Battle.net dynamic namespace (realm search) → profile namespace (character profile). */
-export function dynamicNamespaceToProfileNamespace(dynamicNs: string): string {
-  return dynamicNs.replace(/^dynamic-/, 'profile-');
-}
-
 function firstNonEmptyString(obj: Record<string, unknown>): string {
   for (const v of Object.values(obj)) {
     if (typeof v === 'string' && v.trim().length > 0) return v.trim();

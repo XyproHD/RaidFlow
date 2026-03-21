@@ -1,7 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { TBC_CLASSES, getSpecDisplayName } from '@/lib/wow-tbc-classes';
 import type { WowPreset, WowRegion } from '@/lib/wow-classic-realms';
-import { dynamicNamespaceToProfileNamespace } from '@/lib/wow-realm-name';
 
 type BattlenetProfile = {
   id?: number;
@@ -226,8 +225,10 @@ async function fetchSpecializations(
   try {
     const url = new URL(specializationsHref);
     url.searchParams.set('locale', locale);
-    url.searchParams.set('access_token', accessToken);
-    const res = await fetch(url.toString(), { cache: 'no-store' });
+    const res = await fetch(url.toString(), {
+      cache: 'no-store',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
     if (!res.ok) return null;
     return (await res.json()) as BattlenetSpecializations;
   } catch {
@@ -359,17 +360,15 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
 
   const accessToken = await getAccessToken(config);
   const apiBaseUrl = realm.region === config.region ? config.apiBaseUrl : `https://${realm.region}.api.blizzard.com`;
-  /** Character profile API requires `profile-*` namespaces, not `dynamic-*` from realm search rows. */
-  const profileNamespace = dynamicNamespaceToProfileNamespace(realm.namespace);
   const profilePath = `${config.profileCharacterPath}/${realmSlug}/${charName}`;
   const profileParams = new URLSearchParams({
-    namespace: profileNamespace,
+    namespace: realm.namespace,
     locale: config.locale,
-    access_token: accessToken,
   });
 
   const profileRes = await fetch(`${apiBaseUrl}${profilePath}?${profileParams.toString()}`, {
     cache: 'no-store',
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (profileRes.status === 404) {
     throw new Error('Charakter auf dem angegebenen Server nicht gefunden.');

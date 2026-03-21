@@ -40,6 +40,12 @@ function formatRealmLabel(realm: WowRealm): string {
   return v ? `${n} ${v}`.trim() : n;
 }
 
+function realmNameAndVersion(realm: WowRealm): { name: string; version: string } {
+  const name = (realm.name || realm.slug || '').trim();
+  const version = (realm.wowVersion || '').trim();
+  return { name, version };
+}
+
 export function ProfileCharacters({
   initialData,
   guilds,
@@ -858,22 +864,30 @@ export function ProfileCharacters({
                             <li className="px-3 py-2 text-sm text-muted-foreground">{t('loadingRealms')}</li>
                           )}
                           {!realmsLoading &&
-                            filteredRealmSuggestions.map((realm) => (
-                              <li key={realm.id} role="option">
-                                <button
-                                  type="button"
-                                  className="w-full px-3 py-2 text-left text-sm hover:bg-muted"
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={() => {
-                                    setAutoRealmId(realm.id);
-                                    setRealmComboInput(formatRealmLabel(realm));
-                                    setRealmMenuOpen(false);
-                                  }}
-                                >
-                                  {formatRealmLabel(realm)}
-                                </button>
-                              </li>
-                            ))}
+                            filteredRealmSuggestions.map((realm) => {
+                              const { name, version } = realmNameAndVersion(realm);
+                              return (
+                                <li key={realm.id} role="option">
+                                  <button
+                                    type="button"
+                                    className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                      setAutoRealmId(realm.id);
+                                      setRealmComboInput(formatRealmLabel(realm));
+                                      setRealmMenuOpen(false);
+                                    }}
+                                  >
+                                    <span>{name}</span>
+                                    {version && (
+                                      <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                                        {version}
+                                      </span>
+                                    )}
+                                  </button>
+                                </li>
+                              );
+                            })}
                           {!realmsLoading && filteredRealmSuggestions.length === 0 && realmOptions.length > 0 && (
                             <li className="px-3 py-2 text-sm text-muted-foreground">{t('realmNoMatches')}</li>
                           )}
