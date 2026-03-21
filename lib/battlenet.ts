@@ -396,7 +396,12 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
     throw new Error('Server und Charaktername sind erforderlich.');
   }
 
-  const accessToken = await getAccessToken(config);
+  /** Use regional OAuth endpoint (sync script / Blizzard test tool); global oauth.battle.net can yield 404 for profile API. */
+  const tokenConfig = {
+    ...config,
+    oauthTokenUrl: `https://${realm.region}.battle.net/oauth/token`,
+  };
+  const accessToken = await getAccessToken(tokenConfig);
   const apiBaseUrl = realm.region === config.region ? config.apiBaseUrl : `https://${realm.region}.api.blizzard.com`;
   const profilePath = `${config.profileCharacterPath}/${realmSlug}/${charName}`;
   /** DB stores `dynamic-*` for realm search; profile character endpoint needs `profile-*` (Blizzard `_links.self`). */
