@@ -1,11 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { RaidSignupPhase } from '@/lib/raid-detail-access';
+import { SpecIcon } from '@/components/spec-icon';
+import { ClassIcon } from '@/components/class-icon';
+import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 
-type Char = { id: string; name: string };
+type Char = {
+  id: string;
+  name: string;
+  mainSpec: string;
+  offSpec: string | null;
+  classId: string | null;
+};
 
 type SignupType = 'normal' | 'uncertain' | 'reserve';
 
@@ -16,6 +25,10 @@ function normalizeInitialType(raw: string | undefined): SignupType {
   return 'normal';
 }
 
+function classIdFromMain(mainSpec: string): string | null {
+  return getSpecByDisplayName(mainSpec)?.classId ?? null;
+}
+
 export function RaidSignupForm({
   guildId,
   raidId,
@@ -23,9 +36,10 @@ export function RaidSignupForm({
   signupPhase,
   initialCharacterId,
   initialType,
-  initialAllowReserve,
   initialIsLate,
   initialNote,
+  initialSignedSpec,
+  hasExistingSignup,
 }: {
   guildId: string;
   raidId: string;
@@ -33,9 +47,10 @@ export function RaidSignupForm({
   signupPhase: RaidSignupPhase;
   initialCharacterId: string | null;
   initialType: string;
-  initialAllowReserve: boolean;
   initialIsLate: boolean;
   initialNote: string;
+  initialSignedSpec: string | null;
+  hasExistingSignup: boolean;
 }) {
   const t = useTranslations('raidDetail');
   const router = useRouter();
@@ -44,10 +59,37 @@ export function RaidSignupForm({
   const [characterId, setCharacterId] = useState(
     initialCharacterId ?? characters[0]?.id ?? ''
   );
+
+  const selectedChar = characters.find((c) => c.id === characterId) ?? null;
+
+  const defaultSpecFor = (c: Char | null): string => {
+    if (!c) return '';
+    return initialSignedSpec && c.id === initialCharacterId
+      ? initialSignedSpec
+      : c.mainSpec;
+  };
+
+  const [signedSpec, setSignedSpec] = useState(() =>
+    selectedChar ? defaultSpecFor(selectedChar) : ''
+  );
+
+  useEffect(() => {
+    if (!selectedChar) return;
+    setSignedSpec((prev) => {
+      if (
+        prev &&
+        (prev === selectedChar.mainSpec ||
+          (selectedChar.offSpec && prev === selectedChar.offSpec))
+      ) {
+        return prev;
+      }
+      return selectedChar.mainSpec;
+    });
+  }, [selectedChar]);
+
   const [type, setType] = useState<SignupType>(() =>
     reserveOnly ? 'reserve' : normalizeInitialType(initialType)
   );
-  const [allowReserve, setAllowReserve] = useState(initialAllowReserve);
   const [isLate, setIsLate] = useState(initialIsLate);
   const [note, setNote] = useState(initialNote);
   const [status, setStatus] = useState<'idle' | 'saving' | 'ok' | 'err'>('idle');
@@ -55,8 +97,16 @@ export function RaidSignupForm({
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!characterId) {
+    if (!characterId || !selectedChar) {
       setMessage(t('signupPickCharacter'));
+      setStatus('err');
+      return;
+    }
+    const specOk =
+      signedSpec === selectedChar.mainSpec ||
+      (selectedChar.offSpec && signedSpec === selectedChar.offSpec);
+    if (!specOk || !signedSpec) {
+      setMessage(t('signupPickSpec'));
       setStatus('err');
       return;
     }
@@ -80,9 +130,9 @@ export function RaidSignupForm({
           body: JSON.stringify({
             characterId,
             type: effType,
-            allowReserve: effType === 'normal' ? allowReserve : false,
             isLate,
             note: note.trim() || null,
+            signedSpec,
           }),
         }
       );
@@ -105,29 +155,97 @@ export function RaidSignupForm({
     return <p className="text-muted-foreground text-sm">{t('signupNoCharacters')}</p>;
   }
 
+  const cid = selectedChar ? selectedChar.classId ?? classIdFromMain(selectedChar.mainSpec) : null;
+
   return (
-    <form onSubmit={onSubmit} className="space-y-4 max-w-lg">
+    <form onSubmit={onSubmit} className="space-y-4 max-w-2xl">
       {reserveOnly && (
         <p className="text-sm text-amber-600 dark:text-amber-500">{t('signupReserveOnlyPhase')}</p>
       )}
 
       <div>
-        <label htmlFor="raid-signup-char" className="block text-sm font-medium mb-1">
-          {t('signupCharacter')}
-        </label>
-        <select
-          id="raid-signup-char"
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-          value={characterId}
-          onChange={(e) => setCharacterId(e.target.value)}
-        >
-          {characters.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        <span className="block text-sm font-medium mb-2">{t('signupCharacter')}</span>
+        <div className="flex flex-col gap-2">
+          {characters.map((c) => {
+            const cClass = c.classId ?? classIdFromMain(c.mainSpec);
+            const active = characterId === c.id;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  setCharacterId(c.id);
+                  setSignedSpec(c.mainSpec);
+                }}
+                className={`grid items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors min-w-0 ${
+                  active
+                    ? 'border-primary bg-primary/10 shadow-sm'
+                    : 'border-border bg-card hover:bg-muted/50'
+                }`}
+                style={{
+                  gridTemplateColumns: '28px 1fr minmax(0,auto)',
+                }}
+              >
+                <span className="flex shrink-0 items-center justify-center w-7 h-7">
+                  {cClass ? <ClassIcon classId={cClass} size={24} title={c.mainSpec} /> : null}
+                </span>
+                <span className="font-medium truncate">{c.name}</span>
+                <span className="flex items-center gap-1 justify-end shrink-0">
+                  <SpecIcon spec={c.mainSpec} size={22} />
+                  {c.offSpec && (
+                    <>
+                      <span className="text-muted-foreground text-xs">/</span>
+                      <span className="grayscale inline-flex opacity-90">
+                        <SpecIcon spec={c.offSpec} size={22} />
+                      </span>
+                    </>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
+
+      {selectedChar && (
+        <div>
+          <span className="block text-sm font-medium mb-2">{t('signupSpecChoice')}</span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setSignedSpec(selectedChar.mainSpec)}
+              className={`inline-flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ${
+                signedSpec === selectedChar.mainSpec
+                  ? 'border-primary bg-primary/10'
+                  : 'border-border'
+              }`}
+            >
+              <SpecIcon spec={selectedChar.mainSpec} size={24} />
+              {t('signupWithMainSpec')}
+            </button>
+            {selectedChar.offSpec && (
+              <button
+                type="button"
+                onClick={() => setSignedSpec(selectedChar.offSpec!)}
+                className={`inline-flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ${
+                signedSpec === selectedChar.offSpec
+                  ? 'border-primary bg-primary/10'
+                  : 'border-border'
+              }`}
+              >
+                <SpecIcon spec={selectedChar.offSpec} size={24} />
+                {t('signupWithOffSpec')}
+              </button>
+            )}
+          </div>
+          {cid && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <ClassIcon classId={cid} size={20} />
+              <span>{signedSpec}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {!reserveOnly && (
         <div>
@@ -140,7 +258,7 @@ export function RaidSignupForm({
                 checked={type === 'normal'}
                 onChange={() => setType('normal')}
               />
-              {t('signupType_normal')}
+              {t('signupType_verfugbar')}
             </label>
             <label className="flex items-center gap-2 text-sm">
               <input
@@ -162,17 +280,6 @@ export function RaidSignupForm({
             </label>
           </div>
         </div>
-      )}
-
-      {type === 'normal' && !reserveOnly && (
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={allowReserve}
-            onChange={(e) => setAllowReserve(e.target.checked)}
-          />
-          {t('signupAllowReserve')}
-        </label>
       )}
 
       <label className="flex items-center gap-2 text-sm">
@@ -213,7 +320,11 @@ export function RaidSignupForm({
         disabled={status === 'saving'}
         className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
       >
-        {status === 'saving' ? t('signupSaving') : t('signupSubmit')}
+        {status === 'saving'
+          ? t('signupSaving')
+          : hasExistingSignup
+            ? t('signupApplyChange')
+            : t('signupSubmit')}
       </button>
       {message && (
         <p

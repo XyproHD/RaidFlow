@@ -1,21 +1,27 @@
-import type { Prisma } from '@prisma/client';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 
 type MinSpecs = Record<string, number> | null | undefined;
 
-type SignupRow = {
+export type CompositionSignupRow = {
   type: string;
+  signedSpec: string | null;
   character: { mainSpec: string } | null;
 };
+
+function effectiveSpec(s: CompositionSignupRow): string | null {
+  const a = s.signedSpec?.trim();
+  if (a) return a;
+  return s.character?.mainSpec?.trim() ?? null;
+}
 
 /**
  * Zählt Tank/Melee/Range/Healer aus Anmeldungen (normal + uncertain, keine Reserve).
  */
-export function countRolesFromSignups(signups: SignupRow[]) {
+export function countRolesFromSignups(signups: CompositionSignupRow[]) {
   const counts = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
   for (const s of signups) {
     if (s.type === 'reserve') continue;
-    const role = roleFromSpecDisplayName(s.character?.mainSpec);
+    const role = roleFromSpecDisplayName(effectiveSpec(s));
     if (role && role in counts) {
       counts[role]++;
     }
@@ -43,7 +49,7 @@ export function formatCompositionGaps(args: {
   minRange: number;
   minHealers: number;
   minSpecs: MinSpecs;
-  signups: SignupRow[];
+  signups: CompositionSignupRow[];
 }): string {
   const roleCounts = countRolesFromSignups(args.signups);
   const parts: string[] = [];
@@ -65,7 +71,7 @@ export function formatCompositionGaps(args: {
   const specCounts: Record<string, number> = {};
   for (const s of args.signups) {
     if (s.type === 'reserve') continue;
-    const name = s.character?.mainSpec?.trim();
+    const name = effectiveSpec(s);
     if (name) specCounts[name] = (specCounts[name] ?? 0) + 1;
   }
   for (const [specName, need] of Object.entries(specNeed)) {
@@ -75,4 +81,17 @@ export function formatCompositionGaps(args: {
   }
 
   return parts.length ? parts.join(', ') : '—';
+}
+
+/** Für Min-Spec-Zeile: Ist / Soll je Spec. */
+export function countSignedPerSpec(
+  signups: CompositionSignupRow[],
+  specDisplayName: string
+): number {
+  let n = 0;
+  for (const s of signups) {
+    if (s.type === 'reserve') continue;
+    if (effectiveSpec(s) === specDisplayName) n++;
+  }
+  return n;
 }

@@ -58,7 +58,7 @@ async function loadRaidForDetailPage(
       raidGroupRestriction: { select: { id: true, name: true } },
       signups: {
         include: {
-          character: { select: { id: true, name: true, mainSpec: true } },
+          character: { select: { id: true, name: true, mainSpec: true, offSpec: true } },
         },
         orderBy: { signedAt: 'asc' },
       },

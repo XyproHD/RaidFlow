@@ -5,9 +5,18 @@ import { getTranslations } from 'next-intl/server';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { prisma } from '@/lib/prisma';
-import { formatCompositionGaps } from '@/lib/raid-composition-summary';
+import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
 import { RaidSignupWithdraw } from '@/components/raid-detail/raid-signup-withdraw';
+import {
+  RaidViewSection,
+  type RaidViewRaid,
+} from '@/components/raid-detail/raid-view-section';
+import { RaidSignupHistoryPanel } from '@/components/raid-detail/raid-signup-history';
+import {
+  RaidAnmeldungen,
+  type AnmeldungRow,
+} from '@/components/raid-detail/raid-anmeldungen';
 import {
   filterSignupsVisibleToViewer,
   getRaidDetailContext,
@@ -65,38 +74,6 @@ export default async function RaidDetailPage(props: {
 
   const { raid, canEdit, canSignup, signupPhase } = ctx;
   const base = `/${locale}/guild/${guildId}/raid/${raidId}`;
-  const appBase = (process.env.NEXTAUTH_URL ?? '').replace(/\/$/, '');
-
-  function signupTypeLabel(type: string) {
-    const n = type === 'main' ? 'normal' : type;
-    switch (n) {
-      case 'uncertain':
-        return t('signupType_uncertain');
-      case 'reserve':
-        return t('signupType_reserve');
-      default:
-        return t('signupType_normal');
-    }
-  }
-
-  const gapsText = formatCompositionGaps({
-    minTanks: raid.minTanks,
-    minMelee: raid.minMelee,
-    minRange: raid.minRange,
-    minHealers: raid.minHealers,
-    minSpecs: raid.minSpecs as Record<string, number> | null,
-    signups: raid.signups.map((s) => ({
-      type: s.type,
-      character: s.character ? { mainSpec: s.character.mainSpec } : null,
-    })),
-  });
-
-  const minSpecsObj =
-    raid.minSpecs &&
-    typeof raid.minSpecs === 'object' &&
-    !Array.isArray(raid.minSpecs)
-      ? (raid.minSpecs as Record<string, number>)
-      : null;
 
   if (mode === 'edit' && !canEdit) {
     return (
@@ -122,13 +99,6 @@ export default async function RaidDetailPage(props: {
     );
   }
 
-  const dungeonName = raid.dungeon.names[0]?.name ?? raid.dungeon.name;
-  const formatDt = (d: Date) =>
-    new Intl.DateTimeFormat(locale, {
-      dateStyle: 'short',
-      timeStyle: 'short',
-    }).format(new Date(d));
-
   const visibleSignups = filterSignupsVisibleToViewer(
     raid.signups,
     userId,
@@ -136,32 +106,42 @@ export default async function RaidDetailPage(props: {
     canEdit
   );
 
-  const characters = await prisma.rfCharacter.findMany({
+  const anmeldungRows: AnmeldungRow[] = visibleSignups.map((s) => ({
+    id: s.id,
+    userId: s.userId,
+    character: s.character,
+    signedSpec: s.signedSpec,
+    type: s.type,
+    isLate: s.isLate,
+    note: s.note,
+    leaderAllowsReserve: s.leaderAllowsReserve,
+    leaderMarkedTeilnehmer: s.leaderMarkedTeilnehmer,
+  }));
+
+  const charRows = await prisma.rfCharacter.findMany({
     where: { userId, guildId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, mainSpec: true, offSpec: true },
     orderBy: { name: 'asc' },
   });
 
+  const characters = charRows.map((c) => ({
+    ...c,
+    classId: getSpecByDisplayName(c.mainSpec)?.classId ?? null,
+  }));
+
   const mySignup = raid.signups.find((s) => s.userId === userId);
 
-  const visibilityLabel =
-    raid.signupVisibility === 'raid_leader_only'
-      ? t('visibilityLeaders')
-      : t('visibilityPublic');
-
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-3xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <h1 className="text-2xl font-bold text-foreground">{raid.name}</h1>
+        <h1 className="sr-only">{raid.name}</h1>
         <Link
           href={`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`}
-          className="text-sm text-muted-foreground hover:text-foreground hover:underline shrink-0"
+          className="text-sm text-muted-foreground hover:text-foreground hover:underline shrink-0 sm:ml-auto order-first sm:order-none"
         >
           {t('backDashboard')}
         </Link>
       </div>
-
-      <p className="text-xs text-muted-foreground">{t('modeQueryHint')}</p>
 
       <nav className="flex flex-wrap gap-2" aria-label="Raid-Ansicht">
         <Link href={base} className={modeNavClass(mode === 'view')}>
@@ -185,148 +165,14 @@ export default async function RaidDetailPage(props: {
       </nav>
 
       {mode === 'view' && (
-        <section className="space-y-4" aria-labelledby="raid-view-heading">
-          <h2 id="raid-view-heading" className="text-lg font-semibold">
-            {t('sectionView')}
-          </h2>
-          <dl className="grid gap-2 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-muted-foreground">{t('dungeon')}</dt>
-              <dd>{dungeonName}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">{t('guild')}</dt>
-              <dd>{raid.guild.name}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">{t('scheduledAt')}</dt>
-              <dd>{formatDt(raid.scheduledAt)}</dd>
-            </div>
-            {raid.scheduledEndAt && (
-              <div>
-                <dt className="text-muted-foreground">{t('scheduledEndAt')}</dt>
-                <dd>{formatDt(raid.scheduledEndAt)}</dd>
-              </div>
-            )}
-            <div>
-              <dt className="text-muted-foreground">{t('signupUntil')}</dt>
-              <dd>{formatDt(raid.signupUntil)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">{t('maxPlayers')}</dt>
-              <dd>
-                {raid._count.signups} / {raid.maxPlayers}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">{t('status')}</dt>
-              <dd className="capitalize">{raid.status}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">{t('visibility')}</dt>
-              <dd>{visibilityLabel}</dd>
-            </div>
-            {raid.raidGroupRestriction && (
-              <div className="sm:col-span-2">
-                <dt className="text-muted-foreground">{t('restriction')}</dt>
-                <dd>{raid.raidGroupRestriction.name}</dd>
-              </div>
-            )}
-            {raid.note && (
-              <div className="sm:col-span-2">
-                <dt className="text-muted-foreground">{t('note')}</dt>
-                <dd className="whitespace-pre-wrap">{raid.note}</dd>
-              </div>
-            )}
-            <div>
-              <dt className="text-muted-foreground">{t('minTanks')}</dt>
-              <dd>{raid.minTanks}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">{t('minMelee')}</dt>
-              <dd>{raid.minMelee}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">{t('minRange')}</dt>
-              <dd>{raid.minRange}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">{t('minHealers')}</dt>
-              <dd>{raid.minHealers}</dd>
-            </div>
-            {minSpecsObj && Object.keys(minSpecsObj).length > 0 && (
-              <div className="sm:col-span-2">
-                <dt className="text-muted-foreground">{t('minSpecsHeading')}</dt>
-                <dd>
-                  <ul className="list-disc list-inside">
-                    {Object.entries(minSpecsObj).map(([spec, n]) => (
-                      <li key={spec}>
-                        {spec}: {n}
-                      </li>
-                    ))}
-                  </ul>
-                </dd>
-              </div>
-            )}
-            <div className="sm:col-span-2">
-              <dt className="text-muted-foreground">{t('compositionGaps')}</dt>
-              <dd>{gapsText}</dd>
-            </div>
-          </dl>
-
-          {appBase && (
-            <div className="rounded-md border border-border p-3 text-sm space-y-2">
-              <p className="font-medium">{t('linkRaidView')}</p>
-              <a
-                href={`${appBase}${base}`}
-                className="text-primary break-all hover:underline"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {`${appBase}${base}`}
-              </a>
-              <p className="font-medium pt-2">{t('linkRaidSignup')}</p>
-              <a
-                href={`${appBase}${base}?mode=signup`}
-                className="text-primary break-all hover:underline"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {`${appBase}${base}?mode=signup`}
-              </a>
-            </div>
-          )}
-
-          {raid.discordThreadId && (
-            <p className="text-xs text-muted-foreground">{t('discordStatusHint')}</p>
-          )}
-
-          <div>
-            <h3 className="text-sm font-medium mb-2">{t('signupList')}</h3>
-            {raid.signupVisibility === 'raid_leader_only' && !canEdit && (
-              <p className="text-xs text-muted-foreground mb-2">{t('signupListHidden')}</p>
-            )}
-            {visibleSignups.length === 0 ? (
-              <p className="text-muted-foreground text-sm">—</p>
-            ) : (
-              <ul className="list-disc list-inside text-sm space-y-1">
-                {visibleSignups.map((s) => (
-                  <li key={s.id} className="space-y-0.5">
-                    <span>
-                      {s.isLate ? <span title={t('lateCheckbox')}>⏱ </span> : null}
-                      {s.character?.name ?? t('signupAnonymous')} (
-                      {signupTypeLabel(s.type)}
-                      {s.allowReserve ? `, ${t('signupReserveOk')}` : ''})
-                    </span>
-                    {s.note ? (
-                      <span className="block text-xs text-muted-foreground pl-4">{s.note}</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </section>
+        <RaidViewSection
+          raid={raid as RaidViewRaid}
+          locale={locale}
+          guildId={guildId}
+          raidId={raidId}
+          userId={userId}
+          canEdit={canEdit}
+        />
       )}
 
       {mode === 'edit' && canEdit && (
@@ -349,31 +195,6 @@ export default async function RaidDetailPage(props: {
           <h2 id="raid-signup-heading" className="text-lg font-semibold">
             {t('sectionSignup')}
           </h2>
-          {appBase && (
-            <div className="rounded-md border border-border p-3 text-sm space-y-2">
-              <p className="font-medium">{t('linkRaidView')}</p>
-              <a
-                href={`${appBase}${base}`}
-                className="text-primary break-all hover:underline"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {`${appBase}${base}`}
-              </a>
-              <p className="font-medium pt-2">{t('linkRaidSignup')}</p>
-              <a
-                href={`${appBase}${base}?mode=signup`}
-                className="text-primary break-all hover:underline"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {`${appBase}${base}?mode=signup`}
-              </a>
-            </div>
-          )}
-          {raid.discordThreadId && (
-            <p className="text-xs text-muted-foreground">{t('discordStatusHint')}</p>
-          )}
           <RaidSignupForm
             guildId={guildId}
             raidId={raidId}
@@ -381,33 +202,24 @@ export default async function RaidDetailPage(props: {
             signupPhase={signupPhase}
             initialCharacterId={mySignup?.characterId ?? null}
             initialType={mySignup?.type ?? 'normal'}
-            initialAllowReserve={mySignup?.allowReserve ?? false}
             initialIsLate={mySignup?.isLate ?? false}
             initialNote={mySignup?.note ?? ''}
+            initialSignedSpec={mySignup?.signedSpec ?? null}
+            hasExistingSignup={!!mySignup}
           />
           {mySignup && <RaidSignupWithdraw guildId={guildId} raidId={raidId} />}
-          <div>
-            <h3 className="text-sm font-medium mb-2">{t('signupList')}</h3>
+          {canEdit && <RaidSignupHistoryPanel guildId={guildId} raidId={raidId} />}
+          <div className="space-y-2">
+            <h3 className="text-base font-semibold">{t('anmeldungenHeading')}</h3>
             {raid.signupVisibility === 'raid_leader_only' && !canEdit && (
-              <p className="text-xs text-muted-foreground mb-2">{t('signupListHidden')}</p>
+              <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
             )}
-            {visibleSignups.length === 0 ? (
-              <p className="text-muted-foreground text-sm">—</p>
-            ) : (
-              <ul className="list-disc list-inside text-sm space-y-1">
-                {visibleSignups.map((s) => (
-                  <li key={s.id} className="space-y-0.5">
-                    <span>
-                      {s.isLate ? <span title={t('lateCheckbox')}>⏱ </span> : null}
-                      {s.character?.name ?? t('signupAnonymous')} ({signupTypeLabel(s.type)})
-                    </span>
-                    {s.note ? (
-                      <span className="block text-xs text-muted-foreground pl-4">{s.note}</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <RaidAnmeldungen
+              rows={anmeldungRows}
+              canEdit={canEdit}
+              guildId={guildId}
+              raidId={raidId}
+            />
           </div>
         </section>
       )}

@@ -259,6 +259,12 @@ model RfRaidSignup {
   note          String?   @db.Text
   /// „Komme verspätet“ – dann Notiz mit Verspätungstext verpflichtend
   isLate        Boolean   @default(false) @map("is_late")
+  /// Anmeldung mit Main- oder Off-Spec (Anzeigename wie in rf_character)
+  signedSpec    String?   @map("signed_spec")
+  /// Nur Raidleitung: Reserve für diesen Char zulassen (false = Reserve verbieten)
+  leaderAllowsReserve     Boolean   @default(true) @map("leader_allows_reserve")
+  /// Nur Raidleitung: als Teilnehmer markiert
+  leaderMarkedTeilnehmer  Boolean   @default(false) @map("leader_marked_teilnehmer")
   setConfirmed  Boolean   @default(false) @map("set_confirmed")
   signedAt      DateTime  @default(now()) @map("signed_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
