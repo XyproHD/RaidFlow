@@ -3,33 +3,53 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import type { RaidSignupPhase } from '@/lib/raid-detail-access';
 
 type Char = { id: string; name: string };
+
+type SignupType = 'normal' | 'uncertain' | 'reserve';
+
+function normalizeInitialType(raw: string | undefined): SignupType {
+  if (raw === 'reserve') return 'reserve';
+  if (raw === 'uncertain') return 'uncertain';
+  if (raw === 'main' || raw === 'normal') return 'normal';
+  return 'normal';
+}
 
 export function RaidSignupForm({
   guildId,
   raidId,
   characters,
+  signupPhase,
   initialCharacterId,
   initialType,
   initialAllowReserve,
+  initialIsLate,
+  initialNote,
 }: {
   guildId: string;
   raidId: string;
   characters: Char[];
+  signupPhase: RaidSignupPhase;
   initialCharacterId: string | null;
   initialType: string;
   initialAllowReserve: boolean;
+  initialIsLate: boolean;
+  initialNote: string;
 }) {
   const t = useTranslations('raidDetail');
   const router = useRouter();
+  const reserveOnly = signupPhase === 'reserve_only';
+
   const [characterId, setCharacterId] = useState(
     initialCharacterId ?? characters[0]?.id ?? ''
   );
-  const [type, setType] = useState<'main' | 'reserve'>(
-    initialType === 'reserve' ? 'reserve' : 'main'
+  const [type, setType] = useState<SignupType>(() =>
+    reserveOnly ? 'reserve' : normalizeInitialType(initialType)
   );
   const [allowReserve, setAllowReserve] = useState(initialAllowReserve);
+  const [isLate, setIsLate] = useState(initialIsLate);
+  const [note, setNote] = useState(initialNote);
   const [status, setStatus] = useState<'idle' | 'saving' | 'ok' | 'err'>('idle');
   const [message, setMessage] = useState<string | null>(null);
 
@@ -39,6 +59,15 @@ export function RaidSignupForm({
       setMessage(t('signupPickCharacter'));
       setStatus('err');
       return;
+    }
+    const effType = reserveOnly ? 'reserve' : type;
+    if (isLate) {
+      const n = note.trim();
+      if (n.length < 3) {
+        setMessage(t('lateNoteRequired'));
+        setStatus('err');
+        return;
+      }
     }
     setStatus('saving');
     setMessage(null);
@@ -50,8 +79,10 @@ export function RaidSignupForm({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             characterId,
-            type,
-            allowReserve: type === 'main' ? allowReserve : false,
+            type: effType,
+            allowReserve: effType === 'normal' ? allowReserve : false,
+            isLate,
+            note: note.trim() || null,
           }),
         }
       );
@@ -75,7 +106,11 @@ export function RaidSignupForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4 max-w-md">
+    <form onSubmit={onSubmit} className="space-y-4 max-w-lg">
+      {reserveOnly && (
+        <p className="text-sm text-amber-600 dark:text-amber-500">{t('signupReserveOnlyPhase')}</p>
+      )}
+
       <div>
         <label htmlFor="raid-signup-char" className="block text-sm font-medium mb-1">
           {t('signupCharacter')}
@@ -93,30 +128,43 @@ export function RaidSignupForm({
           ))}
         </select>
       </div>
-      <div>
-        <span className="block text-sm font-medium mb-2">{t('signupType')}</span>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="signup-type"
-              checked={type === 'main'}
-              onChange={() => setType('main')}
-            />
-            {t('signupTypeMain')}
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="signup-type"
-              checked={type === 'reserve'}
-              onChange={() => setType('reserve')}
-            />
-            {t('signupTypeReserve')}
-          </label>
+
+      {!reserveOnly && (
+        <div>
+          <span className="block text-sm font-medium mb-2">{t('signupType')}</span>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="signup-type"
+                checked={type === 'normal'}
+                onChange={() => setType('normal')}
+              />
+              {t('signupType_normal')}
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="signup-type"
+                checked={type === 'uncertain'}
+                onChange={() => setType('uncertain')}
+              />
+              {t('signupType_uncertain')}
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="signup-type"
+                checked={type === 'reserve'}
+                onChange={() => setType('reserve')}
+              />
+              {t('signupType_reserve')}
+            </label>
+          </div>
         </div>
-      </div>
-      {type === 'main' && (
+      )}
+
+      {type === 'normal' && !reserveOnly && (
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -126,6 +174,40 @@ export function RaidSignupForm({
           {t('signupAllowReserve')}
         </label>
       )}
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={isLate}
+          onChange={(e) => {
+            setIsLate(e.target.checked);
+            if (!e.target.checked) setMessage(null);
+          }}
+        />
+        {t('lateCheckbox')}
+      </label>
+
+      <div>
+        <label htmlFor="raid-signup-note" className="block text-sm font-medium mb-1">
+          {isLate ? (
+            <>
+              {t('lateNoteHint')}{' '}
+              <span className="text-destructive">*</span>
+            </>
+          ) : (
+            t('commentOptional')
+          )}
+        </label>
+        <textarea
+          id="raid-signup-note"
+          rows={3}
+          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+          placeholder={isLate ? t('lateNotePlaceholder') : undefined}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
+
       <button
         type="submit"
         disabled={status === 'saving'}

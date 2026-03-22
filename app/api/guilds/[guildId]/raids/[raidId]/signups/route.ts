@@ -3,9 +3,15 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { prisma } from '@/lib/prisma';
-import { resolveRaidAccess } from '@/lib/raid-detail-access';
+import { computeRaidSignupPhase, resolveRaidAccess } from '@/lib/raid-detail-access';
+import { normalizeSignupType } from '@/lib/raid-signup-constants';
+import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 
-const SIGNUP_TYPES = new Set(['main', 'reserve']);
+const NOTE_MIN = 3;
+
+function fireSync(raidId: string) {
+  void syncRaidThreadSummary(raidId);
+}
 
 /**
  * POST /api/guilds/[guildId]/raids/[raidId]/signups
@@ -44,6 +50,15 @@ export async function POST(
     );
   }
 
+  const raid = await prisma.rfRaid.findFirst({
+    where: { id: raidId, guildId },
+    select: { id: true, status: true, signupUntil: true },
+  });
+  if (!raid) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+  const phase = computeRaidSignupPhase(raid);
+
   let body: Record<string, unknown>;
   try {
     body = await request.json();
@@ -53,15 +68,45 @@ export async function POST(
 
   const characterId =
     typeof body.characterId === 'string' ? body.characterId.trim() : '';
-  const type = typeof body.type === 'string' ? body.type.trim() : '';
+  const typeRaw = typeof body.type === 'string' ? body.type.trim() : '';
+  const typeNorm = normalizeSignupType(typeRaw);
   const allowReserve =
     typeof body.allowReserve === 'boolean' ? body.allowReserve : false;
+  const isLate = body.isLate === true;
+  const note =
+    typeof body.note === 'string' ? body.note.trim() : body.note === null ? '' : '';
 
-  if (!characterId || !SIGNUP_TYPES.has(type)) {
+  if (!characterId || !typeNorm) {
     return NextResponse.json(
-      { error: 'Missing or invalid characterId / type (main | reserve)' },
+      { error: 'Missing or invalid characterId / type (normal | uncertain | reserve)' },
       { status: 400 }
     );
+  }
+
+  if (phase === 'reserve_only' && typeNorm !== 'reserve') {
+    return NextResponse.json(
+      { error: 'After signup deadline only reserve is allowed' },
+      { status: 400 }
+    );
+  }
+
+  if (typeNorm !== 'normal' && allowReserve) {
+    return NextResponse.json(
+      { error: 'allowReserve is only valid for type normal' },
+      { status: 400 }
+    );
+  }
+
+  if (isLate) {
+    if (note.length < NOTE_MIN) {
+      return NextResponse.json(
+        {
+          error:
+            'Late attendance requires a note (e.g. approximate delay)',
+        },
+        { status: 400 }
+      );
+    }
   }
 
   const character = await prisma.rfCharacter.findFirst({
@@ -75,6 +120,14 @@ export async function POST(
     );
   }
 
+  const data = {
+    characterId,
+    type: typeNorm,
+    allowReserve: typeNorm === 'normal' ? allowReserve : false,
+    isLate,
+    note: note.length > 0 ? note : null,
+  };
+
   const existing = await prisma.rfRaidSignup.findFirst({
     where: { raidId, userId },
   });
@@ -82,13 +135,18 @@ export async function POST(
   if (existing) {
     const updated = await prisma.rfRaidSignup.update({
       where: { id: existing.id },
-      data: {
-        characterId,
-        type,
-        allowReserve,
+      data,
+      select: {
+        id: true,
+        type: true,
+        characterId: true,
+        isLate: true,
+        note: true,
+        allowReserve: true,
+        signedAt: true,
       },
-      select: { id: true, type: true, characterId: true, signedAt: true },
     });
+    fireSync(raidId);
     return NextResponse.json({ signup: updated });
   }
 
@@ -96,11 +154,69 @@ export async function POST(
     data: {
       raidId,
       userId,
-      characterId,
-      type,
-      allowReserve,
+      ...data,
     },
-    select: { id: true, type: true, characterId: true, signedAt: true },
+    select: {
+      id: true,
+      type: true,
+      characterId: true,
+      isLate: true,
+      note: true,
+      allowReserve: true,
+      signedAt: true,
+    },
   });
+  fireSync(raidId);
   return NextResponse.json({ signup: created }, { status: 201 });
+}
+
+/**
+ * DELETE /api/guilds/[guildId]/raids/[raidId]/signups
+ * Eigene Anmeldung löschen (nur bei offenem Raid).
+ */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ guildId: string; raidId: string }> }
+) {
+  const { guildId, raidId } = await params;
+  const session = await getServerSession(authOptions);
+  if (!session?.discordId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const userId = await getEffectiveUserId(
+    session as { userId?: string; discordId?: string }
+  );
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const access = await resolveRaidAccess(
+    userId,
+    session.discordId as string,
+    guildId,
+    raidId
+  );
+  if (!access.ok) {
+    const status = access.reason === 'raid_not_found' ? 404 : 403;
+    return NextResponse.json({ error: 'Forbidden' }, { status });
+  }
+
+  const raid = await prisma.rfRaid.findFirst({
+    where: { id: raidId, guildId },
+    select: { status: true },
+  });
+  if (!raid || raid.status !== 'open') {
+    return NextResponse.json({ error: 'Raid is not open' }, { status: 403 });
+  }
+
+  const existing = await prisma.rfRaidSignup.findFirst({
+    where: { raidId, userId },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: 'No signup' }, { status: 404 });
+  }
+
+  await prisma.rfRaidSignup.delete({ where: { id: existing.id } });
+  fireSync(raidId);
+  return NextResponse.json({ ok: true });
 }

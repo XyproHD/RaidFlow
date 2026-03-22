@@ -239,3 +239,60 @@ export async function createPublicThreadInChannel(
   if (!data.id) throw new Error('Discord API threads: missing id');
   return { threadId: data.id };
 }
+
+/**
+ * Sendet eine Nachricht in einen Channel oder Thread (thread id = channel id).
+ */
+export async function createChannelMessage(
+  channelId: string,
+  content: string
+): Promise<{ messageId: string }> {
+  const token = getBotToken();
+  if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+
+  const res = await fetch(`${DISCORD_API_BASE}/channels/${channelId}/messages`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ content: content.slice(0, 2000) }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Discord API create message: ${res.status} ${text}`);
+  }
+  const data = (await res.json()) as { id?: string };
+  if (!data.id) throw new Error('Discord API create message: missing id');
+  return { messageId: data.id };
+}
+
+/**
+ * Bearbeitet eine Nachricht (Zusammenfassung im Raid-Thread).
+ */
+export async function editChannelMessage(
+  channelId: string,
+  messageId: string,
+  content: string
+): Promise<void> {
+  const token = getBotToken();
+  if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+
+  const res = await fetch(
+    `${DISCORD_API_BASE}/channels/${channelId}/messages/${messageId}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bot ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content: content.slice(0, 2000) }),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Discord API edit message: ${res.status} ${text}`);
+  }
+}

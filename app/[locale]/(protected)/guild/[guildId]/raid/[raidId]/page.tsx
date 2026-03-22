@@ -5,7 +5,9 @@ import { getTranslations } from 'next-intl/server';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { prisma } from '@/lib/prisma';
+import { formatCompositionGaps } from '@/lib/raid-composition-summary';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
+import { RaidSignupWithdraw } from '@/components/raid-detail/raid-signup-withdraw';
 import {
   filterSignupsVisibleToViewer,
   getRaidDetailContext,
@@ -61,8 +63,40 @@ export default async function RaidDetailPage(props: {
     );
   }
 
-  const { raid, canEdit, canSignup } = ctx;
+  const { raid, canEdit, canSignup, signupPhase } = ctx;
   const base = `/${locale}/guild/${guildId}/raid/${raidId}`;
+  const appBase = (process.env.NEXTAUTH_URL ?? '').replace(/\/$/, '');
+
+  function signupTypeLabel(type: string) {
+    const n = type === 'main' ? 'normal' : type;
+    switch (n) {
+      case 'uncertain':
+        return t('signupType_uncertain');
+      case 'reserve':
+        return t('signupType_reserve');
+      default:
+        return t('signupType_normal');
+    }
+  }
+
+  const gapsText = formatCompositionGaps({
+    minTanks: raid.minTanks,
+    minMelee: raid.minMelee,
+    minRange: raid.minRange,
+    minHealers: raid.minHealers,
+    minSpecs: raid.minSpecs as Record<string, number> | null,
+    signups: raid.signups.map((s) => ({
+      type: s.type,
+      character: s.character ? { mainSpec: s.character.mainSpec } : null,
+    })),
+  });
+
+  const minSpecsObj =
+    raid.minSpecs &&
+    typeof raid.minSpecs === 'object' &&
+    !Array.isArray(raid.minSpecs)
+      ? (raid.minSpecs as Record<string, number>)
+      : null;
 
   if (mode === 'edit' && !canEdit) {
     return (
@@ -204,7 +238,68 @@ export default async function RaidDetailPage(props: {
                 <dd className="whitespace-pre-wrap">{raid.note}</dd>
               </div>
             )}
+            <div>
+              <dt className="text-muted-foreground">{t('minTanks')}</dt>
+              <dd>{raid.minTanks}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">{t('minMelee')}</dt>
+              <dd>{raid.minMelee}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">{t('minRange')}</dt>
+              <dd>{raid.minRange}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">{t('minHealers')}</dt>
+              <dd>{raid.minHealers}</dd>
+            </div>
+            {minSpecsObj && Object.keys(minSpecsObj).length > 0 && (
+              <div className="sm:col-span-2">
+                <dt className="text-muted-foreground">{t('minSpecsHeading')}</dt>
+                <dd>
+                  <ul className="list-disc list-inside">
+                    {Object.entries(minSpecsObj).map(([spec, n]) => (
+                      <li key={spec}>
+                        {spec}: {n}
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+            )}
+            <div className="sm:col-span-2">
+              <dt className="text-muted-foreground">{t('compositionGaps')}</dt>
+              <dd>{gapsText}</dd>
+            </div>
           </dl>
+
+          {appBase && (
+            <div className="rounded-md border border-border p-3 text-sm space-y-2">
+              <p className="font-medium">{t('linkRaidView')}</p>
+              <a
+                href={`${appBase}${base}`}
+                className="text-primary break-all hover:underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {`${appBase}${base}`}
+              </a>
+              <p className="font-medium pt-2">{t('linkRaidSignup')}</p>
+              <a
+                href={`${appBase}${base}?mode=signup`}
+                className="text-primary break-all hover:underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {`${appBase}${base}?mode=signup`}
+              </a>
+            </div>
+          )}
+
+          {raid.discordThreadId && (
+            <p className="text-xs text-muted-foreground">{t('discordStatusHint')}</p>
+          )}
 
           <div>
             <h3 className="text-sm font-medium mb-2">{t('signupList')}</h3>
@@ -216,9 +311,16 @@ export default async function RaidDetailPage(props: {
             ) : (
               <ul className="list-disc list-inside text-sm space-y-1">
                 {visibleSignups.map((s) => (
-                  <li key={s.id}>
-                    {s.character?.name ?? t('signupAnonymous')} ({s.type}
-                    {s.allowReserve ? `, ${t('signupReserveOk')}` : ''})
+                  <li key={s.id} className="space-y-0.5">
+                    <span>
+                      {s.isLate ? <span title={t('lateCheckbox')}>⏱ </span> : null}
+                      {s.character?.name ?? t('signupAnonymous')} (
+                      {signupTypeLabel(s.type)}
+                      {s.allowReserve ? `, ${t('signupReserveOk')}` : ''})
+                    </span>
+                    {s.note ? (
+                      <span className="block text-xs text-muted-foreground pl-4">{s.note}</span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -247,14 +349,43 @@ export default async function RaidDetailPage(props: {
           <h2 id="raid-signup-heading" className="text-lg font-semibold">
             {t('sectionSignup')}
           </h2>
+          {appBase && (
+            <div className="rounded-md border border-border p-3 text-sm space-y-2">
+              <p className="font-medium">{t('linkRaidView')}</p>
+              <a
+                href={`${appBase}${base}`}
+                className="text-primary break-all hover:underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {`${appBase}${base}`}
+              </a>
+              <p className="font-medium pt-2">{t('linkRaidSignup')}</p>
+              <a
+                href={`${appBase}${base}?mode=signup`}
+                className="text-primary break-all hover:underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {`${appBase}${base}?mode=signup`}
+              </a>
+            </div>
+          )}
+          {raid.discordThreadId && (
+            <p className="text-xs text-muted-foreground">{t('discordStatusHint')}</p>
+          )}
           <RaidSignupForm
             guildId={guildId}
             raidId={raidId}
             characters={characters}
+            signupPhase={signupPhase}
             initialCharacterId={mySignup?.characterId ?? null}
-            initialType={mySignup?.type ?? 'main'}
+            initialType={mySignup?.type ?? 'normal'}
             initialAllowReserve={mySignup?.allowReserve ?? false}
+            initialIsLate={mySignup?.isLate ?? false}
+            initialNote={mySignup?.note ?? ''}
           />
+          {mySignup && <RaidSignupWithdraw guildId={guildId} raidId={raidId} />}
           <div>
             <h3 className="text-sm font-medium mb-2">{t('signupList')}</h3>
             {raid.signupVisibility === 'raid_leader_only' && !canEdit && (
@@ -265,8 +396,14 @@ export default async function RaidDetailPage(props: {
             ) : (
               <ul className="list-disc list-inside text-sm space-y-1">
                 {visibleSignups.map((s) => (
-                  <li key={s.id}>
-                    {s.character?.name ?? t('signupAnonymous')} ({s.type})
+                  <li key={s.id} className="space-y-0.5">
+                    <span>
+                      {s.isLate ? <span title={t('lateCheckbox')}>⏱ </span> : null}
+                      {s.character?.name ?? t('signupAnonymous')} ({signupTypeLabel(s.type)})
+                    </span>
+                    {s.note ? (
+                      <span className="block text-xs text-muted-foreground pl-4">{s.note}</span>
+                    ) : null}
                   </li>
                 ))}
               </ul>

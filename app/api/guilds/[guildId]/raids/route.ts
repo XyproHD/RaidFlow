@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { channelExists, createPublicThreadInChannel } from '@/lib/discord-guild-api';
+import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 
 function parseMinSpecs(raw: unknown): Record<string, number> | null {
   if (raw == null) return {};
@@ -239,6 +240,7 @@ export async function POST(
           discordChannelId: storedChannelId,
         },
       });
+      void syncRaidThreadSummary(raid.id);
     } catch (e) {
       console.error('[POST raids] Discord thread failed:', e);
       threadWarning = 'thread_failed';

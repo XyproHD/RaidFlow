@@ -8,6 +8,18 @@ import {
 
 export type RaidPageMode = 'view' | 'edit' | 'signup';
 
+/** Nach Ablauf „Anmeldung bis“ nur noch Reserve; sonst volle Typen. */
+export type RaidSignupPhase = 'full' | 'reserve_only' | 'closed';
+
+export function computeRaidSignupPhase(raid: {
+  status: string;
+  signupUntil: Date;
+}): RaidSignupPhase {
+  if (raid.status !== 'open') return 'closed';
+  if (Date.now() <= raid.signupUntil.getTime()) return 'full';
+  return 'reserve_only';
+}
+
 /**
  * Query-Parameter `mode` oder `modus` (deutsche Aliase).
  * Standard: Anzeigen (view), wenn kein oder unbekannter Wert.
@@ -46,7 +58,7 @@ async function loadRaidForDetailPage(
       raidGroupRestriction: { select: { id: true, name: true } },
       signups: {
         include: {
-          character: { select: { id: true, name: true } },
+          character: { select: { id: true, name: true, mainSpec: true } },
         },
         orderBy: { signedAt: 'asc' },
       },
@@ -67,7 +79,9 @@ export async function resolveRaidAccess(
       ok: true;
       guildInfo: UserGuildInfo;
       canEdit: boolean;
+      /** true solange Raid offen und Anmeldung (inkl. nur-Reserve-Phase) möglich */
       canSignup: boolean;
+      signupPhase: RaidSignupPhase;
     }
 > {
   const guilds = await getGuildsForUser(userId, discordId);
@@ -94,10 +108,10 @@ export async function resolveRaidAccess(
   }
 
   const canEdit = userGuildCanEditRaids(guildInfo);
-  const canSignup =
-    raid.status === 'open' && Date.now() <= raid.signupUntil.getTime();
+  const signupPhase = computeRaidSignupPhase(raid);
+  const canSignup = signupPhase !== 'closed';
 
-  return { ok: true, guildInfo, canEdit, canSignup };
+  return { ok: true, guildInfo, canEdit, canSignup, signupPhase };
 }
 
 export async function getRaidDetailContext(
@@ -113,6 +127,7 @@ export async function getRaidDetailContext(
       guildInfo: UserGuildInfo;
       canEdit: boolean;
       canSignup: boolean;
+      signupPhase: RaidSignupPhase;
       raid: NonNullable<Awaited<ReturnType<typeof loadRaidForDetailPage>>>;
     }
 > {
@@ -129,6 +144,7 @@ export async function getRaidDetailContext(
     guildInfo: access.guildInfo,
     canEdit: access.canEdit,
     canSignup: access.canSignup,
+    signupPhase: access.signupPhase,
     raid,
   };
 }
