@@ -23,6 +23,11 @@ import {
   parseRaidPageMode,
   type RaidPageMode,
 } from '@/lib/raid-detail-access';
+import { getParticipationStatsForUsers } from '@/lib/raid-participation-stats';
+import {
+  RaidEditPanel,
+  type RaidEditSerialized,
+} from '@/components/raid-edit/raid-edit-panel';
 
 type SearchParams = Promise<{ mode?: string; modus?: string }>;
 
@@ -74,6 +79,7 @@ export default async function RaidDetailPage(props: {
 
   const { raid, canEdit, canSignup, signupPhase } = ctx;
   const base = `/${locale}/guild/${guildId}/raid/${raidId}`;
+  const canEditRaid = canEdit && raid.status === 'open';
 
   if (mode === 'edit' && !canEdit) {
     return (
@@ -103,7 +109,8 @@ export default async function RaidDetailPage(props: {
     raid.signups,
     userId,
     raid.signupVisibility,
-    canEdit
+    canEdit,
+    raid.status
   );
 
   const anmeldungRows: AnmeldungRow[] = visibleSignups.map((s) => ({
@@ -131,6 +138,66 @@ export default async function RaidDetailPage(props: {
 
   const mySignup = raid.signups.find((s) => s.userId === userId);
 
+  const memberRows = await prisma.rfGuildMember.findMany({
+    where: { guildId },
+    select: { userId: true },
+  });
+  const statUserIds = [
+    ...new Set<string>([
+      ...memberRows.map((m) => m.userId),
+      ...raid.signups.map((s) => s.userId),
+    ]),
+  ];
+  const participationStatsMap = await getParticipationStatsForUsers(
+    prisma,
+    guildId,
+    raid.dungeonId,
+    statUserIds
+  );
+  const participationStats = Object.fromEntries(participationStatsMap);
+
+  const raidForEdit: RaidEditSerialized = {
+    id: raid.id,
+    guildId: raid.guildId,
+    dungeonId: raid.dungeonId,
+    name: raid.name,
+    note: raid.note,
+    raidLeaderId: raid.raidLeaderId,
+    lootmasterId: raid.lootmasterId,
+    minTanks: raid.minTanks,
+    minMelee: raid.minMelee,
+    minRange: raid.minRange,
+    minHealers: raid.minHealers,
+    minSpecs: raid.minSpecs,
+    raidGroupRestrictionId: raid.raidGroupRestrictionId,
+    maxPlayers: raid.maxPlayers,
+    scheduledAt: raid.scheduledAt.toISOString(),
+    scheduledEndAt: raid.scheduledEndAt?.toISOString() ?? null,
+    signupUntil: raid.signupUntil.toISOString(),
+    signupVisibility: raid.signupVisibility,
+    status: raid.status,
+    discordThreadId: raid.discordThreadId,
+    dungeon: {
+      id: raid.dungeon.id,
+      name: raid.dungeon.names[0]?.name ?? raid.dungeon.name,
+    },
+    raidGroupRestriction: raid.raidGroupRestriction,
+    signups: raid.signups.map((s) => ({
+      id: s.id,
+      userId: s.userId,
+      characterId: s.characterId,
+      type: s.type,
+      signedSpec: s.signedSpec,
+      isLate: s.isLate,
+      note: s.note,
+      leaderAllowsReserve: s.leaderAllowsReserve,
+      leaderMarkedTeilnehmer: s.leaderMarkedTeilnehmer,
+      leaderPlacement: s.leaderPlacement,
+      setConfirmed: s.setConfirmed,
+      character: s.character,
+    })),
+  };
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -148,9 +215,18 @@ export default async function RaidDetailPage(props: {
           {t('modeView')}
         </Link>
         {canEdit ? (
-          <Link href={`${base}?mode=edit`} className={modeNavClass(mode === 'edit')}>
-            {t('modeEdit')}
-          </Link>
+          canEditRaid ? (
+            <Link href={`${base}?mode=edit`} className={modeNavClass(mode === 'edit')}>
+              {t('modeEdit')}
+            </Link>
+          ) : (
+            <span
+              className="text-sm px-3 py-1.5 rounded-md border border-border text-muted-foreground cursor-not-allowed"
+              title={t('raidEditClosed')}
+            >
+              {t('modeEdit')}
+            </span>
+          )
         ) : (
           <span
             className="text-sm px-3 py-1.5 rounded-md border border-border text-muted-foreground cursor-not-allowed"
@@ -175,18 +251,31 @@ export default async function RaidDetailPage(props: {
         />
       )}
 
-      {mode === 'edit' && canEdit && (
+      {mode === 'edit' && canEdit && canEditRaid && (
         <section className="space-y-4" aria-labelledby="raid-edit-heading">
           <h2 id="raid-edit-heading" className="text-lg font-semibold">
             {t('sectionEdit')}
           </h2>
-          <p className="text-muted-foreground text-sm">{t('editPlaceholder')}</p>
           {raid.discordThreadId && (
             <p className="text-sm">
               <span className="text-muted-foreground">{t('discordThread')}: </span>
               <code className="text-xs bg-muted px-1 py-0.5 rounded">{raid.discordThreadId}</code>
             </p>
           )}
+          <RaidEditPanel
+            guildId={guildId}
+            raidId={raidId}
+            initialRaid={raidForEdit}
+            participationStats={participationStats}
+          />
+        </section>
+      )}
+      {mode === 'edit' && canEdit && !canEditRaid && (
+        <section className="space-y-2" aria-labelledby="raid-edit-closed-heading">
+          <h2 id="raid-edit-closed-heading" className="text-lg font-semibold">
+            {t('sectionEdit')}
+          </h2>
+          <p className="text-muted-foreground text-sm">{t('raidEditClosed')}</p>
         </section>
       )}
 
@@ -211,7 +300,9 @@ export default async function RaidDetailPage(props: {
           {canEdit && <RaidSignupHistoryPanel guildId={guildId} raidId={raidId} />}
           <div className="space-y-2">
             <h3 className="text-base font-semibold">{t('anmeldungenHeading')}</h3>
-            {raid.signupVisibility === 'raid_leader_only' && !canEdit && (
+            {raid.signupVisibility === 'raid_leader_only' &&
+              !canEdit &&
+              raid.status !== 'locked' && (
               <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
             )}
             <RaidAnmeldungen

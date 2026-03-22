@@ -3,10 +3,26 @@ import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerForGuild } from '@/lib/raid-planner-auth';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
+import {
+  parseLeaderPlacement,
+  setConfirmedForPlacement,
+  type LeaderPlacement,
+} from '@/lib/raid-leader-placement';
+
+function validateSignedSpec(
+  signedSpec: string,
+  mainSpec: string,
+  offSpec: string | null
+): boolean {
+  const s = signedSpec.trim();
+  if (s === mainSpec.trim()) return true;
+  if (offSpec && s === offSpec.trim()) return true;
+  return false;
+}
 
 /**
  * PATCH /api/guilds/[guildId]/raids/[raidId]/signups/[signupId]
- * Nur Raidleader/Gildenmeister: Reserve zulassen / Teilnehmer markieren.
+ * Raidleader: Reserve / Teilnehmer; Spalten (leaderPlacement); Spec wechseln.
  */
 export async function PATCH(
   request: NextRequest,
@@ -32,9 +48,22 @@ export async function PATCH(
 
   const signup = await prisma.rfRaidSignup.findFirst({
     where: { id: signupId, raidId, raid: { guildId } },
+    include: {
+      character: {
+        select: { mainSpec: true, offSpec: true },
+      },
+    },
   });
   if (!signup) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  const raid = await prisma.rfRaid.findFirst({
+    where: { id: raidId, guildId },
+    select: { status: true },
+  });
+  if (!raid || raid.status !== 'open') {
+    return NextResponse.json({ error: 'Raid is not open' }, { status: 403 });
   }
 
   const prevSnap = snapshotSignup(signup);
@@ -48,16 +77,65 @@ export async function PATCH(
       ? body.leaderMarkedTeilnehmer
       : signup.leaderMarkedTeilnehmer;
 
+  let leaderPlacement: LeaderPlacement =
+    parseLeaderPlacement(signup.leaderPlacement) ?? 'signup';
+  if (body.leaderPlacement !== undefined) {
+    const p = parseLeaderPlacement(body.leaderPlacement);
+    if (!p) {
+      return NextResponse.json({ error: 'Invalid leaderPlacement' }, { status: 400 });
+    }
+    leaderPlacement = p;
+  }
+
+  let signedSpec = signup.signedSpec ?? '';
+  const mainSpec = signup.character?.mainSpec ?? '';
+  const offSpec = signup.character?.offSpec ?? null;
+
+  if (body.cycleSignedSpec === true) {
+    if (!offSpec?.trim()) {
+      return NextResponse.json({ error: 'No off spec to cycle' }, { status: 400 });
+    }
+    const cur = signedSpec.trim();
+    if (cur === mainSpec.trim()) {
+      signedSpec = offSpec.trim();
+    } else if (cur === offSpec.trim()) {
+      signedSpec = mainSpec.trim();
+    } else {
+      signedSpec = mainSpec.trim();
+    }
+  } else if (typeof body.signedSpec === 'string') {
+    signedSpec = body.signedSpec.trim();
+  }
+
+  if (signup.character) {
+    if (
+      !validateSignedSpec(signedSpec, signup.character.mainSpec, signup.character.offSpec)
+    ) {
+      return NextResponse.json({ error: 'Invalid signedSpec for character' }, { status: 400 });
+    }
+  }
+
+  const setConfirmed = setConfirmedForPlacement(leaderPlacement);
+
   const updated = await prisma.rfRaidSignup.update({
     where: { id: signupId },
     data: {
       leaderAllowsReserve,
       leaderMarkedTeilnehmer,
+      leaderPlacement,
+      setConfirmed,
+      signedSpec: signedSpec || undefined,
     },
     select: {
       id: true,
       leaderAllowsReserve: true,
       leaderMarkedTeilnehmer: true,
+      leaderPlacement: true,
+      setConfirmed: true,
+      signedSpec: true,
+      type: true,
+      characterId: true,
+      userId: true,
     },
   });
 
@@ -68,11 +146,7 @@ export async function PATCH(
     changedByUserId: userId,
     action: 'leader_signup_update',
     oldValue: prevSnap,
-    newValue: snapshotSignup({
-      ...signup,
-      leaderAllowsReserve: updated.leaderAllowsReserve,
-      leaderMarkedTeilnehmer: updated.leaderMarkedTeilnehmer,
-    }),
+    newValue: snapshotSignup(updated),
   });
 
   void syncRaidThreadSummary(raidId);

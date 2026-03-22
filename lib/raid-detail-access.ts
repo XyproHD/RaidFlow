@@ -51,6 +51,7 @@ async function loadRaidForDetailPage(
       guild: { select: { name: true } },
       dungeon: {
         select: {
+          id: true,
           name: true,
           names: { where: { locale }, take: 1, select: { name: true } },
         },
@@ -149,14 +150,18 @@ export async function getRaidDetailContext(
   };
 }
 
-/** Anmeldeliste je nach signup_visibility und Rolle. */
+/** Anmeldeliste je nach signup_visibility und Rolle. Nach „Raid setzen“ (locked) ist die Liste bei raid_leader_only für alle sichtbar. */
 export function filterSignupsVisibleToViewer<T extends { userId: string }>(
   signups: T[],
   viewerUserId: string,
   signupVisibility: string,
-  canEdit: boolean
+  canEdit: boolean,
+  raidStatus?: string
 ): T[] {
   if (signupVisibility === 'public' || canEdit) {
+    return signups;
+  }
+  if (raidStatus === 'locked') {
     return signups;
   }
   return signups.filter((s) => s.userId === viewerUserId);

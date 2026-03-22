@@ -97,7 +97,8 @@ export async function RaidViewSection({
     raid.signups,
     userId,
     raid.signupVisibility,
-    canEdit
+    canEdit,
+    raid.status
   );
 
   const rows: AnmeldungRow[] = visibleSignups.map((s) => ({
