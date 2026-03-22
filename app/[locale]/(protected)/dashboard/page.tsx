@@ -101,14 +101,14 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
                   </Link>
                   {r.canEdit && (
                     <Link
-                      href={`/${locale}/guild/${r.guildId}/raid/${r.id}/edit`}
+                      href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=edit`}
                       className="text-sm text-primary hover:underline"
                     >
                       {t('raidEdit')}
                     </Link>
                   )}
                   <Link
-                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}/signup`}
+                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
                     className="text-sm text-primary hover:underline"
                   >
                     {t('signupLink')}

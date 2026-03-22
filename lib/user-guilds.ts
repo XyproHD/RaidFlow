@@ -35,6 +35,25 @@ export interface UserRaidInfo {
   canEdit: boolean; // Raidleader/Gildenmeister
 }
 
+/** Gleiche Sichtbarkeit wie in getRaidsForUser: Raider-Rolle, ggf. Raidgruppe oder Leitung. */
+export function userGuildCanSeeRaid(
+  guildInfo: UserGuildInfo,
+  raid: { guildId: string; raidGroupRestrictionId: string | null }
+): boolean {
+  if (guildInfo.id !== raid.guildId) return false;
+  if (guildInfo.role === 'member') return false;
+  if (raid.raidGroupRestrictionId) {
+    const inGroup = guildInfo.raidGroupIds.includes(raid.raidGroupRestrictionId);
+    const canManage = guildInfo.role === 'guildmaster' || guildInfo.role === 'raidleader';
+    return inGroup || canManage;
+  }
+  return true;
+}
+
+export function userGuildCanEditRaids(guildInfo: UserGuildInfo): boolean {
+  return guildInfo.role === 'raidleader' || guildInfo.role === 'guildmaster';
+}
+
 /**
  * Lädt alle RfGuild mit RaidGroups, prüft pro Gilde ob der User Discord-Mitglied ist,
  * synchronisiert RfUserGuild und RfGuildMember und gibt alle Gilden zurück, in denen
@@ -219,14 +238,7 @@ export async function getRaidsForUser(
   for (const raid of raids) {
     const guildInfo = guildMap.get(raid.guildId);
     if (!guildInfo) continue;
-    // Einschränkung: nur Raids, für die der User Raider-Recht hat (bei Raidgruppe: User muss in Gruppe sein oder Raidleader/Gildenmeister)
-    if (raid.raidGroupRestrictionId) {
-      const inGroup =
-        guildInfo.raidGroupIds.includes(raid.raidGroupRestrictionId);
-      const canManage =
-        guildInfo.role === 'guildmaster' || guildInfo.role === 'raidleader';
-      if (!inGroup && !canManage) continue;
-    }
+    if (!userGuildCanSeeRaid(guildInfo, raid)) continue;
     result.push({
       id: raid.id,
       guildId: raid.guildId,
@@ -238,7 +250,7 @@ export async function getRaidsForUser(
       status: raid.status,
       maxPlayers: raid.maxPlayers,
       signupCount: raid._count.signups,
-      canEdit: guildInfo.role === 'raidleader' || guildInfo.role === 'guildmaster',
+      canEdit: userGuildCanEditRaids(guildInfo),
     });
   }
   return result;
