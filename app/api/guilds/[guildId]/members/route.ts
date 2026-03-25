@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { isMissingGearScoreColumnError } from '@/lib/rf-character-gear-score-compat';
 import { requireGuildMasterOrForbid } from '@/lib/guild-master';
 import { addRoleToMember, removeRoleFromMember } from '@/lib/discord-guild-api';
 
@@ -15,35 +16,44 @@ export async function GET(
   const auth = await requireGuildMasterOrForbid(guildId);
   if (auth instanceof NextResponse) return auth;
 
-  const members = await prisma.rfGuildMember.findMany({
-    where: { guildId },
-    include: {
-      user: {
-        select: {
-          id: true,
-          discordId: true,
-          characters: {
-            where: { guildId },
-            select: {
-              id: true,
-              name: true,
-              mainSpec: true,
-              offSpec: true,
-              isMain: true,
-              gearScore: true,
-              guildDiscordDisplayName: true,
-              battlenetProfile: { select: { battlenetCharacterId: true } },
+  const membersQuery = (withGearScore: boolean) =>
+    prisma.rfGuildMember.findMany({
+      where: { guildId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            discordId: true,
+            characters: {
+              where: { guildId },
+              select: {
+                id: true,
+                name: true,
+                mainSpec: true,
+                offSpec: true,
+                isMain: true,
+                ...(withGearScore ? { gearScore: true as const } : {}),
+                guildDiscordDisplayName: true,
+                battlenetProfile: { select: { battlenetCharacterId: true } },
+              },
+              orderBy: { name: 'asc' },
             },
-            orderBy: { name: 'asc' },
           },
         },
+        memberRaidGroups: {
+          include: { raidGroup: { select: { id: true, name: true } } },
+        },
       },
-      memberRaidGroups: {
-        include: { raidGroup: { select: { id: true, name: true } } },
-      },
-    },
-    orderBy: { joinedAt: 'asc' },
-  });
+      orderBy: { joinedAt: 'asc' },
+    });
+
+  let members: Awaited<ReturnType<typeof membersQuery>>;
+  try {
+    members = await membersQuery(true);
+  } catch (e) {
+    if (!isMissingGearScoreColumnError(e)) throw e;
+    members = await membersQuery(false);
+  }
 
   return NextResponse.json({
     members: members.map((m) => ({
@@ -62,7 +72,7 @@ export async function GET(
         mainSpec: c.mainSpec,
         offSpec: c.offSpec,
         isMain: c.isMain,
-        gearScore: c.gearScore,
+        gearScore: 'gearScore' in c ? (c.gearScore ?? null) : null,
         guildDiscordDisplayName: c.guildDiscordDisplayName,
         hasBattlenet: !!c.battlenetProfile?.battlenetCharacterId,
       })),

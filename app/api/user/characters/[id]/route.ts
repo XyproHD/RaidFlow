@@ -5,6 +5,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { characterToClientDto } from '@/lib/character-api-dto';
+import { findUniqueRfCharacterForProfileDto } from '@/lib/rf-character-gear-score-compat';
 import {
   battlenetProfileJsonToUpsertData,
   isBattlenetProfileJson,
@@ -48,6 +49,7 @@ export async function PATCH(
   }
   const existing = await prisma.rfCharacter.findFirst({
     where: { id, userId },
+    select: { id: true, guildId: true },
   });
   if (!existing) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -62,7 +64,7 @@ export async function PATCH(
     });
   }
   try {
-    const updated = await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx) => {
       const charUpdate: Prisma.RfCharacterUncheckedUpdateInput = {};
       if (body.name != null) charUpdate.name = body.name.trim();
       if (body.guildId !== undefined) {
@@ -83,11 +85,8 @@ export async function PATCH(
           update: data,
         });
       }
-      return tx.rfCharacter.findUniqueOrThrow({
-        where: { id },
-        include: characterInclude,
-      });
     });
+    const updated = await findUniqueRfCharacterForProfileDto(id);
     return NextResponse.json({ character: characterToClientDto(updated) });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -114,6 +113,7 @@ export async function DELETE(
   const { id } = await params;
   const existing = await prisma.rfCharacter.findFirst({
     where: { id, userId },
+    select: { id: true },
   });
   if (!existing) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

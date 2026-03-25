@@ -6,6 +6,10 @@ import { prisma } from '@/lib/prisma';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { characterToClientDto } from '@/lib/character-api-dto';
 import {
+  findManyRfCharactersForProfile,
+  findUniqueRfCharacterForProfileDto,
+} from '@/lib/rf-character-gear-score-compat';
+import {
   battlenetProfileJsonToUpsertData,
   isBattlenetProfileJson,
 } from '@/lib/battlenet-character-persist';
@@ -22,11 +26,7 @@ export async function GET() {
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  const list = await prisma.rfCharacter.findMany({
-    where: { userId },
-    include: characterInclude,
-    orderBy: { name: 'asc' },
-  });
+  const list = await findManyRfCharactersForProfile(userId);
   return NextResponse.json({
     characters: list.map((c) => characterToClientDto(c)),
   });
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Ungültiges battlenetProfile' }, { status: 400 });
   }
   try {
-    const saved = await prisma.$transaction(async (tx) => {
+    const createdId = await prisma.$transaction(async (tx) => {
       const created = await tx.rfCharacter.create({
         data: {
           userId,
@@ -85,11 +85,9 @@ export async function POST(request: NextRequest) {
           update: data,
         });
       }
-      return tx.rfCharacter.findUniqueOrThrow({
-        where: { id: created.id },
-        include: characterInclude,
-      });
+      return created.id;
     });
+    const saved = await findUniqueRfCharacterForProfileDto(createdId);
     return NextResponse.json({ character: characterToClientDto(saved) });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {

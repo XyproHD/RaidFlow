@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { battlenetBearerInit, getBattlenetAccessToken, getBattlenetConfigForRegion } from '@/lib/battlenet';
 import { calculateGearscoreFromItems, type GearscoreItem } from '@/lib/gearscore';
 import type { WowRegion } from '@/lib/wow-classic-realms';
+import { isMissingGearScoreColumnError } from '@/lib/rf-character-gear-score-compat';
 
 function toWowRegion(region: string): WowRegion {
   const r = region.trim().toLowerCase();
@@ -50,15 +51,41 @@ function toGearscoreItems(payload: BnetEquipmentPayload): GearscoreItem[] {
   });
 }
 
+async function loadCharacterWithBattlenetProfile(characterId: string) {
+  try {
+    return await prisma.rfCharacter.findUnique({
+      where: { id: characterId },
+      include: { battlenetProfile: true },
+    });
+  } catch (e) {
+    if (!isMissingGearScoreColumnError(e)) throw e;
+    const row = await prisma.rfCharacter.findUnique({
+      where: { id: characterId },
+      select: {
+        id: true,
+        userId: true,
+        guildId: true,
+        name: true,
+        mainSpec: true,
+        offSpec: true,
+        isMain: true,
+        guildDiscordDisplayName: true,
+        createdAt: true,
+        updatedAt: true,
+        battlenetProfile: true,
+      },
+    });
+    if (!row) return null;
+    return { ...row, gearScore: null as number | null };
+  }
+}
+
 export async function refreshCharacterGearscore(characterId: string): Promise<{
   currentScore: number;
   storedScore: number | null;
   savedHighScore: number;
 }> {
-  const character = await prisma.rfCharacter.findUnique({
-    where: { id: characterId },
-    include: { battlenetProfile: true },
-  });
+  const character = await loadCharacterWithBattlenetProfile(characterId);
   if (!character) throw new Error('Charakter nicht gefunden.');
   if (!character.battlenetProfile?.battlenetCharacterId) {
     throw new Error('Charakter ist nicht mit Battle.net verknüpft.');
@@ -86,10 +113,19 @@ export async function refreshCharacterGearscore(characterId: string): Promise<{
   const savedHighScore = character.gearScore == null ? score : Math.max(character.gearScore, score);
 
   if (savedHighScore !== character.gearScore) {
-    await prisma.rfCharacter.update({
-      where: { id: characterId },
-      data: { gearScore: savedHighScore },
-    });
+    try {
+      await prisma.rfCharacter.update({
+        where: { id: characterId },
+        data: { gearScore: savedHighScore },
+      });
+    } catch (e) {
+      if (isMissingGearScoreColumnError(e)) {
+        throw new Error(
+          'Die Datenbank hat noch keine Spalte gear_score. Bitte Migration anwenden (Supabase SQL oder prisma migrate deploy).'
+        );
+      }
+      throw e;
+    }
   }
 
   return {

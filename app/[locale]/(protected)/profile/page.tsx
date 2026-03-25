@@ -6,6 +6,7 @@ import { getGuildsForUser } from '@/lib/user-guilds';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { expandRaidTimeSlot } from '@/lib/profile-constants';
 import { characterToClientDto } from '@/lib/character-api-dto';
+import { findManyRfCharactersForProfile } from '@/lib/rf-character-gear-score-compat';
 import { ProfileRaidTimes } from './profile-raid-times';
 import { ProfileCharacters } from './profile-characters';
 import { ProfileLoot } from './profile-loot';
@@ -67,14 +68,7 @@ export default async function ProfilePage() {
         where: { userId },
         orderBy: [{ weekday: 'asc' }, { timeSlot: 'asc' }],
       }),
-      prisma.rfCharacter.findMany({
-        where: { userId },
-        include: {
-          guild: { select: { id: true, name: true } },
-          battlenetProfile: { select: { battlenetCharacterId: true, realmSlug: true } },
-        },
-        orderBy: { name: 'asc' },
-      }),
+      findManyRfCharactersForProfile(userId),
       prisma.rfRaidCompletion.findMany({
         where: { userId },
         include: {

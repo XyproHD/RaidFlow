@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { isMissingGearScoreColumnError } from '@/lib/rf-character-gear-score-compat';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { channelExists } from '@/lib/discord-guild-api';
 import { getSpecByDisplayName, TBC_CLASSES, type TbcRole } from '@/lib/wow-tbc-classes';
@@ -34,83 +35,96 @@ export async function GET(
     return NextResponse.json({ error: 'Guild not found' }, { status: 404 });
   }
 
-  const [dungeonsRaw, raidGroups, leaderUserGuilds, groupCharRows, guildMembers] = await Promise.all([
-    prisma.rfDungeon.findMany({
-      where: { instanceType: 'raid' },
-      include: {
-        names: { where: { locale } },
-      },
-      orderBy: { name: 'asc' },
-    }),
-    prisma.rfRaidGroup.findMany({
-      where: { guildId },
-      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      select: { id: true, name: true },
-    }),
-    prisma.rfUserGuild.findMany({
-      where: {
-        guildId,
-        role: { in: ['raider', 'raidleader', 'guildmaster'] },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            characters: {
-              where: { guildId },
-              orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
-              take: 5,
-              select: {
-                name: true,
-                guildDiscordDisplayName: true,
-                isMain: true,
-                battlenetProfile: { select: { battlenetCharacterId: true } },
+  const loadBootstrap = (includeGearScoreOnChars: boolean) =>
+    Promise.all([
+      prisma.rfDungeon.findMany({
+        where: { instanceType: 'raid' },
+        include: {
+          names: { where: { locale } },
+        },
+        orderBy: { name: 'asc' },
+      }),
+      prisma.rfRaidGroup.findMany({
+        where: { guildId },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        select: { id: true, name: true },
+      }),
+      prisma.rfUserGuild.findMany({
+        where: {
+          guildId,
+          role: { in: ['raider', 'raidleader', 'guildmaster'] },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              characters: {
+                where: { guildId },
+                orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+                take: 5,
+                select: {
+                  name: true,
+                  guildDiscordDisplayName: true,
+                  isMain: true,
+                  battlenetProfile: { select: { battlenetCharacterId: true } },
+                },
               },
             },
           },
         },
-      },
-      orderBy: { userId: 'asc' },
-    }),
-    prisma.rfRaidGroupCharacter.findMany({
-      where: { raidGroup: { guildId } },
-      select: { raidGroupId: true, characterId: true, allowed: true },
-    }),
-    prisma.rfGuildMember.findMany({
-      where: { guildId },
-      include: {
-        memberRaidGroups: { select: { raidGroupId: true } },
-        user: {
-          select: {
-            id: true,
-            raidTimePrefs: {
-              select: {
-                weekday: true,
-                timeSlot: true,
-                preference: true,
-                weekFocus: true,
+        orderBy: { userId: 'asc' },
+      }),
+      prisma.rfRaidGroupCharacter.findMany({
+        where: { raidGroup: { guildId } },
+        select: { raidGroupId: true, characterId: true, allowed: true },
+      }),
+      prisma.rfGuildMember.findMany({
+        where: { guildId },
+        include: {
+          memberRaidGroups: { select: { raidGroupId: true } },
+          user: {
+            select: {
+              id: true,
+              raidTimePrefs: {
+                select: {
+                  weekday: true,
+                  timeSlot: true,
+                  preference: true,
+                  weekFocus: true,
+                },
               },
-            },
-            characters: {
-              where: { guildId },
-              orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
-              select: {
-                id: true,
-                name: true,
-                mainSpec: true,
-                offSpec: true,
-                isMain: true,
-                gearScore: true,
-                guildDiscordDisplayName: true,
-                battlenetProfile: { select: { battlenetCharacterId: true } },
+              characters: {
+                where: { guildId },
+                orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+                select: {
+                  id: true,
+                  name: true,
+                  mainSpec: true,
+                  offSpec: true,
+                  isMain: true,
+                  ...(includeGearScoreOnChars ? { gearScore: true as const } : {}),
+                  guildDiscordDisplayName: true,
+                  battlenetProfile: { select: { battlenetCharacterId: true } },
+                },
               },
             },
           },
         },
-      },
-      orderBy: { joinedAt: 'asc' },
-    }),
-  ]);
+        orderBy: { joinedAt: 'asc' },
+      }),
+    ]);
+
+  let dungeonsRaw: Awaited<ReturnType<typeof loadBootstrap>>[0];
+  let raidGroups: Awaited<ReturnType<typeof loadBootstrap>>[1];
+  let leaderUserGuilds: Awaited<ReturnType<typeof loadBootstrap>>[2];
+  let groupCharRows: Awaited<ReturnType<typeof loadBootstrap>>[3];
+  let guildMembers: Awaited<ReturnType<typeof loadBootstrap>>[4];
+  try {
+    [dungeonsRaw, raidGroups, leaderUserGuilds, groupCharRows, guildMembers] = await loadBootstrap(true);
+  } catch (e) {
+    if (!isMissingGearScoreColumnError(e)) throw e;
+    [dungeonsRaw, raidGroups, leaderUserGuilds, groupCharRows, guildMembers] = await loadBootstrap(false);
+  }
 
   const dungeons = dungeonsRaw.map((d) => ({
     id: d.id,
@@ -177,7 +191,7 @@ export async function GET(
         mainSpec: c.mainSpec,
         offSpec: c.offSpec,
         isMain: c.isMain,
-        gearScore: c.gearScore,
+        gearScore: 'gearScore' in c ? (c.gearScore ?? null) : null,
         guildDiscordDisplayName: c.guildDiscordDisplayName,
         hasBattlenet: !!c.battlenetProfile?.battlenetCharacterId,
         classId: parsed?.classId ?? null,

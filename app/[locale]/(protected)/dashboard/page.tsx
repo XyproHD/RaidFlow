@@ -5,6 +5,10 @@ import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getGuildsForUser, getRaidsForUser } from '@/lib/user-guilds';
 import { getLocale } from 'next-intl/server';
 import { prisma } from '@/lib/prisma';
+import {
+  findManyRfCharactersForDashboard,
+  findManyRaidSignupsForDashboard,
+} from '@/lib/rf-character-gear-score-compat';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { DashboardClient, type DashboardCalendarRaid, type DashboardCharacter, type DashboardGuild, type DashboardSignupRow } from './dashboard-client';
 
@@ -86,13 +90,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       };
     });
 
-    const chars = userId
-      ? await prisma.rfCharacter.findMany({
-          where: { userId },
-          include: { guild: { select: { name: true } }, battlenetProfile: { select: { battlenetCharacterId: true } } },
-          orderBy: [{ guildId: 'asc' }, { isMain: 'desc' }, { name: 'asc' }],
-        })
-      : [];
+    const chars = userId ? await findManyRfCharactersForDashboard(userId) : [];
 
     const completionRows = userId
       ? await prisma.rfRaidCompletion.findMany({
@@ -195,44 +193,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       .filter((g) => g.role === 'raidleader' || g.role === 'guildmaster')
       .map((g) => g.id);
 
-    const mySignupRows = userId
-      ? await prisma.rfRaidSignup.findMany({
-          where: {
-            userId,
-            raid: { scheduledAt: { gte: now, lte: rangeEnd } },
-          },
-          select: {
-            raidId: true,
-            type: true,
-            signedSpec: true,
-            leaderPlacement: true,
-            setConfirmed: true,
-            character: {
-              select: {
-                id: true,
-                name: true,
-                mainSpec: true,
-                offSpec: true,
-                isMain: true,
-                battlenetProfile: { select: { battlenetCharacterId: true } },
-                gearScore: true,
-              },
-            },
-            raid: {
-              select: {
-                id: true,
-                name: true,
-                guildId: true,
-                scheduledAt: true,
-                status: true,
-                guild: { select: { name: true } },
-                dungeon: { select: { name: true } },
-              },
-            },
-          },
-          orderBy: { raid: { scheduledAt: 'asc' } },
-        })
-      : [];
+    const mySignupRows = userId ? await findManyRaidSignupsForDashboard(userId, now, rangeEnd) : [];
 
     const mySignups: DashboardSignupRow[] = mySignupRows.map((s) => ({
       raidId: s.raid.id,
@@ -266,9 +227,21 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
     );
   } catch (err) {
     console.error('[DashboardPage]', err);
+    const hint =
+      process.env.NODE_ENV === 'development' && err instanceof Error ? err.message : null;
     return (
       <div className="p-6 md:p-8">
         <p className="text-destructive">Fehler beim Laden des Dashboards. Bitte später erneut versuchen.</p>
+        {hint ? (
+          <p className="mt-2 text-xs text-muted-foreground font-mono whitespace-pre-wrap break-words">
+            {hint}
+          </p>
+        ) : null}
+        <p className="mt-3 text-sm text-muted-foreground">
+          Hinweis: Wenn kürzlich Gearscore eingeführt wurde, fehlt in der Datenbank ggf. die Spalte{' '}
+          <code className="rounded bg-muted px-1">gear_score</code> — dann Migration/SQL auf der DB ausführen.
+          Server-Logs (z. B. Vercel) zeigen die genaue Fehlermeldung.
+        </p>
       </div>
     );
   }
