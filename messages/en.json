@@ -79,6 +79,12 @@
     ,
     "calendarTiles": "Tiles",
     "calendarList": "List"
+    ,
+    "showDays": "Show days",
+    "prevWeek": "Back 7 days",
+    "nextWeek": "Forward 7 days",
+    "todayShort": "today",
+    "signupOpenUntil": "Signup open until"
   },
   "raidDetail": {
     "backDashboard": "Back to dashboard",

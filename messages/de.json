@@ -79,6 +79,12 @@
     ,
     "calendarTiles": "Kacheln",
     "calendarList": "Liste"
+    ,
+    "showDays": "Zeige Tage",
+    "prevWeek": "7 Tage zurück",
+    "nextWeek": "7 Tage vor",
+    "todayShort": "heut",
+    "signupOpenUntil": "Anmeldung offen bis"
   },
   "raidDetail": {
     "backDashboard": "Zum Dashboard",

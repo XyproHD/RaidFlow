@@ -124,11 +124,12 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
     }));
 
     const now = new Date();
+    // Load a wider window so the dashboard calendar can paginate +/-7 days.
     const rangeStart = new Date(now);
-    rangeStart.setDate(rangeStart.getDate() - 1);
+    rangeStart.setDate(rangeStart.getDate() - 28);
     rangeStart.setHours(0, 0, 0, 0);
     const rangeEnd = new Date(now);
-    rangeEnd.setDate(rangeEnd.getDate() + 14);
+    rangeEnd.setDate(rangeEnd.getDate() + 28);
     rangeEnd.setHours(23, 59, 59, 999);
 
     const raidIdsInCalendar = raids
@@ -143,6 +144,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
             guildId: true,
             name: true,
             scheduledAt: true,
+            signupUntil: true,
             status: true,
             maxPlayers: true,
             note: true,
@@ -170,6 +172,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       name: r.name,
       dungeonName: r.dungeon.name,
       scheduledAtIso: r.scheduledAt.toISOString(),
+      signupUntilIso: r.signupUntil.toISOString(),
       status: r.status,
       signupCount: r._count.signups,
       maxPlayers: r.maxPlayers,

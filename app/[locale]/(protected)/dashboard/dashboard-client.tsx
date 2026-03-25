@@ -55,6 +55,7 @@ export type DashboardCalendarRaid = {
   name: string;
   dungeonName: string;
   scheduledAtIso: string;
+  signupUntilIso: string;
   status: string;
   signupCount: number;
   maxPlayers: number;
@@ -147,10 +148,13 @@ export function DashboardClient({
   const [openSignupMenuPos, setOpenSignupMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [openNewRaidMenuPos, setOpenNewRaidMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [calendarView, setCalendarView] = useState<'tiles' | 'list'>('tiles');
+  const [showDays, setShowDays] = useState<7 | 14 | 21>(14);
+  const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => startOfDay(new Date()));
 
   const today = useMemo(() => startOfDay(new Date()), []);
-  const rangeStart = useMemo(() => addDays(today, -1), [today]);
-  const rangeEnd = useMemo(() => addDays(today, 14), [today]);
+  const rangeStart = useMemo(() => startOfDay(addDays(calendarAnchor, -1)), [calendarAnchor]);
+  const tilesCount = useMemo(() => showDays + 1, [showDays]);
+  const rangeEnd = useMemo(() => startOfDay(addDays(rangeStart, tilesCount - 1)), [rangeStart, tilesCount]);
   const defaultCreateGuildId = canCreateGuildIds[0] ?? null;
   const canCreateGuilds = useMemo(
     () => guilds.filter((g) => (g.role === 'raidleader' || g.role === 'guildmaster') && canCreateGuildIds.includes(g.id)),
@@ -194,13 +198,22 @@ export function DashboardClient({
 
   const days = useMemo(() => {
     const list: Date[] = [];
-    for (let i = 0; i <= 15; i++) list.push(addDays(rangeStart, i));
+    for (let i = 0; i < tilesCount; i++) list.push(addDays(rangeStart, i));
     return list;
-  }, [rangeStart]);
+  }, [rangeStart, tilesCount]);
+
+  const visibleCalendarRaids = useMemo(() => {
+    const startMs = startOfDay(rangeStart).getTime();
+    const endMs = startOfDay(rangeEnd).getTime();
+    return calendarRaids.filter((r) => {
+      const d = startOfDay(new Date(r.scheduledAtIso)).getTime();
+      return d >= startMs && d <= endMs;
+    });
+  }, [calendarRaids, rangeStart, rangeEnd]);
 
   const raidsByDay = useMemo(() => {
     const map = new Map<string, DashboardCalendarRaid[]>();
-    for (const r of calendarRaids) {
+    for (const r of visibleCalendarRaids) {
       const d = startOfDay(new Date(r.scheduledAtIso));
       const key = d.toISOString();
       const arr = map.get(key) ?? [];
@@ -212,11 +225,11 @@ export function DashboardClient({
       map.set(k, arr);
     }
     return map;
-  }, [calendarRaids]);
+  }, [visibleCalendarRaids]);
 
   const calendarRaidsSorted = useMemo(() => {
-    return [...calendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime());
-  }, [calendarRaids]);
+    return [...visibleCalendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime());
+  }, [visibleCalendarRaids]);
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-8">
@@ -495,11 +508,56 @@ export function DashboardClient({
         : null}
 
       <section aria-labelledby="calendar-heading" className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
+        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
           <h2 id="calendar-heading" className="text-lg font-semibold text-foreground">
             {t('calendar')}
           </h2>
-          <div className="flex flex-wrap items-center justify-end gap-2">
+
+          {/* Filters centered */}
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+              <span className="text-xs text-muted-foreground">{t('showDays')}</span>
+              {[7, 14, 21].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setShowDays(n as 7 | 14 | 21)}
+                  className={
+                    showDays === n
+                      ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
+                      : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                  }
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
+              <button
+                type="button"
+                className="h-8 w-8 rounded hover:bg-muted"
+                aria-label={t('prevWeek')}
+                title={t('prevWeek')}
+                onClick={() => setCalendarAnchor((d) => addDays(d, -7))}
+              >
+                &lt;
+              </button>
+              <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
+                {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
+                {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
+              </div>
+              <button
+                type="button"
+                className="h-8 w-8 rounded hover:bg-muted"
+                aria-label={t('nextWeek')}
+                title={t('nextWeek')}
+                onClick={() => setCalendarAnchor((d) => addDays(d, 7))}
+              >
+                &gt;
+              </button>
+            </div>
+
             <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
               <button
                 type="button"
@@ -517,10 +575,9 @@ export function DashboardClient({
                 {t('calendarList')}
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
-              {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
-            </p>
+          </div>
+
+          <div className="flex items-center justify-end gap-2">
             {canCreateGuilds.length > 0 ? (
               <button
                 type="button"
@@ -540,14 +597,25 @@ export function DashboardClient({
         </div>
 
         {calendarView === 'tiles' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 items-start">
             {days.map((day) => {
               const key = startOfDay(day).toISOString();
               const raids = raidsByDay.get(key) ?? [];
+              const isToday = startOfDay(day).getTime() === today.getTime();
+              const isPast = startOfDay(day).getTime() < today.getTime();
               return (
-                <div key={key} className="rounded-lg border border-border bg-card p-3">
+                <div
+                  key={key}
+                  className={[
+                    'rounded-lg border bg-card p-3',
+                    isToday ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-900/10' : 'border-border',
+                    isPast ? 'opacity-60' : '',
+                  ].join(' ')}
+                >
                   <div className="flex items-center justify-between">
-                    <div className="font-semibold text-foreground">{formatDayLabel(locale, day)}</div>
+                    <div className="font-semibold text-foreground">
+                      {formatDayLabel(locale, day)} {isToday ? <span className="text-xs text-emerald-700 dark:text-emerald-400">({t('todayShort')})</span> : null}
+                    </div>
                     <div className="text-xs text-muted-foreground">{raids.length}</div>
                   </div>
                   <div className="mt-2 space-y-2">
@@ -558,6 +626,8 @@ export function DashboardClient({
                         const status = myStatusIcon(r.status, r.mySignup);
                         const noteOpen = expandedNoteRaidId === r.id;
                         const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
+                        const signupUntilLabel = formatTime(locale, new Date(r.signupUntilIso));
+                        const signupUntilDateLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(r.signupUntilIso));
                         return (
                           <div key={r.id} className="rounded-md border border-border bg-background px-2 py-2">
                             <div className="flex items-start justify-between gap-2">
@@ -577,10 +647,12 @@ export function DashboardClient({
                                 </div>
                                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                                   <span className="capitalize">{r.status}</span>
-                                  <span>
-                                    {r.signupCount}/{r.maxPlayers} {t('signups')}
-                                  </span>
                                 </div>
+                                {r.status === 'open' ? (
+                                  <div className="mt-1 text-xs text-muted-foreground">
+                                    {t('signupOpenUntil')}: {signupUntilDateLabel} {signupUntilLabel}
+                                  </div>
+                                ) : null}
                               </div>
                               <div className="ml-auto flex items-center gap-2">
                                 {r.canEdit ? (
@@ -659,6 +731,10 @@ export function DashboardClient({
                                   </>
                                 )}
                               </div>
+                            </div>
+
+                            <div className="mt-2 text-xs text-muted-foreground">
+                              {r.signupCount}/{r.maxPlayers} {t('signups')}
                             </div>
                           </div>
                         );
