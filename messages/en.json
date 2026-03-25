@@ -76,6 +76,9 @@
     ,
     "bnetLinkedBadge": "BNet",
     "bnetLinkedBadgeTitle": "Linked to Battle.net"
+    ,
+    "calendarTiles": "Tiles",
+    "calendarList": "List"
   },
   "raidDetail": {
     "backDashboard": "Back to dashboard",

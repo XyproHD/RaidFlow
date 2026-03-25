@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { createPortal } from 'react-dom';
 import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
@@ -122,11 +123,53 @@ export function DashboardClient({
   const router = useRouter();
   const [expandedNoteRaidId, setExpandedNoteRaidId] = useState<string | null>(null);
   const [openSignupMenuKey, setOpenSignupMenuKey] = useState<string | null>(null);
+  const [openSignupMenuPos, setOpenSignupMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [openNewRaidMenuPos, setOpenNewRaidMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [calendarView, setCalendarView] = useState<'tiles' | 'list'>('tiles');
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const rangeStart = useMemo(() => addDays(today, -1), [today]);
   const rangeEnd = useMemo(() => addDays(today, 14), [today]);
   const defaultCreateGuildId = canCreateGuildIds[0] ?? null;
+  const canCreateGuilds = useMemo(
+    () => guilds.filter((g) => g.role === 'raidleader' && canCreateGuildIds.includes(g.id)),
+    [guilds, canCreateGuildIds]
+  );
+
+  const closeAllMenus = () => {
+    setOpenSignupMenuKey(null);
+    setOpenSignupMenuPos(null);
+    setOpenNewRaidMenuPos(null);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeAllMenus();
+    };
+    const onPointerDown = (e: MouseEvent) => {
+      // If a click happens inside a menu, the menu container stops propagation.
+      closeAllMenus();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('scroll', closeAllMenus, true);
+    window.addEventListener('resize', closeAllMenus);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('mousedown', onPointerDown);
+      window.removeEventListener('scroll', closeAllMenus, true);
+      window.removeEventListener('resize', closeAllMenus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function openMenuAtButton(btn: HTMLButtonElement) {
+    const r = btn.getBoundingClientRect();
+    const width = 176; // ~w-44
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, r.right - width));
+    const top = Math.min(window.innerHeight - 8, r.bottom + 6);
+    return { top, left };
+  }
 
   const days = useMemo(() => {
     const list: Date[] = [];
@@ -148,6 +191,10 @@ export function DashboardClient({
       map.set(k, arr);
     }
     return map;
+  }, [calendarRaids]);
+
+  const calendarRaidsSorted = useMemo(() => {
+    return [...calendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime());
   }, [calendarRaids]);
 
   return (
@@ -294,7 +341,10 @@ export function DashboardClient({
                   const menuOpen = openSignupMenuKey === key;
 
                   return (
-                    <tr key={key} className="border-b border-border last:border-b-0">
+                    <tr
+                      key={key}
+                      className="border-b border-border last:border-b-0 odd:bg-background even:bg-muted/10 hover:bg-muted/20"
+                    >
                       <td className="px-3 py-2 align-top text-muted-foreground">
                         {new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(s.scheduledAtIso))}
                       </td>
@@ -352,42 +402,21 @@ export function DashboardClient({
                         )}
                       </td>
                       <td className="px-3 py-2 align-top text-right">
-                        <div className="relative inline-block text-left">
-                          <button
-                            type="button"
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
-                            aria-label={t('actions')}
-                            title={t('actions')}
-                            onClick={() => setOpenSignupMenuKey(menuOpen ? null : key)}
-                          >
-                            ⋮
-                          </button>
-                          {menuOpen ? (
-                            <div className="absolute right-0 z-50 mt-1 w-44 rounded-md border border-border bg-background shadow-md">
-                              <Link
-                                href={`/${locale}/guild/${s.guildId}/raid/${s.raidId}?mode=signup`}
-                                className="block px-3 py-2 text-sm hover:bg-muted"
-                                onClick={() => setOpenSignupMenuKey(null)}
-                              >
-                                ⚙️ {t('signupEdit')}
-                              </Link>
-                              <button
-                                type="button"
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-muted text-destructive"
-                                onClick={async () => {
-                                  await fetch(
-                                    `/api/guilds/${encodeURIComponent(s.guildId)}/raids/${encodeURIComponent(s.raidId)}/signups`,
-                                    { method: 'DELETE' }
-                                  );
-                                  setOpenSignupMenuKey(null);
-                                  router.refresh();
-                                }}
-                              >
-                                ➖ {t('signupWithdraw')}
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
+                        <button
+                          type="button"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+                          aria-label={t('actions')}
+                          title={t('actions')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const pos = openMenuAtButton(e.currentTarget);
+                            setOpenSignupMenuPos(pos);
+                            setOpenNewRaidMenuPos(null);
+                            setOpenSignupMenuKey(menuOpen ? null : key);
+                          }}
+                        >
+                          ⋮
+                        </button>
                       </td>
                     </tr>
                   );
@@ -398,49 +427,102 @@ export function DashboardClient({
         )}
       </section>
 
+      {openSignupMenuKey && openSignupMenuPos
+        ? createPortal(
+            <div
+              style={{ position: 'fixed', top: openSignupMenuPos.top, left: openSignupMenuPos.left, zIndex: 1000 }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              {(() => {
+                const [guildId, raidId] = openSignupMenuKey.split(':');
+                return (
+                  <div className="w-44 rounded-md border border-border bg-background shadow-md overflow-hidden">
+                    <Link
+                      href={`/${locale}/guild/${encodeURIComponent(guildId)}/raid/${encodeURIComponent(raidId)}?mode=signup`}
+                      className="block px-3 py-2 text-sm hover:bg-muted"
+                      onClick={() => closeAllMenus()}
+                    >
+                      ⚙️ {t('signupEdit')}
+                    </Link>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted text-destructive"
+                      onClick={async () => {
+                        await fetch(
+                          `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups`,
+                          { method: 'DELETE' }
+                        );
+                        closeAllMenus();
+                        router.refresh();
+                      }}
+                    >
+                      ➖ {t('signupWithdraw')}
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>,
+            document.body
+          )
+        : null}
+
       <section aria-labelledby="calendar-heading" className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h2 id="calendar-heading" className="text-lg font-semibold text-foreground">
             {t('calendar')}
           </h2>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+              <button
+                type="button"
+                onClick={() => setCalendarView('tiles')}
+                className={calendarView === 'tiles' ? 'text-sm font-semibold text-foreground' : 'text-sm text-muted-foreground hover:text-foreground'}
+              >
+                {t('calendarTiles')}
+              </button>
+              <span className="text-muted-foreground text-xs">|</span>
+              <button
+                type="button"
+                onClick={() => setCalendarView('list')}
+                className={calendarView === 'list' ? 'text-sm font-semibold text-foreground' : 'text-sm text-muted-foreground hover:text-foreground'}
+              >
+                {t('calendarList')}
+              </button>
+            </div>
             <p className="text-xs text-muted-foreground">
               {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
               {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
             </p>
-            {defaultCreateGuildId ? (
-              <>
-                <Link
-                  href={`/${locale}/guild/${encodeURIComponent(defaultCreateGuildId)}/raid/new`}
-                  className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
-                >
-                  {t('createSingleRaid')}
-                </Link>
-                <button
-                  type="button"
-                  disabled
-                  className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground opacity-60 cursor-not-allowed"
-                  title={t('createMultiRaidSoon')}
-                >
-                  {t('createMultiRaid')}
-                </button>
-              </>
+            {canCreateGuilds.length > 0 ? (
+              <button
+                type="button"
+                className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const pos = openMenuAtButton(e.currentTarget);
+                  setOpenNewRaidMenuPos(pos);
+                  setOpenSignupMenuKey(null);
+                  setOpenSignupMenuPos(null);
+                }}
+              >
+                + {t('newRaid')}
+              </button>
             ) : null}
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <div className="grid grid-flow-col auto-cols-[minmax(220px,1fr)] gap-3 pb-1">
+        {calendarView === 'tiles' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 auto-rows-fr">
             {days.map((day) => {
               const key = startOfDay(day).toISOString();
               const raids = raidsByDay.get(key) ?? [];
               return (
-                <div key={key} className="rounded-lg border border-border bg-card p-3">
+                <div key={key} className="rounded-lg border border-border bg-card p-3 h-full flex flex-col">
                   <div className="flex items-center justify-between">
                     <div className="font-semibold text-foreground">{formatDayLabel(locale, day)}</div>
                     <div className="text-xs text-muted-foreground">{raids.length}</div>
                   </div>
-                  <div className="mt-2 space-y-2">
+                  <div className="mt-2 space-y-2 flex-1">
                     {raids.length === 0 ? (
                       <div className="text-sm text-muted-foreground">{t('calendarEmptyDay')}</div>
                     ) : (
@@ -555,8 +637,87 @@ export function DashboardClient({
               );
             })}
           </div>
-        </div>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-border bg-card">
+            <table className="min-w-[980px] w-full text-sm">
+              <thead className="border-b border-border bg-muted/20">
+                <tr className="text-left">
+                  <th className="px-3 py-2">{t('scheduledAt')}</th>
+                  <th className="px-3 py-2">{t('raid')}</th>
+                  <th className="px-3 py-2">{t('guild')}</th>
+                  <th className="px-3 py-2">{t('status')}</th>
+                  <th className="px-3 py-2">{t('myStatus')}</th>
+                  <th className="px-3 py-2 text-right">{t('actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calendarRaidsSorted.map((r) => {
+                  const status = myStatusIcon(r.status, r.mySignup);
+                  return (
+                    <tr key={r.id} className="border-b border-border last:border-b-0 odd:bg-background even:bg-muted/10 hover:bg-muted/20">
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(r.scheduledAtIso))}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Link href={`/${locale}/guild/${r.guildId}/raid/${r.id}`} className="text-primary hover:underline">
+                          {r.name}
+                        </Link>
+                        <div className="text-xs text-muted-foreground">{r.dungeonName}</div>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{r.guildName}</td>
+                      <td className="px-3 py-2 text-muted-foreground capitalize">{r.status}</td>
+                      <td className="px-3 py-2">{status ? status : <span className="text-muted-foreground">{t('notSignedUp')}</span>}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Link
+                          href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+                          title={t('signupEdit')}
+                          aria-label={t('signupEdit')}
+                        >
+                          ⚙️
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
+
+      {openNewRaidMenuPos
+        ? createPortal(
+            <div
+              style={{ position: 'fixed', top: openNewRaidMenuPos.top, left: openNewRaidMenuPos.left, zIndex: 1000 }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="w-56 rounded-md border border-border bg-background shadow-md overflow-hidden">
+                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground">{t('newRaid')}</div>
+                {canCreateGuilds.map((g) => (
+                  <Link
+                    key={g.id}
+                    href={`/${locale}/guild/${encodeURIComponent(g.id)}/raid/new`}
+                    className="block px-3 py-2 text-sm hover:bg-muted"
+                    onClick={() => closeAllMenus()}
+                  >
+                    ➕ {t('createSingleRaid')} — {g.name}
+                  </Link>
+                ))}
+                <div className="border-t border-border" />
+                <button
+                  type="button"
+                  disabled
+                  className="w-full text-left px-3 py-2 text-sm text-muted-foreground opacity-60 cursor-not-allowed"
+                  title={t('createMultiRaidSoon')}
+                >
+                  ⏳ {t('createMultiRaid')}
+                </button>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

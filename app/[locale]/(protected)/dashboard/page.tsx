@@ -179,7 +179,8 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       mySignup: (r as unknown as { signups?: { id: string; leaderPlacement: string; setConfirmed: boolean }[] }).signups?.[0] ?? null,
     }));
 
-    const canCreateGuildIds = guilds.filter((g) => g.role === 'raidleader' || g.role === 'guildmaster').map((g) => g.id);
+    // UI: "+ Neuer Raid" is shown only if user is Raidleader
+    const canCreateGuildIds = guilds.filter((g) => g.role === 'raidleader').map((g) => g.id);
 
     const mySignupRows = userId
       ? await prisma.rfRaidSignup.findMany({
