@@ -89,7 +89,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
     const chars = userId
       ? await prisma.rfCharacter.findMany({
           where: { userId },
-          include: { guild: { select: { name: true } } },
+          include: { guild: { select: { name: true } }, battlenetProfile: { select: { battlenetCharacterId: true } } },
           orderBy: [{ guildId: 'asc' }, { isMain: 'desc' }, { name: 'asc' }],
         })
       : [];
@@ -121,6 +121,8 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       id: c.id,
       name: c.name,
       guildName: c.guild?.name ?? null,
+      hasBattlenet: !!c.battlenetProfile?.battlenetCharacterId,
+      gearScore: c.gearScore ?? null,
       mainSpec: c.mainSpec,
       offSpec: c.offSpec,
       classId: getSpecByDisplayName(c.mainSpec)?.classId ?? null,
@@ -207,11 +209,13 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
             setConfirmed: true,
             character: {
               select: {
+                id: true,
                 name: true,
                 mainSpec: true,
                 offSpec: true,
                 isMain: true,
                 battlenetProfile: { select: { battlenetCharacterId: true } },
+                gearScore: true,
               },
             },
             raid: {
@@ -238,6 +242,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       guildName: s.raid.guild.name,
       scheduledAtIso: s.raid.scheduledAt.toISOString(),
       signedCharacterName: s.character?.name ?? null,
+      signedCharacterId: s.character?.id ?? null,
       signedSpec: s.signedSpec ?? null,
       raidStatus: s.raid.status,
       leaderPlacement: s.leaderPlacement,
@@ -245,6 +250,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       characterMainSpec: s.character?.mainSpec ?? null,
       characterOffSpec: s.character?.offSpec ?? null,
       characterHasBattlenet: !!s.character?.battlenetProfile?.battlenetCharacterId,
+      characterGearScore: s.character?.gearScore ?? null,
       characterIsMain: s.character?.isMain ?? null,
       type: s.type,
     }));

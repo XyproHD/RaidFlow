@@ -4,6 +4,7 @@ type CharacterWithGuildAndBnet = {
   id: string;
   name: string;
   guildId: string | null;
+  gearScore: number | null;
   mainSpec: string;
   offSpec: string | null;
   isMain: boolean;
@@ -20,6 +21,7 @@ export function characterToClientDto(c: CharacterWithGuildAndBnet) {
     guildId: c.guildId,
     guildName: c.guild?.name ?? null,
     guildDiscordDisplayName: c.guildDiscordDisplayName,
+    gearScore: c.gearScore,
     mainSpec: c.mainSpec,
     offSpec: c.offSpec,
     isMain: c.isMain,

@@ -1,6 +1,7 @@
 import type { NextAuthOptions } from 'next-auth';
 import DiscordProvider from 'next-auth/providers/discord';
 import { prisma } from '@/lib/prisma';
+import { refreshAllBattlenetCharactersForUser } from '@/lib/battlenet-gearscore';
 
 /**
  * NextAuth mit Discord Provider.
@@ -37,6 +38,10 @@ export const authOptions: NextAuthOptions = {
             create: { discordId },
             update: { updatedAt: new Date() },
           });
+          // Run heavy BNet updates only on actual login refreshes.
+          if (account || profile) {
+            void refreshAllBattlenetCharactersForUser(dbUser.id);
+          }
           t.uid = dbUser.id;
           t.discordId = dbUser.discordId;
           if (account?.access_token) (token as { discordAccessToken?: string }).discordAccessToken = account.access_token;

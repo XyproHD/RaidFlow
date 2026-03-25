@@ -10,6 +10,7 @@ import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
+import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 
 export type DashboardGuild = {
   id: string;
@@ -24,6 +25,8 @@ export type DashboardCharacter = {
   id: string;
   name: string;
   guildName: string | null;
+  hasBattlenet: boolean;
+  gearScore: number | null;
   mainSpec: string;
   offSpec: string | null;
   classId: string | null;
@@ -39,6 +42,7 @@ export type DashboardSignupRow = {
   dungeonName: string;
   guildName: string;
   scheduledAtIso: string;
+  signedCharacterId: string | null;
   signedCharacterName: string | null;
   signedSpec: string | null;
   raidStatus: string;
@@ -47,6 +51,7 @@ export type DashboardSignupRow = {
   characterMainSpec: string | null;
   characterOffSpec: string | null;
   characterHasBattlenet: boolean;
+  characterGearScore: number | null;
   characterIsMain: boolean | null;
   type: string;
 };
@@ -354,6 +359,13 @@ export function DashboardClient({
                         <div className="text-xs text-muted-foreground truncate" title={c.guildName ?? undefined}>
                           {c.guildName ?? '–'}
                         </div>
+                        <div className="mt-1">
+                          <CharacterGearscoreBadge
+                            characterId={c.id}
+                            hasBattlenet={c.hasBattlenet}
+                            gearScore={c.gearScore}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -465,6 +477,11 @@ export function DashboardClient({
                               {t('bnetLinkedBadge')}
                             </span>
                           ) : null}
+                          <CharacterGearscoreBadge
+                            characterId={s.signedCharacterId ?? ''}
+                            hasBattlenet={s.characterHasBattlenet}
+                            gearScore={s.characterGearScore}
+                          />
                         </button>
                       </td>
                       <td className="px-3 py-2 align-top">

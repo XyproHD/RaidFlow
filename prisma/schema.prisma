@@ -147,6 +147,8 @@ model RfCharacter {
   name                     String
   mainSpec                 String   @map("main_spec")
   offSpec                  String?  @map("off_spec")
+  /// Persistierter maximaler Gearscore; wird via Battle.net-Sync nur erhöht.
+  gearScore                Int?     @map("gear_score")
   isMain                   Boolean  @default(false) @map("is_main")
   /// Anzeigename auf dem Discord-Server der Gilde; Sync beim Login
   guildDiscordDisplayName  String?  @map("guild_discord_display_name")

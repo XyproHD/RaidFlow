@@ -106,6 +106,8 @@ export async function POST(request: NextRequest) {
         mainSpec: created.mainSpec,
         offSpec: created.offSpec,
         isMain: created.isMain,
+        gearScore: created.gearScore ?? null,
+        hasBattlenet: true,
       },
     });
   } catch (err) {

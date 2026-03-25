@@ -26,6 +26,7 @@ import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
 import { CharacterMainStar } from '@/components/character-main-star';
+import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 
 const ALL_SPECS = getAllSpecDisplayNames();
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
@@ -40,6 +41,7 @@ type PoolCharacter = {
   mainSpec: string;
   offSpec: string | null;
   isMain: boolean;
+  gearScore?: number | null;
   classId: string | null;
   specId: string | null;
   role: TbcRole | null;
@@ -941,6 +943,11 @@ export function NewRaidWizard({
                               {tProfile('bnetLinkedBadge')}
                             </span>
                           ) : null}
+                          <CharacterGearscoreBadge
+                            characterId={character.id}
+                            hasBattlenet={character.hasBattlenet}
+                            gearScore={character.gearScore}
+                          />
                           <CharacterMainStar
                             isMain={!!character.isMain}
                             titleMain={tProfile('mainLabel')}

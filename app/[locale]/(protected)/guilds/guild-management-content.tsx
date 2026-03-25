@@ -9,6 +9,7 @@ import { CharacterDiscordNameHint } from '@/components/character-discord-name-hi
 import { GuildBattlenetSection } from '@/components/guild-battlenet-section';
 import { getAllSpecDisplayNames } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
+import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 
 type RaidGroup = { id: string; name: string; discordRoleId: string | null; sortOrder: number };
 type GuildCharacter = {
@@ -17,6 +18,7 @@ type GuildCharacter = {
   mainSpec: string;
   offSpec: string | null;
   isMain: boolean;
+  gearScore?: number | null;
   guildDiscordDisplayName?: string | null;
   hasBattlenet?: boolean;
 };
@@ -679,6 +681,11 @@ function CharacterCard({
             {tProfile('bnetLinkedBadge')}
           </span>
         ) : null}
+        <CharacterGearscoreBadge
+          characterId={ch.id}
+          hasBattlenet={ch.hasBattlenet}
+          gearScore={ch.gearScore}
+        />
       </div>
       {trailingAction != null && <div className="flex items-center shrink-0">{trailingAction}</div>}
     </div>

@@ -17,6 +17,7 @@ import {
 } from '@/lib/wow-classic-realms';
 import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
 import { CharacterMainStar } from '@/components/character-main-star';
+import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 
 type CharacterRow = {
   id: string;
@@ -25,6 +26,7 @@ type CharacterRow = {
   guildName: string | null;
   /** Gespeicherter Anzeigename auf dem Discord der Gilde (Sync beim Login) */
   guildDiscordDisplayName?: string | null;
+  gearScore?: number | null;
   mainSpec: string;
   offSpec: string | null;
   isMain: boolean;
@@ -867,6 +869,14 @@ export function ProfileCharacters({
                           {t('bnetLinkedBadge')}
                         </span>
                       ) : null}
+                      <CharacterGearscoreBadge
+                        characterId={c.id}
+                        hasBattlenet={c.hasBattlenet}
+                        gearScore={c.gearScore}
+                        onUpdated={(nextStored) => {
+                          setList((prev) => prev.map((row) => (row.id === c.id ? { ...row, gearScore: nextStored } : row)));
+                        }}
+                      />
                     </div>
                   </div>
                   <span
