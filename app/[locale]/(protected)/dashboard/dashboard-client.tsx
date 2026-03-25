@@ -263,6 +263,18 @@ export function DashboardClient({
                       {g.name}
                     </span>
                   )}
+                  {g.armoryUrl ? (
+                    <a
+                      href={g.armoryUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center rounded border border-border bg-background px-1.5 py-1 hover:bg-muted"
+                      aria-label="classic-armory.org"
+                      title="classic-armory.org"
+                    >
+                      <img src="https://favicon.pub/classic-armory.org" alt="classic-armory.org favicon" className="h-4 w-4" />
+                    </a>
+                  ) : null}
                   {g.realmLabel ? (
                     <span className="text-xs rounded bg-muted px-1.5 py-0.5 text-muted-foreground" title={g.realmLabel}>
                       {g.realmLabel}

@@ -65,6 +65,31 @@ In **`rf_battlenet_realm`** liegt typischerweise der **dynamic-**Namespace (Real
 
 ---
 
+## 4.1 Dashboard: Armory-Link pro Gilde (Classic Armory)
+
+Im **Dashboard** werden Gildenmitgliedschaften als Karten angezeigt. Wenn die Gilde mit Battle.net-Infos verknüpft ist, führt ein Klick auf die Karte in einem **neuen Tab** zur externen Armory-Ansicht:
+
+`https://classic-armory.org/guild/{region}/{version}/{realmSlug}/{guildSlug}`
+
+**Benötigte Daten (aus `rf_guild` / Relation `battlenetRealm`):**
+
+- `region`: z. B. `eu` (aus `rf_battlenet_realm.region`)
+- `realmSlug`: bevorzugt `rf_guild.battlenet_profile_realm_slug` (Profile-Realm-Slug)
+- `guildSlug`: Slugify aus `rf_guild.battlenet_guild_name` (Fallback: `rf_guild.name`)
+- `version`: Mapping aus `rf_battlenet_realm.version` (intern) auf Armory-URL-Segment:
+
+| Intern (`rf_battlenet_realm.version`) | Armory `version` |
+|--------|------------------|
+| `classic_era` | `classic-era` |
+| `hardcore` | `classic-hardcore` |
+| `season_of_discovery` | `classic-sod` |
+| `anniversary` | `tbc-anniversary` |
+| `progression` (MoP Classic) | `mop` |
+
+Hinweis: Das Mapping ist bewusst **URL-spezifisch** (Classic Armory) und unabhängig von Blizzard-Namespaces (Profile/Game Data).
+
+---
+
 ## 5. Profil: Charaktere & Battle.net-Sync
 
 ### 5.1 Ein Modal für manuelles Anlegen + optional BNet

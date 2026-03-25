@@ -35,7 +35,16 @@ Bei Raids mit **Raidgruppen-Einschränkung** brauchst du zusätzlich die passend
 
 ### Für alle (nach Login)
 
-- **Dashboard:** Übersicht deiner Gilden (Discord-Server mit RaidFlow) und aller Raids mit Anmeldestand und Aktionen je nach Rolle.
+- **Dashboard:** Zentrale Übersicht mit:
+  - **Gildenmitgliedschaften** (oben): Realm-Hinweis + Link zur externen Armory-Ansicht (öffnet in neuem Tab). Für **Gildenleiter** erscheint ein **Zahnrad**, um direkt zur Gildenverwaltung zu springen.
+  - **Meine Statistiken:** Charakter-Kacheln (quadratische Icons wie im Profil) inkl. **Teilnahmen** und **Lootteile**.
+  - **Meine Anmeldungen:** kompakte Tabelle deiner anstehenden Raid-Anmeldungen inkl. Charakter/Specs/Status und einem **⋮**-Overlay-Menü für Aktionen (ohne Tabellen-Layout zu verschieben).
+  - **Kalender:** Zeitraum als **Kachel- oder Listenansicht** umschaltbar. Zusätzliche Steuerung:
+    - **Zeige Tage:** 7 / 14 / 21 (es werden **Auswahl + 1** Tage inkl. „gestern“ angezeigt)
+    - **Pagination:** `<` / `>` springt jeweils **7 Tage** zurück/vor
+    - **Tage-Styling:** Vergangene Tage verblasst; **heute** ist heller, mit **grünem Rahmen** und Label „heut“.
+    - **Einträge** zeigen u. a. Raidname, Dungeon, Gilde, Status, Notiz-Indikator **📒**, sowie **Anmeldungen** als eigene Zeile. Bei Status **offen** wird zusätzlich „**Anmeldung offen bis**“ (Datum+Uhrzeit) angezeigt.
+    - **Eigener Status (Icons):** ➕ (nicht angemeldet), ⚙️ (bearbeiten), ➖ (abmelden), ⌛ (angemeldet, nicht gesetzt), ⚠️ (geplant, nicht gesetzt), ✅ (geplant, gesetzt), 🪑 (geplant, reserve).
 - **Mein Profil:** Anzeige-Modus (Hell/Dunkel in der Topbar, gespeichert im Profil und per Cookie), Raidzeiten-Präferenzen (wahrscheinlich/eventuell, Werktage/Wochenende; Outlook-artiges Grid), **Charaktere** (ein Modal für Anlegen und Bearbeiten: optional **WoW-Server** aus der Datenbank-Realmliste, **„BNet Sync“** lädt Name/Klasse/Main-Spec von der Battle.net **Profile-API** – alles danach manuell änderbar; bei API-Fehler Hinweis auf exakte Schreibweise; Speichern kann ein **Battle.net-Profil** in der DB verknüpfen; **erneuter Sync** beim Bearbeiten möglich; Liste mit ⭐/➖ für Main/Alt, Klassen- und Spec-Icons, Name, optional **„BNet“**-Badge bei verknüpftem Charakter, Gilde, ⋮-Menü), Raidstatistik pro Dungeon und Gilde, Loottabelle (erhaltener Loot pro Gilde/Dungeon).
 - **Sprachauswahl** in der Topbar (Standard: Browsersprache).
 - **Discord-Bot einladen:** Link, um den RaidFlow-Bot auf einem eigenen Discord-Server hinzuzufügen.
