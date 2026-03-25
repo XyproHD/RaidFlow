@@ -144,7 +144,8 @@ export function DashboardClient({
     defaultView: createViewWeek().name,
     selectedDate: Temporal.PlainDate.from(new Date(rangeStart).toISOString().slice(0, 10)),
     weekOptions: {
-      nDays: 16,
+      // Schedule-X week view supports 1..7 only.
+      nDays: 7,
       gridStep: 30,
     },
     minDate: Temporal.PlainDate.from(new Date(rangeStart).toISOString().slice(0, 10)),
