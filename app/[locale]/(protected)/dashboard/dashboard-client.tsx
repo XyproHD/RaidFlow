@@ -6,6 +6,10 @@ import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
+import { ScheduleXCalendar, useCalendarApp } from '@schedule-x/react';
+import { createViewWeek } from '@schedule-x/calendar';
+import 'temporal-polyfill/global';
+import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 
 export type DashboardGuild = {
   id: string;
@@ -36,6 +40,12 @@ export type DashboardSignupRow = {
   scheduledAtIso: string;
   signedCharacterName: string | null;
   signedSpec: string | null;
+  raidStatus: string;
+  leaderPlacement: string;
+  setConfirmed: boolean;
+  characterMainSpec: string | null;
+  characterOffSpec: string | null;
+  characterHasBattlenet: boolean;
   type: string;
 };
 
@@ -51,6 +61,7 @@ export type DashboardCalendarRaid = {
   maxPlayers: number;
   hasNote: boolean;
   note: string | null;
+  canEdit: boolean;
   mySignup: null | {
     id: string;
     leaderPlacement: string;
@@ -70,10 +81,6 @@ function addDays(d: Date, days: number) {
   return x;
 }
 
-function formatDayLabel(locale: string, d: Date) {
-  return new Intl.DateTimeFormat(locale, { weekday: 'short', day: '2-digit', month: '2-digit' }).format(d);
-}
-
 function formatTime(locale: string, d: Date) {
   return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(d);
 }
@@ -91,42 +98,58 @@ export function DashboardClient({
   characters,
   signups,
   calendarRaids,
+  canCreateGuildIds,
 }: {
   guilds: DashboardGuild[];
   characters: DashboardCharacter[];
   signups: DashboardSignupRow[];
   calendarRaids: DashboardCalendarRaid[];
+  canCreateGuildIds: string[];
 }) {
   const t = useTranslations('dashboard');
   const locale = useLocale();
   const router = useRouter();
   const [expandedNoteRaidId, setExpandedNoteRaidId] = useState<string | null>(null);
+  const [openSignupMenuKey, setOpenSignupMenuKey] = useState<string | null>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const rangeStart = useMemo(() => addDays(today, -1), [today]);
   const rangeEnd = useMemo(() => addDays(today, 14), [today]);
+  const defaultCreateGuildId = canCreateGuildIds[0] ?? null;
 
-  const days = useMemo(() => {
-    const list: Date[] = [];
-    for (let i = 0; i <= 15; i++) list.push(addDays(rangeStart, i));
-    return list;
-  }, [rangeStart]);
+  // FullCalendar uses `calendarRaids` directly as events.
 
-  const raidsByDay = useMemo(() => {
-    const map = new Map<string, DashboardCalendarRaid[]>();
-    for (const r of calendarRaids) {
-      const d = startOfDay(new Date(r.scheduledAtIso));
-      const key = d.toISOString();
-      const arr = map.get(key) ?? [];
-      arr.push(r);
-      map.set(key, arr);
-    }
-    for (const [k, arr] of map) {
-      arr.sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime());
-      map.set(k, arr);
-    }
-    return map;
+  const raidsById = useMemo(() => new Map(calendarRaids.map((r) => [r.id, r])), [calendarRaids]);
+
+  const sxEvents = useMemo(() => {
+    // Schedule-X supports string format "YYYY-MM-DD HH:MM"
+    const toSx = (iso: string) => {
+      const d = new Date(iso);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    return calendarRaids.map((r) => ({
+      id: r.id,
+      title: r.name,
+      start: toSx(r.scheduledAtIso),
+      end: toSx(r.scheduledAtIso),
+    }));
   }, [calendarRaids]);
+
+  const calendarApp = useCalendarApp({
+    views: [createViewWeek()],
+    defaultView: createViewWeek().name,
+    selectedDate: (Temporal as any).PlainDate.from(new Date(rangeStart).toISOString().slice(0, 10)),
+    weekOptions: {
+      nDays: 16,
+      gridStep: 30,
+    },
+    minDate: (Temporal as any).PlainDate.from(new Date(rangeStart).toISOString().slice(0, 10)),
+    maxDate: (Temporal as any).PlainDate.from(new Date(rangeEnd).toISOString().slice(0, 10)),
+    firstDayOfWeek: 1,
+    events: sxEvents as any,
+    isResponsive: true,
+  });
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-8">
@@ -246,37 +269,135 @@ export function DashboardClient({
           <p className="text-muted-foreground text-sm">{t('mySignupsEmpty')}</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border bg-card">
-            <table className="min-w-[780px] w-full text-sm">
+            <table className="min-w-[980px] w-full text-sm">
               <thead className="border-b border-border bg-muted/20">
                 <tr className="text-left">
-                  <th className="px-3 py-2">{t('raid')}</th>
-                  <th className="px-3 py-2">{t('dungeon')}</th>
-                  <th className="px-3 py-2">{t('guild')}</th>
                   <th className="px-3 py-2">{t('scheduledAt')}</th>
+                  <th className="px-3 py-2">{t('status')}</th>
                   <th className="px-3 py-2">{t('character')}</th>
-                  <th className="px-3 py-2">{t('spec')}</th>
+                  <th className="px-3 py-2">{t('myStatus')}</th>
+                  <th className="px-3 py-2 text-right">{t('actions')}</th>
                 </tr>
               </thead>
               <tbody>
-                {signups.map((s) => (
-                  <tr key={`${s.guildId}:${s.raidId}`} className="border-b border-border last:border-b-0">
-                    <td className="px-3 py-2 font-medium">
-                      <Link
-                        href={`/${locale}/guild/${s.guildId}/raid/${s.raidId}`}
-                        className="text-primary hover:underline"
-                      >
-                        {s.raidName}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-2 text-muted-foreground">{s.dungeonName}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{s.guildName}</td>
-                    <td className="px-3 py-2 text-muted-foreground">
-                      {new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(s.scheduledAtIso))}
-                    </td>
-                    <td className="px-3 py-2">{s.signedCharacterName ?? '–'}</td>
-                    <td className="px-3 py-2">{s.signedSpec ?? '–'}</td>
-                  </tr>
-                ))}
+                {signups.map((s) => {
+                  const key = `${s.guildId}:${s.raidId}`;
+                  const statusIcon = myStatusIcon(s.raidStatus, {
+                    id: 'x',
+                    leaderPlacement: s.leaderPlacement,
+                    setConfirmed: s.setConfirmed,
+                  });
+                  const specForIcon = s.signedSpec ?? s.characterMainSpec ?? null;
+                  // We rely on SpecIcon's own lookup; ClassIcon needs classId, derive from signedSpec/mainSpec if present.
+                  const derivedClassId = specForIcon ? (getSpecByDisplayName(specForIcon)?.classId ?? null) : null;
+                  const menuOpen = openSignupMenuKey === key;
+
+                  return (
+                    <tr key={key} className="border-b border-border last:border-b-0">
+                      <td className="px-3 py-2 align-top">
+                        <div className="text-muted-foreground">
+                          {new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(s.scheduledAtIso))}
+                        </div>
+                        <div className="font-medium">
+                          <Link
+                            href={`/${locale}/guild/${s.guildId}/raid/${s.raidId}`}
+                            className="text-primary hover:underline"
+                          >
+                            {s.raidName}
+                          </Link>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {s.dungeonName} • {s.guildName}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground align-top">
+                        <span className="capitalize">{s.raidStatus}</span>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <button
+                          type="button"
+                          className="grid items-center gap-2 rounded-md border border-border bg-background px-2 py-2 hover:bg-muted min-w-0"
+                          style={{ gridTemplateColumns: '28px 1fr' }}
+                          onClick={() => router.push(`/${locale}/guild/${s.guildId}/raid/${s.raidId}?mode=signup`)}
+                          title={t('signupEdit')}
+                        >
+                          <div className="flex shrink-0 items-center justify-center w-7 h-7">
+                            {derivedClassId ? <ClassIcon classId={derivedClassId} size={24} title={specForIcon ?? undefined} /> : null}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="flex items-center gap-1 shrink-0">
+                                {specForIcon ? <SpecIcon spec={specForIcon} size={22} /> : null}
+                                {s.characterOffSpec ? (
+                                  <span className="grayscale contrast-90 inline-flex">
+                                    <SpecIcon spec={s.characterOffSpec} size={22} className="opacity-90" />
+                                  </span>
+                                ) : null}
+                              </div>
+                              {s.characterHasBattlenet ? (
+                                <span
+                                  className="shrink-0 rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                                  title={t('bnetLinkedBadgeTitle')}
+                                >
+                                  {t('bnetLinkedBadge')}
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className="font-medium text-foreground truncate">{s.signedCharacterName ?? '–'}</div>
+                            <div className="text-xs text-muted-foreground truncate">{s.guildName}</div>
+                          </div>
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        {statusIcon ? (
+                          <span title={t('myStatus')} className="text-base">
+                            {statusIcon}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">{t('notSignedUp')}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 align-top text-right">
+                        <div className="relative inline-block text-left">
+                          <button
+                            type="button"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+                            aria-label={t('actions')}
+                            title={t('actions')}
+                            onClick={() => setOpenSignupMenuKey(menuOpen ? null : key)}
+                          >
+                            ☰
+                          </button>
+                          {menuOpen ? (
+                            <div className="absolute right-0 z-20 mt-1 w-44 rounded-md border border-border bg-background shadow-md">
+                              <Link
+                                href={`/${locale}/guild/${s.guildId}/raid/${s.raidId}?mode=signup`}
+                                className="block px-3 py-2 text-sm hover:bg-muted"
+                                onClick={() => setOpenSignupMenuKey(null)}
+                              >
+                                ⚙️ {t('signupEdit')}
+                              </Link>
+                              <button
+                                type="button"
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-muted text-destructive"
+                                onClick={async () => {
+                                  await fetch(
+                                    `/api/guilds/${encodeURIComponent(s.guildId)}/raids/${encodeURIComponent(s.raidId)}/signups`,
+                                    { method: 'DELETE' }
+                                  );
+                                  setOpenSignupMenuKey(null);
+                                  router.refresh();
+                                }}
+                              >
+                                ➖ {t('signupWithdraw')}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -288,121 +409,150 @@ export function DashboardClient({
           <h2 id="calendar-heading" className="text-lg font-semibold text-foreground">
             {t('calendar')}
           </h2>
-          <p className="text-xs text-muted-foreground">
-            {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
-            {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
-          </p>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <p className="text-xs text-muted-foreground">
+              {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
+              {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
+            </p>
+            {defaultCreateGuildId ? (
+              <>
+                <Link
+                  href={`/${locale}/guild/${encodeURIComponent(defaultCreateGuildId)}/raid/new`}
+                  className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+                >
+                  {t('createSingleRaid')}
+                </Link>
+                <button
+                  type="button"
+                  disabled
+                  className="rounded-md border border-border px-3 py-1.5 text-sm font-medium text-muted-foreground opacity-60 cursor-not-allowed"
+                  title={t('createMultiRaidSoon')}
+                >
+                  {t('createMultiRaid')}
+                </button>
+              </>
+            ) : null}
+          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <div className="grid grid-flow-col auto-cols-[minmax(240px,1fr)] gap-3 pb-1">
-            {days.map((day) => {
-              const key = startOfDay(day).toISOString();
-              const raids = raidsByDay.get(key) ?? [];
-              return (
-                <div key={key} className="rounded-lg border border-border bg-card p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold text-foreground">{formatDayLabel(locale, day)}</div>
-                    <div className="text-xs text-muted-foreground">{raids.length}</div>
-                  </div>
-                  <div className="mt-2 space-y-2">
-                    {raids.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">{t('calendarEmptyDay')}</div>
-                    ) : (
-                      raids.map((r) => {
-                        const status = myStatusIcon(r.status, r.mySignup);
-                        const noteOpen = expandedNoteRaidId === r.id;
-                        return (
-                          <div key={r.id} className="rounded-md border border-border bg-background px-2 py-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <Link
-                                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}`}
-                                    className="font-semibold text-foreground hover:underline truncate"
-                                    title={r.name}
-                                  >
-                                    {r.name}
-                                  </Link>
-                                  <span className="text-xs text-muted-foreground shrink-0">{formatTime(locale, new Date(r.scheduledAtIso))}</span>
-                                </div>
-                                <div className="text-xs text-muted-foreground truncate" title={`${r.dungeonName} • ${r.guildName}`}>
-                                  {r.dungeonName} • {r.guildName}
-                                </div>
-                                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                                  <span className="capitalize">{r.status}</span>
-                                  <span>
-                                    {r.signupCount}/{r.maxPlayers} {t('signups')}
-                                  </span>
-                                </div>
-                              </div>
-                              {r.hasNote ? (
-                                <button
-                                  type="button"
-                                  className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
-                                  onClick={() => setExpandedNoteRaidId(noteOpen ? null : r.id)}
-                                  aria-label={t('toggleNote')}
-                                  title={t('toggleNote')}
-                                >
-                                  📒
-                                </button>
-                              ) : null}
-                            </div>
-
-                            {noteOpen ? (
-                              <div className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap">
-                                {r.note?.trim() ? r.note : t('noteHint')}
-                              </div>
-                            ) : null}
-
-                            <div className="mt-2 flex items-center justify-between gap-2">
-                              <div className="text-sm">
-                                {status ? <span title={t('myStatus')}>{status}</span> : <span className="text-muted-foreground">{t('notSignedUp')}</span>}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {!r.mySignup ? (
-                                  <Link
-                                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                                    className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
-                                    aria-label={t('signupStart')}
-                                    title={t('signupStart')}
-                                  >
-                                    ➕
-                                  </Link>
-                                ) : (
-                                  <>
-                                    <Link
-                                      href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                                      className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
-                                      aria-label={t('signupEdit')}
-                                      title={t('signupEdit')}
-                                    >
-                                      ⚙️
-                                    </Link>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
-                                      aria-label={t('signupWithdraw')}
-                                      title={t('signupWithdraw')}
-                                      onClick={async () => {
-                                        await fetch(`/api/guilds/${encodeURIComponent(r.guildId)}/raids/${encodeURIComponent(r.id)}/signups`, { method: 'DELETE' });
-                                        router.refresh();
-                                      }}
-                                    >
-                                      ➖
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </div>
+        <div className="rounded-lg border border-border bg-card p-3">
+          <div className="sx-react-calendar-wrapper">
+            <ScheduleXCalendar
+              calendarApp={calendarApp}
+              customComponents={{
+                timeGridEvent: ({ calendarEvent }: { calendarEvent: any }) => {
+                  const r = raidsById.get(String(calendarEvent.id));
+                  if (!r) return null;
+                  const status = myStatusIcon(r.status, r.mySignup);
+                  const noteOpen = expandedNoteRaidId === r.id;
+                  const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
+                  return (
+                    <div className="rounded-md border border-border bg-background px-2 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Link
+                              href={`/${locale}/guild/${r.guildId}/raid/${r.id}`}
+                              className="font-semibold text-foreground hover:underline truncate"
+                              title={r.name}
+                            >
+                              {r.name}
+                            </Link>
+                            <span className="text-xs text-muted-foreground shrink-0">{timeLabel}</span>
                           </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                          <div className="text-xs text-muted-foreground truncate" title={`${r.dungeonName} • ${r.guildName}`}>
+                            {r.dungeonName} • {r.guildName}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                            <span className="capitalize">{r.status}</span>
+                            <span>
+                              {r.signupCount}/{r.maxPlayers} {t('signups')}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="ml-auto flex items-center gap-2">
+                          {r.canEdit ? (
+                            <Link
+                              href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=edit`}
+                              className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                              aria-label={t('raidEdit')}
+                              title={t('raidEdit')}
+                            >
+                              ✏️
+                            </Link>
+                          ) : null}
+                          {r.hasNote ? (
+                            <button
+                              type="button"
+                              className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                              onClick={() => setExpandedNoteRaidId(noteOpen ? null : r.id)}
+                              aria-label={t('toggleNote')}
+                              title={t('toggleNote')}
+                            >
+                              📒
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {noteOpen ? (
+                        <div className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap">
+                          {r.note?.trim() ? r.note : t('noteHint')}
+                        </div>
+                      ) : null}
+
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <div className="text-sm">
+                          {status ? (
+                            <span title={t('myStatus')}>{status}</span>
+                          ) : (
+                            <span className="text-muted-foreground">{t('notSignedUp')}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {!r.mySignup ? (
+                            <Link
+                              href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
+                              className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                              aria-label={t('signupStart')}
+                              title={t('signupStart')}
+                            >
+                              ➕
+                            </Link>
+                          ) : (
+                            <>
+                              <Link
+                                href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
+                                className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                                aria-label={t('signupEdit')}
+                                title={t('signupEdit')}
+                              >
+                                ⚙️
+                              </Link>
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                                aria-label={t('signupWithdraw')}
+                                title={t('signupWithdraw')}
+                                onClick={async () => {
+                                  await fetch(
+                                    `/api/guilds/${encodeURIComponent(r.guildId)}/raids/${encodeURIComponent(r.id)}/signups`,
+                                    { method: 'DELETE' }
+                                  );
+                                  router.refresh();
+                                }}
+                              >
+                                ➖
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                },
+              }}
+            />
           </div>
         </div>
       </section>

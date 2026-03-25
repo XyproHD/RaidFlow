@@ -66,6 +66,16 @@
     "signupStart": "Start signup",
     "signupEdit": "Edit signup",
     "signupWithdraw": "Withdraw"
+    ,
+    "createSingleRaid": "Single raid",
+    "createMultiRaid": "Multi raid",
+    "createMultiRaidSoon": "Multi raid coming soon"
+    ,
+    "status": "Status",
+    "actions": "Actions"
+    ,
+    "bnetLinkedBadge": "BNet",
+    "bnetLinkedBadgeTitle": "Linked to Battle.net"
   },
   "raidDetail": {
     "backDashboard": "Back to dashboard",

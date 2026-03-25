@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Schedule-X calendar default theme */
+@import '@schedule-x/theme-default/dist/index.css';
+
 @layer base {
   /* Light Mode: helle, freundliche Farben mit gutem Kontrast (Standard) */
   :root {
@@ -57,4 +60,10 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Schedule-X wrapper sizing (responsive) */
+.sx-react-calendar-wrapper {
+  width: 100%;
+  height: min(900px, 85vh);
 }

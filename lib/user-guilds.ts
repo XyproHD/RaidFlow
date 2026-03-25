@@ -19,6 +19,8 @@ export interface UserGuildInfo {
   raidGroupIds: string[];
   /** WoW-Realm-Zeile der Gilde (Charakter-Modal: Server-Vorbelegung für Battle.net). */
   battlenetRealmId: string | null;
+  /** Optional: Battle.net-Gilden-ID (aus Suche/Auto-Resolve im Gildenmenü). */
+  battlenetGuildId?: string | null;
   /** Optional: falls in der Gildenverwaltung gesetzt (Profile-API Realm Slug). */
   battlenetProfileRealmSlug?: string | null;
   /** Optional: Anzeigename der verknüpften WoW-Gilde (Battle.net). */
@@ -129,6 +131,7 @@ export async function getGuildsForUser(
             role: existingUserGuild.role as UserGuildRole,
             raidGroupIds,
             battlenetRealmId: guild.battlenetRealmId,
+            battlenetGuildId: guild.battlenetGuildId?.toString() ?? null,
             battlenetProfileRealmSlug: guild.battlenetProfileRealmSlug,
             battlenetGuildName: guild.battlenetGuildName,
             battlenetRealm: guild.battlenetRealm
@@ -216,6 +219,7 @@ export async function getGuildsForUser(
         role,
         raidGroupIds,
         battlenetRealmId: guild.battlenetRealmId,
+        battlenetGuildId: guild.battlenetGuildId?.toString() ?? null,
         battlenetProfileRealmSlug: guild.battlenetProfileRealmSlug,
         battlenetGuildName: guild.battlenetGuildName,
         battlenetRealm: guild.battlenetRealm

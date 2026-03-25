@@ -60,10 +60,12 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       const internalVersion = g.battlenetRealm?.version ?? null;
       const armoryVersion = armoryVersionFromInternal(internalVersion);
       const realmSlug = (g.battlenetProfileRealmSlug ?? g.battlenetRealm?.slug ?? '').trim() || null;
+      // GuildSlug must come from the BNet-linked guild name (searched via API in guild menu),
+      // not from the Discord guild name.
       const guildName = (g.battlenetGuildName ?? '').trim() || null;
       const guildSlug = guildName ? slugify(guildName) : null;
       const armoryUrl =
-        region && armoryVersion && realmSlug && guildSlug
+        region && armoryVersion && realmSlug && guildSlug && !!g.battlenetGuildId
           ? `https://classic-armory.org/guild/${encodeURIComponent(region)}/${encodeURIComponent(armoryVersion)}/${encodeURIComponent(realmSlug)}/${encodeURIComponent(guildSlug)}`
           : null;
       const realmLabel =
@@ -159,6 +161,8 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
         })
       : [];
 
+    const canEditGuildIds = new Set(guilds.filter((g) => g.role === 'raidleader' || g.role === 'guildmaster').map((g) => g.id));
+
     const calendarRaids: DashboardCalendarRaid[] = raidRows.map((r) => ({
       id: r.id,
       guildId: r.guildId,
@@ -171,26 +175,39 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       maxPlayers: r.maxPlayers,
       hasNote: !!(r.note && r.note.trim()),
       note: (r.note && r.note.trim()) ? r.note : null,
+      canEdit: canEditGuildIds.has(r.guildId),
       mySignup: (r as unknown as { signups?: { id: string; leaderPlacement: string; setConfirmed: boolean }[] }).signups?.[0] ?? null,
     }));
+
+    const canCreateGuildIds = guilds.filter((g) => g.role === 'raidleader' || g.role === 'guildmaster').map((g) => g.id);
 
     const mySignupRows = userId
       ? await prisma.rfRaidSignup.findMany({
           where: {
             userId,
-            raid: { scheduledAt: { gte: rangeStart, lte: rangeEnd } },
+            raid: { scheduledAt: { gte: now, lte: rangeEnd } },
           },
           select: {
             raidId: true,
             type: true,
             signedSpec: true,
-            character: { select: { name: true } },
+            leaderPlacement: true,
+            setConfirmed: true,
+            character: {
+              select: {
+                name: true,
+                mainSpec: true,
+                offSpec: true,
+                battlenetProfile: { select: { battlenetCharacterId: true } },
+              },
+            },
             raid: {
               select: {
                 id: true,
                 name: true,
                 guildId: true,
                 scheduledAt: true,
+                status: true,
                 guild: { select: { name: true } },
                 dungeon: { select: { name: true } },
               },
@@ -209,6 +226,12 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       scheduledAtIso: s.raid.scheduledAt.toISOString(),
       signedCharacterName: s.character?.name ?? null,
       signedSpec: s.signedSpec ?? null,
+      raidStatus: s.raid.status,
+      leaderPlacement: s.leaderPlacement,
+      setConfirmed: s.setConfirmed,
+      characterMainSpec: s.character?.mainSpec ?? null,
+      characterOffSpec: s.character?.offSpec ?? null,
+      characterHasBattlenet: !!s.character?.battlenetProfile?.battlenetCharacterId,
       type: s.type,
     }));
 
@@ -218,6 +241,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
         characters={dashboardCharacters}
         signups={mySignups}
         calendarRaids={calendarRaids}
+        canCreateGuildIds={canCreateGuildIds}
       />
     );
   } catch (err) {
