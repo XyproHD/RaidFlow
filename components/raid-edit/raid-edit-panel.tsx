@@ -11,6 +11,7 @@ import { getSpecByDisplayName, type TbcRole } from '@/lib/wow-tbc-classes';
 import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
+import { CharacterMainStar } from '@/components/character-main-star';
 import type { LeaderPlacement } from '@/lib/raid-leader-placement';
 
 type GroupCharRule = { raidGroupId: string; characterId: string; allowed: boolean };
@@ -59,6 +60,7 @@ export type RaidEditSignupRow = {
     name: string;
     mainSpec: string;
     offSpec: string | null;
+    isMain: boolean;
   } | null;
 };
 
@@ -141,6 +143,7 @@ export function RaidEditPanel({
   const t = useTranslations('raidEdit');
   const tPlanner = useTranslations('raidPlanner');
   const tDetail = useTranslations('raidDetail');
+  const tProfile = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
 
@@ -440,6 +443,16 @@ export function RaidEditPanel({
         key={s.id}
         className="rounded-md border border-border bg-background px-2 py-1.5 flex flex-wrap items-center gap-1.5 text-sm"
       >
+        {ch ? (
+          <span className="shrink-0 w-5 flex items-center justify-center">
+            <CharacterMainStar
+              isMain={!!ch.isMain}
+              titleMain={tProfile('mainLabel')}
+              titleAlt={tProfile('altLabel')}
+              sizePx={16}
+            />
+          </span>
+        ) : null}
         {classId ? (
           <span className="shrink-0 w-6 h-6 flex items-center justify-center">
             <ClassIcon classId={classId} size={20} title={main} />

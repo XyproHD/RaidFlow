@@ -40,6 +40,7 @@ export type RaidViewRaid = {
       name: string;
       mainSpec: string;
       offSpec: string | null;
+      isMain: boolean;
     } | null;
   }[];
 };

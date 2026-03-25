@@ -127,7 +127,7 @@ export default async function RaidDetailPage(props: {
 
   const charRows = await prisma.rfCharacter.findMany({
     where: { userId, guildId },
-    select: { id: true, name: true, mainSpec: true, offSpec: true },
+    select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true },
     orderBy: { name: 'asc' },
   });
 

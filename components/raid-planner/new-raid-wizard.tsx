@@ -25,6 +25,7 @@ import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
+import { CharacterMainStar } from '@/components/character-main-star';
 
 const ALL_SPECS = getAllSpecDisplayNames();
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
@@ -940,13 +941,12 @@ export function NewRaidWizard({
                               {tProfile('bnetLinkedBadge')}
                             </span>
                           ) : null}
-                          {character.isMain ? (
-                            <span className="text-xs text-amber-500" aria-label={tProfile('mainLabel')}>
-                              ★
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">{t('alt')}</span>
-                          )}
+                          <CharacterMainStar
+                            isMain={!!character.isMain}
+                            titleMain={tProfile('mainLabel')}
+                            titleAlt={tProfile('altLabel')}
+                            sizePx={16}
+                          />
                         </li>
                       ))}
                     </ul>

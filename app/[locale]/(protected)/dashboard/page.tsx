@@ -124,6 +124,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       mainSpec: c.mainSpec,
       offSpec: c.offSpec,
       classId: getSpecByDisplayName(c.mainSpec)?.classId ?? null,
+      isMain: !!c.isMain,
       participatedRaids: completionCountByChar.get(c.id) ?? 0,
       lootCount: lootCountByChar.get(c.id) ?? 0,
     }));
@@ -209,6 +210,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
                 name: true,
                 mainSpec: true,
                 offSpec: true,
+                isMain: true,
                 battlenetProfile: { select: { battlenetCharacterId: true } },
               },
             },
@@ -243,6 +245,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       characterMainSpec: s.character?.mainSpec ?? null,
       characterOffSpec: s.character?.offSpec ?? null,
       characterHasBattlenet: !!s.character?.battlenetProfile?.battlenetCharacterId,
+      characterIsMain: s.character?.isMain ?? null,
       type: s.type,
     }));
 

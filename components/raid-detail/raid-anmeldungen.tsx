@@ -7,6 +7,7 @@ import { SpecIcon } from '@/components/spec-icon';
 import { ClassIcon } from '@/components/class-icon';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { RaidLeaderSignupControls } from '@/components/raid-detail/raid-leader-signup-controls';
+import { CharacterMainStar } from '@/components/character-main-star';
 
 export type AnmeldungRow = {
   id: string;
@@ -15,6 +16,7 @@ export type AnmeldungRow = {
     name: string;
     mainSpec: string;
     offSpec: string | null;
+    isMain: boolean;
   } | null;
   signedSpec: string | null;
   type: string;
@@ -40,6 +42,7 @@ export function RaidAnmeldungen({
   raidId: string;
 }) {
   const t = useTranslations('raidDetail');
+  const tProfile = useTranslations('profile');
   const router = useRouter();
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
 
@@ -64,6 +67,21 @@ export function RaidAnmeldungen({
         return (
           <li key={s.id} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+              {s.character ? (
+                <span
+                  className="shrink-0 w-6 flex items-center justify-center"
+                  title={s.character.isMain ? tProfile('mainLabel') : tProfile('altLabel')}
+                >
+                  <CharacterMainStar
+                    isMain={!!s.character.isMain}
+                    titleMain={tProfile('mainLabel')}
+                    titleAlt={tProfile('altLabel')}
+                    sizePx={18}
+                  />
+                </span>
+              ) : (
+                <span className="w-6" />
+              )}
               {cid ? (
                 <span className="shrink-0 flex items-center justify-center w-7 h-7">
                   <ClassIcon classId={cid} size={22} title={main} />

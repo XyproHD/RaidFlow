@@ -9,6 +9,7 @@ import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
+import { CharacterMainStar } from '@/components/character-main-star';
 
 export type DashboardGuild = {
   id: string;
@@ -26,6 +27,7 @@ export type DashboardCharacter = {
   mainSpec: string;
   offSpec: string | null;
   classId: string | null;
+  isMain: boolean;
   participatedRaids: number;
   lootCount: number;
 };
@@ -45,6 +47,7 @@ export type DashboardSignupRow = {
   characterMainSpec: string | null;
   characterOffSpec: string | null;
   characterHasBattlenet: boolean;
+  characterIsMain: boolean | null;
   type: string;
 };
 
@@ -141,6 +144,7 @@ export function DashboardClient({
   canCreateGuildIds: string[];
 }) {
   const t = useTranslations('dashboard');
+  const tProfile = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
   const [expandedNoteRaidId, setExpandedNoteRaidId] = useState<string | null>(null);
@@ -322,6 +326,14 @@ export function DashboardClient({
             {characters.map((c) => (
               <div key={c.id} className="rounded-lg border border-border bg-card p-3">
                 <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex shrink-0 items-center justify-center w-6 h-10">
+                    <CharacterMainStar
+                      isMain={!!c.isMain}
+                      titleMain={tProfile('mainLabel')}
+                      titleAlt={tProfile('altLabel')}
+                      sizePx={18}
+                    />
+                  </div>
                   <div className="flex shrink-0 items-center justify-center w-10 h-10 rounded-md bg-muted/40">
                     {c.classId ? <ClassIcon classId={c.classId} size={28} title={c.mainSpec} /> : null}
                   </div>
@@ -436,6 +448,14 @@ export function DashboardClient({
                               </span>
                             ) : null}
                           </span>
+                          {s.characterIsMain != null ? (
+                            <CharacterMainStar
+                              isMain={!!s.characterIsMain}
+                              titleMain={tProfile('mainLabel')}
+                              titleAlt={tProfile('altLabel')}
+                              sizePx={16}
+                            />
+                          ) : null}
                           <span className="font-medium text-foreground truncate">{s.signedCharacterName ?? '–'}</span>
                           {s.characterHasBattlenet ? (
                             <span

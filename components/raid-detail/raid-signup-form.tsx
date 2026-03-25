@@ -7,6 +7,7 @@ import type { RaidSignupPhase } from '@/lib/raid-detail-access';
 import { SpecIcon } from '@/components/spec-icon';
 import { ClassIcon } from '@/components/class-icon';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
+import { CharacterMainStar } from '@/components/character-main-star';
 
 type Char = {
   id: string;
@@ -14,6 +15,7 @@ type Char = {
   mainSpec: string;
   offSpec: string | null;
   classId: string | null;
+  isMain: boolean;
 };
 
 type SignupType = 'normal' | 'uncertain' | 'reserve';
@@ -53,6 +55,7 @@ export function RaidSignupForm({
   hasExistingSignup: boolean;
 }) {
   const t = useTranslations('raidDetail');
+  const tProfile = useTranslations('profile');
   const router = useRouter();
   const reserveOnly = signupPhase === 'reserve_only';
 
@@ -183,9 +186,17 @@ export function RaidSignupForm({
                     : 'border-border bg-card hover:bg-muted/50'
                 }`}
                 style={{
-                  gridTemplateColumns: '28px 1fr minmax(0,auto)',
+                  gridTemplateColumns: '24px 28px 1fr minmax(0,auto)',
                 }}
               >
+                <span className="flex shrink-0 items-center justify-center w-6 h-7">
+                  <CharacterMainStar
+                    isMain={!!c.isMain}
+                    titleMain={tProfile('mainLabel')}
+                    titleAlt={tProfile('altLabel')}
+                    sizePx={18}
+                  />
+                </span>
                 <span className="flex shrink-0 items-center justify-center w-7 h-7">
                   {cClass ? <ClassIcon classId={cClass} size={24} title={c.mainSpec} /> : null}
                 </span>

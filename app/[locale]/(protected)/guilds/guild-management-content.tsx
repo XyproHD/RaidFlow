@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
 import { GuildBattlenetSection } from '@/components/guild-battlenet-section';
 import { getAllSpecDisplayNames } from '@/lib/wow-tbc-classes';
+import { CharacterMainStar } from '@/components/character-main-star';
 
 type RaidGroup = { id: string; name: string; discordRoleId: string | null; sortOrder: number };
 type GuildCharacter = {
@@ -624,8 +625,7 @@ function CharacterCard({
 }) {
   const tProfile = useTranslations('profile');
   const classId = getClassIdForSpec(ch.mainSpec);
-  const twinkLabel = showMainTwink && !ch.isMain && hasTwinksInGuild;
-  const mainOrAltTitle = ch.isMain ? tProfile('mainLabel') : twinkLabel ? tProfile('altLabel') : undefined;
+  const mainOrAltTitle = showMainTwink ? (ch.isMain ? tProfile('mainLabel') : tProfile('altLabel')) : undefined;
   const gridCols = showMainTwink
     ? (trailingAction ? `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr auto` : `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr`)
     : (trailingAction ? `${ICON_SIZE + 4}px auto 1fr auto` : `${ICON_SIZE + 4}px auto 1fr`);
@@ -641,10 +641,13 @@ function CharacterCard({
     >
       {showMainTwink && (
         <div className="flex shrink-0 items-center justify-center w-8 h-8" title={mainOrAltTitle}>
-          {ch.isMain ? (
-            <span className="inline-flex items-center justify-center text-[22px] leading-none text-amber-400" aria-label={tProfile('mainLabel')}>⭐</span>
-          ) : twinkLabel ? (
-            <span className="inline-flex items-center justify-center text-[22px] leading-none text-muted-foreground" aria-label={tProfile('altLabel')}>➖</span>
+          {showMainTwink ? (
+            <CharacterMainStar
+              isMain={!!ch.isMain}
+              titleMain={tProfile('mainLabel')}
+              titleAlt={tProfile('altLabel')}
+              sizePx={22}
+            />
           ) : (
             <span className="w-8 h-8" aria-hidden />
           )}

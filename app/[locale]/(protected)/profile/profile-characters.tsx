@@ -16,6 +16,7 @@ import {
   type WowRealm,
 } from '@/lib/wow-classic-realms';
 import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
+import { CharacterMainStar } from '@/components/character-main-star';
 
 type CharacterRow = {
   id: string;
@@ -817,8 +818,8 @@ export function ProfileCharacters({
             </div>
             {group.characters.map((c) => {
               const cClassId = c.classId ?? getClassIdForSpec(c.mainSpec);
-              const twinkLabel = c.guildId && !c.isMain && charsInSameGuild(c.guildId).length > 1;
-              const mainOrAltTitle = c.isMain && c.guildId ? t('mainLabel') : twinkLabel ? t('altLabel') : undefined;
+              const showMainTwink = !!c.guildId;
+              const mainOrAltTitle = showMainTwink ? (c.isMain ? t('mainLabel') : t('altLabel')) : undefined;
               const ICON_SIZE = 24;
               const menuOpen = openMenuId === c.id;
               return (
@@ -827,14 +828,13 @@ export function ProfileCharacters({
                   className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm grid-cols-[32px_28px_1fr_44px] sm:grid-cols-[32px_28px_auto_1fr_minmax(4rem,1fr)_44px] min-w-0"
                 >
                   <div className="flex shrink-0 items-center justify-center w-8 h-8 mr-0.5" title={mainOrAltTitle}>
-                    {c.isMain && c.guildId ? (
-                      <span className="inline-flex items-center justify-center text-[22px] leading-none text-amber-400" aria-label={t('mainLabel')}>
-                        ⭐
-                      </span>
-                    ) : twinkLabel ? (
-                      <span className="inline-flex items-center justify-center text-[22px] leading-none text-muted-foreground" aria-label={t('altLabel')}>
-                        ➖
-                      </span>
+                    {showMainTwink ? (
+                      <CharacterMainStar
+                        isMain={!!c.isMain}
+                        titleMain={t('mainLabel')}
+                        titleAlt={t('altLabel')}
+                        sizePx={22}
+                      />
                     ) : (
                       <span className="w-8 h-8" aria-hidden />
                     )}
