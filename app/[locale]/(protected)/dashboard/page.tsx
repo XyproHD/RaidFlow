@@ -45,9 +45,14 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       const x = (v ?? '').trim().toLowerCase();
       if (!x) return null;
       if (x === 'classic_era') return 'classic-era';
+      if (x === 'classic-era') return 'classic-era';
       if (x === 'hardcore') return 'classic-hardcore';
+      if (x === 'classic-hardcore') return 'classic-hardcore';
       if (x === 'season_of_discovery') return 'classic-sod';
+      if (x === 'classic-sod') return 'classic-sod';
       if (x === 'anniversary') return 'tbc-anniversary';
+      // Older/alternate values used in DB/imports
+      if (x === 'tbc' || x === 'tbc_classic' || x === 'classic_tbc' || x === 'classicann' || x === 'tbc-anniversary') return 'tbc-anniversary';
       if (x === 'progression') return 'mop';
       // fallback: allow some older values
       if (x === 'mop') return 'mop';
