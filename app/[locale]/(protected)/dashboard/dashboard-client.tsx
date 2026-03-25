@@ -122,30 +122,33 @@ export function DashboardClient({
   const raidsById = useMemo(() => new Map(calendarRaids.map((r) => [r.id, r])), [calendarRaids]);
 
   const sxEvents = useMemo(() => {
-    // Schedule-X supports string format "YYYY-MM-DD HH:MM"
-    const toSx = (iso: string) => {
-      const d = new Date(iso);
-      const pad = (n: number) => String(n).padStart(2, '0');
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    };
-    return calendarRaids.map((r) => ({
-      id: r.id,
-      title: r.name,
-      start: toSx(r.scheduledAtIso),
-      end: toSx(r.scheduledAtIso),
-    }));
+    // Schedule-X requires Temporal.PlainDate or Temporal.ZonedDateTime.
+    // We convert our UTC ISO string into a ZonedDateTime in the viewer's timezone.
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    return calendarRaids.map((r) => {
+      const instant = Temporal.Instant.from(r.scheduledAtIso);
+      const start = instant.toZonedDateTimeISO(tz);
+      // We don't store end-time yet; render with a small default duration.
+      const end = start.add({ hours: 3 });
+      return {
+        id: r.id,
+        title: r.name,
+        start,
+        end,
+      };
+    });
   }, [calendarRaids]);
 
   const calendarApp = useCalendarApp({
     views: [createViewWeek()],
     defaultView: createViewWeek().name,
-    selectedDate: (Temporal as any).PlainDate.from(new Date(rangeStart).toISOString().slice(0, 10)),
+    selectedDate: Temporal.PlainDate.from(new Date(rangeStart).toISOString().slice(0, 10)),
     weekOptions: {
       nDays: 16,
       gridStep: 30,
     },
-    minDate: (Temporal as any).PlainDate.from(new Date(rangeStart).toISOString().slice(0, 10)),
-    maxDate: (Temporal as any).PlainDate.from(new Date(rangeEnd).toISOString().slice(0, 10)),
+    minDate: Temporal.PlainDate.from(new Date(rangeStart).toISOString().slice(0, 10)),
+    maxDate: Temporal.PlainDate.from(new Date(rangeEnd).toISOString().slice(0, 10)),
     firstDayOfWeek: 1,
     events: sxEvents as any,
     isResponsive: true,
