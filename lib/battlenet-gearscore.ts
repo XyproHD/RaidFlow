@@ -1,6 +1,13 @@
 import { prisma } from '@/lib/prisma';
 import { battlenetBearerInit, getBattlenetAccessToken, getBattlenetConfigForRegion } from '@/lib/battlenet';
 import { calculateGearscoreFromItems, type GearscoreItem } from '@/lib/gearscore';
+import type { WowRegion } from '@/lib/wow-classic-realms';
+
+function toWowRegion(region: string): WowRegion {
+  const r = region.trim().toLowerCase();
+  if (r === 'eu' || r === 'us' || r === 'kr' || r === 'tw') return r;
+  return 'eu';
+}
 
 type BnetEquipmentItem = {
   level?: { value?: number };
@@ -27,20 +34,20 @@ function extractEquipmentHref(rawProfile: unknown): string | null {
 }
 
 function toGearscoreItems(payload: BnetEquipmentPayload): GearscoreItem[] {
-  return (payload.equipped_items ?? [])
-    .map((item) => {
-      const itemLevel = Number(item.item_level ?? item.level?.value ?? 0);
-      const qualityType = item.quality?.type ?? '';
-      const inventoryType = item.inventory_type?.type ?? '';
-      if (!Number.isFinite(itemLevel) || itemLevel <= 0 || !qualityType || !inventoryType) return null;
-      return {
+  return (payload.equipped_items ?? []).flatMap((item): GearscoreItem[] => {
+    const itemLevel = Number(item.item_level ?? item.level?.value ?? 0);
+    const qualityType = item.quality?.type ?? '';
+    const inventoryType = item.inventory_type?.type ?? '';
+    if (!Number.isFinite(itemLevel) || itemLevel <= 0 || !qualityType || !inventoryType) return [];
+    return [
+      {
         itemLevel,
         qualityType,
         inventoryType,
         slotType: item.slot?.type ?? null,
-      } satisfies GearscoreItem;
-    })
-    .filter((x): x is GearscoreItem => x != null);
+      },
+    ];
+  });
 }
 
 export async function refreshCharacterGearscore(characterId: string): Promise<{
@@ -57,8 +64,7 @@ export async function refreshCharacterGearscore(characterId: string): Promise<{
     throw new Error('Charakter ist nicht mit Battle.net verknüpft.');
   }
 
-  const region = character.battlenetProfile.region as 'eu' | 'us' | 'kr' | 'tw' | 'cn';
-  const config = await getBattlenetConfigForRegion(region);
+  const config = await getBattlenetConfigForRegion(toWowRegion(character.battlenetProfile.region));
   if (!config) throw new Error('Keine aktive Battle.net Konfiguration gefunden.');
   const accessToken = await getBattlenetAccessToken(config);
 
