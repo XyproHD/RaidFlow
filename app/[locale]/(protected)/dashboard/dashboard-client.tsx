@@ -248,21 +248,28 @@ export function DashboardClient({
             {guilds.map((g) => (
               <li key={g.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-3 py-2">
                 <div className="min-w-0 flex items-center gap-2">
-                  {g.armoryUrl ? (
-                    <a
-                      href={g.armoryUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-semibold text-foreground hover:underline truncate"
-                      title={g.name}
-                    >
-                      {g.name}
-                    </a>
-                  ) : (
-                    <span className="font-semibold text-foreground truncate" title={g.name}>
-                      {g.name}
-                    </span>
-                  )}
+                  <div className="min-w-0">
+                    {g.armoryUrl ? (
+                      <a
+                        href={g.armoryUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-semibold text-foreground hover:underline truncate block"
+                        title={g.name}
+                      >
+                        {g.name}
+                      </a>
+                    ) : (
+                      <span className="font-semibold text-foreground truncate block" title={g.name}>
+                        {g.name}
+                      </span>
+                    )}
+                    {g.realmLabel ? (
+                      <div className="text-xs text-muted-foreground truncate" title={g.realmLabel}>
+                        @ {g.realmLabel.includes('•') ? g.realmLabel.split('•').pop()?.trim() : g.realmLabel}
+                      </div>
+                    ) : null}
+                  </div>
                   {g.armoryUrl ? (
                     <a
                       href={g.armoryUrl}
@@ -274,11 +281,6 @@ export function DashboardClient({
                     >
                       <img src="https://favicon.pub/classic-armory.org" alt="classic-armory.org favicon" className="h-4 w-4" />
                     </a>
-                  ) : null}
-                  {g.realmLabel ? (
-                    <span className="text-xs rounded bg-muted px-1.5 py-0.5 text-muted-foreground" title={g.realmLabel}>
-                      {g.realmLabel}
-                    </span>
                   ) : null}
                   <div className="flex flex-wrap gap-1">
                     {guildRoleBadges(t, g.role).map((b) => (
