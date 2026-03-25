@@ -1,10 +1,12 @@
-import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getGuildsForUser, getRaidsForUser } from '@/lib/user-guilds';
 import { getLocale } from 'next-intl/server';
+import { prisma } from '@/lib/prisma';
+import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
+import { DashboardClient, type DashboardCalendarRaid, type DashboardCharacter, type DashboardGuild, type DashboardSignupRow } from './dashboard-client';
 
 type SearchParams = Promise<{ guild?: string }>;
 
@@ -26,101 +28,197 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       console.error('[Dashboard]', e);
     }
 
-    const params = props.searchParams ? await props.searchParams : {};
-    const guildParam = params.guild ?? null;
-    const selectedGuild = guildParam && guilds.length > 0
-      ? guilds.find((g) => g.id === guildParam) ?? guilds[0]
-      : guilds[0] ?? null;
-    const raidsForGuild = selectedGuild ? raids.filter((r) => r.guildId === selectedGuild.id) : [];
-
-    function formatDate(d: Date) {
-      return new Intl.DateTimeFormat(locale, {
-        dateStyle: 'short',
-        timeStyle: 'short',
-      }).format(new Date(d));
+    // ---- helpers (server) ---------------------------------------------------
+    function slugify(input: string): string {
+      return input
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim()
+        .replace(/['"]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
     }
 
+    function armoryVersionFromInternal(v: string | null | undefined): string | null {
+      const x = (v ?? '').trim().toLowerCase();
+      if (!x) return null;
+      if (x === 'classic_era') return 'classic-era';
+      if (x === 'hardcore') return 'classic-hardcore';
+      if (x === 'season_of_discovery') return 'classic-sod';
+      if (x === 'anniversary') return 'tbc-anniversary';
+      if (x === 'progression') return 'mop';
+      // fallback: allow some older values
+      if (x === 'mop') return 'mop';
+      return null;
+    }
+
+    // ---- data for dashboard -------------------------------------------------
+    const dashboardGuilds: DashboardGuild[] = guilds.map((g) => {
+      const region = g.battlenetRealm?.region ?? null;
+      const internalVersion = g.battlenetRealm?.version ?? null;
+      const armoryVersion = armoryVersionFromInternal(internalVersion);
+      const realmSlug = (g.battlenetProfileRealmSlug ?? g.battlenetRealm?.slug ?? '').trim() || null;
+      const guildName = (g.battlenetGuildName ?? '').trim() || null;
+      const guildSlug = guildName ? slugify(guildName) : null;
+      const armoryUrl =
+        region && armoryVersion && realmSlug && guildSlug
+          ? `https://classic-armory.org/guild/${encodeURIComponent(region)}/${encodeURIComponent(armoryVersion)}/${encodeURIComponent(realmSlug)}/${encodeURIComponent(guildSlug)}`
+          : null;
+      const realmLabel =
+        region && realmSlug && armoryVersion ? `${region}/${armoryVersion} • ${realmSlug}` : realmSlug ? realmSlug : null;
+      const canManage = g.role === 'guildmaster';
+      return {
+        id: g.id,
+        name: g.name,
+        role: g.role,
+        armoryUrl,
+        realmLabel,
+        canManage,
+      };
+    });
+
+    const chars = userId
+      ? await prisma.rfCharacter.findMany({
+          where: { userId },
+          include: { guild: { select: { name: true } } },
+          orderBy: [{ guildId: 'asc' }, { isMain: 'desc' }, { name: 'asc' }],
+        })
+      : [];
+
+    const completionRows = userId
+      ? await prisma.rfRaidCompletion.findMany({
+          where: { userId },
+          select: { characterId: true },
+        })
+      : [];
+    const lootRows = userId
+      ? await prisma.rfLoot.findMany({
+          where: { userId },
+          select: { characterId: true },
+        })
+      : [];
+    const completionCountByChar = new Map<string, number>();
+    for (const r of completionRows) {
+      if (!r.characterId) continue;
+      completionCountByChar.set(r.characterId, (completionCountByChar.get(r.characterId) ?? 0) + 1);
+    }
+    const lootCountByChar = new Map<string, number>();
+    for (const r of lootRows) {
+      if (!r.characterId) continue;
+      lootCountByChar.set(r.characterId, (lootCountByChar.get(r.characterId) ?? 0) + 1);
+    }
+
+    const dashboardCharacters: DashboardCharacter[] = chars.map((c) => ({
+      id: c.id,
+      name: c.name,
+      guildName: c.guild?.name ?? null,
+      mainSpec: c.mainSpec,
+      offSpec: c.offSpec,
+      classId: getSpecByDisplayName(c.mainSpec)?.classId ?? null,
+      participatedRaids: completionCountByChar.get(c.id) ?? 0,
+      lootCount: lootCountByChar.get(c.id) ?? 0,
+    }));
+
+    const now = new Date();
+    const rangeStart = new Date(now);
+    rangeStart.setDate(rangeStart.getDate() - 1);
+    rangeStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(now);
+    rangeEnd.setDate(rangeEnd.getDate() + 14);
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    const raidIdsInCalendar = raids
+      .filter((r) => r.scheduledAt >= rangeStart && r.scheduledAt <= rangeEnd)
+      .map((r) => r.id);
+
+    const raidRows = raidIdsInCalendar.length
+      ? await prisma.rfRaid.findMany({
+          where: { id: { in: raidIdsInCalendar } },
+          select: {
+            id: true,
+            guildId: true,
+            name: true,
+            scheduledAt: true,
+            status: true,
+            maxPlayers: true,
+            note: true,
+            guild: { select: { name: true } },
+            dungeon: { select: { name: true } },
+            _count: { select: { signups: true } },
+            signups: userId
+              ? {
+                  where: { userId },
+                  select: { id: true, leaderPlacement: true, setConfirmed: true },
+                  take: 1,
+                }
+              : undefined,
+          },
+          orderBy: { scheduledAt: 'asc' },
+        })
+      : [];
+
+    const calendarRaids: DashboardCalendarRaid[] = raidRows.map((r) => ({
+      id: r.id,
+      guildId: r.guildId,
+      guildName: r.guild.name,
+      name: r.name,
+      dungeonName: r.dungeon.name,
+      scheduledAtIso: r.scheduledAt.toISOString(),
+      status: r.status,
+      signupCount: r._count.signups,
+      maxPlayers: r.maxPlayers,
+      hasNote: !!(r.note && r.note.trim()),
+      note: (r.note && r.note.trim()) ? r.note : null,
+      mySignup: (r as unknown as { signups?: { id: string; leaderPlacement: string; setConfirmed: boolean }[] }).signups?.[0] ?? null,
+    }));
+
+    const mySignupRows = userId
+      ? await prisma.rfRaidSignup.findMany({
+          where: {
+            userId,
+            raid: { scheduledAt: { gte: rangeStart, lte: rangeEnd } },
+          },
+          select: {
+            raidId: true,
+            type: true,
+            signedSpec: true,
+            character: { select: { name: true } },
+            raid: {
+              select: {
+                id: true,
+                name: true,
+                guildId: true,
+                scheduledAt: true,
+                guild: { select: { name: true } },
+                dungeon: { select: { name: true } },
+              },
+            },
+          },
+          orderBy: { raid: { scheduledAt: 'asc' } },
+        })
+      : [];
+
+    const mySignups: DashboardSignupRow[] = mySignupRows.map((s) => ({
+      raidId: s.raid.id,
+      guildId: s.raid.guildId,
+      raidName: s.raid.name,
+      dungeonName: s.raid.dungeon.name,
+      guildName: s.raid.guild.name,
+      scheduledAtIso: s.raid.scheduledAt.toISOString(),
+      signedCharacterName: s.character?.name ?? null,
+      signedSpec: s.signedSpec ?? null,
+      type: s.type,
+    }));
+
     return (
-      <div className="p-6 md:p-8">
-        <h1 className="text-2xl font-bold text-foreground mb-6">{t('title')}</h1>
-
-        {guilds.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center" role="status" aria-live="polite">
-            <span className="text-5xl mb-4" aria-hidden="true">😢</span>
-            <p className="text-muted-foreground">{t('noGuildMembership')}</p>
-          </div>
-        )}
-
-        {guilds.length > 0 && selectedGuild?.role === 'member' && (
-          <div className="flex flex-col items-center justify-center py-16 text-center" role="status" aria-live="polite">
-            <span className="text-5xl mb-4" aria-hidden="true">😢</span>
-            <p className="text-muted-foreground">{t('noRaiderRights')}</p>
-          </div>
-        )}
-
-        {guilds.length > 0 && selectedGuild && selectedGuild.role !== 'member' && (
-          <section aria-labelledby="raids-heading">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-              <h2 id="raids-heading" className="text-lg font-semibold text-foreground">
-                {t('raids')}
-              </h2>
-              {(selectedGuild.role === 'raidleader' || selectedGuild.role === 'guildmaster') && (
-                <Link
-                  href={`/${locale}/guild/${selectedGuild.id}/raid/new`}
-                  className="text-sm font-medium rounded-md bg-primary px-3 py-1.5 text-primary-foreground hover:opacity-90"
-                >
-                  {t('newRaid')}
-                </Link>
-              )}
-            </div>
-            {raidsForGuild.length === 0 ? (
-              <p className="text-muted-foreground text-sm">{t('raidsEmpty')}</p>
-            ) : (
-              <ul className="space-y-2">
-                {raidsForGuild.map((r) => (
-              <li
-                key={r.id}
-                className="flex flex-wrap items-center gap-x-4 gap-y-1 p-3 rounded-lg border border-border bg-card"
-              >
-                <span className="font-medium text-foreground">{r.name}</span>
-                <span className="text-muted-foreground text-sm">{r.dungeonName}</span>
-                <span className="text-muted-foreground text-sm">{r.guildName}</span>
-                <span className="text-muted-foreground text-sm">
-                  {formatDate(r.scheduledAt)}
-                </span>
-                <span className="text-muted-foreground text-sm">
-                  {r.signupCount} / {r.maxPlayers} {t('signups')}
-                </span>
-                <span className="text-muted-foreground text-sm capitalize">{r.status}</span>
-                <div className="flex gap-2 ml-auto">
-                  <Link
-                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}`}
-                    className="text-sm text-primary hover:underline"
-                  >
-                    {t('raidView')}
-                  </Link>
-                  {r.canEdit && (
-                    <Link
-                      href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=edit`}
-                      className="text-sm text-primary hover:underline"
-                    >
-                      {t('raidEdit')}
-                    </Link>
-                  )}
-                  <Link
-                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                    className="text-sm text-primary hover:underline"
-                  >
-                    {t('signupLink')}
-                  </Link>
-                </div>
-              </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
-      </div>
+      <DashboardClient
+        guilds={dashboardGuilds}
+        characters={dashboardCharacters}
+        signups={mySignups}
+        calendarRaids={calendarRaids}
+      />
     );
   } catch (err) {
     console.error('[DashboardPage]', err);

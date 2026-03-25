@@ -19,6 +19,12 @@ export interface UserGuildInfo {
   raidGroupIds: string[];
   /** WoW-Realm-Zeile der Gilde (Charakter-Modal: Server-Vorbelegung für Battle.net). */
   battlenetRealmId: string | null;
+  /** Optional: falls in der Gildenverwaltung gesetzt (Profile-API Realm Slug). */
+  battlenetProfileRealmSlug?: string | null;
+  /** Optional: Anzeigename der verknüpften WoW-Gilde (Battle.net). */
+  battlenetGuildName?: string | null;
+  /** Optional: Realm-Infos (aus rf_battlenet_realm, sofern battlenetRealmId gesetzt). */
+  battlenetRealm?: { slug: string; region: string; version: string } | null;
 }
 
 export interface UserRaidInfo {
@@ -68,6 +74,7 @@ export async function getGuildsForUser(
     prisma.rfGuild.findMany({
       include: {
         raidGroups: { select: { id: true, discordRoleId: true } },
+        battlenetRealm: { select: { slug: true, region: true, version: true } },
       },
       orderBy: { name: 'asc' },
     }),
@@ -122,6 +129,11 @@ export async function getGuildsForUser(
             role: existingUserGuild.role as UserGuildRole,
             raidGroupIds,
             battlenetRealmId: guild.battlenetRealmId,
+            battlenetProfileRealmSlug: guild.battlenetProfileRealmSlug,
+            battlenetGuildName: guild.battlenetGuildName,
+            battlenetRealm: guild.battlenetRealm
+              ? { slug: guild.battlenetRealm.slug, region: guild.battlenetRealm.region, version: guild.battlenetRealm.version }
+              : null,
           });
         }
         continue;
@@ -204,6 +216,11 @@ export async function getGuildsForUser(
         role,
         raidGroupIds,
         battlenetRealmId: guild.battlenetRealmId,
+        battlenetProfileRealmSlug: guild.battlenetProfileRealmSlug,
+        battlenetGuildName: guild.battlenetGuildName,
+        battlenetRealm: guild.battlenetRealm
+          ? { slug: guild.battlenetRealm.slug, region: guild.battlenetRealm.region, version: guild.battlenetRealm.version }
+          : null,
       });
     } catch (e) {
       console.error('[getGuildsForUser] guild:', guild.id, guild.name, e);

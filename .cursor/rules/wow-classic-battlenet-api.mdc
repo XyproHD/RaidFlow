@@ -44,3 +44,9 @@ Konvertierung im Code: `dynamicNamespaceToProfileNamespace()` in `lib/wow-realm-
 ## Agenten-Hinweis
 
 Neue Endpoints immer an der **offiziellen Doku** zum jeweiligen Produkt (Classic Retail vs. Classic-Familie) ausrichten; Namespace und Pfad können sich zwischen Game Data und Profile unterscheiden — **nicht** nur `realm.namespace` aus der DB blind verwenden, wenn die Doku **`profile-*`** verlangt.
+
+## Projekt-Dokumentation (Markdown)
+
+- **[BNET_INTEGRATION.md](../../BNET_INTEGRATION.md)** — Konfiguration, Gildenverknüpfung (Server, BNet-Gilden-ID), Charakter-Sync, BNet-Badge, API-Tabelle, Main-Spec (Talentpunkte).
+- **[wowrealms.md](../../wowrealms.md)** — Realm-Sync, DB-Felder, Game Data vs. Profile.
+- **[functions.md](../../functions.md)** — Kurzübersicht Profil-/Gilden-Funktionen und i18n-Keys.

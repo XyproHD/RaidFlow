@@ -62,6 +62,7 @@ Konfiguration von Branch → Service erfolgt in Vercel (Production/Preview) und 
    - **DATABASE_URL** und **DIRECT_URL** (Supabase): Ohne sie schlägt `prisma migrate deploy` fehl, der Build läuft trotzdem weiter (`Skipping migrate deploy`). Für laufende App und Migrationen müssen beide gesetzt sein.
    - **NEXTAUTH_URL**: Für Preview z. B. `https://<dein-preview-subdomain>.vercel.app`, für Production `https://raidflow.vercel.app`.
    - **NEXTAUTH_SECRET**, **DISCORD_*** etc. wie in `.env.example` dokumentiert.
+   - **Battle.net:** Zugangsdaten für die Blizzard-API werden **nicht** als Vercel-Env für die Webapp benötigt, sofern **`rf_battlenet_api_config`** in der jeweiligen Datenbank (Preview/Production) gepflegt ist. Siehe [BNET_INTEGRATION.md](BNET_INTEGRATION.md).
 5. **Preview-Branch:** Unter **Settings** → **Git** den Branch für Preview Deployments auf `preview` setzen (oder den gewünschten Branch).
 
 ---
@@ -83,4 +84,5 @@ Der letzte fehlgeschlagene Preview-Build wurde durch einen **TypeScript-Fehler**
 ## Referenz
 
 - **Manuelle Einrichtung** (Vercel Env-Variablen, Railway, Discord, Supabase): [manual_setup.md](manual_setup.md)
+- **Battle.net (DB-Konfiguration, keine Pflicht-Env-Variablen):** [BNET_INTEGRATION.md](BNET_INTEGRATION.md)
 - **Lokal starten:** [README.md](README.md) (Webapp: `npm run dev`; Bot: `npm run bot` bzw. `npm run dev:all`)

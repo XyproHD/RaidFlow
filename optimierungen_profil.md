@@ -8,8 +8,12 @@ Diese Datei dient als zentrale Referenz für die Umsetzung aller Optimierungen d
 - `app/[locale]/(protected)/profile/profile-characters.tsx` – Charaktere-Client
 - `components/availability-grid.tsx` – Grid für Raidzeiten (Klick/Ziehen)
 - `app/api/user/raid-times/bulk/route.ts` – Bulk-Speichern Raidzeiten
-- `app/api/user/characters/route.ts`, `app/api/user/characters/[id]/route.ts` – Charakter-CRUD
-- `lib/profile-constants.ts` – Slots, Wochentage, Präferenzen
+- `app/api/user/characters/route.ts`, `app/api/user/characters/[id]/route.ts` – Charakter-CRUD (optional `battlenetProfile`)
+- `app/api/user/characters/battlenet-fetch/route.ts` – Battle.net-Vorschau für Sync
+- `lib/battlenet.ts`, `lib/battlenet-character-persist.ts`, `lib/character-api-dto.ts` – BNet-Auflösung & Persistenz
+- `lib/user-guilds.ts` – `battlenetRealmId` pro Gilde für Realm-Vorbelegung
+- `lib/profile-constants.ts` – Slots, Wochentage, Präferenzen  
+**Dokumentation:** [BNET_INTEGRATION.md](BNET_INTEGRATION.md), [wowrealms.md](wowrealms.md)
 
 ---
 
@@ -379,6 +383,24 @@ Diese Datei dient als zentrale Referenz für die Umsetzung aller Optimierungen d
 
 ---
 
+### 4.3 Charaktere & Battle.net (Profil + API)
+
+**Ziel:** Einheitliches Charakter-Modal mit optionaler Battle.net-Synchronisation; Main-Spec aus dem Talentbaum mit den meisten Punkten; BNet-Kennzeichnung in Listen; Gilden-Realm für Vorbelegung.
+
+**Umsetzung (Kurz):**
+
+1. **UI:** Ein Modal (Anlegen/Bearbeiten) mit Realm-Combobox, **„BNet Sync“**, manuell überschreibbare Felder; Hinweis bei API-404 (exakte Schreibweise); **„BNet“**-Badge in der Profil-Charakterliste, wenn `battlenet_character_id` gesetzt ist.
+2. **API:** `POST …/battlenet-fetch` (nur Lesen), `POST`/`PATCH …/characters` mit optionalem `battlenetProfile` → `rf_battlenet_character_profile`.
+3. **Gilde:** `UserGuildInfo.battlenetRealmId` aus `rf_guild` → bei gewählter Gilde Realm im Modal vorbelegen.
+4. **Main-Spec:** Aus Character-Specializations (`spent_points` / `talent_rank`), Fallback `active_spec` (`lib/battlenet.ts`).
+5. **Gildenverwaltung:** Mitglieder-API liefert `hasBattlenet`; siehe [BNET_INTEGRATION.md](BNET_INTEGRATION.md) Abschnitt Gildenverwaltung.
+
+**Akzeptanzkriterium:** Nutzer können Chars manuell oder per Sync anlegen; verknüpfte Chars sind in Profil und Gildenliste am Badge erkennbar.
+
+**Progress:** [x]
+
+---
+
 ## 5. Ideen (optionale Erweiterungen)
 
 Diese Punkte sind bewusst knapp; bei Umsetzung können sie in dieselbe Struktur (Ziel, Dateien, Schritte, Progress) wie oben ausgebaut werden.
@@ -407,7 +429,7 @@ Diese Punkte sind bewusst knapp; bei Umsetzung können sie in dieselbe Struktur 
 | 1. Fehler         | 4        | 0     |
 | 2. Probleme       | 7        | 0     |
 | 3. Mobile         | (siehe 1.1, 1.4) | 0 |
-| 4. Weitere Opt.   | 2        | 0     |
+| 4. Weitere Opt.   | 3        | 0     |
 | 5. Ideen          | 0        | 5     |
 
 Bei Umsetzung die Zähler und die `[ ]`-Angaben in den Abschnitten aktualisieren.

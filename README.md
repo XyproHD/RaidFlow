@@ -36,14 +36,15 @@ Bei Raids mit **Raidgruppen-Einschränkung** brauchst du zusätzlich die passend
 ### Für alle (nach Login)
 
 - **Dashboard:** Übersicht deiner Gilden (Discord-Server mit RaidFlow) und aller Raids mit Anmeldestand und Aktionen je nach Rolle.
-- **Mein Profil:** Anzeige-Modus (Hell/Dunkel in der Topbar, gespeichert im Profil und per Cookie), Raidzeiten-Präferenzen (wahrscheinlich/eventuell, Werktage/Wochenende; Outlook-artiges Grid), Charaktere (Anlegen und Bearbeiten im gleichen Modal; Liste mit ⭐/➖ für Main/Alt, Klassen- und Spec-Icons, Name, Gilde, ⋮-Menü für Bearbeiten/Als Main setzen), Raidstatistik pro Dungeon und Gilde, Loottabelle (erhaltener Loot pro Gilde/Dungeon).
+- **Mein Profil:** Anzeige-Modus (Hell/Dunkel in der Topbar, gespeichert im Profil und per Cookie), Raidzeiten-Präferenzen (wahrscheinlich/eventuell, Werktage/Wochenende; Outlook-artiges Grid), **Charaktere** (ein Modal für Anlegen und Bearbeiten: optional **WoW-Server** aus der Datenbank-Realmliste, **„BNet Sync“** lädt Name/Klasse/Main-Spec von der Battle.net **Profile-API** – alles danach manuell änderbar; bei API-Fehler Hinweis auf exakte Schreibweise; Speichern kann ein **Battle.net-Profil** in der DB verknüpfen; **erneuter Sync** beim Bearbeiten möglich; Liste mit ⭐/➖ für Main/Alt, Klassen- und Spec-Icons, Name, optional **„BNet“**-Badge bei verknüpftem Charakter, Gilde, ⋮-Menü), Raidstatistik pro Dungeon und Gilde, Loottabelle (erhaltener Loot pro Gilde/Dungeon).
 - **Sprachauswahl** in der Topbar (Standard: Browsersprache).
 - **Discord-Bot einladen:** Link, um den RaidFlow-Bot auf einem eigenen Discord-Server hinzuzufügen.
 
 ### Gildenverwaltung (nur RaidFlow-Gildenmeister)
 
 - **Raidgruppen** anlegen und verwalten (der Bot legt die Discord-Rollen „Raidflowgroup-&lt;Name&gt;“ an).
-- **Mitglieder** der Gilde einsehen und Raidgruppen zuordnen (in der App oder über Discord-Rollen).
+- **Mitglieder** der Gilde einsehen und Raidgruppen zuordnen (in der App oder über Discord-Rollen). An **Charakterkarten** erscheint wie im Profil ein **„BNet“**-Hinweis, wenn der Charakter in der DB mit einer Battle.net-Charakter-ID verknüpft ist.
+- **Battle.net / WoW:** **Serverwahl** (Realm aus der synchronisierten Liste), optionale Verknüpfung mit der **WoW-Gilde** (Battle.net-Gilden-ID, Anzeigename, Profil-Realm-Slug/-ID). Gespeichert in `rf_guild` und per API `GET`/`PATCH …`/battlenet-link`. Damit kann im **Profil** beim Anlegen eines Chars der **Realm der Gilde vorbelegt** werden, sofern die Gilde einen Server gesetzt hat.
 - **„Lese Channels“:** Bot liefert alle Discord-Channels; Gildenmeister wählen die Channels, in denen der Bot Raid-Threads erstellen darf. Diese Auswahl wird beim Anlegen eines Raids als Channel-Dropdown angeboten.
 
 ### Raidplaner (RaidFlow-Raidleader)
@@ -119,10 +120,12 @@ RaidFlow unterstützt damit die gesamte Kette von der Planung über die Anmeldun
 | [DiscordBot.md](DiscordBot.md) | Bot-Befehle, Rollen, Threads |
 | [rules.md](rules.md) | Tech-Stack, Code-Style |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment-Pipeline (main/preview, Vercel, Railway) |
+| [BNET_INTEGRATION.md](BNET_INTEGRATION.md) | Battle.net API: Konfiguration, Gildenverknüpfung, Charakter-Sync, BNet-Badge, Endpunkte |
+| [wowrealms.md](wowrealms.md) | Realm-Sync (Namespaces, DB-Felder, Game Data vs. Profile) |
 | [manual_setup.md](manual_setup.md) | Manuelle Einrichtung (Vercel, Railway, Discord, Supabase) |
 
 **Lokal starten:** `npm run dev` – App unter http://localhost:3000 (Redirect auf /de).  
-**Datenbank:** `.env.example` nach `.env` kopieren und `DATABASE_URL`/`DIRECT_URL` eintragen. Für Prisma: `npx prisma db push` (Schema anwenden) oder `npx prisma migrate dev` (mit Migrationen; erwartet `.env`). Nach Schema-Änderungen (z. B. neues Feld `theme_preference` in rf_user) erneut `npx prisma db push` ausführen. **TBC-Dungeons:** `npm run db:seed` (bzw. `npx prisma db seed`) befüllt die Tabelle rf_dungeon mit TBC-Raids (Karazhan, SSC, BT usw.).
+**Datenbank:** `.env.example` nach `.env` kopieren und `DATABASE_URL`/`DIRECT_URL` eintragen. Für Prisma: `npx prisma db push` (Schema anwenden) oder `npx prisma migrate dev` (mit Migrationen; erwartet `.env`). Nach Schema-Änderungen (z. B. neues Feld `theme_preference` in rf_user) erneut `npx prisma db push` ausführen. **TBC-Dungeons:** `npm run db:seed` (bzw. `npx prisma db seed`) befüllt die Tabelle rf_dungeon mit TBC-Raids (Karazhan, SSC, BT usw.). **WoW-Realmliste** für Serverwahl & Battle.net: `npm run db:sync:wowrealms` (siehe [wowrealms.md](wowrealms.md)); **Battle.net-Client** für die API liegt in **`rf_battlenet_api_config`** (siehe [BNET_INTEGRATION.md](BNET_INTEGRATION.md)).
 
 ---
 
