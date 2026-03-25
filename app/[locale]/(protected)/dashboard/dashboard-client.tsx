@@ -88,6 +88,27 @@ function formatTime(locale: string, d: Date) {
   return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(d);
 }
 
+function guildRoleBadges(
+  t: ReturnType<typeof useTranslations>,
+  role: DashboardGuild['role']
+): { key: string; label: string }[] {
+  if (role === 'guildmaster') {
+    return [
+      { key: 'guildmaster', label: t('roleGuildmaster') },
+      { key: 'raidleader', label: t('roleRaidleader') },
+      { key: 'raider', label: t('roleRaider') },
+    ];
+  }
+  if (role === 'raidleader') {
+    return [
+      { key: 'raidleader', label: t('roleRaidleader') },
+      { key: 'raider', label: t('roleRaider') },
+    ];
+  }
+  if (role === 'raider') return [{ key: 'raider', label: t('roleRaider') }];
+  return [];
+}
+
 function myStatusIcon(raidStatus: string, mySignup: DashboardCalendarRaid['mySignup']): '⌛' | '⚠️' | '✅' | '🪑' | null {
   if (!mySignup) return null;
   if (raidStatus !== 'locked') return '⌛';
@@ -132,7 +153,7 @@ export function DashboardClient({
   const rangeEnd = useMemo(() => addDays(today, 14), [today]);
   const defaultCreateGuildId = canCreateGuildIds[0] ?? null;
   const canCreateGuilds = useMemo(
-    () => guilds.filter((g) => g.role === 'raidleader' && canCreateGuildIds.includes(g.id)),
+    () => guilds.filter((g) => (g.role === 'raidleader' || g.role === 'guildmaster') && canCreateGuildIds.includes(g.id)),
     [guilds, canCreateGuildIds]
   );
 
@@ -234,9 +255,16 @@ export function DashboardClient({
                       {g.realmLabel}
                     </span>
                   ) : null}
-                  <span className="text-xs rounded border border-border px-1.5 py-0.5 text-muted-foreground capitalize" title={g.role}>
-                    {g.role}
-                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {guildRoleBadges(t, g.role).map((b) => (
+                      <span
+                        key={`${g.id}:${b.key}`}
+                        className="text-xs rounded border border-border px-1.5 py-0.5 text-muted-foreground"
+                      >
+                        {b.label}
+                      </span>
+                    ))}
+                  </div>
                 </div>
                 <div className="ml-auto flex items-center gap-2">
                   {g.canManage ? (
@@ -512,34 +540,38 @@ export function DashboardClient({
         </div>
 
         {calendarView === 'tiles' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 auto-rows-fr">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {days.map((day) => {
               const key = startOfDay(day).toISOString();
               const raids = raidsByDay.get(key) ?? [];
               return (
-                <div key={key} className="rounded-lg border border-border bg-card p-3 h-full flex flex-col">
+                <div key={key} className="rounded-lg border border-border bg-card p-3">
                   <div className="flex items-center justify-between">
                     <div className="font-semibold text-foreground">{formatDayLabel(locale, day)}</div>
                     <div className="text-xs text-muted-foreground">{raids.length}</div>
                   </div>
-                  <div className="mt-2 space-y-2 flex-1">
+                  <div className="mt-2 space-y-2">
                     {raids.length === 0 ? (
                       <div className="text-sm text-muted-foreground">{t('calendarEmptyDay')}</div>
                     ) : (
                       raids.map((r) => {
                         const status = myStatusIcon(r.status, r.mySignup);
                         const noteOpen = expandedNoteRaidId === r.id;
+                        const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
                         return (
                           <div key={r.id} className="rounded-md border border-border bg-background px-2 py-2">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
-                                <Link
-                                  href={`/${locale}/guild/${r.guildId}/raid/${r.id}`}
-                                  className="font-semibold text-foreground hover:underline block truncate"
-                                  title={r.name}
-                                >
-                                  {r.name}
-                                </Link>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <Link
+                                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}`}
+                                    className="font-semibold text-foreground hover:underline block truncate"
+                                    title={r.name}
+                                  >
+                                    {r.name}
+                                  </Link>
+                                  <span className="text-xs text-muted-foreground shrink-0">{timeLabel}</span>
+                                </div>
                                 <div className="text-xs text-muted-foreground truncate" title={`${r.dungeonName} • ${r.guildName}`}>
                                   {r.dungeonName} • {r.guildName}
                                 </div>
@@ -653,10 +685,12 @@ export function DashboardClient({
               <tbody>
                 {calendarRaidsSorted.map((r) => {
                   const status = myStatusIcon(r.status, r.mySignup);
+                  const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
                   return (
                     <tr key={r.id} className="border-b border-border last:border-b-0 odd:bg-background even:bg-muted/10 hover:bg-muted/20">
                       <td className="px-3 py-2 text-muted-foreground">
-                        {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(r.scheduledAtIso))}
+                        {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(r.scheduledAtIso))}{' '}
+                        <span className="text-xs">{timeLabel}</span>
                       </td>
                       <td className="px-3 py-2">
                         <Link href={`/${locale}/guild/${r.guildId}/raid/${r.id}`} className="text-primary hover:underline">
