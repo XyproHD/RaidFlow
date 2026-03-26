@@ -862,15 +862,7 @@ export function ProfileCharacters({
                       >
                         {c.name}
                       </CharacterDiscordNameHint>
-                      {c.hasBattlenet ? (
-                        <span
-                          className="shrink-0 inline-flex items-center justify-center rounded border border-border bg-muted/60 px-1.5 py-0.5"
-                          title={t('bnetLinkedBadgeTitle')}
-                          aria-label={t('bnetLinkedBadgeTitle')}
-                        >
-                          <BattlenetLogo size={12} />
-                        </span>
-                      ) : null}
+                      {c.hasBattlenet ? <BattlenetLogo size={18} title={t('bnetLinkedBadgeTitle')} /> : null}
                       <CharacterGearscoreBadge
                         characterId={c.id}
                         hasBattlenet={c.hasBattlenet}

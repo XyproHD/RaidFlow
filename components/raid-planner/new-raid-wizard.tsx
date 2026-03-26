@@ -937,13 +937,7 @@ export function NewRaidWizard({
                             {character.name}
                           </CharacterDiscordNameHint>
                           {character.hasBattlenet ? (
-                            <span
-                              className="shrink-0 inline-flex items-center justify-center rounded border border-border bg-muted/60 px-1.5 py-0.5"
-                              title={tProfile('bnetLinkedBadgeTitle')}
-                              aria-label={tProfile('bnetLinkedBadgeTitle')}
-                            >
-                              <BattlenetLogo size={12} />
-                            </span>
+                            <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} />
                           ) : null}
                           <CharacterGearscoreBadge
                             characterId={character.id}

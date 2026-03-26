@@ -674,15 +674,7 @@ function CharacterCard({
         <CharacterDiscordNameHint discordName={ch.guildDiscordDisplayName} className="font-medium text-sm min-w-0">
           {ch.name}
         </CharacterDiscordNameHint>
-        {ch.hasBattlenet ? (
-          <span
-            className="shrink-0 inline-flex items-center justify-center rounded border border-border bg-muted/60 px-1.5 py-0.5"
-            title={tProfile('bnetLinkedBadgeTitle')}
-            aria-label={tProfile('bnetLinkedBadgeTitle')}
-          >
-            <BattlenetLogo size={12} />
-          </span>
-        ) : null}
+        {ch.hasBattlenet ? <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} /> : null}
         <CharacterGearscoreBadge
           characterId={ch.id}
           hasBattlenet={ch.hasBattlenet}

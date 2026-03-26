@@ -470,15 +470,7 @@ export function DashboardClient({
                             />
                           ) : null}
                           <span className="font-medium text-foreground truncate">{s.signedCharacterName ?? '–'}</span>
-                          {s.characterHasBattlenet ? (
-                            <span
-                              className="shrink-0 inline-flex items-center justify-center rounded border border-border bg-muted/60 px-1.5 py-0.5"
-                              title={t('bnetLinkedBadgeTitle')}
-                              aria-label={t('bnetLinkedBadgeTitle')}
-                            >
-                              <BattlenetLogo size={12} />
-                            </span>
-                          ) : null}
+                          {s.characterHasBattlenet ? <BattlenetLogo size={18} title={t('bnetLinkedBadgeTitle')} /> : null}
                           <CharacterGearscoreBadge
                             characterId={s.signedCharacterId ?? ''}
                             hasBattlenet={s.characterHasBattlenet}

@@ -2,7 +2,7 @@ import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
 export function BattlenetLogo({
-  size = 14,
+  size = 18,
   title,
   className,
 }: {
@@ -17,7 +17,7 @@ export function BattlenetLogo({
       height={size}
       alt="Battle.net"
       title={title}
-      className={cn('shrink-0', className)}
+      className={cn('shrink-0 select-none', className)}
     />
   );
 }
