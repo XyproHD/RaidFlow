@@ -149,10 +149,12 @@ type SignupForDashboard = Prisma.RfRaidSignupGetPayload<{
         id: true;
         name: true;
         guildId: true;
+        dungeonId: true;
         scheduledAt: true;
         status: true;
         guild: { select: { name: true } };
         dungeon: { select: { name: true } };
+        dungeonIds: true;
       };
     };
   };
@@ -215,10 +217,12 @@ export async function findManyRaidSignupsForDashboard(
         id: true,
         name: true,
         guildId: true,
+        dungeonId: true,
         scheduledAt: true,
         status: true,
         guild: { select: { name: true } },
         dungeon: { select: { name: true } },
+        dungeonIds: true,
       },
     },
   } satisfies Prisma.RfRaidSignupSelect;
@@ -244,10 +248,12 @@ export async function findManyRaidSignupsForDashboard(
         id: true,
         name: true,
         guildId: true,
+        dungeonId: true,
         scheduledAt: true,
         status: true,
         guild: { select: { name: true } },
         dungeon: { select: { name: true } },
+        dungeonIds: true,
       },
     },
   } satisfies Prisma.RfRaidSignupSelect;

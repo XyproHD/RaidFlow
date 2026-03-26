@@ -129,7 +129,7 @@ export async function getRaidDetailContext(
       canEdit: boolean;
       canSignup: boolean;
       signupPhase: RaidSignupPhase;
-      raid: NonNullable<Awaited<ReturnType<typeof loadRaidForDetailPage>>>;
+      raid: (NonNullable<Awaited<ReturnType<typeof loadRaidForDetailPage>>> & { dungeonNames: string[] });
     }
 > {
   const access = await resolveRaidAccess(userId, discordId, guildId, raidId);
@@ -140,13 +140,40 @@ export async function getRaidDetailContext(
     return { ok: false, reason: 'raid_not_found' };
   }
 
+  const rawIds = (raid as unknown as { dungeonIds?: unknown }).dungeonIds;
+  const dungeonIds =
+    Array.isArray(rawIds) && rawIds.every((x) => typeof x === 'string')
+      ? (rawIds as string[]).map((x) => x.trim()).filter(Boolean)
+      : [];
+  const ids = Array.from(new Set([raid.dungeonId, ...dungeonIds].filter(Boolean)));
+
+  const nameRows = ids.length
+    ? await prisma.rfDungeonName.findMany({
+        where: { dungeonId: { in: ids }, locale },
+        select: { dungeonId: true, name: true },
+      })
+    : [];
+  const nameById = new Map(nameRows.map((r) => [r.dungeonId, r.name]));
+
+  const fallbackRows = ids.length
+    ? await prisma.rfDungeon.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const fallbackById = new Map(fallbackRows.map((r) => [r.id, r.name]));
+
+  const dungeonNames = ids
+    .map((id) => nameById.get(id) ?? fallbackById.get(id) ?? id)
+    .filter(Boolean);
+
   return {
     ok: true,
     guildInfo: access.guildInfo,
     canEdit: access.canEdit,
     canSignup: access.canSignup,
     signupPhase: access.signupPhase,
-    raid,
+    raid: { ...raid, dungeonNames },
   };
 }
 

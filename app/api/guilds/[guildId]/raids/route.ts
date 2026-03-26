@@ -35,7 +35,12 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const dungeonId = typeof body.dungeonId === 'string' ? body.dungeonId.trim() : '';
+  const dungeonIdRaw = typeof body.dungeonId === 'string' ? body.dungeonId.trim() : '';
+  const dungeonIdsRaw = Array.isArray(body.dungeonIds)
+    ? (body.dungeonIds as unknown[]).filter((x) => typeof x === 'string').map((x) => (x as string).trim())
+    : null;
+  const dungeonIds = dungeonIdsRaw ? dungeonIdsRaw.filter(Boolean) : [];
+  const dungeonId = (dungeonIds[0] ?? dungeonIdRaw).trim();
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   const note = typeof body.note === 'string' ? body.note.trim() : null;
   const maxPlayers =
@@ -135,13 +140,18 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid signupUntil' }, { status: 400 });
   }
 
-  const dungeon = await prisma.rfDungeon.findFirst({
-    where: { id: dungeonId, instanceType: 'raid' },
+  const uniqueDungeonIds = Array.from(new Set([dungeonId, ...dungeonIds].filter(Boolean)));
+  const dungeons = await prisma.rfDungeon.findMany({
+    where: { id: { in: uniqueDungeonIds }, instanceType: 'raid' },
     select: { id: true, name: true },
   });
-  if (!dungeon) {
+  if (!dungeons.some((d) => d.id === dungeonId)) {
     return NextResponse.json({ error: 'Dungeon not found' }, { status: 400 });
   }
+  if (uniqueDungeonIds.length > 0 && dungeons.length !== uniqueDungeonIds.length) {
+    return NextResponse.json({ error: 'One or more dungeons not found' }, { status: 400 });
+  }
+  const primaryDungeon = dungeons.find((d) => d.id === dungeonId)!;
 
   if (raidGroupRestrictionId) {
     const rg = await prisma.rfRaidGroup.findFirst({
@@ -202,6 +212,7 @@ export async function POST(
     data: {
       guildId,
       dungeonId,
+      dungeonIds: uniqueDungeonIds.length > 1 ? uniqueDungeonIds : null,
       name,
       raidLeaderId,
       lootmasterId,
@@ -228,7 +239,7 @@ export async function POST(
   let threadWarning: string | undefined;
 
   if (createDiscordThread && discordChannelId) {
-    const threadTitle = `${dungeon.name} – ${name}`.slice(0, 100);
+    const threadTitle = `${primaryDungeon.name} – ${name}`.slice(0, 100);
     try {
       const { threadId } = await createPublicThreadInChannel(discordChannelId, threadTitle);
       discordThreadId = threadId;

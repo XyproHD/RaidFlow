@@ -462,6 +462,7 @@ export function NewRaidWizard({
 
       const body = {
         dungeonId,
+        dungeonIds,
         name,
         note: note || null,
         raidLeaderId,

@@ -148,12 +148,14 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
           select: {
             id: true,
             guildId: true,
+            dungeonId: true,
             name: true,
             scheduledAt: true,
             signupUntil: true,
             status: true,
             maxPlayers: true,
             note: true,
+            dungeonIds: true,
             guild: { select: { name: true } },
             dungeon: { select: { name: true } },
             _count: { select: { signups: true } },
@@ -171,12 +173,53 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
 
     const canEditGuildIds = new Set(guilds.filter((g) => g.role === 'raidleader' || g.role === 'guildmaster').map((g) => g.id));
 
+    const dungeonIdSet = new Set<string>();
+    for (const r of raidRows) {
+      const ids = Array.isArray((r as unknown as { dungeonIds?: unknown }).dungeonIds)
+        ? ((r as unknown as { dungeonIds?: unknown }).dungeonIds as unknown[]).filter((x) => typeof x === 'string').map((x) => (x as string).trim())
+        : [];
+      dungeonIdSet.add(r.dungeonId);
+      for (const id of ids) if (id) dungeonIdSet.add(id);
+    }
+    for (const s of mySignupRows) {
+      const ids = Array.isArray((s.raid as unknown as { dungeonIds?: unknown }).dungeonIds)
+        ? ((s.raid as unknown as { dungeonIds?: unknown }).dungeonIds as unknown[]).filter((x) => typeof x === 'string').map((x) => (x as string).trim())
+        : [];
+      dungeonIdSet.add(s.raid.dungeonId);
+      for (const id of ids) if (id) dungeonIdSet.add(id);
+    }
+    const allDungeonIds = Array.from(dungeonIdSet);
+    const dungeonNameRows = allDungeonIds.length
+      ? await prisma.rfDungeonName.findMany({
+          where: { dungeonId: { in: allDungeonIds }, locale },
+          select: { dungeonId: true, name: true },
+        })
+      : [];
+    const dungeonNamesById = new Map(dungeonNameRows.map((r) => [r.dungeonId, r.name]));
+    const dungeonFallbackRows = allDungeonIds.length
+      ? await prisma.rfDungeon.findMany({
+          where: { id: { in: allDungeonIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const dungeonFallbackById = new Map(dungeonFallbackRows.map((r) => [r.id, r.name]));
+
+    function dungeonLabelFor(raid: { dungeonId: string; dungeon: { name: string }; dungeonIds?: unknown }) {
+      const ids =
+        Array.isArray(raid.dungeonIds) && raid.dungeonIds.every((x) => typeof x === 'string')
+          ? (raid.dungeonIds as string[]).map((x) => x.trim()).filter(Boolean)
+          : [];
+      const list = Array.from(new Set([raid.dungeonId, ...ids].filter(Boolean)));
+      if (list.length <= 1) return dungeonNamesById.get(raid.dungeonId) ?? raid.dungeon.name;
+      return list.map((id) => dungeonNamesById.get(id) ?? dungeonFallbackById.get(id) ?? id).join(' / ');
+    }
+
     const calendarRaids: DashboardCalendarRaid[] = raidRows.map((r) => ({
       id: r.id,
       guildId: r.guildId,
       guildName: r.guild.name,
       name: r.name,
-      dungeonName: r.dungeon.name,
+      dungeonName: dungeonLabelFor(r),
       scheduledAtIso: r.scheduledAt.toISOString(),
       signupUntilIso: r.signupUntil.toISOString(),
       status: r.status,
@@ -199,7 +242,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       raidId: s.raid.id,
       guildId: s.raid.guildId,
       raidName: s.raid.name,
-      dungeonName: s.raid.dungeon.name,
+      dungeonName: dungeonLabelFor(s.raid as unknown as { dungeonId: string; dungeon: { name: string }; dungeonIds?: unknown }),
       guildName: s.raid.guild.name,
       scheduledAtIso: s.raid.scheduledAt.toISOString(),
       signedCharacterName: s.character?.name ?? null,

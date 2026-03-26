@@ -26,6 +26,7 @@ export type RaidViewRaid = {
   _count: { signups: number };
   guild: { name: string };
   dungeon: { name: string; names: { name: string }[] };
+  dungeonNames?: string[];
   raidGroupRestriction: { name: string } | null;
   signups: {
     id: string;
@@ -62,7 +63,10 @@ export async function RaidViewSection({
 }) {
   const t = await getTranslations('raidDetail');
 
-  const dungeonName = raid.dungeon.names[0]?.name ?? raid.dungeon.name;
+  const dungeonName =
+    raid.dungeonNames && raid.dungeonNames.length > 0
+      ? raid.dungeonNames.join(' / ')
+      : raid.dungeon.names[0]?.name ?? raid.dungeon.name;
   const dateShort = new Intl.DateTimeFormat(locale, {
     weekday: 'short',
     day: '2-digit',

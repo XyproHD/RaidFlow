@@ -217,6 +217,7 @@ model RfRaid {
   id                      String    @id @default(uuid())
   guildId                 String    @map("guild_id")
   dungeonId               String    @map("dungeon_id")
+  dungeonIds              Json?     @map("dungeon_ids")
   name                    String
   raidLeaderId            String?   @map("raid_leader_id")
   lootmasterId            String?   @map("lootmaster_id")
