@@ -72,6 +72,25 @@ async function resolveEquipmentHrefViaProfileFetch(
   }
 }
 
+function buildEquipmentUrlFromCharacter(
+  character: Awaited<ReturnType<typeof loadCharacterWithBattlenetProfile>>,
+  config: Awaited<ReturnType<typeof getBattlenetConfigForRegion>>
+): URL | null {
+  if (!character?.battlenetProfile || !config) return null;
+  const realmSlug = character.battlenetProfile.realmSlug?.trim().toLowerCase();
+  const characterNameLower = character.battlenetProfile.characterNameLower?.trim().toLowerCase();
+  if (!realmSlug || !characterNameLower) return null;
+
+  const region = toWowRegion(character.battlenetProfile.region);
+  const namespace = profileNamespaceForWowVersion(region, character.battlenetProfile.wowVersion);
+  const url = new URL(
+    `${config.apiBaseUrl}${config.profileCharacterPath}/${realmSlug}/${characterNameLower}/equipment`
+  );
+  url.searchParams.set('namespace', namespace);
+  url.searchParams.set('locale', config.locale);
+  return url;
+}
+
 function toGearscoreItems(payload: BnetEquipmentPayload): GearscoreItem[] {
   return (payload.equipped_items ?? []).flatMap((item): GearscoreItem[] => {
     const itemLevel = Number(item.item_level ?? item.level?.value ?? 0);
@@ -189,11 +208,17 @@ export async function refreshCharacterGearscore(characterId: string): Promise<{
   const equipmentHref =
     extractEquipmentHref(character.battlenetProfile.rawProfile) ??
     (await resolveEquipmentHrefViaProfileFetch(character, config, accessToken));
-  if (!equipmentHref) throw new Error('Keine Battle.net Equipment-Referenz gefunden. Bitte BNet Sync erneut ausführen.');
 
-  const equipmentUrl = new URL(equipmentHref);
+  const equipmentUrl =
+    (equipmentHref ? new URL(equipmentHref) : null) ?? buildEquipmentUrlFromCharacter(character, config);
+  if (!equipmentUrl) {
+    throw new Error(
+      'Keine Battle.net Equipment-Referenz gefunden. Bitte BNet Sync erneut ausführen.'
+    );
+  }
   equipmentUrl.searchParams.set('locale', config.locale);
   equipmentUrl.searchParams.delete('access_token');
+
   const eqRes = await fetch(equipmentUrl.toString(), battlenetBearerInit(accessToken));
   if (!eqRes.ok) {
     throw new Error(`Battle.net Equipment-Abfrage fehlgeschlagen (HTTP ${eqRes.status}).`);
