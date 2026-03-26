@@ -72,6 +72,7 @@ export async function PATCH(
     typeof body.leaderAllowsReserve === 'boolean'
       ? body.leaderAllowsReserve
       : signup.leaderAllowsReserve;
+  const effectiveLeaderAllowsReserve = signup.forbidReserve ? false : leaderAllowsReserve;
   const leaderMarkedTeilnehmer =
     typeof body.leaderMarkedTeilnehmer === 'boolean'
       ? body.leaderMarkedTeilnehmer
@@ -92,6 +93,12 @@ export async function PATCH(
   const offSpec = signup.character?.offSpec ?? null;
 
   if (body.cycleSignedSpec === true) {
+    if (signup.onlySignedSpec) {
+      return NextResponse.json(
+        { error: 'Spec is locked by signup condition' },
+        { status: 400 }
+      );
+    }
     if (!offSpec?.trim()) {
       return NextResponse.json({ error: 'No off spec to cycle' }, { status: 400 });
     }
@@ -104,7 +111,22 @@ export async function PATCH(
       signedSpec = mainSpec.trim();
     }
   } else if (typeof body.signedSpec === 'string') {
+    if (signup.onlySignedSpec && body.signedSpec.trim() !== (signup.signedSpec ?? '').trim()) {
+      return NextResponse.json(
+        { error: 'Spec is locked by signup condition' },
+        { status: 400 }
+      );
+    }
     signedSpec = body.signedSpec.trim();
+  }
+
+  if (signup.forbidReserve) {
+    if (signup.type === 'reserve') {
+      return NextResponse.json(
+        { error: 'Reserve is forbidden by signup condition' },
+        { status: 400 }
+      );
+    }
   }
 
   if (signup.character) {
@@ -120,7 +142,7 @@ export async function PATCH(
   const updated = await prisma.rfRaidSignup.update({
     where: { id: signupId },
     data: {
-      leaderAllowsReserve,
+      leaderAllowsReserve: effectiveLeaderAllowsReserve,
       leaderMarkedTeilnehmer,
       leaderPlacement,
       setConfirmed,

@@ -87,6 +87,8 @@ export async function POST(
     typeof body.note === 'string' ? body.note.trim() : body.note === null ? '' : '';
   const signedSpecRaw =
     typeof body.signedSpec === 'string' ? body.signedSpec.trim() : '';
+  const onlySignedSpec = body.onlySignedSpec === true;
+  const forbidReserve = body.forbidReserve === true;
 
   if (!characterId || !typeNorm) {
     return NextResponse.json(
@@ -102,6 +104,13 @@ export async function POST(
   if (phase === 'reserve_only' && typeNorm !== 'reserve') {
     return NextResponse.json(
       { error: 'After signup deadline only reserve is allowed' },
+      { status: 400 }
+    );
+  }
+
+  if (forbidReserve && typeNorm === 'reserve') {
+    return NextResponse.json(
+      { error: 'Reserve is forbidden by signup condition' },
       { status: 400 }
     );
   }
@@ -140,6 +149,8 @@ export async function POST(
     characterId,
     type: typeNorm,
     signedSpec: signedSpecRaw,
+    onlySignedSpec,
+    forbidReserve,
     isLate,
     note: note.length > 0 ? note : null,
   };
@@ -157,12 +168,15 @@ export async function POST(
       data: {
         ...data,
         allowReserve: false,
+        leaderAllowsReserve: forbidReserve ? false : existing.leaderAllowsReserve,
       },
       select: {
         id: true,
         type: true,
         characterId: true,
         signedSpec: true,
+        onlySignedSpec: true,
+        forbidReserve: true,
         isLate: true,
         note: true,
         allowReserve: true,
@@ -190,7 +204,7 @@ export async function POST(
       userId,
       ...data,
       allowReserve: false,
-      leaderAllowsReserve: true,
+      leaderAllowsReserve: !forbidReserve,
       leaderMarkedTeilnehmer: false,
     },
     select: {
@@ -198,6 +212,8 @@ export async function POST(
       type: true,
       characterId: true,
       signedSpec: true,
+      onlySignedSpec: true,
+      forbidReserve: true,
       isLate: true,
       note: true,
       allowReserve: true,

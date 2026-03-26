@@ -94,6 +94,22 @@ export async function POST(
   });
 
   if (existing) {
+    if (existing.forbidReserve && typeNorm === 'reserve') {
+      return NextResponse.json(
+        { error: 'Reserve is forbidden by signup condition' },
+        { status: 400 }
+      );
+    }
+    if (
+      existing.onlySignedSpec &&
+      existing.signedSpec &&
+      existing.signedSpec.trim() !== signedSpecRaw.trim()
+    ) {
+      return NextResponse.json(
+        { error: 'Spec is locked by signup condition' },
+        { status: 400 }
+      );
+    }
     const prevSnap = snapshotSignup(existing);
     const updated = await prisma.rfRaidSignup.update({
       where: { id: existing.id },
@@ -101,6 +117,7 @@ export async function POST(
         characterId,
         type: typeNorm,
         signedSpec: signedSpecRaw,
+        leaderAllowsReserve: existing.forbidReserve ? false : existing.leaderAllowsReserve,
         leaderPlacement,
         setConfirmed,
       },
@@ -130,6 +147,8 @@ export async function POST(
       note: null,
       leaderAllowsReserve: true,
       leaderMarkedTeilnehmer: false,
+      onlySignedSpec: false,
+      forbidReserve: false,
       leaderPlacement,
       setConfirmed,
     },

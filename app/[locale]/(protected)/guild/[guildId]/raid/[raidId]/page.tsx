@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound, redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 import { getTranslations } from 'next-intl/server';
@@ -8,17 +9,13 @@ import { prisma } from '@/lib/prisma';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
 import { RaidSignupWithdraw } from '@/components/raid-detail/raid-signup-withdraw';
+import { ROLE_ICONS } from '@/lib/role-spec-icons';
+import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import {
   RaidViewSection,
   type RaidViewRaid,
 } from '@/components/raid-detail/raid-view-section';
-import { RaidSignupHistoryPanel } from '@/components/raid-detail/raid-signup-history';
 import {
-  RaidAnmeldungen,
-  type AnmeldungRow,
-} from '@/components/raid-detail/raid-anmeldungen';
-import {
-  filterSignupsVisibleToViewer,
   getRaidDetailContext,
   parseRaidPageMode,
   type RaidPageMode,
@@ -105,26 +102,6 @@ export default async function RaidDetailPage(props: {
     );
   }
 
-  const visibleSignups = filterSignupsVisibleToViewer(
-    raid.signups,
-    userId,
-    raid.signupVisibility,
-    canEdit,
-    raid.status
-  );
-
-  const anmeldungRows: AnmeldungRow[] = visibleSignups.map((s) => ({
-    id: s.id,
-    userId: s.userId,
-    character: s.character,
-    signedSpec: s.signedSpec,
-    type: s.type,
-    isLate: s.isLate,
-    note: s.note,
-    leaderAllowsReserve: s.leaderAllowsReserve,
-    leaderMarkedTeilnehmer: s.leaderMarkedTeilnehmer,
-  }));
-
   const charRows = await prisma.rfCharacter.findMany({
     where: { userId, guildId },
     select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true },
@@ -137,6 +114,22 @@ export default async function RaidDetailPage(props: {
   }));
 
   const mySignup = raid.signups.find((s) => s.userId === userId);
+  const typeNorm = (v: string) => (v === 'main' ? 'normal' : v);
+  const roleStats = {
+    Tank: { normal: 0, uncertain: 0, reserve: 0 },
+    Melee: { normal: 0, uncertain: 0, reserve: 0 },
+    Range: { normal: 0, uncertain: 0, reserve: 0 },
+    Healer: { normal: 0, uncertain: 0, reserve: 0 },
+  };
+  for (const s of raid.signups) {
+    const spec = (s.signedSpec?.trim() || s.character?.mainSpec?.trim() || null) as string | null;
+    const role = roleFromSpecDisplayName(spec);
+    const tn = typeNorm(s.type);
+    if (!role || !(role in roleStats)) continue;
+    if (tn === 'normal' || tn === 'uncertain' || tn === 'reserve') {
+      roleStats[role as keyof typeof roleStats][tn]++;
+    }
+  }
 
   const memberRows = await prisma.rfGuildMember.findMany({
     where: { guildId },
@@ -188,6 +181,8 @@ export default async function RaidDetailPage(props: {
       characterId: s.characterId,
       type: s.type,
       signedSpec: s.signedSpec,
+      onlySignedSpec: s.onlySignedSpec,
+      forbidReserve: s.forbidReserve,
       isLate: s.isLate,
       note: s.note,
       leaderAllowsReserve: s.leaderAllowsReserve,
@@ -284,6 +279,78 @@ export default async function RaidDetailPage(props: {
           <h2 id="raid-signup-heading" className="text-lg font-semibold">
             {t('sectionSignup')}
           </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border border-border bg-card/50 p-3">
+              <p className="text-xs text-muted-foreground">{t('signupUntil')}</p>
+              <p className="text-sm font-medium">
+                {new Intl.DateTimeFormat(locale, {
+                  dateStyle: 'short',
+                  timeStyle: 'short',
+                }).format(raid.signupUntil)}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-card/50 p-3">
+              <p className="text-xs text-muted-foreground">{t('maxPlayers')}</p>
+              <p className="text-sm font-medium">
+                {raid._count.signups} / {raid.maxPlayers}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-card/50 p-3">
+              <p className="text-xs text-muted-foreground">{t('status')}</p>
+              <p className="text-sm font-medium capitalize">{raid.status}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-card/50 p-3">
+              <p className="text-xs text-muted-foreground">{t('visibility')}</p>
+              <p className="text-sm font-medium">
+                {raid.signupVisibility === 'raid_leader_only'
+                  ? t('visibilityLeaders')
+                  : t('visibilityPublic')}
+              </p>
+            </div>
+          </div>
+          {raid.raidGroupRestriction && (
+            <div className="rounded-lg border border-border bg-card/50 p-3 text-sm">
+              <span className="text-muted-foreground">{t('restriction')}: </span>
+              <span className="font-medium">{raid.raidGroupRestriction.name}</span>
+            </div>
+          )}
+          <div className="rounded-lg border border-border bg-card/40 p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('signupRoleLoadTitle')}
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              {(
+                [
+                  { key: 'Tank', icon: ROLE_ICONS.Tank },
+                  { key: 'Melee', icon: ROLE_ICONS.Melee },
+                  { key: 'Range', icon: ROLE_ICONS.Range },
+                  { key: 'Healer', icon: ROLE_ICONS.Healer },
+                ] as const
+              ).map(({ key, icon }) => {
+                const stats = roleStats[key];
+                return (
+                  <span
+                    key={key}
+                    className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                  >
+                    <Image src={icon.src} alt="" width={20} height={20} unoptimized />
+                    <span className="tabular-nums">
+                      <span className="font-semibold text-green-600 dark:text-green-500">
+                        {stats.normal}
+                      </span>
+                      {' ('}
+                      <span className="font-semibold text-amber-600 dark:text-amber-500">
+                        {stats.uncertain}
+                      </span>
+                      {' / '}
+                      <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
+                      {')'}
+                    </span>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
           <RaidSignupForm
             guildId={guildId}
             raidId={raidId}
@@ -294,24 +361,11 @@ export default async function RaidDetailPage(props: {
             initialIsLate={mySignup?.isLate ?? false}
             initialNote={mySignup?.note ?? ''}
             initialSignedSpec={mySignup?.signedSpec ?? null}
+            initialOnlySignedSpec={mySignup?.onlySignedSpec ?? false}
+            initialForbidReserve={mySignup?.forbidReserve ?? false}
             hasExistingSignup={!!mySignup}
           />
           {mySignup && <RaidSignupWithdraw guildId={guildId} raidId={raidId} />}
-          {canEdit && <RaidSignupHistoryPanel guildId={guildId} raidId={raidId} />}
-          <div className="space-y-2">
-            <h3 className="text-base font-semibold">{t('anmeldungenHeading')}</h3>
-            {raid.signupVisibility === 'raid_leader_only' &&
-              !canEdit &&
-              raid.status !== 'locked' && (
-              <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
-            )}
-            <RaidAnmeldungen
-              rows={anmeldungRows}
-              canEdit={canEdit}
-              guildId={guildId}
-              raidId={raidId}
-            />
-          </div>
         </section>
       )}
     </div>

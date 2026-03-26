@@ -24,6 +24,8 @@ export type AnmeldungRow = {
   note: string | null;
   leaderAllowsReserve: boolean;
   leaderMarkedTeilnehmer: boolean;
+  onlySignedSpec?: boolean;
+  forbidReserve?: boolean;
 };
 
 function classIdForChar(mainSpec: string): string | null {
@@ -106,7 +108,23 @@ export function RaidAnmeldungen({
                   {t('badgeTeilnehmer')}
                 </span>
               )}
-              {!s.leaderAllowsReserve && (
+              {s.onlySignedSpec && (
+                <span
+                  className="text-xs rounded border border-amber-600/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 shrink-0 max-w-[9rem] truncate"
+                  title={t('badgeOnlySignedSpec')}
+                >
+                  {t('badgeOnlySignedSpec')}
+                </span>
+              )}
+              {s.forbidReserve && (
+                <span
+                  className="text-xs rounded border border-muted-foreground/35 bg-muted/70 px-1.5 py-0.5 shrink-0 max-w-[9rem] truncate"
+                  title={t('badgeUserForbidReserve')}
+                >
+                  {t('badgeUserForbidReserve')}
+                </span>
+              )}
+              {!s.leaderAllowsReserve && !s.forbidReserve && (
                 <span className="text-xs rounded bg-muted px-1.5 py-0.5 shrink-0">
                   {t('badgeReserveForbidden')}
                 </span>

@@ -19,6 +19,7 @@ type Char = {
 };
 
 type SignupType = 'normal' | 'uncertain' | 'reserve';
+type PunctualityType = 'on_time' | 'tight' | 'late';
 
 function normalizeInitialType(raw: string | undefined): SignupType {
   if (raw === 'reserve') return 'reserve';
@@ -41,6 +42,8 @@ export function RaidSignupForm({
   initialIsLate,
   initialNote,
   initialSignedSpec,
+  initialOnlySignedSpec,
+  initialForbidReserve,
   hasExistingSignup,
 }: {
   guildId: string;
@@ -52,6 +55,8 @@ export function RaidSignupForm({
   initialIsLate: boolean;
   initialNote: string;
   initialSignedSpec: string | null;
+  initialOnlySignedSpec: boolean;
+  initialForbidReserve: boolean;
   hasExistingSignup: boolean;
 }) {
   const t = useTranslations('raidDetail');
@@ -93,8 +98,13 @@ export function RaidSignupForm({
   const [type, setType] = useState<SignupType>(() =>
     reserveOnly ? 'reserve' : normalizeInitialType(initialType)
   );
-  const [isLate, setIsLate] = useState(initialIsLate);
+  const [punctuality, setPunctuality] = useState<PunctualityType>(
+    initialIsLate ? 'late' : 'on_time'
+  );
+  const isLate = punctuality !== 'on_time';
   const [note, setNote] = useState(initialNote);
+  const [onlySignedSpec, setOnlySignedSpec] = useState(initialOnlySignedSpec);
+  const [forbidReserve, setForbidReserve] = useState(initialForbidReserve);
   const [status, setStatus] = useState<'idle' | 'saving' | 'ok' | 'err'>('idle');
   const [message, setMessage] = useState<string | null>(null);
 
@@ -114,10 +124,16 @@ export function RaidSignupForm({
       return;
     }
     const effType = reserveOnly ? 'reserve' : type;
-    if (isLate) {
+    if (forbidReserve && effType === 'reserve') {
+      setMessage(t('forbidReserveConflictsWithType'));
+      setStatus('err');
+      return;
+    }
+    const noteRequired = isLate || effType === 'uncertain' || effType === 'reserve';
+    if (noteRequired) {
       const n = note.trim();
       if (n.length < 3) {
-        setMessage(t('lateNoteRequired'));
+        setMessage(t('noteRequiredForState'));
         setStatus('err');
         return;
       }
@@ -136,6 +152,8 @@ export function RaidSignupForm({
             isLate,
             note: note.trim() || null,
             signedSpec,
+            onlySignedSpec,
+            forbidReserve,
           }),
         }
       );
@@ -161,13 +179,13 @@ export function RaidSignupForm({
   const cid = selectedChar ? selectedChar.classId ?? classIdFromMain(selectedChar.mainSpec) : null;
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4 max-w-2xl">
+    <form onSubmit={onSubmit} className="space-y-6 max-w-2xl">
       {reserveOnly && (
         <p className="text-sm text-amber-600 dark:text-amber-500">{t('signupReserveOnlyPhase')}</p>
       )}
 
-      <div>
-        <span className="block text-sm font-medium mb-2">{t('signupCharacter')}</span>
+      <section className="space-y-2">
+        <span className="block text-sm font-semibold">{t('signupCharacter')}</span>
         <div className="flex flex-col gap-2">
           {characters.map((c) => {
             const cClass = c.classId ?? classIdFromMain(c.mainSpec);
@@ -180,13 +198,13 @@ export function RaidSignupForm({
                   setCharacterId(c.id);
                   setSignedSpec(c.mainSpec);
                 }}
-                className={`grid items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors min-w-0 ${
+                className={`grid items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors min-w-0 ${
                   active
                     ? 'border-primary bg-primary/10 shadow-sm'
                     : 'border-border bg-card hover:bg-muted/50'
                 }`}
                 style={{
-                  gridTemplateColumns: '24px 28px 1fr minmax(0,auto)',
+                  gridTemplateColumns: '24px 26px 1fr auto',
                 }}
               >
                 <span className="flex shrink-0 items-center justify-center w-6 h-7">
@@ -202,115 +220,127 @@ export function RaidSignupForm({
                 </span>
                 <span className="font-medium truncate">{c.name}</span>
                 <span className="flex items-center gap-1 justify-end shrink-0">
-                  <SpecIcon spec={c.mainSpec} size={22} />
+                  <button
+                    type="button"
+                    title={t('signupWithMainSpec')}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCharacterId(c.id);
+                      setSignedSpec(c.mainSpec);
+                    }}
+                    className={`inline-flex rounded ${characterId === c.id && signedSpec === c.mainSpec ? 'ring-2 ring-primary/60' : ''}`}
+                  >
+                    <SpecIcon spec={c.mainSpec} size={22} />
+                  </button>
                   {c.offSpec && (
-                    <>
-                      <span className="text-muted-foreground text-xs">/</span>
-                      <span className="grayscale inline-flex opacity-90">
-                        <SpecIcon spec={c.offSpec} size={22} />
-                      </span>
-                    </>
+                    <button
+                      type="button"
+                      title={t('signupWithOffSpec')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCharacterId(c.id);
+                        setSignedSpec(c.offSpec!);
+                      }}
+                      className={`inline-flex rounded ${characterId === c.id && signedSpec === c.offSpec ? 'ring-2 ring-primary/60' : 'opacity-75'}`}
+                    >
+                      <SpecIcon spec={c.offSpec} size={22} />
+                    </button>
                   )}
                 </span>
               </button>
             );
           })}
         </div>
-      </div>
+      </section>
+      {selectedChar && cid && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <ClassIcon classId={cid} size={20} />
+          <span>{signedSpec}</span>
+        </div>
+      )}
 
-      {selectedChar && (
-        <div>
-          <span className="block text-sm font-medium mb-2">{t('signupSpecChoice')}</span>
-          <div className="flex items-center gap-3">
+      <section className="space-y-3">
+        <span className="block text-sm font-semibold">{t('signupType')}</span>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { key: 'normal' as const, icon: '✅', label: t('signupType_verfugbar') },
+            { key: 'uncertain' as const, icon: '❔', label: t('signupType_uncertain') },
+            { key: 'reserve' as const, icon: '🪑', label: t('signupType_reserve') },
+          ].map((opt) => (
             <button
+              key={opt.key}
               type="button"
-              onClick={() => setSignedSpec(selectedChar.mainSpec)}
-              className={`inline-flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ${
-                signedSpec === selectedChar.mainSpec
-                  ? 'border-primary bg-primary/10'
-                  : 'border-border'
-              }`}
+              disabled={reserveOnly && opt.key !== 'reserve'}
+              onClick={() => setType(opt.key)}
+              className={`rounded-md border px-2 py-2 text-xs sm:text-sm ${
+                type === opt.key ? 'border-primary bg-primary/10' : 'border-border bg-card'
+              } ${reserveOnly && opt.key !== 'reserve' ? 'opacity-40 cursor-not-allowed' : ''}`}
+              title={opt.label}
             >
-              <SpecIcon spec={selectedChar.mainSpec} size={24} />
-              {t('signupWithMainSpec')}
+              <span className="mr-1.5">{opt.icon}</span>
+              {opt.label}
             </button>
-            {selectedChar.offSpec && (
-              <button
-                type="button"
-                onClick={() => setSignedSpec(selectedChar.offSpec!)}
-                className={`inline-flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ${
-                signedSpec === selectedChar.offSpec
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <span className="block text-sm font-semibold">{t('signupPunctuality')}</span>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { key: 'on_time' as const, icon: '🟢', label: t('punctualityOnTime') },
+            { key: 'tight' as const, icon: '🟡', label: t('punctualityTight') },
+            { key: 'late' as const, icon: '🔴', label: t('punctualityLate') },
+          ].map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setPunctuality(opt.key)}
+              className={`rounded-md border px-2 py-2 text-xs sm:text-sm ${
+                punctuality === opt.key
                   ? 'border-primary bg-primary/10'
-                  : 'border-border'
+                  : 'border-border bg-card'
               }`}
-              >
-                <SpecIcon spec={selectedChar.offSpec} size={24} />
-                {t('signupWithOffSpec')}
-              </button>
-            )}
-          </div>
-          {cid && (
-            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-              <ClassIcon classId={cid} size={20} />
-              <span>{signedSpec}</span>
-            </div>
-          )}
+              title={opt.label}
+            >
+              <span className="mr-1.5">{opt.icon}</span>
+              {opt.label}
+            </button>
+          ))}
         </div>
-      )}
+      </section>
 
-      {!reserveOnly && (
-        <div>
-          <span className="block text-sm font-medium mb-2">{t('signupType')}</span>
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="signup-type"
-                checked={type === 'normal'}
-                onChange={() => setType('normal')}
-              />
-              {t('signupType_verfugbar')}
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="signup-type"
-                checked={type === 'uncertain'}
-                onChange={() => setType('uncertain')}
-              />
-              {t('signupType_uncertain')}
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                name="signup-type"
-                checked={type === 'reserve'}
-                onChange={() => setType('reserve')}
-              />
-              {t('signupType_reserve')}
-            </label>
-          </div>
+      <section className="space-y-3">
+        <span className="block text-sm font-semibold">{t('signupConditions')}</span>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setOnlySignedSpec((v) => !v)}
+            className={`rounded-md border px-3 py-2 text-left text-sm ${
+              onlySignedSpec ? 'border-primary bg-primary/10' : 'border-border bg-card'
+            }`}
+          >
+            <span className="mr-2">{onlySignedSpec ? '☑️' : '⬜'}</span>
+            {t('conditionOnlySignedSpec')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setForbidReserve((v) => !v)}
+            className={`rounded-md border px-3 py-2 text-left text-sm ${
+              forbidReserve ? 'border-primary bg-primary/10' : 'border-border bg-card'
+            }`}
+          >
+            <span className="mr-2">{forbidReserve ? '☑️' : '⬜'}</span>
+            {t('conditionForbidReserve')}
+          </button>
         </div>
-      )}
-
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={isLate}
-          onChange={(e) => {
-            setIsLate(e.target.checked);
-            if (!e.target.checked) setMessage(null);
-          }}
-        />
-        {t('lateCheckbox')}
-      </label>
+      </section>
 
       <div>
         <label htmlFor="raid-signup-note" className="block text-sm font-medium mb-1">
-          {isLate ? (
+          {isLate || type === 'uncertain' || type === 'reserve' ? (
             <>
-              {t('lateNoteHint')}{' '}
-              <span className="text-destructive">*</span>
+              {t('noteRequiredLabel')} <span className="text-destructive">*</span>
             </>
           ) : (
             t('commentOptional')
@@ -320,12 +350,18 @@ export function RaidSignupForm({
           id="raid-signup-note"
           rows={3}
           className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-          placeholder={isLate ? t('lateNotePlaceholder') : undefined}
+          placeholder={
+            isLate || type === 'uncertain' || type === 'reserve'
+              ? t('noteRequiredPlaceholder')
+              : undefined
+          }
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
       </div>
 
+      <input type="hidden" name="onlySignedSpec" value={onlySignedSpec ? '1' : '0'} />
+      <input type="hidden" name="forbidReserve" value={forbidReserve ? '1' : '0'} />
       <button
         type="submit"
         disabled={status === 'saving'}

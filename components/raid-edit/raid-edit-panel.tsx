@@ -49,6 +49,8 @@ export type RaidEditSignupRow = {
   characterId: string | null;
   type: string;
   signedSpec: string | null;
+  onlySignedSpec: boolean;
+  forbidReserve: boolean;
   isLate: boolean;
   note: string | null;
   leaderAllowsReserve: boolean;
@@ -464,6 +466,22 @@ export function RaidEditPanel({
         <span className="text-muted-foreground text-xs whitespace-nowrap">
           ({stats.dungeon}/{stats.total})
         </span>
+        {s.onlySignedSpec && (
+          <span
+            className="text-[10px] sm:text-xs rounded border border-amber-600/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 px-1 py-0.5 shrink-0 max-w-[7rem] truncate"
+            title={tDetail('badgeOnlySignedSpec')}
+          >
+            {tDetail('badgeOnlySignedSpec')}
+          </span>
+        )}
+        {s.forbidReserve && (
+          <span
+            className="text-[10px] sm:text-xs rounded border border-muted-foreground/40 bg-muted/60 px-1 py-0.5 shrink-0 max-w-[7rem] truncate"
+            title={tDetail('badgeUserForbidReserve')}
+          >
+            {tDetail('badgeUserForbidReserve')}
+          </span>
+        )}
         {s.note?.trim() ? (
           <span className="text-base" title={showAllNotes || (s.note?.length ?? 0) < 40 ? s.note ?? '' : undefined}>
             {showAllNotes ? `📒 ${s.note}` : '📒'}
@@ -497,8 +515,11 @@ export function RaidEditPanel({
           {hasOff ? (
             <button
               type="button"
-              className="px-1.5 py-0.5 rounded border border-border text-xs hover:bg-muted"
-              title={t('cycleSpec')}
+              disabled={s.onlySignedSpec}
+              className="px-1.5 py-0.5 rounded border border-border text-xs hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+              title={
+                s.onlySignedSpec ? tDetail('badgeOnlySignedSpec') : t('cycleSpec')
+              }
               onClick={() => void patchSignup(s.id, { cycleSignedSpec: true })}
             >
               ⇄

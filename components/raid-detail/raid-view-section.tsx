@@ -37,6 +37,8 @@ export type RaidViewRaid = {
     signedSpec: string | null;
     leaderAllowsReserve: boolean;
     leaderMarkedTeilnehmer: boolean;
+    onlySignedSpec: boolean;
+    forbidReserve: boolean;
     character: {
       name: string;
       mainSpec: string;
@@ -116,6 +118,8 @@ export async function RaidViewSection({
     note: s.note,
     leaderAllowsReserve: s.leaderAllowsReserve,
     leaderMarkedTeilnehmer: s.leaderMarkedTeilnehmer,
+    onlySignedSpec: s.onlySignedSpec,
+    forbidReserve: s.forbidReserve,
   }));
 
   const visibilityLabel =

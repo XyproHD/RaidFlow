@@ -264,6 +264,10 @@ model RfRaidSignup {
   isLate        Boolean   @default(false) @map("is_late")
   /// Anmeldung mit Main- oder Off-Spec (Anzeigename wie in rf_character)
   signedSpec    String?   @map("signed_spec")
+  /// User-Bedingung: nur angemeldeter Spec erlaubt (kein Leader-Spec-Wechsel)
+  onlySignedSpec Boolean  @default(false) @map("only_signed_spec")
+  /// User-Bedingung: Reserve verbieten (eigene Anmeldung darf nicht auf Reserve)
+  forbidReserve  Boolean  @default(false) @map("forbid_reserve")
   /// Nur Raidleitung: Reserve für diesen Char zulassen (false = Reserve verbieten)
   leaderAllowsReserve     Boolean   @default(true) @map("leader_allows_reserve")
   /// Nur Raidleitung: als Teilnehmer markiert
