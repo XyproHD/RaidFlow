@@ -68,9 +68,9 @@ type Bootstrap = {
   members: PoolMember[];
 };
 
-type WeekFocusFilter = 'both' | 'weekday' | 'weekend';
-
 type RowColor = 'green' | 'orange' | 'gray';
+type MainAltFilter = 'mains' | 'both' | 'twinks';
+type AvailabilityFilter = 'all' | 'available' | 'limited' | 'unavailable';
 
 function toDatetimeLocalValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -94,11 +94,11 @@ function charAllowedInRestrictedGroup(
   return true;
 }
 
-function memberPassesWeekFocus(m: PoolMember, f: WeekFocusFilter): boolean {
-  if (f === 'both') return true;
+function memberPassesWeekFocus(m: PoolMember, allowWeekday: boolean, allowWeekend: boolean): boolean {
   if (m.weekFocus == null) return true;
-  if (f === 'weekday') return m.weekFocus === 'weekday';
-  return m.weekFocus === 'weekend';
+  if (m.weekFocus === 'weekday') return allowWeekday;
+  if (m.weekFocus === 'weekend') return allowWeekend;
+  return true;
 }
 
 function heatClass(h: SlotHeat): string {
@@ -168,15 +168,16 @@ export function NewRaidWizard({
   const [rangeEndIdx, setRangeEndIdx] = useState(DEFAULT_SLOT_IDX);
   const [pickingEnd, setPickingEnd] = useState(false);
 
-  const [showTwinks, setShowTwinks] = useState(true);
-  const [onlyMains, setOnlyMains] = useState(false);
-  const [weekFocusFilter, setWeekFocusFilter] = useState<WeekFocusFilter>('both');
+  const [mainAltFilter, setMainAltFilter] = useState<MainAltFilter>('mains');
+  const [allowWeekday, setAllowWeekday] = useState(true);
+  const [allowWeekend, setAllowWeekend] = useState(true);
   const [roleFilter, setRoleFilter] = useState<Record<TbcRole, boolean>>({
     Tank: true,
     Healer: true,
     Melee: true,
     Range: true,
   });
+  const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>('all');
 
   const signupUntil = useMemo(() => parseDatetimeLocal(signupDatetimeLocal), [signupDatetimeLocal]);
 
@@ -242,10 +243,10 @@ export function NewRaidWizard({
     const out: { userId: string; member: PoolMember; character: PoolCharacter }[] = [];
     for (const m of data.members) {
       if (m.roleInGuild === 'member') continue;
-      if (!memberPassesWeekFocus(m, weekFocusFilter)) continue;
+      if (!memberPassesWeekFocus(m, allowWeekday, allowWeekend)) continue;
       const eligible = m.characters.filter((c) => {
-        if (!showTwinks && !c.isMain) return false;
-        if (onlyMains && !c.isMain) return false;
+        if (mainAltFilter === 'mains' && !c.isMain) return false;
+        if (mainAltFilter === 'twinks' && c.isMain) return false;
         if (restriction && !charAllowedInRestrictedGroup(c.id, m, restriction, data.groupCharAllowed)) {
           return false;
         }
@@ -263,9 +264,9 @@ export function NewRaidWizard({
     return out;
   }, [
     data,
-    weekFocusFilter,
-    showTwinks,
-    onlyMains,
+    allowWeekday,
+    allowWeekend,
+    mainAltFilter,
     restriction,
     roleFilter,
     anyRoleSelected,
@@ -277,31 +278,35 @@ export function NewRaidWizard({
     const rows: { member: PoolMember; character: PoolCharacter; color: RowColor }[] = [];
     for (const m of data.members) {
       if (m.roleInGuild === 'member') continue;
-      if (!memberPassesWeekFocus(m, weekFocusFilter)) continue;
+      if (!memberPassesWeekFocus(m, allowWeekday, allowWeekend)) continue;
       for (const c of m.characters) {
-        if (!showTwinks && !c.isMain) continue;
-        if (onlyMains && !c.isMain) continue;
+        if (mainAltFilter === 'mains' && !c.isMain) continue;
+        if (mainAltFilter === 'twinks' && c.isMain) continue;
         if (restriction && !charAllowedInRestrictedGroup(c.id, m, restriction, data.groupCharAllowed)) {
           continue;
         }
         if (c.role && anyRoleSelected && !roleFilter[c.role]) continue;
         if (!c.role) continue;
         const color = availabilityColorForRaidWindow(m.raidTimeSlots, scheduledDate, rangeSlotStrings);
+        if (availabilityFilter === 'available' && color !== 'green') continue;
+        if (availabilityFilter === 'limited' && color !== 'orange') continue;
+        if (availabilityFilter === 'unavailable' && color !== 'gray') continue;
         rows.push({ member: m, character: c, color });
       }
     }
     return rows;
   }, [
     data,
-    weekFocusFilter,
-    showTwinks,
-    onlyMains,
+    allowWeekday,
+    allowWeekend,
+    mainAltFilter,
     restriction,
     roleFilter,
     anyRoleSelected,
     scheduledDate,
     rangeSlotStrings,
     raidGroupRestrictionId,
+    availabilityFilter,
   ]);
 
   const slotHeat = useMemo((): SlotHeat[] => {
@@ -410,7 +415,25 @@ export function NewRaidWizard({
   }, [filteredPool]);
 
   const toggleRole = (r: TbcRole) => {
-    setRoleFilter((prev) => ({ ...prev, [r]: !prev[r] }));
+    setRoleFilter((prev) => {
+      const next = { ...prev, [r]: !prev[r] };
+      const any = ROLE_ORDER.some((x) => next[x]);
+      return any ? next : prev;
+    });
+  };
+
+  const toggleAllowWeekday = () => {
+    setAllowWeekday((prev) => {
+      const next = !prev;
+      return next || allowWeekend ? next : prev;
+    });
+  };
+
+  const toggleAllowWeekend = () => {
+    setAllowWeekend((prev) => {
+      const next = !prev;
+      return next || allowWeekday ? next : prev;
+    });
   };
 
   const addMinSpecRow = () => {
@@ -861,21 +884,13 @@ export function NewRaidWizard({
               <span className="text-xl leading-none" aria-hidden>
                 👥
               </span>
-              <span className="tabular-nums text-lg font-semibold">{liveStats.signupCount}</span>
-              <span className="text-muted-foreground tabular-nums">/</span>
-              <span className="tabular-nums text-muted-foreground">{maxPlayers}</span>
-            </span>
-            <span className="flex items-center gap-1.5" title={t('liveAvailable', { n: liveStats.availablePlayers })}>
-              <span className="text-xl leading-none" aria-hidden>
-                ✓
-              </span>
-              <span className="tabular-nums text-lg font-semibold">{liveStats.availablePlayers}</span>
+              <span className="tabular-nums text-lg font-semibold">{maxPlayers}</span>
             </span>
           </div>
 
           <p className="text-xs text-muted-foreground">{t('timelineClickHint')}</p>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[5.5rem_minmax(0,1fr)_minmax(200px,280px)] gap-4 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[4.75rem_minmax(0,1fr)_minmax(210px,300px)] gap-4 items-start">
             <div className="flex flex-col gap-0.5 lg:sticky lg:top-4">
               {SLOTS.map((slot, i) => {
                 const inRange = rangeIndices.includes(i);
@@ -886,13 +901,25 @@ export function NewRaidWizard({
                     type="button"
                     onClick={() => handleTimelineClick(i)}
                     className={cn(
-                      'h-8 w-full rounded border text-[11px] font-medium transition-colors',
-                      heatClass(heat),
+                      'h-8 w-full rounded border text-[11px] font-medium transition-colors bg-background hover:bg-muted/40',
+                      'border-border',
                       inRange && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
                       pickingEnd && rangeStartIdx === i && 'ring-2 ring-amber-500'
                     )}
                   >
-                    {slot}
+                    <span className="flex items-center justify-between gap-2 px-2">
+                      <span className="tabular-nums">{slot}</span>
+                      <span
+                        aria-hidden
+                        className={cn(
+                          'inline-block h-2.5 w-2.5 rounded-full border',
+                          heat === 'green' && 'bg-emerald-500 border-emerald-600',
+                          heat === 'yellow' && 'bg-yellow-400 border-yellow-600',
+                          heat === 'orange' && 'bg-orange-500 border-orange-600',
+                          heat === 'red' && 'bg-red-500 border-red-600'
+                        )}
+                      />
+                    </span>
                   </button>
                 );
               })}
@@ -960,55 +987,114 @@ export function NewRaidWizard({
 
             <div className="rounded-xl border border-border bg-muted/15 p-4 space-y-3 lg:sticky lg:top-4">
               <p className="text-sm font-medium border-b border-border pb-2">{t('filters')}</p>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={showTwinks}
-                  onChange={(e) => setShowTwinks(e.target.checked)}
-                />
-                {t('filterTwinks')}
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={onlyMains}
-                  onChange={(e) => setOnlyMains(e.target.checked)}
-                />
-                {t('filterOnlyMains')}
-              </label>
-              <div className="space-y-1.5 text-sm">
-                <span className="text-muted-foreground text-xs">{t('filterWeekFocus')}</span>
-                {(
-                  [
-                    ['both', t('focusBoth')],
-                    ['weekday', t('focusWeekday')],
-                    ['weekend', t('focusWeekend')],
-                  ] as const
-                ).map(([v, label]) => (
-                  <label key={v} className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="weekFocusRp"
-                      checked={weekFocusFilter === v}
-                      onChange={() => setWeekFocusFilter(v)}
-                    />
-                    {label}
-                  </label>
-                ))}
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{t('filterChars')}</span>
+                <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+                  {(
+                    [
+                      ['mains', t('filterCharsMains')],
+                      ['both', t('filterCharsBoth')],
+                      ['twinks', t('filterCharsTwinks')],
+                    ] as const
+                  ).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setMainAltFilter(v)}
+                      className={cn(
+                        'rounded-md px-2.5 py-1.5 text-sm flex-1',
+                        mainAltFilter === v
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="space-y-1.5 text-sm pt-1">
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{t('filterDays')}</span>
+                <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+                  <button
+                    type="button"
+                    onClick={toggleAllowWeekday}
+                    className={cn(
+                      'rounded-md px-3 py-1.5 text-sm flex-1',
+                      allowWeekday
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                    )}
+                    aria-pressed={allowWeekday}
+                  >
+                    {t('focusWeekday')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleAllowWeekend}
+                    className={cn(
+                      'rounded-md px-3 py-1.5 text-sm flex-1',
+                      allowWeekend
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                    )}
+                    aria-pressed={allowWeekend}
+                  >
+                    {t('focusWeekend')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
                 <span className="text-muted-foreground text-xs">{t('filterRoles')}</span>
-                <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {ROLE_ORDER.map((r) => (
-                    <label key={r} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={roleFilter[r]}
-                        onChange={() => toggleRole(r)}
-                      />
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => toggleRole(r)}
+                      className={cn(
+                        'rounded-lg border px-2 py-1.5 text-sm flex items-center gap-2 justify-start',
+                        roleFilter[r]
+                          ? 'border-primary/50 bg-primary/10 text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                      )}
+                      aria-pressed={roleFilter[r]}
+                      title={r}
+                    >
                       <RoleIcon role={r} size={18} />
                       <span>{r}</span>
-                    </label>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <span className="text-muted-foreground text-xs">{t('filterAvailability')}</span>
+                <div className="flex flex-col gap-2">
+                  {(
+                    [
+                      ['all', t('filterAvailabilityAll')],
+                      ['available', t('filterAvailabilityAvailable')],
+                      ['limited', t('filterAvailabilityLimited')],
+                      ['unavailable', t('filterAvailabilityUnavailable')],
+                    ] as const
+                  ).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setAvailabilityFilter(v)}
+                      className={cn(
+                        'rounded-lg border px-3 py-1.5 text-sm text-left',
+                        availabilityFilter === v
+                          ? 'border-primary/50 bg-primary/10 text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                      )}
+                      aria-pressed={availabilityFilter === v}
+                    >
+                      {label}
+                    </button>
                   ))}
                 </div>
               </div>
