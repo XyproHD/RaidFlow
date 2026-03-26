@@ -10,6 +10,7 @@ import { GuildBattlenetSection } from '@/components/guild-battlenet-section';
 import { getAllSpecDisplayNames } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
+import { BattlenetLogo } from '@/components/battlenet-logo';
 
 type RaidGroup = { id: string; name: string; discordRoleId: string | null; sortOrder: number };
 type GuildCharacter = {
@@ -675,10 +676,11 @@ function CharacterCard({
         </CharacterDiscordNameHint>
         {ch.hasBattlenet ? (
           <span
-            className="shrink-0 rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+            className="shrink-0 inline-flex items-center justify-center rounded border border-border bg-muted/60 px-1.5 py-0.5"
             title={tProfile('bnetLinkedBadgeTitle')}
+            aria-label={tProfile('bnetLinkedBadgeTitle')}
           >
-            {tProfile('bnetLinkedBadge')}
+            <BattlenetLogo size={12} />
           </span>
         ) : null}
         <CharacterGearscoreBadge

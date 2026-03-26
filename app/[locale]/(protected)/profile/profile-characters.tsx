@@ -18,6 +18,7 @@ import {
 import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
+import { BattlenetLogo } from '@/components/battlenet-logo';
 
 type CharacterRow = {
   id: string;
@@ -863,10 +864,11 @@ export function ProfileCharacters({
                       </CharacterDiscordNameHint>
                       {c.hasBattlenet ? (
                         <span
-                          className="shrink-0 rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                          className="shrink-0 inline-flex items-center justify-center rounded border border-border bg-muted/60 px-1.5 py-0.5"
                           title={t('bnetLinkedBadgeTitle')}
+                          aria-label={t('bnetLinkedBadgeTitle')}
                         >
-                          {t('bnetLinkedBadge')}
+                          <BattlenetLogo size={12} />
                         </span>
                       ) : null}
                       <CharacterGearscoreBadge

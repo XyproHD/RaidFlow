@@ -11,6 +11,7 @@ import { RoleIcon } from '@/components/role-icon';
 import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
+import { BattlenetLogo } from '@/components/battlenet-logo';
 
 export type DashboardGuild = {
   id: string;
@@ -471,10 +472,11 @@ export function DashboardClient({
                           <span className="font-medium text-foreground truncate">{s.signedCharacterName ?? '–'}</span>
                           {s.characterHasBattlenet ? (
                             <span
-                              className="shrink-0 rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                              className="shrink-0 inline-flex items-center justify-center rounded border border-border bg-muted/60 px-1.5 py-0.5"
                               title={t('bnetLinkedBadgeTitle')}
+                              aria-label={t('bnetLinkedBadgeTitle')}
                             >
-                              {t('bnetLinkedBadge')}
+                              <BattlenetLogo size={12} />
                             </span>
                           ) : null}
                           <CharacterGearscoreBadge
