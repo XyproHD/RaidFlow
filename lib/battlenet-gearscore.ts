@@ -25,13 +25,50 @@ type BnetEquipmentPayload = {
 function extractEquipmentHref(rawProfile: unknown): string | null {
   if (!rawProfile || typeof rawProfile !== 'object') return null;
   const root = rawProfile as Record<string, unknown>;
-  const profileNode =
-    root.profile && typeof root.profile === 'object'
-      ? (root.profile as Record<string, unknown>)
-      : root;
-  const links = profileNode._links as { equipment?: { href?: string } } | undefined;
-  const href = links?.equipment?.href;
-  return typeof href === 'string' && href.trim().length > 0 ? href : null;
+  const candidates: Record<string, unknown>[] = [];
+  candidates.push(root);
+  if (root.profile && typeof root.profile === 'object') {
+    candidates.push(root.profile as Record<string, unknown>);
+  }
+  for (const candidate of candidates) {
+    const links = candidate._links as { equipment?: { href?: string } } | undefined;
+    const href = links?.equipment?.href;
+    if (typeof href === 'string' && href.trim().length > 0) return href;
+  }
+  return null;
+}
+
+function profileNamespaceForWowVersion(region: WowRegion, wowVersion: string | null | undefined): string {
+  const v = (wowVersion ?? '').trim().toLowerCase();
+  if (v === 'anniversary' || v === 'tbc') return `profile-classicann-${region}`;
+  if (v === 'progression' || v === 'mop') return `profile-classic-${region}`;
+  return `profile-classic1x-${region}`;
+}
+
+async function resolveEquipmentHrefViaProfileFetch(
+  character: Awaited<ReturnType<typeof loadCharacterWithBattlenetProfile>>,
+  config: Awaited<ReturnType<typeof getBattlenetConfigForRegion>>,
+  accessToken: string
+): Promise<string | null> {
+  if (!character?.battlenetProfile || !config) return null;
+  const realmSlug = character.battlenetProfile.realmSlug?.trim().toLowerCase();
+  const characterNameLower = character.battlenetProfile.characterNameLower?.trim().toLowerCase();
+  if (!realmSlug || !characterNameLower) return null;
+
+  const region = toWowRegion(character.battlenetProfile.region);
+  const namespace = profileNamespaceForWowVersion(region, character.battlenetProfile.wowVersion);
+  const profileUrl = new URL(`${config.apiBaseUrl}${config.profileCharacterPath}/${realmSlug}/${characterNameLower}`);
+  profileUrl.searchParams.set('namespace', namespace);
+  profileUrl.searchParams.set('locale', config.locale);
+
+  try {
+    const res = await fetch(profileUrl.toString(), battlenetBearerInit(accessToken));
+    if (!res.ok) return null;
+    const profilePayload = (await res.json()) as unknown;
+    return extractEquipmentHref(profilePayload);
+  } catch {
+    return null;
+  }
 }
 
 function toGearscoreItems(payload: BnetEquipmentPayload): GearscoreItem[] {
@@ -95,7 +132,9 @@ export async function refreshCharacterGearscore(characterId: string): Promise<{
   if (!config) throw new Error('Keine aktive Battle.net Konfiguration gefunden.');
   const accessToken = await getBattlenetAccessToken(config);
 
-  const equipmentHref = extractEquipmentHref(character.battlenetProfile.rawProfile);
+  const equipmentHref =
+    extractEquipmentHref(character.battlenetProfile.rawProfile) ??
+    (await resolveEquipmentHrefViaProfileFetch(character, config, accessToken));
   if (!equipmentHref) throw new Error('Keine Battle.net Equipment-Referenz gefunden. Bitte BNet Sync erneut ausführen.');
 
   const equipmentUrl = new URL(equipmentHref);
