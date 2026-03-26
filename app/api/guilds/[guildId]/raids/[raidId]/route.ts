@@ -283,3 +283,29 @@ export async function PATCH(
   void syncRaidThreadSummary(raidId);
   return NextResponse.json({ ok: true, resetSignups: timeChanged && confirmResetSignups });
 }
+
+/**
+ * DELETE /api/guilds/[guildId]/raids/[raidId]
+ * Raidleader/Gildenmeister: Raid vollständig löschen.
+ */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ guildId: string; raidId: string }> }
+) {
+  const { guildId, raidId } = await params;
+  const auth = await requireRaidPlannerOrForbid(guildId);
+  if (auth instanceof NextResponse) return auth;
+
+  const raid = await prisma.rfRaid.findFirst({
+    where: { id: raidId, guildId },
+    select: { id: true },
+  });
+  if (!raid) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  await prisma.rfRaid.delete({
+    where: { id: raidId },
+  });
+  return NextResponse.json({ ok: true });
+}

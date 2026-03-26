@@ -136,6 +136,13 @@ function roleForSpecDisplayName(specDisplayName: string | null): string | null {
   return spec?.role ?? null;
 }
 
+function signupIndicator(signupUntilIso: string): { icon: '🟢' | '🟡' | '🔴'; isClosed: boolean } {
+  const remainingMs = new Date(signupUntilIso).getTime() - Date.now();
+  if (remainingMs <= 0) return { icon: '🔴', isClosed: true };
+  if (remainingMs < 30 * 60 * 60 * 1000) return { icon: '🟡', isClosed: false };
+  return { icon: '🟢', isClosed: false };
+}
+
 export function DashboardClient({
   guilds,
   characters,
@@ -157,6 +164,9 @@ export function DashboardClient({
   const [openSignupMenuKey, setOpenSignupMenuKey] = useState<string | null>(null);
   const [openSignupMenuPos, setOpenSignupMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [openNewRaidMenuPos, setOpenNewRaidMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [openCalendarActionRaidId, setOpenCalendarActionRaidId] = useState<string | null>(null);
+  const [openCalendarActionPos, setOpenCalendarActionPos] = useState<{ top: number; left: number } | null>(null);
+  const [expandedSignupUntilRaidId, setExpandedSignupUntilRaidId] = useState<string | null>(null);
   const [calendarView, setCalendarView] = useState<'tiles' | 'list'>('tiles');
   const [showDays, setShowDays] = useState<7 | 14 | 21>(14);
   const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => startOfDay(new Date()));
@@ -175,6 +185,8 @@ export function DashboardClient({
     setOpenSignupMenuKey(null);
     setOpenSignupMenuPos(null);
     setOpenNewRaidMenuPos(null);
+    setOpenCalendarActionRaidId(null);
+    setOpenCalendarActionPos(null);
   };
 
   useEffect(() => {
@@ -671,8 +683,11 @@ export function DashboardClient({
                         const status = myStatusIcon(r.status, r.mySignup);
                         const noteOpen = expandedNoteRaidId === r.id;
                         const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
-                        const signupUntilLabel = formatTime(locale, new Date(r.signupUntilIso));
-                        const signupUntilDateLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(r.signupUntilIso));
+                        const signupUntilDateTimeLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
+                          new Date(r.signupUntilIso)
+                        );
+                        const signupState = signupIndicator(r.signupUntilIso);
+                        const signupUntilOpen = expandedSignupUntilRaidId === r.id;
                         return (
                           <div key={r.id} className="rounded-md border border-border bg-background px-2 py-2">
                             <div className="flex items-start justify-between gap-2">
@@ -693,22 +708,38 @@ export function DashboardClient({
                                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                                   <span className="capitalize">{r.status}</span>
                                 </div>
-                                {r.status === 'open' ? (
-                                  <div className="mt-1 text-xs text-muted-foreground">
-                                    {t('signupOpenUntil')}: {signupUntilDateLabel} {signupUntilLabel}
-                                  </div>
-                                ) : null}
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  <button
+                                    type="button"
+                                    className="inline-flex items-center gap-1 hover:text-foreground"
+                                    title={signupUntilDateTimeLabel}
+                                    onClick={() => setExpandedSignupUntilRaidId(signupUntilOpen ? null : r.id)}
+                                  >
+                                    <span>Anmeldung:</span>
+                                    <span>{signupState.icon}</span>
+                                  </button>
+                                  {signupUntilOpen ? <div className="mt-1 text-[11px]">{signupUntilDateTimeLabel}</div> : null}
+                                </div>
                               </div>
                               <div className="ml-auto flex items-center gap-2">
                                 {r.canEdit ? (
-                                  <Link
-                                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=edit`}
-                                    className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
-                                    aria-label={t('raidEdit')}
-                                    title={t('raidEdit')}
+                                  <button
+                                    type="button"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+                                    aria-label={t('actions')}
+                                    title={t('actions')}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const pos = openMenuAtButton(e.currentTarget);
+                                      setOpenCalendarActionPos(pos);
+                                      setOpenCalendarActionRaidId(openCalendarActionRaidId === r.id ? null : r.id);
+                                      setOpenSignupMenuKey(null);
+                                      setOpenSignupMenuPos(null);
+                                      setOpenNewRaidMenuPos(null);
+                                    }}
                                   >
-                                    ✏️
-                                  </Link>
+                                    ⋮
+                                  </button>
                                 ) : null}
                                 {r.hasNote ? (
                                   <button
@@ -740,39 +771,49 @@ export function DashboardClient({
                               </div>
                               <div className="flex items-center gap-2">
                                 {!r.mySignup ? (
-                                  <Link
-                                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                                    className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
-                                    aria-label={t('signupStart')}
-                                    title={t('signupStart')}
-                                  >
-                                    ➕
-                                  </Link>
-                                ) : (
-                                  <>
+                                  r.status === 'open' ? (
                                     <Link
                                       href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
                                       className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
-                                      aria-label={t('signupEdit')}
-                                      title={t('signupEdit')}
+                                      aria-label={t('signupStart')}
+                                      title={t('signupStart')}
                                     >
-                                      ⚙️
+                                      ➕
                                     </Link>
-                                    <button
-                                      type="button"
-                                      className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
-                                      aria-label={t('signupWithdraw')}
-                                      title={t('signupWithdraw')}
-                                      onClick={async () => {
-                                        await fetch(
-                                          `/api/guilds/${encodeURIComponent(r.guildId)}/raids/${encodeURIComponent(r.id)}/signups`,
-                                          { method: 'DELETE' }
-                                        );
-                                        router.refresh();
-                                      }}
-                                    >
-                                      ➖
-                                    </button>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground">Anmeldung gesperrt</span>
+                                  )
+                                ) : (
+                                  <>
+                                    {r.status === 'open' ? (
+                                      <>
+                                        <Link
+                                          href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
+                                          className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                                          aria-label={t('signupEdit')}
+                                          title={t('signupEdit')}
+                                        >
+                                          ⚙️
+                                        </Link>
+                                        <button
+                                          type="button"
+                                          className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                                          aria-label={t('signupWithdraw')}
+                                          title={t('signupWithdraw')}
+                                          onClick={async () => {
+                                            await fetch(
+                                              `/api/guilds/${encodeURIComponent(r.guildId)}/raids/${encodeURIComponent(r.id)}/signups`,
+                                              { method: 'DELETE' }
+                                            );
+                                            router.refresh();
+                                          }}
+                                        >
+                                          ➖
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">Anmeldung gesperrt</span>
+                                    )}
                                   </>
                                 )}
                               </div>
@@ -797,9 +838,10 @@ export function DashboardClient({
                 <tr className="text-left">
                   <th className="px-3 py-2">{t('scheduledAt')}</th>
                   <th className="px-3 py-2">{t('raid')}</th>
-                  <th className="px-3 py-2">{t('guild')}</th>
+                  <th className="px-3 py-2">Anmeldung bis</th>
                   <th className="px-3 py-2">{t('status')}</th>
                   <th className="px-3 py-2">{t('myStatus')}</th>
+                  <th className="px-3 py-2">Schnellaktion</th>
                   <th className="px-3 py-2 text-right">{t('actions')}</th>
                 </tr>
               </thead>
@@ -807,6 +849,10 @@ export function DashboardClient({
                 {calendarRaidsSorted.map((r) => {
                   const status = myStatusIcon(r.status, r.mySignup);
                   const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
+                  const signupUntilLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
+                    new Date(r.signupUntilIso)
+                  );
+                  const signupState = signupIndicator(r.signupUntilIso);
                   return (
                     <tr key={r.id} className="border-b border-border last:border-b-0 odd:bg-background even:bg-muted/10 hover:bg-muted/20">
                       <td className="px-3 py-2 text-muted-foreground">
@@ -818,19 +864,67 @@ export function DashboardClient({
                           {r.name}
                         </Link>
                         <div className="text-xs text-muted-foreground">{r.dungeonName}</div>
+                        <div className="text-xs text-muted-foreground">@ {r.guildName}</div>
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground">{r.guildName}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        <span title={signupUntilLabel}>Anmeldung: {signupState.icon}</span>
+                      </td>
                       <td className="px-3 py-2 text-muted-foreground capitalize">{r.status}</td>
                       <td className="px-3 py-2">{status ? status : <span className="text-muted-foreground">{t('notSignedUp')}</span>}</td>
+                      <td className="px-3 py-2">
+                        {!r.mySignup ? (
+                          r.status === 'open' ? (
+                            <Link
+                              href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
+                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1.5 hover:bg-muted"
+                              title={t('signupStart')}
+                              aria-label={t('signupStart')}
+                            >
+                              <span>➕</span>
+                              <span>Anmelden</span>
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )
+                        ) : r.status === 'open' ? (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1.5 hover:bg-muted"
+                            title={t('signupWithdraw')}
+                            aria-label={t('signupWithdraw')}
+                            onClick={async () => {
+                              await fetch(
+                                `/api/guilds/${encodeURIComponent(r.guildId)}/raids/${encodeURIComponent(r.id)}/signups`,
+                                { method: 'DELETE' }
+                              );
+                              router.refresh();
+                            }}
+                          >
+                            <span>➖</span>
+                            <span>Abmelden</span>
+                          </button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-right">
-                        <Link
-                          href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
+                        <button
+                          type="button"
                           className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
-                          title={t('signupEdit')}
-                          aria-label={t('signupEdit')}
+                          title={t('actions')}
+                          aria-label={t('actions')}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const pos = openMenuAtButton(e.currentTarget);
+                            setOpenCalendarActionPos(pos);
+                            setOpenCalendarActionRaidId(openCalendarActionRaidId === r.id ? null : r.id);
+                            setOpenSignupMenuKey(null);
+                            setOpenSignupMenuPos(null);
+                            setOpenNewRaidMenuPos(null);
+                          }}
                         >
-                          ⚙️
-                        </Link>
+                          ⋮
+                        </button>
                       </td>
                     </tr>
                   );
@@ -840,6 +934,84 @@ export function DashboardClient({
           </div>
         )}
       </section>
+
+      {openCalendarActionRaidId && openCalendarActionPos
+        ? createPortal(
+            <>
+              <div className="fixed inset-0 z-[995] bg-black/20" onMouseDown={() => closeAllMenus()} />
+              <div
+                style={{ position: 'fixed', top: openCalendarActionPos.top, left: openCalendarActionPos.left, zIndex: 1000 }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                {(() => {
+                  const raid = calendarRaids.find((x) => x.id === openCalendarActionRaidId);
+                  if (!raid) return null;
+                  return (
+                    <div className="w-52 rounded-md border border-border bg-background shadow-md overflow-hidden">
+                      {raid.status === 'open' ? (
+                        <Link
+                          href={`/${locale}/guild/${raid.guildId}/raid/${raid.id}?mode=signup`}
+                          className="block px-3 py-2 text-sm hover:bg-muted"
+                          onClick={() => closeAllMenus()}
+                        >
+                          ⚙️ {raid.mySignup ? t('signupEdit') : t('signupStart')}
+                        </Link>
+                      ) : (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">⚙️ Anmeldung gesperrt</div>
+                      )}
+                      {raid.canEdit ? (
+                        <>
+                          <Link
+                            href={`/${locale}/guild/${raid.guildId}/raid/${raid.id}?mode=edit`}
+                            className="block px-3 py-2 text-sm hover:bg-muted"
+                            onClick={() => closeAllMenus()}
+                          >
+                            ✏️ {t('raidEdit')}
+                          </Link>
+                          {raid.status === 'open' ? (
+                            <button
+                              type="button"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted"
+                              onClick={async () => {
+                                await fetch(
+                                  `/api/guilds/${encodeURIComponent(raid.guildId)}/raids/${encodeURIComponent(raid.id)}`,
+                                  {
+                                    method: 'PATCH',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ action: 'cancel' }),
+                                  }
+                                );
+                                closeAllMenus();
+                                router.refresh();
+                              }}
+                            >
+                              🚫 Raid absagen
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted text-destructive"
+                            onClick={async () => {
+                              await fetch(
+                                `/api/guilds/${encodeURIComponent(raid.guildId)}/raids/${encodeURIComponent(raid.id)}`,
+                                { method: 'DELETE' }
+                              );
+                              closeAllMenus();
+                              router.refresh();
+                            }}
+                          >
+                            🗑️ Raid löschen
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  );
+                })()}
+              </div>
+            </>,
+            document.body
+          )
+        : null}
 
       {openNewRaidMenuPos
         ? createPortal(
