@@ -980,14 +980,15 @@ export function NewRaidWizard({
 
                           {character.classId ? <ClassIcon classId={character.classId} size={22} /> : null}
 
-                          <span className="flex items-center gap-2 min-w-0">
+                          <span className="flex items-center gap-1.5">
                             <SpecIcon spec={character.mainSpec} size={22} />
-                            <span className="min-w-0 truncate">
-                              <span className="font-medium">{character.mainSpec}</span>
-                              {character.offSpec ? (
-                                <span className="text-muted-foreground">{` (${character.offSpec})`}</span>
-                              ) : null}
-                            </span>
+                            {character.offSpec ? (
+                              <SpecIcon
+                                spec={character.offSpec}
+                                size={22}
+                                className="grayscale contrast-200 brightness-75"
+                              />
+                            ) : null}
                           </span>
 
                           <span className="font-medium min-w-0 truncate">{character.name}</span>
