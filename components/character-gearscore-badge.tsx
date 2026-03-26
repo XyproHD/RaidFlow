@@ -16,9 +16,11 @@ export function CharacterGearscoreBadge({
 }) {
   const t = useTranslations('profile');
   const [loading, setLoading] = useState(false);
+  const [lastCurrentScore, setLastCurrentScore] = useState<number | null>(null);
+  const [lastSavedHighScore, setLastSavedHighScore] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   if (!hasBattlenet || !characterId) return null;
-  const value = typeof gearScore === 'number' ? String(gearScore) : '----';
 
   const refresh = async () => {
     if (loading) return;
@@ -34,32 +36,37 @@ export function CharacterGearscoreBadge({
         error?: string;
       };
       if (!res.ok) {
-        window.alert(data.error || t('gearscoreRefreshError'));
+        setError(data.error || t('gearscoreRefreshError'));
         return;
       }
+      setError(null);
+      setLastCurrentScore(typeof data.currentScore === 'number' ? data.currentScore : null);
+      setLastSavedHighScore(typeof data.savedHighScore === 'number' ? data.savedHighScore : null);
       if (typeof data.savedHighScore === 'number') onUpdated?.(data.savedHighScore);
-      window.alert(
-        t('gearscoreCurrentPopup', {
-          current: data.currentScore ?? 0,
-          high: data.savedHighScore ?? 0,
-        })
-      );
     } catch {
-      window.alert(t('gearscoreRefreshError'));
+      setError(t('gearscoreRefreshError'));
     } finally {
       setLoading(false);
     }
   };
+
+  const high = typeof lastSavedHighScore === 'number' ? lastSavedHighScore : typeof gearScore === 'number' ? gearScore : null;
+  const cur = typeof lastCurrentScore === 'number' ? lastCurrentScore : null;
+
+  const text =
+    high != null && cur != null && cur < high
+      ? `GS Max: ${high}\nGS Cur: ${cur}`
+      : `GS: ${high != null ? high : '----'}`;
 
   return (
     <button
       type="button"
       onClick={() => void refresh()}
       disabled={loading}
-      className="shrink-0 rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground disabled:opacity-60"
-      title={t('gearscoreBadgeTitle')}
+      className="shrink-0 rounded border border-border bg-muted/60 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-muted-foreground disabled:opacity-60 whitespace-pre-line text-left leading-tight"
+      title={error ?? t('gearscoreBadgeTitle')}
     >
-      {loading ? t('gearscoreRefreshLoading') : `GS: ${value}`}
+      {loading ? t('gearscoreRefreshLoading') : text}
     </button>
   );
 }
