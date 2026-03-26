@@ -212,7 +212,7 @@ export async function POST(
     data: {
       guildId,
       dungeonId,
-      dungeonIds: uniqueDungeonIds.length > 1 ? uniqueDungeonIds : null,
+      dungeonIds: uniqueDungeonIds.length > 1 ? uniqueDungeonIds : undefined,
       name,
       raidLeaderId,
       lootmasterId,

@@ -172,6 +172,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       : [];
 
     const canEditGuildIds = new Set(guilds.filter((g) => g.role === 'raidleader' || g.role === 'guildmaster').map((g) => g.id));
+    const mySignupRows = userId ? await findManyRaidSignupsForDashboard(userId, now, rangeEnd) : [];
 
     const dungeonIdSet = new Set<string>();
     for (const r of raidRows) {
@@ -235,8 +236,6 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
     const canCreateGuildIds = guilds
       .filter((g) => g.role === 'raidleader' || g.role === 'guildmaster')
       .map((g) => g.id);
-
-    const mySignupRows = userId ? await findManyRaidSignupsForDashboard(userId, now, rangeEnd) : [];
 
     const mySignups: DashboardSignupRow[] = mySignupRows.map((s) => ({
       raidId: s.raid.id,
