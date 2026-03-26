@@ -13,6 +13,7 @@ function toWowRegion(region: string): WowRegion {
 type BnetEquipmentItem = {
   level?: { value?: number };
   item_level?: number;
+  item?: { key?: { href?: string } };
   quality?: { type?: string };
   inventory_type?: { type?: string };
   slot?: { type?: string };
@@ -88,6 +89,59 @@ function toGearscoreItems(payload: BnetEquipmentPayload): GearscoreItem[] {
   });
 }
 
+async function resolveItemLevelFromHref(
+  href: string,
+  accessToken: string,
+  locale: string
+): Promise<number | null> {
+  try {
+    const url = new URL(href);
+    url.searchParams.set('locale', locale);
+    url.searchParams.delete('access_token');
+    const res = await fetch(url.toString(), battlenetBearerInit(accessToken));
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      level?: number;
+      preview_item?: { level?: { value?: number }; item_level?: number };
+    };
+    const level = Number(json.level ?? json.preview_item?.level?.value ?? json.preview_item?.item_level ?? 0);
+    if (!Number.isFinite(level) || level <= 0) return null;
+    return level;
+  } catch {
+    return null;
+  }
+}
+
+async function toGearscoreItemsWithItemFallback(
+  payload: BnetEquipmentPayload,
+  accessToken: string,
+  locale: string
+): Promise<GearscoreItem[]> {
+  const out: GearscoreItem[] = [];
+  for (const item of payload.equipped_items ?? []) {
+    const qualityType = item.quality?.type ?? '';
+    const inventoryType = item.inventory_type?.type ?? '';
+    if (!qualityType || !inventoryType) continue;
+
+    let itemLevel = Number(item.item_level ?? item.level?.value ?? 0);
+    if (!Number.isFinite(itemLevel) || itemLevel <= 0) {
+      const href = item.item?.key?.href;
+      if (typeof href === 'string' && href.trim().length > 0) {
+        const resolved = await resolveItemLevelFromHref(href, accessToken, locale);
+        if (resolved != null) itemLevel = resolved;
+      }
+    }
+    if (!Number.isFinite(itemLevel) || itemLevel <= 0) continue;
+    out.push({
+      itemLevel,
+      qualityType,
+      inventoryType,
+      slotType: item.slot?.type ?? null,
+    });
+  }
+  return out;
+}
+
 async function loadCharacterWithBattlenetProfile(characterId: string) {
   try {
     return await prisma.rfCharacter.findUnique({
@@ -146,7 +200,10 @@ export async function refreshCharacterGearscore(characterId: string): Promise<{
   }
 
   const payload = (await eqRes.json()) as BnetEquipmentPayload;
-  const items = toGearscoreItems(payload);
+  let items = toGearscoreItems(payload);
+  if (items.length === 0 && (payload.equipped_items?.length ?? 0) > 0) {
+    items = await toGearscoreItemsWithItemFallback(payload, accessToken, config.locale);
+  }
   const className = character.battlenetProfile.className ?? null;
   const { score } = calculateGearscoreFromItems(items, className);
   const savedHighScore = character.gearScore == null ? score : Math.max(character.gearScore, score);
