@@ -24,7 +24,6 @@ import {
 import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
-import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
@@ -134,7 +133,7 @@ export function NewRaidWizard({
 
   const [data, setData] = useState<Bootstrap | null>(null);
 
-  const [dungeonId, setDungeonId] = useState('');
+  const [dungeonIds, setDungeonIds] = useState<string[]>([]);
   const [name, setName] = useState('');
   const [note, setNote] = useState('');
   const [raidLeaderId, setRaidLeaderId] = useState(currentUserId);
@@ -216,7 +215,7 @@ export function NewRaidWizard({
       setData(json);
       if (json.dungeons.length > 0) {
         const first = json.dungeons[0]!;
-        setDungeonId(first.id);
+        setDungeonIds([first.id]);
         setMaxPlayers(first.maxPlayers);
       }
       if (json.leaders.some((l) => l.userId === currentUserId)) {
@@ -455,6 +454,7 @@ export function NewRaidWizard({
     setSaveError(null);
     setSaving(true);
     try {
+      const dungeonId = dungeonIds[0] ?? '';
       const minSpecs: Record<string, number> = {};
       for (const r of minSpecRows) {
         if (r.spec && r.count > 0) minSpecs[r.spec] = r.count;
@@ -529,12 +529,16 @@ export function NewRaidWizard({
     );
   }
 
+  const effectiveDungeonId = dungeonIds[0] ?? '';
+
   const roleMinConfig = [
     { role: 'Tank' as const, val: minTanks, set: setMinTanks, key: 'minTanks' as const },
     { role: 'Healer' as const, val: minHealers, set: setMinHealers, key: 'minHealers' as const },
     { role: 'Melee' as const, val: minMelee, set: setMinMelee, key: 'minMelee' as const },
     { role: 'Range' as const, val: minRange, set: setMinRange, key: 'minRange' as const },
   ];
+
+  const matchingCount = filteredPool.length;
 
   return (
     <div className="max-w-6xl space-y-8">
@@ -553,22 +557,39 @@ export function NewRaidWizard({
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="text-muted-foreground">{t('dungeon')}</span>
-                <select
-                  className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
-                  value={dungeonId}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setDungeonId(id);
-                    const d = data.dungeons.find((x) => x.id === id);
-                    if (d) setMaxPlayers(d.maxPlayers);
-                  }}
-                >
-                  {data.dungeons.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-2 rounded-md border border-input bg-background px-3 py-2">
+                  {data.dungeons.map((d) => {
+                    const checked = dungeonIds.includes(d.id);
+                    return (
+                      <label key={d.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const nextChecked = e.target.checked;
+                            setDungeonIds((prev) => {
+                              let next: string[];
+                              if (nextChecked) {
+                                next = prev.includes(d.id) ? prev : [...prev, d.id];
+                              } else {
+                                next = prev.filter((x) => x !== d.id);
+                                if (next.length === 0) return prev;
+                              }
+                              const selected = data.dungeons.filter((x) => next.includes(x.id));
+                              const mx = selected.reduce((m, x) => Math.max(m, x.maxPlayers), 0);
+                              if (mx > 0) setMaxPlayers(mx);
+                              return next;
+                            });
+                          }}
+                        />
+                        <span className="min-w-0 truncate">{d.name}</span>
+                        <span className="ml-auto tabular-nums text-xs text-muted-foreground">
+                          {d.maxPlayers}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="text-muted-foreground">{t('raidName')}</span>
@@ -624,7 +645,8 @@ export function NewRaidWizard({
                   max={40}
                   className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
                   value={maxPlayers}
-                  onChange={(e) => setMaxPlayers(Number(e.target.value))}
+                  readOnly
+                  aria-readonly="true"
                 />
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
@@ -801,7 +823,7 @@ export function NewRaidWizard({
               type="button"
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
               onClick={() => {
-                if (!name.trim() || !dungeonId) {
+                if (!name.trim() || !effectiveDungeonId) {
                   setSaveError(t('validationBasics'));
                   return;
                 }
@@ -884,7 +906,9 @@ export function NewRaidWizard({
               <span className="text-xl leading-none" aria-hidden>
                 👥
               </span>
-              <span className="tabular-nums text-lg font-semibold">{maxPlayers}</span>
+              <span className="tabular-nums text-lg font-semibold">{matchingCount}</span>
+              <span className="text-muted-foreground tabular-nums">/</span>
+              <span className="tabular-nums text-muted-foreground">{maxPlayers}</span>
             </span>
           </div>
 
@@ -926,7 +950,7 @@ export function NewRaidWizard({
             </div>
 
             <div className="min-w-0 space-y-6 rounded-xl border border-border bg-card p-4">
-              <h2 className="text-lg font-semibold text-foreground sr-only">{t('sectionPicker')}</h2>
+              <h2 className="text-base font-semibold text-foreground">{t('membersHeading')}</h2>
               {ROLE_ORDER.map((role) => {
                 const list = groupedList.get(role) ?? [];
                 if (list.length === 0) return null;
@@ -947,36 +971,51 @@ export function NewRaidWizard({
                             color === 'gray' && 'opacity-55 border-border bg-muted/30'
                           )}
                         >
-                          {character.classId && (
-                            <ClassIcon classId={character.classId} size={22} />
-                          )}
-                          <SpecIcon spec={character.mainSpec} size={22} />
-                          <span
-                            className="rounded border border-border bg-muted/50 px-1 py-0.5 text-[10px] font-bold text-muted-foreground"
-                            title={t('weekFocusShortTitle')}
-                          >
-                            {weekAbbr(member)}
-                          </span>
-                          <CharacterDiscordNameHint
-                            discordName={character.guildDiscordDisplayName}
-                            className="font-medium min-w-0"
-                          >
-                            {character.name}
-                          </CharacterDiscordNameHint>
-                          {character.hasBattlenet ? (
-                            <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} />
-                          ) : null}
-                          <CharacterGearscoreBadge
-                            characterId={character.id}
-                            hasBattlenet={character.hasBattlenet}
-                            gearScore={character.gearScore}
-                          />
                           <CharacterMainStar
                             isMain={!!character.isMain}
                             titleMain={tProfile('mainLabel')}
                             titleAlt={tProfile('altLabel')}
                             sizePx={16}
                           />
+
+                          {character.classId ? <ClassIcon classId={character.classId} size={22} /> : null}
+
+                          <span className="flex items-center gap-2 min-w-0">
+                            <SpecIcon spec={character.mainSpec} size={22} />
+                            <span className="min-w-0 truncate">
+                              <span className="font-medium">{character.mainSpec}</span>
+                              {character.offSpec ? (
+                                <span className="text-muted-foreground">{` (${character.offSpec})`}</span>
+                              ) : null}
+                            </span>
+                          </span>
+
+                          <span className="font-medium min-w-0 truncate">{character.name}</span>
+
+                          <span className="ml-auto flex items-center gap-2">
+                            {character.guildDiscordDisplayName ? (
+                              <span
+                                className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground max-w-[9rem] truncate"
+                                title={character.guildDiscordDisplayName}
+                              >
+                                {character.guildDiscordDisplayName}
+                              </span>
+                            ) : null}
+                            <span
+                              className="rounded border border-border bg-muted/50 px-1 py-0.5 text-[10px] font-bold text-muted-foreground"
+                              title={t('weekFocusShortTitle')}
+                            >
+                              {weekAbbr(member)}
+                            </span>
+                            {character.hasBattlenet ? (
+                              <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} />
+                            ) : null}
+                            <CharacterGearscoreBadge
+                              characterId={character.id}
+                              hasBattlenet={character.hasBattlenet}
+                              gearScore={character.gearScore}
+                            />
+                          </span>
                         </li>
                       ))}
                     </ul>
