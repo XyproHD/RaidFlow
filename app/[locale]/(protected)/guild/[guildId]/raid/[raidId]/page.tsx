@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import Image from 'next/image';
 import { notFound, redirect } from 'next/navigation';
 import { getServerSession } from 'next-auth';
 import { getTranslations } from 'next-intl/server';
@@ -7,32 +6,18 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { prisma } from '@/lib/prisma';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
-import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
-import { RaidSignupWithdraw } from '@/components/raid-detail/raid-signup-withdraw';
-import { ROLE_ICONS } from '@/lib/role-spec-icons';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
-import {
-  RaidViewSection,
-  type RaidViewRaid,
-} from '@/components/raid-detail/raid-view-section';
+import { RaidDetailView } from '@/components/raid-detail/raid-detail-view';
 import {
   getRaidDetailContext,
   parseRaidPageMode,
   type RaidPageMode,
 } from '@/lib/raid-detail-access';
 import { getParticipationStatsForUsers } from '@/lib/raid-participation-stats';
-import {
-  RaidEditPanel,
-  type RaidEditSerialized,
-} from '@/components/raid-edit/raid-edit-panel';
+import { type RaidEditSerialized } from '@/components/raid-edit/raid-edit-panel';
+import { findManyRfCharactersForDashboard } from '@/lib/rf-character-gear-score-compat';
 
 type SearchParams = Promise<{ mode?: string; modus?: string }>;
-
-function modeNavClass(active: boolean) {
-  return active
-    ? 'text-sm px-3 py-1.5 rounded-md border border-primary bg-primary/10 text-foreground font-medium'
-    : 'text-sm px-3 py-1.5 rounded-md border border-transparent text-muted-foreground hover:border-border';
-}
 
 export default async function RaidDetailPage(props: {
   params: Promise<{ locale: string; guildId: string; raidId: string }>;
@@ -74,7 +59,7 @@ export default async function RaidDetailPage(props: {
     );
   }
 
-  const { raid, canEdit, canSignup, signupPhase } = ctx;
+  const { raid, canEdit, canSignup, signupPhase, guildInfo } = ctx;
   const base = `/${locale}/guild/${guildId}/raid/${raidId}`;
   const canEditRaid = canEdit && raid.status === 'open';
 
@@ -102,18 +87,37 @@ export default async function RaidDetailPage(props: {
     );
   }
 
-  const charRows = await prisma.rfCharacter.findMany({
-    where: { userId, guildId },
-    select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true },
-    orderBy: { name: 'asc' },
-  });
-
-  const characters = charRows.map((c) => ({
-    ...c,
-    classId: getSpecByDisplayName(c.mainSpec)?.classId ?? null,
-  }));
+  const charRows = await findManyRfCharactersForDashboard(userId);
+  const characters = charRows
+    .filter((c) => c.guildId === guildId)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      mainSpec: c.mainSpec,
+      offSpec: c.offSpec,
+      isMain: c.isMain,
+      classId: getSpecByDisplayName(c.mainSpec)?.classId ?? null,
+      gearScore: c.gearScore,
+      hasBattlenet: !!c.battlenetProfile?.battlenetCharacterId,
+    }));
 
   const mySignup = raid.signups.find((s) => s.userId === userId);
+  const mySignupSerialized = mySignup
+    ? {
+        id: mySignup.id,
+        characterId: mySignup.characterId,
+        type: mySignup.type,
+        isLate: mySignup.isLate,
+        note: mySignup.note,
+        signedSpec: mySignup.signedSpec,
+        onlySignedSpec: mySignup.onlySignedSpec,
+        forbidReserve: mySignup.forbidReserve,
+        leaderPlacement: mySignup.leaderPlacement,
+        setConfirmed: mySignup.setConfirmed,
+      }
+    : null;
+
   const typeNorm = (v: string) => (v === 'main' ? 'normal' : v);
   const roleStats = {
     Tank: { normal: 0, uncertain: 0, reserve: 0 },
@@ -193,10 +197,16 @@ export default async function RaidDetailPage(props: {
     })),
   };
 
+  const raidForView = {
+    ...raid,
+    scheduledAt: raid.scheduledAt.toISOString(),
+    scheduledEndAt: raid.scheduledEndAt?.toISOString() ?? null,
+    signupUntil: raid.signupUntil.toISOString(),
+  };
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto space-y-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <h1 className="sr-only">{raid.name}</h1>
         <Link
           href={`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`}
           className="text-sm text-muted-foreground hover:text-foreground hover:underline shrink-0 sm:ml-auto order-first sm:order-none"
@@ -205,169 +215,25 @@ export default async function RaidDetailPage(props: {
         </Link>
       </div>
 
-      <nav className="flex flex-wrap gap-2" aria-label="Raid-Ansicht">
-        <Link href={base} className={modeNavClass(mode === 'view')}>
-          {t('modeView')}
-        </Link>
-        {canEdit ? (
-          canEditRaid ? (
-            <Link href={`${base}?mode=edit`} className={modeNavClass(mode === 'edit')}>
-              {t('modeEdit')}
-            </Link>
-          ) : (
-            <span
-              className="text-sm px-3 py-1.5 rounded-md border border-border text-muted-foreground cursor-not-allowed"
-              title={t('raidEditClosed')}
-            >
-              {t('modeEdit')}
-            </span>
-          )
-        ) : (
-          <span
-            className="text-sm px-3 py-1.5 rounded-md border border-border text-muted-foreground cursor-not-allowed"
-            title={t('forbiddenEdit')}
-          >
-            {t('modeEdit')}
-          </span>
-        )}
-        <Link href={`${base}?mode=signup`} className={modeNavClass(mode === 'signup')}>
-          {t('modeSignup')}
-        </Link>
-      </nav>
-
-      {mode === 'view' && (
-        <RaidViewSection
-          raid={raid as RaidViewRaid}
-          locale={locale}
-          guildId={guildId}
-          raidId={raidId}
-          userId={userId}
-          canEdit={canEdit}
-        />
-      )}
-
-      {mode === 'edit' && canEdit && canEditRaid && (
-        <section className="space-y-4" aria-labelledby="raid-edit-heading">
-          <h2 id="raid-edit-heading" className="text-lg font-semibold">
-            {t('sectionEdit')}
-          </h2>
-          {raid.discordThreadId && (
-            <p className="text-sm">
-              <span className="text-muted-foreground">{t('discordThread')}: </span>
-              <code className="text-xs bg-muted px-1 py-0.5 rounded">{raid.discordThreadId}</code>
-            </p>
-          )}
-          <RaidEditPanel
-            guildId={guildId}
-            raidId={raidId}
-            initialRaid={raidForEdit}
-            participationStats={participationStats}
-          />
-        </section>
-      )}
-      {mode === 'edit' && canEdit && !canEditRaid && (
-        <section className="space-y-2" aria-labelledby="raid-edit-closed-heading">
-          <h2 id="raid-edit-closed-heading" className="text-lg font-semibold">
-            {t('sectionEdit')}
-          </h2>
-          <p className="text-muted-foreground text-sm">{t('raidEditClosed')}</p>
-        </section>
-      )}
-
-      {mode === 'signup' && canSignup && (
-        <section className="space-y-6" aria-labelledby="raid-signup-heading">
-          <h2 id="raid-signup-heading" className="text-lg font-semibold">
-            {t('sectionSignup')}
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border border-border bg-card/50 p-3">
-              <p className="text-xs text-muted-foreground">{t('signupUntil')}</p>
-              <p className="text-sm font-medium">
-                {new Intl.DateTimeFormat(locale, {
-                  dateStyle: 'short',
-                  timeStyle: 'short',
-                }).format(raid.signupUntil)}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-card/50 p-3">
-              <p className="text-xs text-muted-foreground">{t('maxPlayers')}</p>
-              <p className="text-sm font-medium">
-                {raid._count.signups} / {raid.maxPlayers}
-              </p>
-            </div>
-            <div className="rounded-lg border border-border bg-card/50 p-3">
-              <p className="text-xs text-muted-foreground">{t('status')}</p>
-              <p className="text-sm font-medium capitalize">{raid.status}</p>
-            </div>
-            <div className="rounded-lg border border-border bg-card/50 p-3">
-              <p className="text-xs text-muted-foreground">{t('visibility')}</p>
-              <p className="text-sm font-medium">
-                {raid.signupVisibility === 'raid_leader_only'
-                  ? t('visibilityLeaders')
-                  : t('visibilityPublic')}
-              </p>
-            </div>
-          </div>
-          {raid.raidGroupRestriction && (
-            <div className="rounded-lg border border-border bg-card/50 p-3 text-sm">
-              <span className="text-muted-foreground">{t('restriction')}: </span>
-              <span className="font-medium">{raid.raidGroupRestriction.name}</span>
-            </div>
-          )}
-          <div className="rounded-lg border border-border bg-card/40 p-3">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t('signupRoleLoadTitle')}
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              {(
-                [
-                  { key: 'Tank', icon: ROLE_ICONS.Tank },
-                  { key: 'Melee', icon: ROLE_ICONS.Melee },
-                  { key: 'Range', icon: ROLE_ICONS.Range },
-                  { key: 'Healer', icon: ROLE_ICONS.Healer },
-                ] as const
-              ).map(({ key, icon }) => {
-                const stats = roleStats[key];
-                return (
-                  <span
-                    key={key}
-                    className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                  >
-                    <Image src={icon.src} alt="" width={20} height={20} unoptimized />
-                    <span className="tabular-nums">
-                      <span className="font-semibold text-green-600 dark:text-green-500">
-                        {stats.normal}
-                      </span>
-                      {' ('}
-                      <span className="font-semibold text-amber-600 dark:text-amber-500">
-                        {stats.uncertain}
-                      </span>
-                      {' / '}
-                      <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
-                      {')'}
-                    </span>
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-          <RaidSignupForm
-            guildId={guildId}
-            raidId={raidId}
-            characters={characters}
-            signupPhase={signupPhase}
-            initialCharacterId={mySignup?.characterId ?? null}
-            initialType={mySignup?.type ?? 'normal'}
-            initialIsLate={mySignup?.isLate ?? false}
-            initialNote={mySignup?.note ?? ''}
-            initialSignedSpec={mySignup?.signedSpec ?? null}
-            initialOnlySignedSpec={mySignup?.onlySignedSpec ?? false}
-            initialForbidReserve={mySignup?.forbidReserve ?? false}
-            hasExistingSignup={!!mySignup}
-          />
-          {mySignup && <RaidSignupWithdraw guildId={guildId} raidId={raidId} />}
-        </section>
-      )}
+      <RaidDetailView
+        locale={locale}
+        guildId={guildId}
+        raidId={raidId}
+        userId={userId}
+        guildRole={guildInfo.role}
+        raid={raidForView}
+        roleStats={roleStats}
+        canEdit={canEdit}
+        canEditRaid={canEditRaid}
+        canSignup={canSignup}
+        signupPhase={signupPhase}
+        characters={characters}
+        raidForEdit={raidForEdit}
+        participationStats={participationStats}
+        mySignup={mySignupSerialized}
+        initialEditOpen={mode === 'edit' && canEdit}
+        initialSignupOpen={mode === 'signup' && canSignup}
+      />
     </div>
   );
 }

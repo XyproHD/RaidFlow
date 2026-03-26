@@ -83,6 +83,56 @@ export function formatCompositionGaps(args: {
   return parts.length ? parts.join(', ') : '—';
 }
 
+export type CompositionGapRole = {
+  role: 'Tank' | 'Melee' | 'Range' | 'Healer';
+  missing: number;
+};
+
+export type CompositionGapSpec = { spec: string; missing: number };
+
+/**
+ * Strukturierte Lücken für Icon-Darstellung (Rollen + Mindest-Specs).
+ */
+export function getCompositionGapsStructured(args: {
+  minTanks: number;
+  minMelee: number;
+  minRange: number;
+  minHealers: number;
+  minSpecs: MinSpecs;
+  signups: CompositionSignupRow[];
+}): { roles: CompositionGapRole[]; specs: CompositionGapSpec[] } {
+  const roleCounts = countRolesFromSignups(args.signups);
+  const roles: CompositionGapRole[] = [];
+  const roleNeed: { key: keyof typeof roleCounts; min: number }[] = [
+    { key: 'Tank', min: args.minTanks },
+    { key: 'Melee', min: args.minMelee },
+    { key: 'Range', min: args.minRange },
+    { key: 'Healer', min: args.minHealers },
+  ];
+  for (const { key, min } of roleNeed) {
+    if (min <= 0) continue;
+    const have = roleCounts[key];
+    const miss = min - have;
+    if (miss > 0) roles.push({ role: key, missing: miss });
+  }
+
+  const specNeed = parseMinSpecs(args.minSpecs);
+  const specCounts: Record<string, number> = {};
+  for (const s of args.signups) {
+    if (s.type === 'reserve') continue;
+    const name = effectiveSpec(s);
+    if (name) specCounts[name] = (specCounts[name] ?? 0) + 1;
+  }
+  const specs: CompositionGapSpec[] = [];
+  for (const [specName, need] of Object.entries(specNeed)) {
+    const have = specCounts[specName] ?? 0;
+    const miss = need - have;
+    if (miss > 0) specs.push({ spec: specName, missing: miss });
+  }
+
+  return { roles, specs };
+}
+
 /** Für Min-Spec-Zeile: Ist / Soll je Spec. */
 export function countSignedPerSpec(
   signups: CompositionSignupRow[],

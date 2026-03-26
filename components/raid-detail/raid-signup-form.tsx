@@ -45,6 +45,7 @@ export function RaidSignupForm({
   initialOnlySignedSpec,
   initialForbidReserve,
   hasExistingSignup,
+  onSaved,
 }: {
   guildId: string;
   raidId: string;
@@ -58,6 +59,7 @@ export function RaidSignupForm({
   initialOnlySignedSpec: boolean;
   initialForbidReserve: boolean;
   hasExistingSignup: boolean;
+  onSaved?: () => void;
 }) {
   const t = useTranslations('raidDetail');
   const tProfile = useTranslations('profile');
@@ -166,6 +168,7 @@ export function RaidSignupForm({
       setMessage(t('signupSaved'));
       setStatus('ok');
       router.refresh();
+      onSaved?.();
     } catch {
       setMessage(t('signupError'));
       setStatus('err');
