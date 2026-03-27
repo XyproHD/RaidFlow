@@ -150,6 +150,7 @@ export function NewRaidWizard({
 }) {
   const t = useTranslations('raidPlanner');
   const tEdit = useTranslations('raidEdit');
+  const tDetail = useTranslations('raidDetail');
   const tProfile = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
@@ -159,6 +160,7 @@ export function NewRaidWizard({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [resetAck, setResetAck] = useState(false);
 
   const [data, setData] = useState<Bootstrap | null>(null);
 
@@ -295,6 +297,27 @@ export function NewRaidWizard({
     const last = rangeSlotStrings[rangeSlotStrings.length - 1] ?? '19:00';
     return addMinutes(raidSlotToLocalDate(scheduledDate, last), 30);
   }, [scheduledDate, rangeSlotStrings]);
+
+  const isEdit = mode === 'edit' && !!raidId && !!initialRaid;
+  const initialDungeonIds = useMemo(() => {
+    if (!initialRaid) return [];
+    return Array.from(new Set([initialRaid.dungeonId, ...(initialRaid.dungeonIds ?? [])].filter(Boolean)));
+  }, [initialRaid]);
+  const dungeonChanged = useMemo(() => {
+    if (!isEdit) return false;
+    return JSON.stringify(initialDungeonIds) !== JSON.stringify(dungeonIds);
+  }, [isEdit, initialDungeonIds, dungeonIds]);
+  const scheduleChanged = useMemo(() => {
+    if (!isEdit || !initialRaid) return false;
+    const a0 = new Date(initialRaid.scheduledAt).getTime();
+    const e0 = (initialRaid.scheduledEndAt ? new Date(initialRaid.scheduledEndAt) : addMinutes(new Date(initialRaid.scheduledAt), 30)).getTime();
+    return a0 !== scheduledAt.getTime() || e0 !== scheduledEndAt.getTime();
+  }, [isEdit, initialRaid, scheduledAt, scheduledEndAt]);
+  const requiresReset = isEdit && (scheduleChanged || dungeonChanged);
+
+  useEffect(() => {
+    if (!requiresReset) setResetAck(false);
+  }, [requiresReset]);
 
   const loadBootstrap = useCallback(async () => {
     setLoading(true);
@@ -550,6 +573,11 @@ export function NewRaidWizard({
     setSaveError(null);
     setSaving(true);
     try {
+      if (requiresReset && !resetAck) {
+        setSaveError(tEdit('resetSignupsWarning'));
+        setSaving(false);
+        return;
+      }
       const dungeonId = dungeonIds[0] ?? '';
       const minSpecs: Record<string, number> = {};
       for (const r of minSpecRows) {
@@ -578,30 +606,12 @@ export function NewRaidWizard({
         createDiscordThread,
       };
 
-      const isEdit = mode === 'edit' && !!raidId && !!initialRaid;
-      const scheduleChanged = isEdit
-        ? new Date(initialRaid.scheduledAt).getTime() !== scheduledAt.getTime()
-        : false;
-      const initialDungeonIds = isEdit
-        ? Array.from(new Set([initialRaid.dungeonId, ...(initialRaid.dungeonIds ?? [])].filter(Boolean)))
-        : [];
-      const dungeonChanged = isEdit
-        ? JSON.stringify(initialDungeonIds) !== JSON.stringify(dungeonIds)
-        : false;
-
-      if (isEdit && (scheduleChanged || dungeonChanged)) {
-        if (!window.confirm(tEdit('resetSignupsWarning'))) {
-          setSaving(false);
-          return;
-        }
-      }
-
       const res = await fetch(isEdit ? `/api/guilds/${guildId}/raids/${raidId}` : `/api/guilds/${guildId}/raids`, {
         method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...body,
-          ...(isEdit && (scheduleChanged || dungeonChanged) ? { confirmResetSignups: true } : {}),
+          ...(requiresReset ? { confirmResetSignups: true } : {}),
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -614,6 +624,38 @@ export function NewRaidWizard({
       router.refresh();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const doCancelRaid = async () => {
+    if (!isEdit || !raidId) return;
+    if (!window.confirm(tEdit('cancelConfirm'))) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/guilds/${guildId}/raids/${raidId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' }),
+      });
+      if (!res.ok) return;
+      router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
+      router.refresh();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const doDeleteRaid = async () => {
+    if (!isEdit || !raidId) return;
+    if (!window.confirm(tDetail('deleteRaidConfirm'))) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/guilds/${guildId}/raids/${raidId}`, { method: 'DELETE' });
+      if (!res.ok) return;
+      router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
+      router.refresh();
     } finally {
       setSaving(false);
     }
@@ -962,13 +1004,36 @@ export function NewRaidWizard({
 
           <p className="text-sm text-muted-foreground">{t('raidDateHint')}</p>
 
+          {isEdit && requiresReset ? (
+            <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 space-y-2">
+              <p className="text-sm">⚠️ {tEdit('resetSignupsWarning')}</p>
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={resetAck}
+                  onChange={(e) => setResetAck(e.target.checked)}
+                />
+                <span>{tEdit('confirmReset')}</span>
+              </label>
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap gap-3">
-            <Link
-              href={`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`}
-              className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
-            >
-              {t('cancel')}
-            </Link>
+            {isEdit ? (
+              <Link
+                href={`/${locale}/guild/${guildId}/raid/${raidId}`}
+                className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+              >
+                {t('cancel')}
+              </Link>
+            ) : (
+              <Link
+                href={`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`}
+                className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+              >
+                {t('cancel')}
+              </Link>
+            )}
             <button
               type="button"
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
@@ -984,6 +1049,26 @@ export function NewRaidWizard({
             >
               {t('next')}
             </button>
+            {isEdit ? (
+              <>
+                <button
+                  type="button"
+                  disabled={saving || !editable}
+                  className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
+                  onClick={() => void doCancelRaid()}
+                >
+                  🚫 {tEdit('cancelRaid')}
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  className="rounded-md border border-destructive bg-destructive/10 text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
+                  onClick={() => void doDeleteRaid()}
+                >
+                  🗑️ {tDetail('menuDeleteRaid')}
+                </button>
+              </>
+            ) : null}
           </div>
           {saveError && step === 1 && (
             <p className="text-destructive text-sm" role="alert">
@@ -1304,6 +1389,20 @@ export function NewRaidWizard({
             </p>
           )}
 
+          {isEdit && requiresReset ? (
+            <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 space-y-2">
+              <p className="text-sm">⚠️ {tEdit('resetSignupsWarning')}</p>
+              <label className="inline-flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={resetAck}
+                  onChange={(e) => setResetAck(e.target.checked)}
+                />
+                <span>{tEdit('confirmReset')}</span>
+              </label>
+            </div>
+          ) : null}
+
           <div className="flex flex-wrap gap-3 pt-2">
             <button
               type="button"
@@ -1314,12 +1413,32 @@ export function NewRaidWizard({
             </button>
             <button
               type="button"
-              disabled={saving}
+              disabled={saving || (requiresReset && !resetAck) || !editable}
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
               onClick={submit}
             >
               {saving ? t('saving') : t('saveRaid')}
             </button>
+            {isEdit ? (
+              <>
+                <button
+                  type="button"
+                  disabled={saving || !editable}
+                  className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
+                  onClick={() => void doCancelRaid()}
+                >
+                  🚫 {tEdit('cancelRaid')}
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  className="rounded-md border border-destructive bg-destructive/10 text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
+                  onClick={() => void doDeleteRaid()}
+                >
+                  🗑️ {tDetail('menuDeleteRaid')}
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
       )}
