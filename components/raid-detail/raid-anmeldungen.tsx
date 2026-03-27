@@ -1,13 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SpecIcon } from '@/components/spec-icon';
 import { ClassIcon } from '@/components/class-icon';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
-import { RaidLeaderSignupControls } from '@/components/raid-detail/raid-leader-signup-controls';
 import { CharacterMainStar } from '@/components/character-main-star';
+import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 
 export type AnmeldungRow = {
   id: string;
@@ -17,6 +15,7 @@ export type AnmeldungRow = {
     mainSpec: string;
     offSpec: string | null;
     isMain: boolean;
+    guildDiscordDisplayName?: string | null;
   } | null;
   signedSpec: string | null;
   type: string;
@@ -35,17 +34,12 @@ function classIdForChar(mainSpec: string): string | null {
 export function RaidAnmeldungen({
   rows,
   canEdit,
-  guildId,
-  raidId,
 }: {
   rows: AnmeldungRow[];
   canEdit: boolean;
-  guildId: string;
-  raidId: string;
 }) {
   const t = useTranslations('raidDetail');
   const tProfile = useTranslations('profile');
-  const router = useRouter();
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
 
   function typeLabel(type: string) {
@@ -65,7 +59,8 @@ export function RaidAnmeldungen({
       {rows.map((s) => {
         const main = s.character?.mainSpec ?? '';
         const cid = main ? classIdForChar(main) : null;
-        const specShow = s.signedSpec?.trim() || main || '?';
+        const discordName = s.character?.guildDiscordDisplayName?.trim();
+
         return (
           <li key={s.id} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 px-3 py-2">
@@ -91,7 +86,12 @@ export function RaidAnmeldungen({
               ) : (
                 <span className="w-7" />
               )}
-              <SpecIcon spec={specShow} size={22} />
+              <SignupSpecIcons
+                character={s.character}
+                signedSpec={s.signedSpec}
+                onlySignedSpec={!!s.onlySignedSpec}
+                viewerIsRaidLeader={canEdit}
+              />
               {s.isLate && (
                 <span className="text-base shrink-0" title={t('lateCheckbox')}>
                   ⏱
@@ -99,6 +99,9 @@ export function RaidAnmeldungen({
               )}
               <span className="font-medium text-foreground min-w-0 truncate">
                 {s.character?.name ?? t('signupAnonymous')}
+                {discordName ? (
+                  <span className="text-muted-foreground font-normal"> · {discordName}</span>
+                ) : null}
               </span>
               <span className="text-sm text-muted-foreground shrink-0">
                 {typeLabel(s.type)}
@@ -146,18 +149,6 @@ export function RaidAnmeldungen({
             {openNoteId === s.id && canEdit && s.note && (
               <div className="px-3 pb-2 text-xs text-muted-foreground border-t border-border bg-muted/30 whitespace-pre-wrap">
                 {s.note}
-              </div>
-            )}
-            {canEdit && (
-              <div className="px-3 pb-2 border-t border-border bg-muted/20">
-                <RaidLeaderSignupControls
-                  guildId={guildId}
-                  raidId={raidId}
-                  signupId={s.id}
-                  leaderAllowsReserve={s.leaderAllowsReserve}
-                  leaderMarkedTeilnehmer={s.leaderMarkedTeilnehmer}
-                  onSaved={() => router.refresh()}
-                />
               </div>
             )}
           </li>

@@ -20,6 +20,7 @@ import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
 import { RaidAnmeldungen, type AnmeldungRow } from '@/components/raid-detail/raid-anmeldungen';
+import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
 import {
   RaidEditPanel,
@@ -27,8 +28,6 @@ import {
 } from '@/components/raid-edit/raid-edit-panel';
 import type { RaidSignupPhase } from '@/lib/raid-detail-access';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-access';
-
-type GuildRoleForBadges = 'guildmaster' | 'raidleader' | 'raider' | 'member';
 
 type RoleStat = { normal: number; uncertain: number; reserve: number };
 
@@ -68,6 +67,7 @@ export type RaidDetailRaid = {
       mainSpec: string;
       offSpec: string | null;
       isMain: boolean;
+      guildDiscordDisplayName?: string | null;
     } | null;
   }[];
 };
@@ -81,6 +81,7 @@ export type RaidDetailCharacter = {
   classId: string | null;
   gearScore: number | null;
   hasBattlenet: boolean;
+  guildDiscordDisplayName?: string | null;
 };
 
 export type MySignupSerialized = {
@@ -95,27 +96,6 @@ export type MySignupSerialized = {
   leaderPlacement: string;
   setConfirmed: boolean;
 };
-
-function guildRoleBadges(
-  t: ReturnType<typeof useTranslations>,
-  role: GuildRoleForBadges
-): { key: string; label: string }[] {
-  if (role === 'guildmaster') {
-    return [
-      { key: 'guildmaster', label: t('roleGuildmaster') },
-      { key: 'raidleader', label: t('roleRaidleader') },
-      { key: 'raider', label: t('roleRaider') },
-    ];
-  }
-  if (role === 'raidleader') {
-    return [
-      { key: 'raidleader', label: t('roleRaidleader') },
-      { key: 'raider', label: t('roleRaider') },
-    ];
-  }
-  if (role === 'raider') return [{ key: 'raider', label: t('roleRaider') }];
-  return [];
-}
 
 function myStatusIcon(
   raidStatus: string,
@@ -161,7 +141,6 @@ export function RaidDetailView({
   guildId,
   raidId,
   userId,
-  guildRole,
   raid,
   roleStats,
   canEdit,
@@ -179,7 +158,6 @@ export function RaidDetailView({
   guildId: string;
   raidId: string;
   userId: string;
-  guildRole: GuildRoleForBadges;
   raid: RaidDetailRaid;
   roleStats: Record<(typeof ROLE_KEYS)[number], RoleStat>;
   canEdit: boolean;
@@ -207,7 +185,6 @@ export function RaidDetailView({
   const [showEdit, setShowEdit] = useState(initialEditOpen && canEditRaid);
   const [showSignup, setShowSignup] = useState(initialSignupOpen);
   const [expandedNote, setExpandedNote] = useState(false);
-  const [expandedSignupUntil, setExpandedSignupUntil] = useState(false);
   const [withdrawBusy, setWithdrawBusy] = useState(false);
 
   useEffect(() => {
@@ -298,10 +275,7 @@ export function RaidDetailView({
   const myChar = mySignup?.characterId
     ? characters.find((c) => c.id === mySignup.characterId)
     : null;
-  const specShow =
-    mySignup?.signedSpec?.trim() ||
-    myChar?.mainSpec ||
-    '';
+  const myDiscord = myChar?.guildDiscordDisplayName?.trim();
 
   async function doCancelRaid() {
     if (!window.confirm(tEdit('cancelConfirm'))) return;
@@ -411,12 +385,17 @@ export function RaidDetailView({
         <div className="p-4">
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-              <dt className="text-muted-foreground">{t('signupUntil')}</dt>
-              <dd>
-                {new Intl.DateTimeFormat(intlLocale, {
-                  dateStyle: 'short',
-                  timeStyle: 'short',
-                }).format(signupUntil)}
+              <dt className="text-muted-foreground shrink-0">{tDash('signupOpenUntil')}</dt>
+              <dd className="flex items-center gap-2 text-right min-w-0">
+                <span className="shrink-0" title={tDash('signupOpenUntil')}>
+                  {signupState.icon}
+                </span>
+                <span>
+                  {new Intl.DateTimeFormat(intlLocale, {
+                    dateStyle: 'short',
+                    timeStyle: 'short',
+                  }).format(signupUntil)}
+                </span>
               </dd>
             </div>
             <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
@@ -540,64 +519,12 @@ export function RaidDetailView({
           ) : null}
         </div>
         <div className="p-4 space-y-3">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            {guildRoleBadges(tDash, guildRole).map((b) => (
-              <span
-                key={b.key}
-                className="rounded border border-border px-1.5 py-0.5 text-muted-foreground"
-              >
-                {b.label}
-              </span>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span className="capitalize">{raid.status}</span>
-            <span className="text-border">·</span>
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 hover:text-foreground"
-              title={new Intl.DateTimeFormat(intlLocale, { dateStyle: 'short', timeStyle: 'short' }).format(
-                signupUntil
-              )}
-              onClick={() => setExpandedSignupUntil((v) => !v)}
-            >
-              <span>{tDash('signupOpenUntil')}</span>
-              <span>{signupState.icon}</span>
-            </button>
-            {expandedSignupUntil ? (
-              <span className="w-full text-[11px] sm:w-auto">
-                {new Intl.DateTimeFormat(intlLocale, { dateStyle: 'short', timeStyle: 'short' }).format(signupUntil)}
-              </span>
-            ) : null}
-          </div>
-
           {mySignup ? (
             <>
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    {statusIcon ? (
-                      <span title={tDash('myStatus')}>{statusIcon}</span>
-                    ) : null}
-                    <span className="text-muted-foreground">{tDash('myStatus')}:</span>
-                    <span className="font-medium">
-                      {raid.status === 'locked' ? (
-                        mySignup.leaderPlacement === 'substitute' ? (
-                          t('mySignupLockedSubstitute')
-                        ) : mySignup.setConfirmed ? (
-                          t('mySignupLockedConfirmed')
-                        ) : (
-                          t('mySignupLockedPending')
-                        )
-                      ) : (
-                        signupTypeOpenLabel(t, mySignup.type)
-                      )}
-                    </span>
-                  </div>
-
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-2 justify-between">
+                <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
                   {myChar ? (
-                    <div className="flex flex-wrap items-center gap-2">
+                    <>
                       <div className="flex shrink-0 items-center justify-center w-6 h-8">
                         <CharacterMainStar
                           isMain={!!myChar.isMain}
@@ -611,15 +538,26 @@ export function RaidDetailView({
                           <ClassIcon classId={myChar.classId} size={26} title={myChar.mainSpec} />
                         </span>
                       ) : null}
-                      <div className="flex items-center gap-1 shrink-0">
-                        <SpecIcon spec={specShow} size={22} />
-                        {myChar.offSpec ? (
-                          <span className="grayscale contrast-90 inline-flex">
-                            <SpecIcon spec={myChar.offSpec} size={22} className="opacity-90" />
-                          </span>
+                      <SignupSpecIcons
+                        character={{
+                          mainSpec: myChar.mainSpec,
+                          offSpec: myChar.offSpec,
+                        }}
+                        signedSpec={mySignup.signedSpec}
+                        onlySignedSpec={mySignup.onlySignedSpec}
+                        viewerIsRaidLeader={canEdit}
+                      />
+                      {mySignup.isLate ? (
+                        <span className="text-base shrink-0" title={t('lateCheckbox')}>
+                          ⏱
+                        </span>
+                      ) : null}
+                      <span className="font-semibold text-foreground truncate">
+                        {myChar.name}
+                        {myDiscord ? (
+                          <span className="text-muted-foreground font-normal"> · {myDiscord}</span>
                         ) : null}
-                      </div>
-                      <span className="font-semibold text-foreground truncate">{myChar.name}</span>
+                      </span>
                       {myChar.hasBattlenet ? (
                         <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} />
                       ) : null}
@@ -628,8 +566,29 @@ export function RaidDetailView({
                         hasBattlenet={myChar.hasBattlenet}
                         gearScore={myChar.gearScore}
                       />
-                    </div>
-                  ) : null}
+                      <span className="text-muted-foreground hidden sm:inline">·</span>
+                      {statusIcon ? (
+                        <span className="shrink-0" title={tDash('myStatus')}>
+                          {statusIcon}
+                        </span>
+                      ) : null}
+                      <span className="text-sm font-medium text-foreground">
+                        {raid.status === 'locked' ? (
+                          mySignup.leaderPlacement === 'substitute' ? (
+                            t('mySignupLockedSubstitute')
+                          ) : mySignup.setConfirmed ? (
+                            t('mySignupLockedConfirmed')
+                          ) : (
+                            t('mySignupLockedPending')
+                          )
+                        ) : (
+                          signupTypeOpenLabel(t, mySignup.type)
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">{t('signupAnonymous')}</span>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -668,7 +627,7 @@ export function RaidDetailView({
         {raid.signupVisibility === 'raid_leader_only' && !canEdit && (
           <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
         )}
-        <RaidAnmeldungen rows={rows} canEdit={canEdit} guildId={guildId} raidId={raidId} />
+        <RaidAnmeldungen rows={rows} canEdit={canEdit} />
       </section>
 
       {leaderMenuOpen && leaderMenuPos

@@ -59,7 +59,7 @@ export default async function RaidDetailPage(props: {
     );
   }
 
-  const { raid, canEdit, canSignup, signupPhase, guildInfo } = ctx;
+  const { raid, canEdit, canSignup, signupPhase } = ctx;
   const base = `/${locale}/guild/${guildId}/raid/${raidId}`;
   const canEditRaid = canEdit && raid.status === 'open';
 
@@ -100,6 +100,7 @@ export default async function RaidDetailPage(props: {
       classId: getSpecByDisplayName(c.mainSpec)?.classId ?? null,
       gearScore: c.gearScore,
       hasBattlenet: !!c.battlenetProfile?.battlenetCharacterId,
+      guildDiscordDisplayName: c.guildDiscordDisplayName,
     }));
 
   const mySignup = raid.signups.find((s) => s.userId === userId);
@@ -220,7 +221,6 @@ export default async function RaidDetailPage(props: {
         guildId={guildId}
         raidId={raidId}
         userId={userId}
-        guildRole={guildInfo.role}
         raid={raidForView}
         roleStats={roleStats}
         canEdit={canEdit}

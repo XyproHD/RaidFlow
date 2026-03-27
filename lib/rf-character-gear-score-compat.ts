@@ -26,6 +26,7 @@ export type DashboardCharacterQueryRow = {
   offSpec: string | null;
   isMain: boolean;
   gearScore: number | null;
+  guildDiscordDisplayName: string | null;
   guild: { name: string } | null;
   battlenetProfile: { battlenetCharacterId: bigint | null } | null;
 };
@@ -49,6 +50,7 @@ export async function findManyRfCharactersForDashboard(userId: string): Promise<
       offSpec: r.offSpec,
       isMain: r.isMain,
       gearScore: r.gearScore ?? null,
+      guildDiscordDisplayName: r.guildDiscordDisplayName ?? null,
       guild: r.guild,
       battlenetProfile: r.battlenetProfile,
     }));
@@ -80,6 +82,7 @@ export async function findManyRfCharactersForDashboard(userId: string): Promise<
       offSpec: r.offSpec,
       isMain: r.isMain,
       gearScore: null,
+      guildDiscordDisplayName: r.guildDiscordDisplayName ?? null,
       guild: r.guild,
       battlenetProfile: r.battlenetProfile,
     }));
