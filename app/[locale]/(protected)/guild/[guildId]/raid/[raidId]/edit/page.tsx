@@ -5,7 +5,7 @@ import { getTranslations } from 'next-intl/server';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getRaidDetailContext } from '@/lib/raid-detail-access';
-import { RaidEditBasicsPage } from '@/components/raid-edit/raid-edit-basics-page';
+import { NewRaidWizard } from '@/components/raid-planner/new-raid-wizard';
 import type { RaidEditSerialized } from '@/components/raid-edit/raid-edit-panel';
 
 export default async function RaidEditStandalonePage(props: {
@@ -108,7 +108,16 @@ export default async function RaidEditStandalonePage(props: {
           {t('modeView')}
         </Link>
       </div>
-      <RaidEditBasicsPage guildId={guildId} raidId={raidId} initialRaid={raidForEdit} />
+      <div className="max-w-5xl mx-auto">
+        <h1 className="text-2xl font-bold text-foreground mb-6">{t('sectionEdit')}</h1>
+        <NewRaidWizard
+          guildId={guildId}
+          currentUserId={userId}
+          mode="edit"
+          raidId={raidId}
+          initialRaid={raidForEdit}
+        />
+      </div>
     </div>
   );
 }

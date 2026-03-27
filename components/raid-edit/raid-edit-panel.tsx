@@ -70,7 +70,7 @@ export type RaidEditSerialized = {
   id: string;
   guildId: string;
   dungeonId: string;
-  dungeonIds?: string[] | null;
+  dungeonIds: string[] | null;
   name: string;
   note: string | null;
   raidLeaderId: string | null;
@@ -88,7 +88,7 @@ export type RaidEditSerialized = {
   signupVisibility: string;
   status: string;
   discordThreadId: string | null;
-  discordChannelId?: string | null;
+  discordChannelId: string | null;
   dungeon: { id: string; name: string };
   raidGroupRestriction: { id: string; name: string } | null;
   signups: RaidEditSignupRow[];

@@ -116,11 +116,40 @@ function heatClass(h: SlotHeat): string {
 export function NewRaidWizard({
   guildId,
   currentUserId,
+  mode = 'create',
+  raidId,
+  initialRaid,
 }: {
   guildId: string;
   currentUserId: string;
+  mode?: 'create' | 'edit';
+  raidId?: string;
+  initialRaid?: {
+    id: string;
+    dungeonId: string;
+    dungeonIds: string[] | null;
+    name: string;
+    note: string | null;
+    raidLeaderId: string | null;
+    lootmasterId: string | null;
+    minTanks: number;
+    minMelee: number;
+    minRange: number;
+    minHealers: number;
+    minSpecs: unknown;
+    raidGroupRestrictionId: string | null;
+    maxPlayers: number;
+    scheduledAt: string;
+    scheduledEndAt: string | null;
+    signupUntil: string;
+    signupVisibility: string;
+    discordThreadId: string | null;
+    discordChannelId: string | null;
+    status: string;
+  };
 }) {
   const t = useTranslations('raidPlanner');
+  const tEdit = useTranslations('raidEdit');
   const tProfile = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
@@ -133,19 +162,51 @@ export function NewRaidWizard({
 
   const [data, setData] = useState<Bootstrap | null>(null);
 
-  const [dungeonIds, setDungeonIds] = useState<string[]>([]);
-  const [name, setName] = useState('');
-  const [note, setNote] = useState('');
-  const [raidLeaderId, setRaidLeaderId] = useState(currentUserId);
-  const [lootmasterId, setLootmasterId] = useState<string>('');
-  const [minTanks, setMinTanks] = useState(1);
-  const [minMelee, setMinMelee] = useState(0);
-  const [minRange, setMinRange] = useState(0);
-  const [minHealers, setMinHealers] = useState(0);
-  const [minSpecRows, setMinSpecRows] = useState<{ spec: string; count: number }[]>([]);
-  const [raidGroupRestrictionId, setRaidGroupRestrictionId] = useState('');
-  const [maxPlayers, setMaxPlayers] = useState(25);
+  const [dungeonIds, setDungeonIds] = useState<string[]>(() => {
+    if (mode === 'edit' && initialRaid) {
+      const fromJson = Array.isArray(initialRaid.dungeonIds) ? initialRaid.dungeonIds : [];
+      return Array.from(new Set([initialRaid.dungeonId, ...fromJson].filter(Boolean)));
+    }
+    return [];
+  });
+  const [dungeonMenuOpen, setDungeonMenuOpen] = useState(false);
+  const [name, setName] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.name : ''));
+  const [note, setNote] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.note ?? '' : ''));
+  const [raidLeaderId, setRaidLeaderId] = useState(() =>
+    mode === 'edit' && initialRaid ? (initialRaid.raidLeaderId ?? '') : currentUserId
+  );
+  const [lootmasterId, setLootmasterId] = useState<string>(() =>
+    mode === 'edit' && initialRaid ? (initialRaid.lootmasterId ?? '') : ''
+  );
+  const [minTanks, setMinTanks] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minTanks : 1));
+  const [minMelee, setMinMelee] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minMelee : 0));
+  const [minRange, setMinRange] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minRange : 0));
+  const [minHealers, setMinHealers] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minHealers : 0));
+  const [minSpecRows, setMinSpecRows] = useState<{ spec: string; count: number }[]>(() => {
+    if (
+      mode === 'edit' &&
+      initialRaid &&
+      initialRaid.minSpecs &&
+      typeof initialRaid.minSpecs === 'object' &&
+      !Array.isArray(initialRaid.minSpecs)
+    ) {
+      const src = initialRaid.minSpecs as Record<string, number>;
+      return Object.entries(src).map(([spec, count]) => ({ spec, count }));
+    }
+    return [];
+  });
+  const [raidGroupRestrictionId, setRaidGroupRestrictionId] = useState(() =>
+    mode === 'edit' && initialRaid ? (initialRaid.raidGroupRestrictionId ?? '') : ''
+  );
+  const [maxPlayers, setMaxPlayers] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.maxPlayers : 25));
   const [scheduledDate, setScheduledDate] = useState(() => {
+    if (mode === 'edit' && initialRaid) {
+      const d = new Date(initialRaid.scheduledAt);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
     const t0 = new Date();
     const y = t0.getFullYear();
     const m = String(t0.getMonth() + 1).padStart(2, '0');
@@ -153,18 +214,35 @@ export function NewRaidWizard({
     return `${y}-${m}-${d}`;
   });
   const [signupDatetimeLocal, setSignupDatetimeLocal] = useState(() => {
+    if (mode === 'edit' && initialRaid) return toDatetimeLocalValue(parseDatetimeLocal(initialRaid.signupUntil));
     const t0 = new Date();
     t0.setHours(12, 0, 0, 0);
     return toDatetimeLocalValue(t0);
   });
-  const [signupVisibility, setSignupVisibility] = useState<'public' | 'raid_leader_only'>(
-    'public'
-  );
-  const [discordChannelId, setDiscordChannelId] = useState('');
-  const [createDiscordThread, setCreateDiscordThread] = useState(false);
+  const [signupVisibility, setSignupVisibility] = useState<'public' | 'raid_leader_only'>(() => {
+    if (mode === 'edit' && initialRaid) return initialRaid.signupVisibility === 'raid_leader_only' ? 'raid_leader_only' : 'public';
+    return 'public';
+  });
+  const [discordChannelId, setDiscordChannelId] = useState(() => (mode === 'edit' && initialRaid ? (initialRaid.discordChannelId ?? '') : ''));
+  const [createDiscordThread, setCreateDiscordThread] = useState(() => (mode === 'edit' && initialRaid ? !!initialRaid.discordThreadId : false));
 
-  const [rangeStartIdx, setRangeStartIdx] = useState(DEFAULT_SLOT_IDX);
-  const [rangeEndIdx, setRangeEndIdx] = useState(DEFAULT_SLOT_IDX);
+  const [rangeStartIdx, setRangeStartIdx] = useState(() => {
+    if (mode === 'edit' && initialRaid) {
+      const s = new Date(initialRaid.scheduledAt);
+      const slot = `${String(s.getHours()).padStart(2, '0')}:${String(s.getMinutes()).padStart(2, '0')}`;
+      return Math.max(0, SLOTS.indexOf(slot));
+    }
+    return DEFAULT_SLOT_IDX;
+  });
+  const [rangeEndIdx, setRangeEndIdx] = useState(() => {
+    if (mode === 'edit' && initialRaid) {
+      const end = initialRaid.scheduledEndAt ? new Date(initialRaid.scheduledEndAt) : addMinutes(new Date(initialRaid.scheduledAt), 30);
+      const endMinus = addMinutes(end, -30);
+      const slot = `${String(endMinus.getHours()).padStart(2, '0')}:${String(endMinus.getMinutes()).padStart(2, '0')}`;
+      return Math.max(0, SLOTS.indexOf(slot));
+    }
+    return DEFAULT_SLOT_IDX;
+  });
   const [pickingEnd, setPickingEnd] = useState(false);
 
   const [mainAltFilter, setMainAltFilter] = useState<MainAltFilter>('mains');
@@ -213,7 +291,7 @@ export function NewRaidWizard({
       }
       const json = (await res.json()) as Bootstrap;
       setData(json);
-      if (json.dungeons.length > 0) {
+      if (json.dungeons.length > 0 && mode !== 'edit') {
         const first = json.dungeons[0]!;
         setDungeonIds([first.id]);
         setMaxPlayers(first.maxPlayers);
@@ -228,7 +306,7 @@ export function NewRaidWizard({
     } finally {
       setLoading(false);
     }
-  }, [guildId, locale, currentUserId]);
+  }, [guildId, locale, currentUserId, mode]);
 
   useEffect(() => {
     loadBootstrap();
@@ -482,16 +560,39 @@ export function NewRaidWizard({
         createDiscordThread,
       };
 
-      const res = await fetch(`/api/guilds/${guildId}/raids`, {
-        method: 'POST',
+      const isEdit = mode === 'edit' && !!raidId && !!initialRaid;
+      const scheduleChanged = isEdit
+        ? new Date(initialRaid.scheduledAt).getTime() !== scheduledAt.getTime()
+        : false;
+      const initialDungeonIds = isEdit
+        ? Array.from(new Set([initialRaid.dungeonId, ...(initialRaid.dungeonIds ?? [])].filter(Boolean)))
+        : [];
+      const dungeonChanged = isEdit
+        ? JSON.stringify(initialDungeonIds) !== JSON.stringify(dungeonIds)
+        : false;
+
+      if (isEdit && (scheduleChanged || dungeonChanged)) {
+        if (!window.confirm(tEdit('resetSignupsWarning'))) {
+          setSaving(false);
+          return;
+        }
+      }
+
+      const res = await fetch(isEdit ? `/api/guilds/${guildId}/raids/${raidId}` : `/api/guilds/${guildId}/raids`, {
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          ...body,
+          ...(isEdit && (scheduleChanged || dungeonChanged) ? { confirmResetSignups: true } : {}),
+        }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error((json as { error?: string }).error || res.statusText);
       }
-      router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
+      router.push(
+        isEdit ? `/${locale}/guild/${guildId}/raid/${raidId}` : `/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`
+      );
       router.refresh();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'Error');
@@ -531,6 +632,22 @@ export function NewRaidWizard({
   }
 
   const effectiveDungeonId = dungeonIds[0] ?? '';
+  const editable = mode === 'create' ? true : (initialRaid?.status === 'open');
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDungeonMenuOpen(false);
+    };
+    const onDown = () => setDungeonMenuOpen(false);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('scroll', onDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', onDown, true);
+    };
+  }, []);
 
   const roleMinConfig = [
     { role: 'Tank' as const, val: minTanks, set: setMinTanks, key: 'minTanks' as const },
@@ -555,41 +672,71 @@ export function NewRaidWizard({
             <h2 className="text-lg font-semibold text-foreground border-b border-border pb-2">
               {t('sectionBasics')}
             </h2>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <fieldset disabled={!editable} className="grid gap-4 sm:grid-cols-2 disabled:opacity-70">
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="text-muted-foreground">{t('dungeon')}</span>
-                <div className="space-y-2 rounded-md border border-input bg-background px-3 py-2">
-                  {data.dungeons.map((d) => {
-                    const checked = dungeonIds.includes(d.id);
-                    return (
-                      <label key={d.id} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const nextChecked = e.target.checked;
-                            setDungeonIds((prev) => {
-                              let next: string[];
-                              if (nextChecked) {
-                                next = prev.includes(d.id) ? prev : [...prev, d.id];
-                              } else {
-                                next = prev.filter((x) => x !== d.id);
-                                if (next.length === 0) return prev;
-                              }
-                              const selected = data.dungeons.filter((x) => next.includes(x.id));
-                              const mx = selected.reduce((m, x) => Math.max(m, x.maxPlayers), 0);
-                              if (mx > 0) setMaxPlayers(mx);
-                              return next;
-                            });
-                          }}
-                        />
-                        <span className="min-w-0 truncate">{d.name}</span>
-                        <span className="ml-auto tabular-nums text-xs text-muted-foreground">
-                          {d.maxPlayers}
-                        </span>
-                      </label>
-                    );
-                  })}
+                <div className="relative">
+                  <button
+                    type="button"
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-left text-sm hover:bg-muted/30"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDungeonMenuOpen((v) => !v);
+                    }}
+                    aria-haspopup="menu"
+                    aria-expanded={dungeonMenuOpen}
+                  >
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate">
+                        {dungeonIds.length === 0
+                          ? '—'
+                          : data.dungeons
+                              .filter((d) => dungeonIds.includes(d.id))
+                              .map((d) => d.name)
+                              .join(', ')}
+                      </span>
+                      <span className="text-muted-foreground">▾</span>
+                    </span>
+                  </button>
+                  {dungeonMenuOpen ? (
+                    <div
+                      className="absolute z-20 mt-2 w-full rounded-md border border-border bg-background shadow-lg overflow-hidden"
+                      role="menu"
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <div className="max-h-64 overflow-auto p-2 space-y-1">
+                        {data.dungeons.map((d) => {
+                          const checked = dungeonIds.includes(d.id);
+                          return (
+                            <button
+                              key={d.id}
+                              type="button"
+                              className="w-full text-left px-2 py-2 rounded hover:bg-muted flex items-center gap-2"
+                              onClick={() => {
+                                setDungeonIds((prev) => {
+                                  let next: string[];
+                                  if (prev.includes(d.id)) {
+                                    next = prev.filter((x) => x !== d.id);
+                                    if (next.length === 0) return prev;
+                                  } else {
+                                    next = [...prev, d.id];
+                                  }
+                                  const selected = data.dungeons.filter((x) => next.includes(x.id));
+                                  const mx = selected.reduce((m, x) => Math.max(m, x.maxPlayers), 0);
+                                  if (mx > 0) setMaxPlayers(mx);
+                                  return next;
+                                });
+                              }}
+                            >
+                              <span className="shrink-0">{checked ? '✅' : '⬜'}</span>
+                              <span className="min-w-0 truncate flex-1">{d.name}</span>
+                              <span className="tabular-nums text-xs text-muted-foreground shrink-0">{d.maxPlayers}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
@@ -665,7 +812,7 @@ export function NewRaidWizard({
                   ))}
                 </select>
               </label>
-            </div>
+            </fieldset>
           </section>
 
           <section className="rounded-xl border border-border bg-card p-4 md:p-6 space-y-4">
