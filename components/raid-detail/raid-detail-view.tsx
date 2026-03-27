@@ -22,10 +22,6 @@ import { BattlenetLogo } from '@/components/battlenet-logo';
 import { RaidAnmeldungen, type AnmeldungRow } from '@/components/raid-detail/raid-anmeldungen';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
-import {
-  RaidEditPanel,
-  type RaidEditSerialized,
-} from '@/components/raid-edit/raid-edit-panel';
 import type { RaidSignupPhase } from '@/lib/raid-detail-access';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-access';
 
@@ -148,10 +144,7 @@ export function RaidDetailView({
   canSignup,
   signupPhase,
   characters,
-  raidForEdit,
-  participationStats,
   mySignup,
-  initialEditOpen,
   initialSignupOpen,
 }: {
   locale: string;
@@ -165,10 +158,7 @@ export function RaidDetailView({
   canSignup: boolean;
   signupPhase: RaidSignupPhase;
   characters: RaidDetailCharacter[];
-  raidForEdit: RaidEditSerialized;
-  participationStats: Record<string, { dungeon: number; total: number }>;
   mySignup: MySignupSerialized | null;
-  initialEditOpen: boolean;
   initialSignupOpen: boolean;
 }) {
   const t = useTranslations('raidDetail');
@@ -182,7 +172,6 @@ export function RaidDetailView({
   const [leaderMenuPos, setLeaderMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [myMenuOpen, setMyMenuOpen] = useState(false);
   const [myMenuPos, setMyMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const [showEdit, setShowEdit] = useState(initialEditOpen && canEditRaid);
   const [showSignup, setShowSignup] = useState(initialSignupOpen);
   const [expandedNote, setExpandedNote] = useState(false);
   const [withdrawBusy, setWithdrawBusy] = useState(false);
@@ -660,7 +649,7 @@ export function RaidDetailView({
                   )}
                   onClick={() => {
                     setLeaderMenuOpen(false);
-                    if (canEditRaid) setShowEdit(true);
+                    if (canEditRaid) router.push(`/${locale}/guild/${guildId}/raid/${raidId}/edit`);
                   }}
                 >
                   ✏️ {t('modeEdit')}
@@ -741,57 +730,6 @@ export function RaidDetailView({
                 ) : null}
               </div>
             </>,
-            document.body
-          )
-        : null}
-
-      {showEdit
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-[1005] flex items-start justify-center overflow-y-auto bg-black/50 p-4"
-              role="presentation"
-              onClick={() => setShowEdit(false)}
-            >
-              <div
-                className="relative my-4 w-full max-w-4xl rounded-xl border border-border bg-background shadow-xl"
-                role="dialog"
-                aria-modal="true"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-border bg-background px-4 py-3">
-                  <h2 className="text-lg font-semibold">{t('sectionEdit')}</h2>
-                  <button
-                    type="button"
-                    className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
-                    onClick={() => setShowEdit(false)}
-                  >
-                    {tEdit('abort')}
-                  </button>
-                </div>
-                <div className="p-4 max-h-[calc(100vh-8rem)] overflow-y-auto">
-                  {!canEditRaid ? (
-                    <p className="text-muted-foreground text-sm">{t('raidEditClosed')}</p>
-                  ) : (
-                    <>
-                      {raidForEdit.discordThreadId ? (
-                        <p className="text-sm mb-4">
-                          <span className="text-muted-foreground">{t('discordThread')}: </span>
-                          <code className="text-xs bg-muted px-1 py-0.5 rounded">
-                            {raidForEdit.discordThreadId}
-                          </code>
-                        </p>
-                      ) : null}
-                      <RaidEditPanel
-                        guildId={guildId}
-                        raidId={raidId}
-                        initialRaid={raidForEdit}
-                        participationStats={participationStats}
-                      />
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>,
             document.body
           )
         : null}

@@ -4,7 +4,6 @@ import { getServerSession } from 'next-auth';
 import { getTranslations } from 'next-intl/server';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { prisma } from '@/lib/prisma';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { RaidDetailView } from '@/components/raid-detail/raid-detail-view';
@@ -13,8 +12,6 @@ import {
   parseRaidPageMode,
   type RaidPageMode,
 } from '@/lib/raid-detail-access';
-import { getParticipationStatsForUsers } from '@/lib/raid-participation-stats';
-import { type RaidEditSerialized } from '@/components/raid-edit/raid-edit-panel';
 import { findManyRfCharactersForDashboard } from '@/lib/rf-character-gear-score-compat';
 
 type SearchParams = Promise<{ mode?: string; modus?: string }>;
@@ -63,6 +60,9 @@ export default async function RaidDetailPage(props: {
   const base = `/${locale}/guild/${guildId}/raid/${raidId}`;
   const canEditRaid = canEdit && raid.status === 'open';
 
+  if (mode === 'edit' && canEdit) {
+    redirect(`/${locale}/guild/${guildId}/raid/${raidId}/edit`);
+  }
   if (mode === 'edit' && !canEdit) {
     return (
       <div className="p-6 md:p-8 max-w-3xl mx-auto space-y-4">
@@ -136,68 +136,6 @@ export default async function RaidDetailPage(props: {
     }
   }
 
-  const memberRows = await prisma.rfGuildMember.findMany({
-    where: { guildId },
-    select: { userId: true },
-  });
-  const statUserIds = [
-    ...new Set<string>([
-      ...memberRows.map((m) => m.userId),
-      ...raid.signups.map((s) => s.userId),
-    ]),
-  ];
-  const participationStatsMap = await getParticipationStatsForUsers(
-    prisma,
-    guildId,
-    raid.dungeonId,
-    statUserIds
-  );
-  const participationStats = Object.fromEntries(participationStatsMap);
-
-  const raidForEdit: RaidEditSerialized = {
-    id: raid.id,
-    guildId: raid.guildId,
-    dungeonId: raid.dungeonId,
-    name: raid.name,
-    note: raid.note,
-    raidLeaderId: raid.raidLeaderId,
-    lootmasterId: raid.lootmasterId,
-    minTanks: raid.minTanks,
-    minMelee: raid.minMelee,
-    minRange: raid.minRange,
-    minHealers: raid.minHealers,
-    minSpecs: raid.minSpecs,
-    raidGroupRestrictionId: raid.raidGroupRestrictionId,
-    maxPlayers: raid.maxPlayers,
-    scheduledAt: raid.scheduledAt.toISOString(),
-    scheduledEndAt: raid.scheduledEndAt?.toISOString() ?? null,
-    signupUntil: raid.signupUntil.toISOString(),
-    signupVisibility: raid.signupVisibility,
-    status: raid.status,
-    discordThreadId: raid.discordThreadId,
-    dungeon: {
-      id: raid.dungeon.id,
-      name: raid.dungeon.names[0]?.name ?? raid.dungeon.name,
-    },
-    raidGroupRestriction: raid.raidGroupRestriction,
-    signups: raid.signups.map((s) => ({
-      id: s.id,
-      userId: s.userId,
-      characterId: s.characterId,
-      type: s.type,
-      signedSpec: s.signedSpec,
-      onlySignedSpec: s.onlySignedSpec,
-      forbidReserve: s.forbidReserve,
-      isLate: s.isLate,
-      note: s.note,
-      leaderAllowsReserve: s.leaderAllowsReserve,
-      leaderMarkedTeilnehmer: s.leaderMarkedTeilnehmer,
-      leaderPlacement: s.leaderPlacement,
-      setConfirmed: s.setConfirmed,
-      character: s.character,
-    })),
-  };
-
   const raidForView = {
     ...raid,
     scheduledAt: raid.scheduledAt.toISOString(),
@@ -228,10 +166,7 @@ export default async function RaidDetailPage(props: {
         canSignup={canSignup}
         signupPhase={signupPhase}
         characters={characters}
-        raidForEdit={raidForEdit}
-        participationStats={participationStats}
         mySignup={mySignupSerialized}
-        initialEditOpen={mode === 'edit' && canEdit}
         initialSignupOpen={mode === 'signup' && canSignup}
       />
     </div>

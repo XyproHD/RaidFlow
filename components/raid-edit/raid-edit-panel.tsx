@@ -70,6 +70,7 @@ export type RaidEditSerialized = {
   id: string;
   guildId: string;
   dungeonId: string;
+  dungeonIds?: string[] | null;
   name: string;
   note: string | null;
   raidLeaderId: string | null;

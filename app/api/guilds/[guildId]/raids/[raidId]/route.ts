@@ -133,6 +133,15 @@ export async function PATCH(
     typeof body.dungeonId === 'string' && body.dungeonId.trim()
       ? body.dungeonId.trim()
       : raid.dungeonId;
+  const nextDungeonIds =
+    Array.isArray(body.dungeonIds) && body.dungeonIds.every((x) => typeof x === 'string')
+      ? Array.from(new Set((body.dungeonIds as string[]).map((x) => x.trim()).filter(Boolean)))
+      : Array.isArray(raid.dungeonIds) && raid.dungeonIds.every((x) => typeof x === 'string')
+        ? Array.from(new Set((raid.dungeonIds as string[]).map((x) => x.trim()).filter(Boolean)))
+        : [dungeonId];
+  if (!nextDungeonIds.includes(dungeonId)) {
+    nextDungeonIds.unshift(dungeonId);
+  }
 
   const scheduledAtRaw = body.scheduledAt;
   const scheduledEndAtRaw = body.scheduledEndAt;
@@ -184,10 +193,17 @@ export async function PATCH(
   const timeChanged =
     scheduledAtRaw !== undefined &&
     scheduledAt.getTime() !== raid.scheduledAt.getTime();
+  const prevDungeonIds =
+    Array.isArray(raid.dungeonIds) && raid.dungeonIds.every((x) => typeof x === 'string')
+      ? Array.from(new Set((raid.dungeonIds as string[]).map((x) => x.trim()).filter(Boolean)))
+      : [raid.dungeonId];
+  const dungeonChanged =
+    raid.dungeonId !== dungeonId ||
+    JSON.stringify(prevDungeonIds) !== JSON.stringify(nextDungeonIds);
 
-  if (timeChanged && !confirmResetSignups) {
+  if ((timeChanged || dungeonChanged) && !confirmResetSignups) {
     return NextResponse.json(
-      { error: 'confirmResetSignups required when changing schedule' },
+      { error: 'confirmResetSignups required when changing schedule or dungeons' },
       { status: 400 }
     );
   }
@@ -202,6 +218,13 @@ export async function PATCH(
   });
   if (!dungeon) {
     return NextResponse.json({ error: 'Dungeon not found' }, { status: 400 });
+  }
+  const allDungeons = await prisma.rfDungeon.findMany({
+    where: { id: { in: nextDungeonIds }, instanceType: 'raid' },
+    select: { id: true },
+  });
+  if (allDungeons.length !== nextDungeonIds.length) {
+    return NextResponse.json({ error: 'One or more dungeons not found' }, { status: 400 });
   }
 
   if (raidGroupRestrictionId) {
@@ -231,7 +254,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid loot master' }, { status: 400 });
   }
 
-  if (timeChanged && confirmResetSignups) {
+  if ((timeChanged || dungeonChanged) && confirmResetSignups) {
     await prisma.$transaction([
       prisma.rfRaidSignup.deleteMany({ where: { raidId } }),
       prisma.rfRaid.update({
@@ -240,6 +263,7 @@ export async function PATCH(
           name,
           note,
           dungeonId,
+          dungeonIds: nextDungeonIds,
           raidLeaderId,
           lootmasterId,
           minTanks,
@@ -263,6 +287,7 @@ export async function PATCH(
         name,
         note,
         dungeonId,
+        dungeonIds: nextDungeonIds,
         raidLeaderId,
         lootmasterId,
         minTanks,
@@ -281,7 +306,10 @@ export async function PATCH(
   }
 
   void syncRaidThreadSummary(raidId);
-  return NextResponse.json({ ok: true, resetSignups: timeChanged && confirmResetSignups });
+  return NextResponse.json({
+    ok: true,
+    resetSignups: (timeChanged || dungeonChanged) && confirmResetSignups,
+  });
 }
 
 /**
