@@ -256,6 +256,24 @@ export function NewRaidWizard({
   });
   const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>('all');
 
+  const editable = mode === 'create' ? true : (initialRaid?.status === 'open');
+
+  useEffect(() => {
+    if (!dungeonMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDungeonMenuOpen(false);
+    };
+    const onDown = () => setDungeonMenuOpen(false);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('scroll', onDown, true);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', onDown, true);
+    };
+  }, [dungeonMenuOpen]);
+
   const signupUntil = useMemo(() => parseDatetimeLocal(signupDatetimeLocal), [signupDatetimeLocal]);
 
   const rangeIndices = useMemo(() => {
@@ -632,22 +650,6 @@ export function NewRaidWizard({
   }
 
   const effectiveDungeonId = dungeonIds[0] ?? '';
-  const editable = mode === 'create' ? true : (initialRaid?.status === 'open');
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setDungeonMenuOpen(false);
-    };
-    const onDown = () => setDungeonMenuOpen(false);
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('scroll', onDown, true);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('scroll', onDown, true);
-    };
-  }, []);
 
   const roleMinConfig = [
     { role: 'Tank' as const, val: minTanks, set: setMinTanks, key: 'minTanks' as const },
