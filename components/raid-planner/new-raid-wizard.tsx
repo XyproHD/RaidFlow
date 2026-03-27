@@ -704,6 +704,34 @@ export function NewRaidWizard({
 
   return (
     <div className="max-w-6xl space-y-8">
+      {isEdit ? (
+        <section className="rounded-xl border border-border bg-card p-4 md:p-5 flex flex-wrap items-center gap-3 justify-between">
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{tEdit('sectionBasics')}</span>
+            <span className="mx-2 text-border">·</span>
+            <span>{tEdit('terminSection')}</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={saving || !editable}
+              className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
+              onClick={() => void doCancelRaid()}
+            >
+              🚫 {tEdit('cancelRaid')}
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              className="rounded-md border border-destructive bg-destructive/10 text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
+              onClick={() => void doDeleteRaid()}
+            >
+              🗑️ {tDetail('menuDeleteRaid')}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <div className="flex items-center gap-3 text-sm text-muted-foreground">
         <span className={cn(step === 1 && 'text-foreground font-medium')}>{t('step1')}</span>
         <span aria-hidden>→</span>
@@ -1003,6 +1031,13 @@ export function NewRaidWizard({
           </section>
 
           <p className="text-sm text-muted-foreground">{t('raidDateHint')}</p>
+
+          {isEdit ? (
+            <div className="rounded-xl border border-border bg-muted/15 p-4 text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">ℹ️</span>{' '}
+              {tEdit('resetSignupsWarning')}
+            </div>
+          ) : null}
 
           {isEdit && requiresReset ? (
             <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 space-y-2">
