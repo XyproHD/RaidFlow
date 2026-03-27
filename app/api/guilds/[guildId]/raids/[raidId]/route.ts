@@ -128,6 +128,12 @@ export async function PATCH(
       : typeof body.raidGroupRestrictionId === 'string' && body.raidGroupRestrictionId.trim()
         ? body.raidGroupRestrictionId.trim()
         : raid.raidGroupRestrictionId;
+  const discordChannelId =
+    body.discordChannelId === null
+      ? null
+      : typeof body.discordChannelId === 'string'
+        ? body.discordChannelId.trim() || null
+        : raid.discordChannelId;
 
   const dungeonId =
     typeof body.dungeonId === 'string' && body.dungeonId.trim()
@@ -272,6 +278,7 @@ export async function PATCH(
           minHealers,
           minSpecs: nextMinSpecs,
           raidGroupRestrictionId,
+          discordChannelId,
           maxPlayers,
           scheduledAt,
           scheduledEndAt,
@@ -296,6 +303,7 @@ export async function PATCH(
         minHealers,
         minSpecs: nextMinSpecs,
         raidGroupRestrictionId,
+        discordChannelId,
         maxPlayers,
         scheduledAt,
         scheduledEndAt,

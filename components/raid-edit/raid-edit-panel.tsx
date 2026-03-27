@@ -88,6 +88,7 @@ export type RaidEditSerialized = {
   signupVisibility: string;
   status: string;
   discordThreadId: string | null;
+  discordChannelId?: string | null;
   dungeon: { id: string; name: string };
   raidGroupRestriction: { id: string; name: string } | null;
   signups: RaidEditSignupRow[];
