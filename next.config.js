@@ -7,11 +7,6 @@ const nextConfig = {
   async redirects() {
     return [
       {
-        source: '/:locale/guild/:guildId/raid/:raidId/edit',
-        destination: '/:locale/guild/:guildId/raid/:raidId?mode=edit',
-        permanent: false,
-      },
-      {
         source: '/:locale/guild/:guildId/raid/:raidId/signup',
         destination: '/:locale/guild/:guildId/raid/:raidId?mode=signup',
         permanent: false,
