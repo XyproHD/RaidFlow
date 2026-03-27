@@ -1,0 +1,47 @@
+import { prisma } from '@/lib/prisma';
+
+type SessionLike = { userId?: string; discordId?: string } | null;
+
+/**
+ * Liefert die rf_user.id für die Session. Wenn session.userId keine gültige User-ID
+ * ist (z. B. alte Session mit Discord-ID statt DB-UUID), wird der User per discordId
+ * ermittelt bzw. angelegt. Behebt Foreign-Key-Fehler bei Character/Raidzeiten.
+ */
+export async function getEffectiveUserId(session: SessionLike): Promise<string | null> {
+  if (!session || typeof session !== 'object') return null;
+  const s = session as { userId?: string; discordId?: string; user?: { id?: string } };
+  let discordId = typeof s.discordId === 'string' && s.discordId ? s.discordId : undefined;
+  if (!discordId && s.user?.id) discordId = String(s.user.id);
+  const candidateId = typeof s.userId === 'string' && s.userId ? s.userId : undefined;
+
+  /** UUID-Format (rf_user.id); Discord-IDs sind lange Zahlenstrings. */
+  const isUuid = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+  try {
+    if (candidateId) {
+      const user = await prisma.rfUser.findUnique({ where: { id: candidateId } });
+      if (user) return user.id;
+      // Alte Session / Fallback: userId ist oft Discord-ID (token.sub), dann per discordId suchen oder anlegen
+      if (!isUuid(candidateId)) {
+        const byDiscord = await prisma.rfUser.findUnique({ where: { discordId: candidateId } });
+        if (byDiscord) return byDiscord.id;
+        // Session hat nur userId (Discord-ID), kein discordId – trotzdem User ermitteln/anlegen
+        discordId = discordId ?? candidateId;
+      }
+    }
+
+    if (discordId) {
+      const user = await prisma.rfUser.upsert({
+        where: { discordId },
+        create: { discordId },
+        update: { updatedAt: new Date() },
+      });
+      return user.id;
+    }
+  } catch (e) {
+    console.error('[getEffectiveUserId]', e);
+    return null;
+  }
+
+  return null;
+}

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getSession } from '@/lib/auth';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export type ThemeBody = { theme: 'light' | 'dark' };
@@ -7,8 +8,8 @@ export type ThemeBody = { theme: 'light' | 'dark' };
 /** Theme-Preferenz des eingeloggten Users in der DB speichern (zusätzlich zum Cookie). */
 export async function PATCH(request: Request) {
   try {
-    const session = await getSession();
-    if (!session?.user?.discordId) {
+    const session = await getServerSession(authOptions);
+    if (!session?.discordId) {
       return NextResponse.json(
         { error: 'Nicht eingeloggt' },
         { status: 401 }
@@ -25,7 +26,7 @@ export async function PATCH(request: Request) {
     }
 
     await prisma.rfUser.updateMany({
-      where: { discordId: session.user.discordId },
+      where: { discordId: session.discordId },
       data: { themePreference: theme },
     });
 

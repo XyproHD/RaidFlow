@@ -16,9 +16,11 @@ datasource db {
 // -----------------------------------------------------------------------------
 
 model RfUser {
-  id              String   @id @default(uuid())
-  discordId       String   @unique @map("discord_id")
-  themePreference String?  @map("theme_preference") // "light" | "dark" – Anzeige-Modus, wird auch per Cookie gespeichert
+  id              String    @id @default(uuid())
+  discordId       String    @unique @map("discord_id")
+  themePreference String?   @map("theme_preference") // "light" | "dark" – Anzeige-Modus, wird auch per Cookie gespeichert
+  lastActiveAt    DateTime? @map("last_active_at")  // Letzte Aktivität in RaidFlow
+  status          String   @default("aktiv")       // aktiv | inaktiv | deaktiviert
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -42,9 +44,17 @@ model RfGuild {
   discordRoleGuildmasterId    String?  @map("discord_role_guildmaster_id")
   discordRoleRaidleaderId     String?  @map("discord_role_raidleader_id")
   discordRoleRaiderId         String?  @map("discord_role_raider_id")
+  // Optional: WoW-Realm-Zeile + Battle.net-Gilden-ID (Gildenverwaltung)
+  battlenetRealmId           String?  @map("battlenet_realm_id")
+  // Profil-API: realm.slug / realm.id (Fallback: rf_battlenet_realm)
+  battlenetProfileRealmSlug   String?  @map("battlenet_profile_realm_slug")
+  battlenetProfileRealmId     BigInt?  @map("battlenet_profile_realm_id")
+  battlenetGuildId            BigInt?  @map("battlenet_guild_id")
+  battlenetGuildName          String?  @map("battlenet_guild_name")
   createdAt                   DateTime @default(now()) @map("created_at")
   updatedAt                   DateTime @updatedAt @map("updated_at")
 
+  battlenetRealm        RfBattlenetRealm? @relation(fields: [battlenetRealmId], references: [id], onDelete: SetNull)
   userGuilds            RfUserGuild[]
   raidGroups            RfRaidGroup[]
   guildMembers          RfGuildMember[]
@@ -58,10 +68,12 @@ model RfGuild {
 }
 
 model RfUserGuild {
-  userId    String   @map("user_id")
-  guildId   String   @map("guild_id")
-  role      String
-  joinedAt  DateTime @default(now()) @map("joined_at")
+  userId       String    @map("user_id")
+  guildId     String    @map("guild_id")
+  role        String
+  joinedAt    DateTime  @default(now()) @map("joined_at")
+  lastActiveAt DateTime? @map("last_active_at") // Letzte Aktivität in dieser Gilde
+  status      String    @default("aktiv")       // aktiv | inaktiv | deaktiviert
 
   user   RfUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
   guild  RfGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
@@ -77,24 +89,48 @@ model RfRaidGroup {
   discordRoleId  String?  @map("discord_role_id")
   sortOrder      Int      @default(0) @map("sort_order")
 
-  guild         RfGuild        @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  guildMembers  RfGuildMember[]
-  raids         RfRaid[]       @relation("RaidGroupRestriction")
+  guild                 RfGuild                      @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  memberRaidGroups      RfGuildMemberRaidGroup[]
+  raids                 RfRaid[]                     @relation("RaidGroupRestriction")
+  raidGroupCharacters   RfRaidGroupCharacter[]
 
   @@map("rf_raid_group")
+}
+
+model RfRaidGroupCharacter {
+  id          String   @id @default(uuid())
+  raidGroupId String   @map("raid_group_id")
+  characterId String   @map("character_id")
+  allowed     Boolean  @default(true)
+
+  raidGroup RfRaidGroup  @relation(fields: [raidGroupId], references: [id], onDelete: Cascade)
+  character RfCharacter  @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([raidGroupId, characterId])
+  @@map("rf_raid_group_character")
+}
+
+model RfGuildMemberRaidGroup {
+  guildMemberId String @map("guild_member_id")
+  raidGroupId   String @map("raid_group_id")
+
+  guildMember RfGuildMember @relation(fields: [guildMemberId], references: [id], onDelete: Cascade)
+  raidGroup   RfRaidGroup    @relation(fields: [raidGroupId], references: [id], onDelete: Cascade)
+
+  @@id([guildMemberId, raidGroupId])
+  @@map("rf_guild_member_raid_group")
 }
 
 model RfGuildMember {
   id           String    @id @default(uuid())
   userId       String    @map("user_id")
   guildId      String    @map("guild_id")
-  raidGroupId  String?   @map("raid_group_id")
   joinedAt     DateTime  @default(now()) @map("joined_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
-  user      RfUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  guild     RfGuild    @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  raidGroup RfRaidGroup? @relation(fields: [raidGroupId], references: [id], onDelete: SetNull)
+  user             RfUser                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild            RfGuild                   @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  memberRaidGroups RfGuildMemberRaidGroup[]
 
   @@unique([userId, guildId])
   @@map("rf_guild_member")
@@ -105,20 +141,27 @@ model RfGuildMember {
 // -----------------------------------------------------------------------------
 
 model RfCharacter {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  guildId   String?  @map("guild_id")
-  name      String
-  mainSpec  String   @map("main_spec")
-  offSpec   String?  @map("off_spec")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                       String   @id @default(uuid())
+  userId                   String   @map("user_id")
+  guildId                  String?  @map("guild_id")
+  name                     String
+  mainSpec                 String   @map("main_spec")
+  offSpec                  String?  @map("off_spec")
+  /// Persistierter maximaler Gearscore; wird via Battle.net-Sync nur erhöht.
+  gearScore                Int?     @map("gear_score")
+  isMain                   Boolean  @default(false) @map("is_main")
+  /// Anzeigename auf dem Discord-Server der Gilde; Sync beim Login
+  guildDiscordDisplayName  String?  @map("guild_discord_display_name")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
 
-  user          RfUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  guild         RfGuild? @relation(fields: [guildId], references: [id], onDelete: SetNull)
-  raidSignups   RfRaidSignup[]
-  raidCompletions RfRaidCompletion[]
-  loots         RfLoot[]
+  user                RfUser                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guild                RfGuild?                @relation(fields: [guildId], references: [id], onDelete: SetNull)
+  raidSignups          RfRaidSignup[]
+  raidCompletions      RfRaidCompletion[]
+  loots                RfLoot[]
+  raidGroupCharacters  RfRaidGroupCharacter[]
+  battlenetProfile     RfBattlenetCharacterProfile?
 
   @@map("rf_character")
 }
@@ -138,14 +181,32 @@ model RfRaidTimePreference {
 }
 
 model RfDungeon {
-  id        String  @id @default(uuid())
-  name      String
-  expansion String
+  id             String   @id @default(uuid())
+  name           String   // Fallback/Default-Name (z. B. en)
+  expansion      String
+  instanceType   String   @map("instance_type")   // "dungeon" | "raid"
+  maxPlayers     Int      @map("max_players")    // 5 = Dungeon, 10/25 = Schlachtzug
+  resetType      String?  @map("reset_type")     // "weekly" | "daily" | "per_run"
+  resetWeekday   Int?     @map("reset_weekday")  // 0=Sonntag .. 6=Samstag (EU weekly: 3=Mittwoch)
+  resetTimeUtc   String?  @map("reset_time_utc") // HH:MM UTC (z. B. "04:00")
+  addonNames     Json?    @map("addon_names")    // ["AtlasLoot","InstanceID","Atlas"]
 
-  raids RfRaid[]
-  loots RfLoot[]
+  names  RfDungeonName[]
+  raids  RfRaid[]
+  loots  RfLoot[]
 
   @@map("rf_dungeon")
+}
+
+model RfDungeonName {
+  dungeonId String @map("dungeon_id")
+  locale    String // de, en, fr, …
+  name      String
+
+  dungeon RfDungeon @relation(fields: [dungeonId], references: [id], onDelete: Cascade)
+
+  @@id([dungeonId, locale])
+  @@map("rf_dungeon_name")
 }
 
 // -----------------------------------------------------------------------------
@@ -156,6 +217,7 @@ model RfRaid {
   id                      String    @id @default(uuid())
   guildId                 String    @map("guild_id")
   dungeonId               String    @map("dungeon_id")
+  dungeonIds              Json?     @map("dungeon_ids")
   name                    String
   raidLeaderId            String?   @map("raid_leader_id")
   lootmasterId            String?   @map("lootmaster_id")
@@ -168,11 +230,14 @@ model RfRaid {
   note                    String?   @db.Text
   maxPlayers              Int       @map("max_players")
   scheduledAt             DateTime  @map("scheduled_at")
+  scheduledEndAt          DateTime? @map("scheduled_end_at")
   signupUntil             DateTime  @map("signup_until")
   signupVisibility        String    @map("signup_visibility")
   status                  String
-  discordThreadId         String?   @map("discord_thread_id")
-  discordChannelId       String?   @map("discord_channel_id")
+  discordThreadId                String?   @map("discord_thread_id")
+  discordChannelId               String?   @map("discord_channel_id")
+  /// Erste Zusammenfassungs-Nachricht im Thread (PATCH bei Anmelde-Updates)
+  discordThreadSummaryMessageId  String?   @map("discord_thread_summary_message_id")
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
 
@@ -191,9 +256,24 @@ model RfRaidSignup {
   raidId        String    @map("raid_id")
   userId        String    @map("user_id")
   characterId   String?   @map("character_id")
+  /// normal | uncertain | reserve (ältere DB: main → normal)
   type          String
   allowReserve  Boolean   @default(false) @map("allow_reserve")
   note          String?   @db.Text
+  /// „Komme verspätet“ – dann Notiz mit Verspätungstext verpflichtend
+  isLate        Boolean   @default(false) @map("is_late")
+  /// Anmeldung mit Main- oder Off-Spec (Anzeigename wie in rf_character)
+  signedSpec    String?   @map("signed_spec")
+  /// User-Bedingung: nur angemeldeter Spec erlaubt (kein Leader-Spec-Wechsel)
+  onlySignedSpec Boolean  @default(false) @map("only_signed_spec")
+  /// User-Bedingung: Reserve verbieten (eigene Anmeldung darf nicht auf Reserve)
+  forbidReserve  Boolean  @default(false) @map("forbid_reserve")
+  /// Nur Raidleitung: Reserve für diesen Char zulassen (false = Reserve verbieten)
+  leaderAllowsReserve     Boolean   @default(true) @map("leader_allows_reserve")
+  /// Nur Raidleitung: als Teilnehmer markiert
+  leaderMarkedTeilnehmer  Boolean   @default(false) @map("leader_marked_teilnehmer")
+  /// signup | substitute | confirmed — Spalten Anmeldung / Ersatz / Gesetzt
+  leaderPlacement String  @default("signup") @map("leader_placement")
   setConfirmed  Boolean   @default(false) @map("set_confirmed")
   signedAt      DateTime  @default(now()) @map("signed_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
@@ -264,6 +344,76 @@ model RfAppConfig {
   value String @db.Text
 
   @@map("rf_app_config")
+}
+
+model RfBattlenetApiConfig {
+  id                  String   @id @default(uuid())
+  region              String   @unique
+  clientId            String   @map("client_id")
+  clientSecret        String   @map("client_secret")
+  locale              String   @default("de_DE")
+  namespaceProfile    String   @map("namespace_profile")
+  namespaceDynamic    String   @map("namespace_dynamic")
+  oauthTokenUrl       String   @map("oauth_token_url")
+  apiBaseUrl          String   @map("api_base_url")
+  searchCharacterPath String   @default("/data/wow/search/character") @map("search_character_path")
+  searchGuildPath     String   @default("/data/wow/search/guild") @map("search_guild_path")
+  profileCharacterPath String  @default("/profile/wow/character") @map("profile_character_path")
+  profileGuildPath     String  @default("/data/wow/guild") @map("profile_guild_path")
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  characterProfiles   RfBattlenetCharacterProfile[]
+
+  @@map("rf_battlenet_api_config")
+}
+
+model RfBattlenetCharacterProfile {
+  id                   String    @id @default(uuid())
+  characterId          String    @unique @map("character_id")
+  battlenetConfigId    String?   @map("battlenet_config_id")
+  region               String
+  wowVersion           String?   @map("wow_version")
+  realmSlug            String    @map("realm_slug")
+  realmName            String?   @map("realm_name")
+  characterNameLower   String    @map("character_name_lower")
+  battlenetCharacterId BigInt?   @map("battlenet_character_id")
+  level                Int?
+  raceName             String?   @map("race_name")
+  className            String?   @map("class_name")
+  activeSpecName       String?   @map("active_spec_name")
+  guildName            String?   @map("guild_name")
+  faction              String?
+  profileUrl           String?   @map("profile_url")
+  rawProfile           Json?     @map("raw_profile")
+  lastSyncedAt         DateTime  @default(now()) @map("last_synced_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  character       RfCharacter            @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  battlenetConfig RfBattlenetApiConfig?  @relation(fields: [battlenetConfigId], references: [id], onDelete: SetNull)
+
+  @@unique([region, realmSlug, characterNameLower])
+  @@map("rf_battlenet_character_profile")
+}
+
+model RfBattlenetRealm {
+  id         String   @id @default(uuid())
+  realmId    BigInt   @map("realm_id")
+  name       Json
+  slug       String
+  region     String
+  namespace  String
+  version    String
+  type       String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  guilds RfGuild[]
+
+  @@unique([region, namespace, realmId])
+  @@unique([region, namespace, slug])
+  @@map("rf_battlenet_realm")
 }
 
 model RfAuditLog {

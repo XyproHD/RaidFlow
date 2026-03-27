@@ -1,15 +1,31 @@
-import { useTranslations } from 'next-intl';
+import { redirect } from 'next/navigation';
+import { getServerSession } from 'next-auth';
+import { getLocale } from 'next-intl/server';
+import { authOptions } from '@/lib/auth';
+import { getAppConfig } from '@/lib/app-config';
+import { LandingPage } from '@/components/landing-page';
 
-export default function HomePage() {
-  const t = useTranslations('home');
-  const tCommon = useTranslations('common');
+/** Startseite: Nicht eingeloggt → Landing; eingeloggt → Redirect zu Dashboard. */
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: { error?: string };
+}) {
+  const session = await getServerSession(authOptions);
+  const locale = await getLocale();
+  const { error } = searchParams;
 
+  if (session) {
+    redirect(`/${locale}/dashboard`);
+  }
+
+  const config = await getAppConfig();
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-8 bg-background">
-      <h1 className="text-3xl font-bold text-foreground mb-2">
-        {tCommon('appName')}
-      </h1>
-      <p className="text-muted-foreground">{t('welcome')}</p>
-    </main>
+    <LandingPage
+      error={error}
+      discordBotInviteEnabled={config.discordBotInviteEnabled}
+      maintenanceMode={config.maintenanceMode}
+      statusMessage={config.statusMessage}
+    />
   );
 }
