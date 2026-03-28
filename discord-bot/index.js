@@ -2,6 +2,7 @@
  * RaidFlow Discord-Bot
  * Slash-Commands: /raidflow help, /raidflow setup, /raidflow group <groupname>
  * Rechte: Nur Server-Owner oder ADMINISTRATOR oder MANAGE_GUILD.
+ * Gateway: GuildMembers (privileged) – synchronisiert RaidFlow-Rechte bei Join/Update/Leave.
  *
  * Umgebung: .env oder .env.local im discord-bot/ Ordner, oder .env.local im Projektroot.
  */
@@ -115,6 +116,19 @@ async function callWebapp(path, body) {
   return res.json();
 }
 
+/** RaidFlow-Berechtigungen in der Webapp-DB aktualisieren (zentrales Sync-API). */
+async function pushMemberPermissionSync(guildDiscordId, discordUserId, payload) {
+  try {
+    await callWebapp('/api/bot/sync-member', {
+      discordGuildId: guildDiscordId,
+      discordUserId,
+      ...payload,
+    });
+  } catch (e) {
+    console.error('[pushMemberPermissionSync]', e.message);
+  }
+}
+
 /** Server-Rollen für Auswahl (ohne @everyone, ohne verwaltete Rollen), max 24 + "Neue Rolle". */
 function getSelectableRoles(guild) {
   const roles = guild.roles.cache
@@ -125,7 +139,7 @@ function getSelectableRoles(guild) {
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
 
 // —— Help ———————————————————————————————————————————————————————————————————
@@ -889,6 +903,24 @@ if (!token) {
   console.error('DISCORD_BOT_TOKEN fehlt. Bitte in Railway/Vercel bzw. .env setzen.');
   process.exit(1);
 }
+
+client.on('guildMemberAdd', (member) => {
+  void pushMemberPermissionSync(member.guild.id, member.user.id, {
+    roleIds: [...member.roles.cache.keys()],
+    displayName: member.displayName ?? null,
+  });
+});
+
+client.on('guildMemberRemove', (member) => {
+  void pushMemberPermissionSync(member.guild.id, member.user.id, { left: true });
+});
+
+client.on('guildMemberUpdate', (_oldMember, newMember) => {
+  void pushMemberPermissionSync(newMember.guild.id, newMember.user.id, {
+    roleIds: [...newMember.roles.cache.keys()],
+    displayName: newMember.displayName ?? null,
+  });
+});
 
 client.on('error', (err) => {
   console.error('Discord Client Error:', err);

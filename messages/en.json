@@ -7,7 +7,8 @@
     "loginWithDiscord": "Login with Discord",
     "discordBotInvite": "Discord Bot invite",
     "loginErrorTitle": "Discord login failed.",
-    "loginErrorHint": "Common causes: (1) Redirect URL below must be in the same Discord application that provides your Client ID & Secret. (2) NEXTAUTH_URL in .env.local must match exactly (no trailing slash). (3) NEXTAUTH_SECRET must be set. (4) After restarting \"npm run dev\", try logging in again and check the terminal for debug output with the exact error."
+    "loginErrorHint": "Common causes: (1) Under Discord → OAuth2 → Redirects, add exactly the URL below (same application as Client ID & Secret). (2) On Vercel → Environment Variables for Production: NEXTAUTH_URL = site base URL with no trailing slash (e.g. https://raidflow.vercel.app). (3) NEXTAUTH_SECRET and DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET set for Production. (4) \"OAuthCallback\" often means redirect URI mismatch, wrong client secret, or Discord app mismatch vs Vercel.",
+    "loginErrorParam": "Return code: {code}"
   },
   "footer": {
     "imprint": "Imprint",

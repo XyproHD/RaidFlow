@@ -7,7 +7,8 @@
     "loginWithDiscord": "Login mit Discord",
     "discordBotInvite": "Discord-Bot einladen",
     "loginErrorTitle": "Discord-Login fehlgeschlagen.",
-    "loginErrorHint": "Häufige Ursachen: (1) Redirect-URL wie unten bei derselben Discord-App eingetragen, in der du Client ID & Secret verwendest. (2) NEXTAUTH_URL in .env.local exakt wie unten (kein Slash). (3) NEXTAUTH_SECRET gesetzt. (4) Im Terminal nach Neustart von „npm run dev“ erscheinen bei erneutem Login-Versuch Debug-Meldungen – dort steht die genaue Fehlerursache."
+    "loginErrorHint": "Häufige Ursachen: (1) Unter Discord → OAuth2 → Redirects muss exakt die URL unten stehen (dieselbe App wie Client ID & Secret). (2) Auf Vercel unter Environment Variables für Production: NEXTAUTH_URL = Basis-URL ohne abschließenden Slash (z. B. https://raidflow.vercel.app). (3) NEXTAUTH_SECRET und DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET für Production gesetzt. (4) „OAuthCallback“ entsteht oft durch falsche Redirect-URL, falsches Secret oder eine andere Discord-App als auf Vercel konfiguriert.",
+    "loginErrorParam": "Rückgabecode: {code}"
   },
   "footer": {
     "imprint": "Impressum",
