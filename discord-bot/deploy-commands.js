@@ -30,6 +30,11 @@ const commands = [
     .setDescription('RaidFlow: Server einrichten und Raidgruppen verwalten')
     .addSubcommand((sub) =>
       sub
+        .setName('check')
+        .setDescription('Status: Webapp/DB, Mindestrollen, deine Discord- und Webapp-Zuordnung')
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName('help')
         .setDescription('Zeigt eine Übersicht aller RaidFlow-Befehle mit Beschreibung')
     )
@@ -67,7 +72,9 @@ const rest = new REST().setToken(token);
       console.log('Globale Commands erfolgreich registriert.');
     }
   } catch (e) {
-    console.error('Fehler:', e);
-    process.exit(1);
+    console.error('[deploy-commands] Slash-Commands konnten nicht registriert werden:', e);
+    if (e?.rawError) console.error('[deploy-commands] Discord API:', JSON.stringify(e.rawError));
+    // Exit 0: Viele Deploy-Skripte nutzen "deploy && node index.js" — bei exit 1 würde der Bot nie starten.
+    process.exit(0);
   }
 })();

@@ -125,6 +125,131 @@ async function callWebapp(path, body) {
   return res.json();
 }
 
+/** GET mit Query + Bot-Secret (Diagnose). */
+async function getWebappJson(path, queryParams) {
+  const base = (process.env.WEBAPP_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const qs = new URLSearchParams(queryParams);
+  const url = `${base}${path}?${qs.toString()}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: getWebappHeaders(),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Webapp ${res.status}: ${text}`);
+  }
+  return JSON.parse(text);
+}
+
+function formatRolePresenceLine(guild, roleId, label) {
+  if (!roleId) return `• ${label}: _nicht in DB hinterlegt_`;
+  const r = guild.roles.cache.get(roleId);
+  return r
+    ? `• ${label}: vorhanden („${r.name}“, \`${roleId}\`)`
+    : `• ${label}: **fehlt auf dem Server** (in DB: \`${roleId}\`)`;
+}
+
+function discordMainRaidFlowRole(member, gmId, rlId, rdId) {
+  const ids = member.roles.cache;
+  if (gmId && ids.has(gmId)) return 'Gildenmeister';
+  if (rlId && ids.has(rlId)) return 'Raidleader';
+  if (rdId && ids.has(rdId)) return 'Raider';
+  return null;
+}
+
+async function runRaidflowCheck(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const guild = interaction.guild;
+  const discordUserId = interaction.user.id;
+  const discordGuildId = guild.id;
+
+  try {
+    const data = await getWebappJson('/api/bot/guild-check', {
+      discordGuildId,
+      discordUserId,
+    });
+
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        scope: 'RF_BOT_CHECK',
+        step: 'bot_guild_check_ok',
+        discordGuildId,
+        discordUserId,
+        guildInDatabase: data.guildInDatabase,
+        rfUserGuildRole: data.user?.rfUserGuildRole,
+      })
+    );
+
+    let member = interaction.member;
+    try {
+      member = await guild.members.fetch({ user: discordUserId });
+    } catch {
+      /* interaction.member */
+    }
+
+    const g = data.rfGuild;
+    const gmId = g?.discordRoleGuildmasterId;
+    const rlId = g?.discordRoleRaidleaderId;
+    const rdId = g?.discordRoleRaiderId;
+
+    const lines = [];
+    lines.push('**RaidFlow – Status-Check**');
+    lines.push('');
+    lines.push('**Webapp / Datenbank**');
+    lines.push(`• Server in DB: **${data.guildInDatabase ? 'ja' : 'nein'}**`);
+    lines.push(`• Mindestrollen in DB vollständig: **${g?.minimumRolesConfigured ? 'ja' : 'nein'}**`);
+    lines.push(`• App-Config (Server erlaubt): **${data.allowedByAppConfig ? 'ja' : 'nein'}**`);
+    if (g) lines.push(`• Raidgruppen in DB: **${g.raidGroupCount}**`);
+    lines.push('');
+    lines.push('**Konfigurierte Rollen auf Discord**');
+    if (g) {
+      lines.push(formatRolePresenceLine(guild, gmId, 'Gildenmeister'));
+      lines.push(formatRolePresenceLine(guild, rlId, 'Raidleader'));
+      lines.push(formatRolePresenceLine(guild, rdId, 'Raider'));
+    } else {
+      lines.push('_(keine Gilde in der Webapp-DB)_');
+    }
+    lines.push('');
+    lines.push('**Deine RaidFlow-Hauptrolle (Discord)**');
+    const dr = discordMainRaidFlowRole(member, gmId, rlId, rdId);
+    lines.push(dr ? `• **${dr}**` : '• _keine der drei Hauptrollen_');
+    lines.push('');
+    lines.push('**Webapp-Zuordnung (DB)**');
+    lines.push(`• \`rf_user\`: **${data.user.rfUserExists ? 'ja' : 'nein'}**`);
+    lines.push(`• \`rf_user_guild\` Rolle: **${data.user.rfUserGuildRole ?? '— fehlt —'}**`);
+    lines.push(
+      `• \`rf_guild_member\`: **${data.user.rfGuildMemberExists ? 'ja' : 'nein'}** (Raidgruppen-Links: ${data.user.raidGroupLinkCount})`
+    );
+
+    if (data.hints?.length) {
+      lines.push('');
+      lines.push('**Hinweise**');
+      for (const h of data.hints) lines.push(`• ${h}`);
+    }
+
+    lines.push('');
+    lines.push('_Logs: Vercel & Railway nach `RF_BOT_CHECK`; optional DB `rf_bot_diagnostic_log`._');
+
+    const content = lines.join('\n').slice(0, 3900);
+    await interaction.editReply({ content });
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'RF_BOT_CHECK',
+        step: 'bot_guild_check_failed',
+        discordGuildId,
+        discordUserId,
+        error: String(e?.message || e),
+      })
+    );
+    await interaction.editReply({
+      content: `Check fehlgeschlagen: ${e.message}\n\nWEBAPP_URL, BOT_SETUP_SECRET und Erreichbarkeit der Webapp prüfen.`,
+    });
+  }
+}
+
 /** RaidFlow-Berechtigungen in der Webapp-DB aktualisieren (zentrales Sync-API). */
 async function pushMemberPermissionSync(guildDiscordId, discordUserId, payload) {
   try {
@@ -180,7 +305,9 @@ function buildHelpContent() {
     '',
     '**`/raidflow group <Groupname>`** – Raidgruppe anlegen. Erstellt eine Discord-Rolle `Raidflowgroup-<Name>` und verknüpft sie in der Webapp.',
     '',
-    'Alle Befehle sind nur für Server-Gründer oder Nutzer mit „Server verwalten“ bzw. Administrator-Recht nutzbar.',
+    '**`/raidflow check`** – Status: Server in Webapp/DB, Mindestrollen, deine Discord-Rollen vs. Webapp-Zuordnung. **Für alle Server-Mitglieder.**',
+    '',
+    '**`help`**, **`setup`**, **`group`** nur mit Setup-Recht (Owner / Administrator / Server verwalten). **`check`** kann jeder auf dem Server nutzen.',
   ].join('\n');
 }
 
@@ -776,6 +903,16 @@ client.on('interactionCreate', async (interaction) => {
   // Help (nur Slash)
   if (interaction.isChatInputCommand() && interaction.commandName === 'raidflow') {
     const sub = interaction.options.getSubcommand();
+    if (sub === 'check') {
+      if (!interaction.guild) {
+        return interaction.reply({
+          content: 'Dieser Befehl funktioniert nur auf einem Server (nicht in DMs).',
+          ephemeral: true,
+        });
+      }
+      await runRaidflowCheck(interaction);
+      return;
+    }
     if (sub === 'help') {
       if (!hasSetupPermission(interaction.member)) {
         return interaction.reply({
