@@ -4,7 +4,19 @@ import { getServerSession } from 'next-auth';
 import { getLocale } from 'next-intl/server';
 import { authOptions } from '@/lib/auth';
 import { requireAdmin } from '@/lib/require-admin';
-import { getAppConfig } from '@/lib/app-config';
+import { getAppConfig, OWNER_DISCORD_ID, type AppConfigState } from '@/lib/app-config';
+
+/** Fallback wenn DB/Prisma in getAppConfig/requireAdmin fehlschlägt (z. B. falsche Prod-Env, Schema drift). */
+const defaultAppConfig: AppConfigState = {
+  ownerDiscordId: OWNER_DISCORD_ID,
+  useWhitelist: false,
+  useBlacklist: false,
+  serverWhitelist: [],
+  serverBlacklist: [],
+  discordBotInviteEnabled: true,
+  maintenanceMode: false,
+  statusMessage: '',
+};
 
 /** Geschützter Bereich: Nur für eingeloggte Nutzer. Bei Wartungsmodus sehen Nicht-Admins nur die Wartungsmeldung. */
 export default async function ProtectedLayout({
@@ -19,7 +31,13 @@ export default async function ProtectedLayout({
     redirect(`/${locale}`);
   }
 
-  const [admin, config] = await Promise.all([requireAdmin(), getAppConfig()]);
+  let admin: Awaited<ReturnType<typeof requireAdmin>> = null;
+  let config: AppConfigState = defaultAppConfig;
+  try {
+    [admin, config] = await Promise.all([requireAdmin(), getAppConfig()]);
+  } catch (e) {
+    console.error('[ProtectedLayout] requireAdmin/getAppConfig:', e);
+  }
   if (config.maintenanceMode && !admin) {
     const t = await getTranslations('maintenance');
     return (
