@@ -250,16 +250,59 @@ async function runRaidflowCheck(interaction) {
   }
 }
 
-/** RaidFlow-Berechtigungen in der Webapp-DB aktualisieren (zentrales Sync-API). */
+/**
+ * POST /api/bot/sync-member — mit ausführlichem JSON-Log (Railway).
+ * Kein throw: Fehler nur loggen, damit der Bot nicht abstürzt.
+ */
 async function pushMemberPermissionSync(guildDiscordId, discordUserId, payload) {
+  const base = (process.env.WEBAPP_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const url = `${base}/api/bot/sync-member`;
   try {
-    await callWebapp('/api/bot/sync-member', {
-      discordGuildId: guildDiscordId,
-      discordUserId,
-      ...payload,
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getWebappHeaders(),
+      },
+      body: JSON.stringify({
+        discordGuildId: guildDiscordId,
+        discordUserId,
+        ...payload,
+      }),
     });
+    const text = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* nicht JSON */
+    }
+    const line = {
+      level: res.ok ? 'info' : 'error',
+      scope: 'RF_MEMBER_SYNC',
+      httpStatus: res.status,
+      discordGuildId,
+      discordUserId,
+      left: payload.left === true,
+      roleIdCount: Array.isArray(payload.roleIds) ? payload.roleIds.length : 0,
+      skipped: json?.skipped === true,
+      skipReason: json?.reason,
+      apiError: json?.error,
+    };
+    console.log(JSON.stringify(line));
+    if (!res.ok || json?.skipped) {
+      console.log('[RF_MEMBER_SYNC] response body:', text.slice(0, 900));
+    }
   } catch (e) {
-    console.error('[pushMemberPermissionSync]', e.message);
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'RF_MEMBER_SYNC',
+        discordGuildId,
+        discordUserId,
+        error: String(e?.message || e),
+      })
+    );
   }
 }
 
@@ -289,6 +332,9 @@ if (USE_GUILD_MEMBERS_INTENT) {
       'Im Discord-Portal „Server Members Intent“ aktivieren und Railway-Env DISCORD_GUILD_MEMBERS_INTENT=1 setzen.'
   );
 }
+console.info(
+  '[RaidFlow] Slash-Commands: neuen Subcommand sofort nutzen → GUILD_ID oder DISCORD_DEPLOY_GUILD_IDS (Server-Snowflake) in Railway setzen; sonst globale Updates bis ca. 1 h.'
+);
 
 // —— Help ———————————————————————————————————————————————————————————————————
 function buildHelpContent() {
@@ -1076,11 +1122,26 @@ if (USE_GUILD_MEMBERS_INTENT) {
     void pushMemberPermissionSync(member.guild.id, member.user.id, { left: true });
   });
 
-  client.on('guildMemberUpdate', (_oldMember, newMember) => {
-    void pushMemberPermissionSync(newMember.guild.id, newMember.user.id, {
-      roleIds: [...newMember.roles.cache.keys()],
-      displayName: newMember.displayName ?? null,
-    });
+  client.on('guildMemberUpdate', async (_oldMember, newMember) => {
+    try {
+      const fresh = await newMember.fetch();
+      void pushMemberPermissionSync(fresh.guild.id, fresh.user.id, {
+        roleIds: [...fresh.roles.cache.keys()],
+        displayName: fresh.displayName ?? null,
+      });
+    } catch (e) {
+      void pushMemberPermissionSync(newMember.guild.id, newMember.user.id, {
+        roleIds: [...newMember.roles.cache.keys()],
+        displayName: newMember.displayName ?? null,
+      });
+      console.error(
+        JSON.stringify({
+          scope: 'RF_MEMBER_SYNC',
+          step: 'guildMemberUpdate_fetch_fallback',
+          error: String(e?.message || e),
+        })
+      );
+    }
   });
 }
 

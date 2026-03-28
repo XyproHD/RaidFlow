@@ -93,6 +93,11 @@ export async function GET(request: Request) {
     hints.push('Discord-User noch nicht in rf_user – mindestens einmal in der Webapp mit Discord anmelden.');
   } else if (guild && !rfUserGuildRole) {
     hints.push('Kein rf_user_guild-Eintrag – Webapp-Dashboard laden (mit DISCORD_BOT_TOKEN) oder Bot Member-Sync (Intent) nutzen.');
+    if (rfGuildMemberExists) {
+      hints.push(
+        'Hinweis: rf_guild_member existiert ohne rf_user_guild (früher möglicher Teil-Schreibfehler). Nach Deploy: Dashboard einmal laden (mit Bot-Token auf Vercel) oder Rolle auf Discord kurz ändern, damit der Bot erneut sync’t.'
+      );
+    }
   }
 
   const payload = {

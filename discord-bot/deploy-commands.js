@@ -3,8 +3,8 @@
  * Einmal ausführen nach Bot-Erstellung bzw. bei Änderung der Commands:
  *   cd discord-bot && node deploy-commands.js
  *
- * Für Test-Guild (sofort sichtbar): setze GUILD_ID in .env.
- * Ohne GUILD_ID: globale Registrierung (kann bis zu 1 Stunde verzögert sein).
+ * Immer: globale Commands (alle Server; Discord kann neue Subcommands bis ca. 1 h verzögern).
+ * Zusätzlich sofort auf deinem Server: GUILD_ID und/oder DISCORD_DEPLOY_GUILD_IDS (kommagetrennte Snowflakes).
  */
 import dotenv from 'dotenv';
 import path from 'path';
@@ -59,18 +59,29 @@ const commands = [
 
 const rest = new REST().setToken(token);
 
+function collectGuildIdsForInstantDeploy() {
+  const fromList = (process.env.DISCORD_DEPLOY_GUILD_IDS || '')
+    .split(/[,;\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const single = process.env.GUILD_ID?.trim();
+  return [...new Set(single ? [...fromList, single] : fromList)];
+}
+
 (async () => {
   try {
-    const guildId = process.env.GUILD_ID;
-    if (guildId) {
-      console.log(`Registriere Commands für Test-Guild ${guildId}...`);
-      await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
-      console.log('Guild-Commands erfolgreich registriert.');
-    } else {
-      console.log('Registriere globale Commands...');
-      await rest.put(Routes.applicationCommands(clientId), { body: commands });
-      console.log('Globale Commands erfolgreich registriert.');
+    const guildIds = collectGuildIdsForInstantDeploy();
+    for (const gid of guildIds) {
+      console.log(`[deploy-commands] Guild-Slash-Commands für ${gid} (sofort sichtbar)…`);
+      await rest.put(Routes.applicationGuildCommands(clientId, gid), { body: commands });
     }
+    if (guildIds.length === 0) {
+      console.log('[deploy-commands] Kein GUILD_ID / DISCORD_DEPLOY_GUILD_IDS — nur globale Registrierung.');
+    }
+
+    console.log('[deploy-commands] Globale Slash-Commands (alle Server)…');
+    await rest.put(Routes.applicationCommands(clientId), { body: commands });
+    console.log('[deploy-commands] Fertig: global + ggf. Guild-Kopien.');
   } catch (e) {
     console.error('[deploy-commands] Slash-Commands konnten nicht registriert werden:', e);
     if (e?.rawError) console.error('[deploy-commands] Discord API:', JSON.stringify(e.rawError));
