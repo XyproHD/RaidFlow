@@ -72,7 +72,9 @@ const rest = new REST().setToken(token);
       console.log('Globale Commands erfolgreich registriert.');
     }
   } catch (e) {
-    console.error('Fehler:', e);
-    process.exit(1);
+    console.error('[deploy-commands] Slash-Commands konnten nicht registriert werden:', e);
+    if (e?.rawError) console.error('[deploy-commands] Discord API:', JSON.stringify(e.rawError));
+    // Exit 0: Viele Deploy-Skripte nutzen "deploy && node index.js" — bei exit 1 würde der Bot nie starten.
+    process.exit(0);
   }
 })();

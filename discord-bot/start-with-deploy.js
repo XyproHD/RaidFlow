@@ -17,8 +17,13 @@ function run(cmd, args) {
 
 const deployCode = await run('node', ['deploy-commands.js']);
 if (deployCode !== 0) {
-  console.warn('Command-Registrierung fehlgeschlagen oder übersprungen, starte Bot trotzdem.');
+  console.warn(
+    '[start-with-deploy] deploy-commands Exit-Code:',
+    deployCode,
+    '— starte Bot trotzdem (npm start sollte immer index.js erreichen).'
+  );
 }
+console.log('[start-with-deploy] Starte Discord-Bot (index.js)…');
 
 const bot = spawn('node', ['index.js'], { stdio: 'inherit', cwd: __dirname });
 ['SIGTERM', 'SIGINT'].forEach((sig) => process.on(sig, () => bot.kill(sig)));

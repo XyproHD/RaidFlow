@@ -1,0 +1,8 @@
+# Railway/Nixpacks: nur dieses Paket installieren (kein Prisma/Next aus dem Monorepo-Root).
+# Root Directory in Railway auf "discord-bot" setzen.
+
+[phases.install]
+cmds = ["npm ci"]
+
+[start]
+cmd = "npm start"
