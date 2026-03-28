@@ -30,6 +30,11 @@ const commands = [
     .setDescription('RaidFlow: Server einrichten und Raidgruppen verwalten')
     .addSubcommand((sub) =>
       sub
+        .setName('check')
+        .setDescription('Status: Webapp/DB, Mindestrollen, deine Discord- und Webapp-Zuordnung')
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName('help')
         .setDescription('Zeigt eine Übersicht aller RaidFlow-Befehle mit Beschreibung')
     )

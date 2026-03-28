@@ -346,6 +346,21 @@ model RfAppConfig {
   @@map("rf_app_config")
 }
 
+/// Diagnose-Logs (z. B. /raidflow check) — Auswertung in Supabase SQL, nicht für Produktions-Pfade kritisch.
+model RfBotDiagnosticLog {
+  id               String   @id @default(uuid())
+  kind             String   @map("kind")
+  discordGuildId   String?  @map("discord_guild_id")
+  discordUserId    String?  @map("discord_user_id")
+  success          Boolean  @default(true)
+  summaryLine      String?  @map("summary_line") @db.VarChar(500)
+  payload          Json?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt(sort: Desc)])
+  @@map("rf_bot_diagnostic_log")
+}
+
 model RfBattlenetApiConfig {
   id                  String   @id @default(uuid())
   region              String   @unique
