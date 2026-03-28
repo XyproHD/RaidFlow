@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
+import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
 import { syncRaidThreadSummary, postRaidLockedThreadNotice } from '@/lib/raid-thread-sync';
 
 function parseMinSpecs(raw: unknown): Record<string, number> | null {
@@ -247,10 +248,7 @@ export async function PATCH(
 
   const verifyUserInGuild = async (uid: string | null) => {
     if (!uid) return true;
-    const ug = await prisma.rfUserGuild.findUnique({
-      where: { userId_guildId: { userId: uid, guildId } },
-    });
-    return !!(ug && ug.role !== 'member');
+    return userHasRaidflowParticipationInGuild(uid, guildId);
   };
 
   if (!(await verifyUserInGuild(raidLeaderId))) {

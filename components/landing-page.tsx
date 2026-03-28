@@ -10,6 +10,20 @@ export type LandingPageProps = {
   statusMessage?: string;
 };
 
+/** NextAuth leitet bei fehlgeschlagenem OAuth mit error=… auf die Sign-In-Seite (hier /). */
+function isAuthCallbackError(error: string | undefined): boolean {
+  if (!error) return false;
+  if (error === 'discord') return true;
+  return [
+    'OAuthCallback',
+    'OAuthSignin',
+    'Callback',
+    'Configuration',
+    'AccessDenied',
+    'OAuthAccountNotLinked',
+  ].includes(error);
+}
+
 export async function LandingPage({
   error,
   discordBotInviteEnabled = true,
@@ -44,13 +58,16 @@ export async function LandingPage({
           </p>
         )}
 
-        {error === 'discord' && (
+        {isAuthCallbackError(error) && (
           <div className="mb-6 max-w-md rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <p className="font-medium">{t('loginErrorTitle')}</p>
             <p className="mt-1 text-muted-foreground">{t('loginErrorHint')}</p>
-            <p className="mt-2 font-mono text-xs break-all">
+            {error ? (
+              <p className="mt-2 text-xs text-muted-foreground font-mono break-all">{t('loginErrorParam', { code: error })}</p>
+            ) : null}
+            <p className="mt-2 font-mono text-xs break-all text-foreground">
               {process.env.NEXTAUTH_URL
-                ? `${process.env.NEXTAUTH_URL}/api/auth/callback/discord`
+                ? `${process.env.NEXTAUTH_URL.replace(/\/$/, '')}/api/auth/callback/discord`
                 : 'http://localhost:3000/api/auth/callback/discord'}
             </p>
           </div>
