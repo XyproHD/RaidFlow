@@ -28,6 +28,18 @@ export interface AppConfigState {
   statusMessage: string;
 }
 
+/** Sichere Defaults wenn `getAppConfig()` fehlschlägt (DB/Env in Prod). */
+export const DEFAULT_APP_CONFIG_STATE: AppConfigState = {
+  ownerDiscordId: OWNER_DISCORD_ID,
+  useWhitelist: false,
+  useBlacklist: false,
+  serverWhitelist: [],
+  serverBlacklist: [],
+  discordBotInviteEnabled: true,
+  maintenanceMode: false,
+  statusMessage: '',
+};
+
 async function getConfigValue(key: string): Promise<string | null> {
   const row = await prisma.rfAppConfig.findUnique({ where: { key } });
   return row?.value ?? null;
