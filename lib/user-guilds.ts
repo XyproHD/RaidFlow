@@ -1,10 +1,11 @@
 /**
- * User-Gilden-Zuordnung: Gilden aus der DB laden (Spiegelung der Discord-Rollen).
+ * User-Gilden-Zuordnung: Gilden aus der DB (Spiegelung der Discord-Rollen).
  *
- * **Aktualisierung** der Spiegelung: primär der Discord-Bot via `POST /api/bot/sync-member`
- * (`lib/member-permission-sync.ts`). Fehlt beim ersten Webapp-Besuch noch eine `rf_user_guild`-
- * Zeile, erfolgt ein **einmaliger Bootstrap** per Discord REST (Bot-Token), danach derselbe
- * zentrale Sync.
+ * **Aktualisierung:** Primär der Discord-Bot (`POST /api/bot/sync-member`). Zusätzlich: Wenn
+ * `DISCORD_BOT_TOKEN` in der **Webapp** gesetzt ist, wird pro Gilde vor dem Anzeigen ein Abgleich
+ * per Discord REST ausgeführt (`getMemberRoleIds` → `syncMemberPermissionsFromDiscordState`).
+ * Ohne Token in der Webapp kann keine Mitgliedschaft/Rolle ermittelt werden — dann bleibt nur der
+ * Bot-Event-Pfad (benötigt Server-Members-Intent + `DISCORD_GUILD_MEMBERS_INTENT`).
  */
 
 import { prisma } from '@/lib/prisma';
@@ -71,8 +72,7 @@ export function userGuildCanEditRaids(guildInfo: UserGuildInfo): boolean {
 }
 
 /**
- * Lädt RaidFlow-Gilden des Users aus der DB. Ohne bestehende `rf_user_guild`-Zeile:
- * einmaliger Abgleich per Discord API + zentraler Sync (siehe `member-permission-sync`).
+ * Lädt RaidFlow-Gilden des Users. Mit `DISCORD_BOT_TOKEN` wird die DB pro Gilde zuvor mit Discord abgeglichen.
  */
 export async function getGuildsForUser(
   userId: string,
@@ -98,14 +98,11 @@ export async function getGuildsForUser(
 
   const result: UserGuildInfo[] = [];
 
+  const hasWebappBotToken = Boolean(process.env.DISCORD_BOT_TOKEN?.trim());
+
   for (const guild of guilds) {
     try {
-      let ug = await prisma.rfUserGuild.findUnique({
-        where: { userId_guildId: { userId, guildId: guild.id } },
-        select: { role: true },
-      });
-
-      if (!ug) {
+      if (hasWebappBotToken) {
         let roleIds: string[] = [];
         let inGuild = false;
         let displayNameInGuild: string | null = null;
@@ -132,11 +129,12 @@ export async function getGuildsForUser(
           roleIds,
           displayNameInGuild,
         });
-        ug = await prisma.rfUserGuild.findUnique({
-          where: { userId_guildId: { userId, guildId: guild.id } },
-          select: { role: true },
-        });
       }
+
+      const ug = await prisma.rfUserGuild.findUnique({
+        where: { userId_guildId: { userId, guildId: guild.id } },
+        select: { role: true },
+      });
 
       if (!ug) continue;
 

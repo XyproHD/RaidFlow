@@ -74,6 +74,8 @@ export async function getMemberRoleIds(
     membershipKnown: false,
   };
   try {
+    // Pro Deployment (Preview vs Production) der Token der jeweiligen Discord-Application.
+    // Derselbe Bot muss auf dem Ziel-Server eingeladen sein; Preview-Webapp → Preview-Bot-Token usw.
     const botToken = process.env.DISCORD_BOT_TOKEN;
     if (!botToken) return unknown;
 
