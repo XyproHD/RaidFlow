@@ -83,12 +83,12 @@ export async function syncMemberPermissionsFromDiscordState(params: {
 
   if (resolved) {
     try {
-      const member = await prisma.rfGuildMember.upsert({
-        where: { userId_guildId: { userId, guildId: guild.id } },
-        create: { userId, guildId: guild.id },
-        update: {},
-      });
       await prisma.$transaction(async (tx) => {
+        const member = await tx.rfGuildMember.upsert({
+          where: { userId_guildId: { userId, guildId: guild.id } },
+          create: { userId, guildId: guild.id },
+          update: {},
+        });
         await tx.rfUserGuild.upsert({
           where: { userId_guildId: { userId, guildId: guild.id } },
           create: { userId, guildId: guild.id, role: resolved.role },
@@ -108,22 +108,24 @@ export async function syncMemberPermissionsFromDiscordState(params: {
     }
   } else {
     try {
-      const existingMember = await prisma.rfGuildMember.findUnique({
-        where: { userId_guildId: { userId, guildId: guild.id } },
-        select: { id: true },
-      });
-      if (existingMember) {
-        await prisma.rfGuildMemberRaidGroup.deleteMany({
-          where: { guildMemberId: existingMember.id },
+      await prisma.$transaction(async (tx) => {
+        const existingMember = await tx.rfGuildMember.findUnique({
+          where: { userId_guildId: { userId, guildId: guild.id } },
+          select: { id: true },
         });
-        await prisma.rfGuildMember.delete({
-          where: { id: existingMember.id },
+        if (existingMember) {
+          await tx.rfGuildMemberRaidGroup.deleteMany({
+            where: { guildMemberId: existingMember.id },
+          });
+          await tx.rfGuildMember.delete({
+            where: { id: existingMember.id },
+          });
+        }
+        await tx.rfUserGuild.upsert({
+          where: { userId_guildId: { userId, guildId: guild.id } },
+          create: { userId, guildId: guild.id, role: 'member' },
+          update: { role: 'member' },
         });
-      }
-      await prisma.rfUserGuild.upsert({
-        where: { userId_guildId: { userId, guildId: guild.id } },
-        create: { userId, guildId: guild.id, role: 'member' },
-        update: { role: 'member' },
       });
     } catch (e) {
       console.error('[syncMemberPermissionsFromDiscordState] member-only', guild.id, e);

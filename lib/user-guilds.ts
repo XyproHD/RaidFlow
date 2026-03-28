@@ -129,6 +129,35 @@ export async function getGuildsForUser(
           roleIds,
           displayNameInGuild,
         });
+
+        // Alte Teil-Schreibfehler: rf_guild_member ohne rf_user_guild → Sync erneut (gleiche Rollen, keine Extra-Discord-Runde).
+        if (membershipKnown && inGuild) {
+          const [ugProbe, gmProbe] = await Promise.all([
+            prisma.rfUserGuild.findUnique({
+              where: { userId_guildId: { userId, guildId: guild.id } },
+              select: { role: true },
+            }),
+            prisma.rfGuildMember.findUnique({
+              where: { userId_guildId: { userId, guildId: guild.id } },
+              select: { id: true },
+            }),
+          ]);
+          if (gmProbe && !ugProbe) {
+            console.warn(
+              '[getGuildsForUser] repaired orphan rf_guild_member (re-sync):',
+              guild.id,
+              guild.name
+            );
+            await syncMemberPermissionsFromDiscordState({
+              userId,
+              guild: guildRowToPermissionSyncShape(guild),
+              membershipKnown,
+              inGuild,
+              roleIds,
+              displayNameInGuild,
+            });
+          }
+        }
       }
 
       const ug = await prisma.rfUserGuild.findUnique({

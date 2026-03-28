@@ -51,6 +51,16 @@ export async function POST(request: Request) {
     },
   });
   if (!guild) {
+    console.log(
+      JSON.stringify({
+        scope: 'RF_SYNC',
+        step: 'skipped',
+        reason: 'guild_not_registered',
+        discordGuildId,
+        discordUserId,
+        hint: 'rf_guild.discord_guild_id stimmt nicht mit diesem Server überein oder Setup fehlt in dieser DB.',
+      })
+    );
     return NextResponse.json({ ok: true, skipped: true, reason: 'guild_not_registered' });
   }
 
@@ -92,6 +102,17 @@ export async function POST(request: Request) {
         displayNameInGuild,
       });
     }
+    console.log(
+      JSON.stringify({
+        scope: 'RF_SYNC',
+        step: 'ok',
+        rfGuildId: guild.id,
+        discordGuildId,
+        discordUserId,
+        left,
+        roleIdCount: roleIds.length,
+      })
+    );
     return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
