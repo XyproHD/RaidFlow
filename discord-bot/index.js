@@ -2,7 +2,11 @@
  * RaidFlow Discord-Bot
  * Slash-Commands: /raidflow help, /raidflow setup, /raidflow group <groupname>
  * Rechte: Nur Server-Owner oder ADMINISTRATOR oder MANAGE_GUILD.
- * Gateway: GuildMembers (privileged) – synchronisiert RaidFlow-Rechte bei Join/Update/Leave.
+ * Gateway: optional GuildMembers (privileged). Nur nutzen, wenn im Discord Developer Portal
+ * unter Bot → „Privileged Gateway Intents“ → **Server Members Intent** aktiviert ist **und**
+ * die Umgebungsvariable DISCORD_GUILD_MEMBERS_INTENT=1 (oder true) gesetzt ist. Sonst Login-Fehler
+ * „Used disallowed intents“. Ohne diesen Intent startet der Bot; Rollen-Sync läuft dann nur
+ * über Webapp-Bootstrap (getGuildsForUser), nicht live per Event.
  *
  * Umgebung: .env oder .env.local im discord-bot/ Ordner, oder .env.local im Projektroot.
  */
@@ -29,6 +33,11 @@ import {
 
 const DISCORD_ADMINISTRATOR = Number(PermissionFlagsBits.Administrator);
 const DISCORD_MANAGE_GUILD = Number(PermissionFlagsBits.ManageGuild);
+
+/** Privilegierter Intent – nur wenn im Portal aktiviert + explizit per Env eingeschaltet. */
+const USE_GUILD_MEMBERS_INTENT = /^(1|true|yes)$/i.test(
+  String(process.env.DISCORD_GUILD_MEMBERS_INTENT ?? '').trim()
+);
 
 const RAIDFLOW_ROLES = ['guildmaster', 'raidleader', 'raider'];
 const RAIDFLOW_LABELS = { guildmaster: 'Gildenmeister', raidleader: 'Raidleader', raider: 'Raider' };
@@ -138,9 +147,23 @@ function getSelectableRoles(guild) {
   return roles.slice(0, 24);
 }
 
+const gatewayIntents = [GatewayIntentBits.Guilds];
+if (USE_GUILD_MEMBERS_INTENT) {
+  gatewayIntents.push(GatewayIntentBits.GuildMembers);
+}
+
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+  intents: gatewayIntents,
 });
+
+if (USE_GUILD_MEMBERS_INTENT) {
+  console.info('[RaidFlow] GuildMembers-Intent aktiv (Live-Sync bei Join/Update/Leave).');
+} else {
+  console.warn(
+    '[RaidFlow] GuildMembers-Intent aus: Bot startet ohne Member-Events. Für Live-Rechte-Sync: ' +
+      'Im Discord-Portal „Server Members Intent“ aktivieren und Railway-Env DISCORD_GUILD_MEMBERS_INTENT=1 setzen.'
+  );
+}
 
 // —— Help ———————————————————————————————————————————————————————————————————
 function buildHelpContent() {
@@ -904,23 +927,25 @@ if (!token) {
   process.exit(1);
 }
 
-client.on('guildMemberAdd', (member) => {
-  void pushMemberPermissionSync(member.guild.id, member.user.id, {
-    roleIds: [...member.roles.cache.keys()],
-    displayName: member.displayName ?? null,
+if (USE_GUILD_MEMBERS_INTENT) {
+  client.on('guildMemberAdd', (member) => {
+    void pushMemberPermissionSync(member.guild.id, member.user.id, {
+      roleIds: [...member.roles.cache.keys()],
+      displayName: member.displayName ?? null,
+    });
   });
-});
 
-client.on('guildMemberRemove', (member) => {
-  void pushMemberPermissionSync(member.guild.id, member.user.id, { left: true });
-});
-
-client.on('guildMemberUpdate', (_oldMember, newMember) => {
-  void pushMemberPermissionSync(newMember.guild.id, newMember.user.id, {
-    roleIds: [...newMember.roles.cache.keys()],
-    displayName: newMember.displayName ?? null,
+  client.on('guildMemberRemove', (member) => {
+    void pushMemberPermissionSync(member.guild.id, member.user.id, { left: true });
   });
-});
+
+  client.on('guildMemberUpdate', (_oldMember, newMember) => {
+    void pushMemberPermissionSync(newMember.guild.id, newMember.user.id, {
+      roleIds: [...newMember.roles.cache.keys()],
+      displayName: newMember.displayName ?? null,
+    });
+  });
+}
 
 client.on('error', (err) => {
   console.error('Discord Client Error:', err);
