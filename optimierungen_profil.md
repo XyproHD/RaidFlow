@@ -385,17 +385,17 @@ Diese Datei dient als zentrale Referenz für die Umsetzung aller Optimierungen d
 
 ### 4.3 Charaktere & Battle.net (Profil + API)
 
-**Ziel:** Einheitliches Charakter-Modal mit optionaler Battle.net-Synchronisation; Main-Spec aus dem Talentbaum mit den meisten Punkten; BNet-Kennzeichnung in Listen; Gilden-Realm für Vorbelegung.
+**Ziel:** Einheitliches Charakter-Modal mit optionaler Battle.net-Synchronisation; Main-Spec aus dem Talentbaum mit den meisten Punkten; **Battle.net-Logo** in Listen (statt Text-Badge); Gilden-Realm für Vorbelegung.
 
 **Umsetzung (Kurz):**
 
-1. **UI:** Ein Modal (Anlegen/Bearbeiten) mit Realm-Combobox, **„BNet Sync“**, manuell überschreibbare Felder; Hinweis bei API-404 (exakte Schreibweise); **„BNet“**-Badge in der Profil-Charakterliste, wenn `battlenet_character_id` gesetzt ist.
+1. **UI:** Ein Modal (Anlegen/Bearbeiten) mit Realm-Combobox, **„BNet Sync“**, manuell überschreibbare Felder; Hinweis bei API-404 (exakte Schreibweise); **Battle.net-Logo** (`components/battlenet-logo.tsx`, Asset `public/icons/bnet.png`) in der Profil-Charakterliste, wenn `battlenet_character_id` gesetzt ist.
 2. **API:** `POST …/battlenet-fetch` (nur Lesen), `POST`/`PATCH …/characters` mit optionalem `battlenetProfile` → `rf_battlenet_character_profile`.
 3. **Gilde:** `UserGuildInfo.battlenetRealmId` aus `rf_guild` → bei gewählter Gilde Realm im Modal vorbelegen.
 4. **Main-Spec:** Aus Character-Specializations (`spent_points` / `talent_rank`), Fallback `active_spec` (`lib/battlenet.ts`).
 5. **Gildenverwaltung:** Mitglieder-API liefert `hasBattlenet`; siehe [BNET_INTEGRATION.md](BNET_INTEGRATION.md) Abschnitt Gildenverwaltung.
 
-**Akzeptanzkriterium:** Nutzer können Chars manuell oder per Sync anlegen; verknüpfte Chars sind in Profil und Gildenliste am Badge erkennbar.
+**Akzeptanzkriterium:** Nutzer können Chars manuell oder per Sync anlegen; verknüpfte Chars sind in Profil und Gildenliste am Battle.net-Logo erkennbar.
 
 **Progress:** [x]
 

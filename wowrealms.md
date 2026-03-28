@@ -66,5 +66,5 @@ Bei API-Änderungen oder zusätzlichen Feldern: Prisma-Schema `RfBattlenetRealm`
 
 ## 6. Verwandte Dokumente
 
-- **[BNET_INTEGRATION.md](BNET_INTEGRATION.md)** – OAuth, Gildenverknüpfung, Charakter-Endpunkte, BNet-Badge, Main-Spec-Logik.
+- **[BNET_INTEGRATION.md](BNET_INTEGRATION.md)** – OAuth, Gildenverknüpfung, Charakter-Endpunkte, Battle.net-Logo in der UI, Main-Spec-Logik.
 - **`.cursor/rules/wow-classic-battlenet-api.mdc`** – Kurzregeln für Agenten (Namespaces, Profile vs. Game Data).

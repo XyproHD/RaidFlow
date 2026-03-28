@@ -11,6 +11,8 @@ Ein **Multiraid** ist ein Raid-Event mit:
 
 Das Konzept erweitert den bisherigen Single-Raid-Flow, ohne bestehende Funktionen zu brechen.
 
+**Abgrenzung (Stand 03/2026):** Im bestehenden **„Neuer Raid“**-Wizard können mehrere **Schlachtzug-Instanzen** (`rf_dungeon`) für **ein** Kalender-Event ausgewählt werden; die IDs liegen in **`rf_raid.dungeon_ids`** (JSON), die erste Auswahl bleibt **`dungeon_id`**. Das ist **kein** Multiraid im Sinne dieser Spezifikation (keine Serien-/Lockout-Serienobjekte), sondern nur Anzeige- und Kapazitätslogik (max. Teilnehmer = Maximum der gewählten Dungeons).
+
 Lockout-ID und Lockout-Fenster werden aus den offiziellen Dungeon-Resetzeiten abgeleitet.
 
 ---
@@ -50,6 +52,8 @@ Vorteile:
 - bestehende Ansichten/Thread-Logik bleiben nutzbar,
 - minimal-invasive Einführung,
 - klare Trennung zwischen Planung und operativem Raid.
+
+**Hinweis (Stand 03/2026):** Im bestehenden operativen **`rf_raid_signup`** (Single-Raid) sind Spieler-Bedingungen **`only_signed_spec`** (nur angemeldeter Spec) und **`forbid_reserve`** (Reserve verbieten) umgesetzt und in der Webapp für Raidleitung sichtbar. Für eine spätere **`rf_raid_series_signup`** können gleichartige oder vereinfachte Felder vorgesehen werden.
 
 Wichtig: Die operativen Raids bleiben **dauerhaft mit der RaidSeries verlinkt**, damit spaetere Anpassungen zentral moeglich sind.
 

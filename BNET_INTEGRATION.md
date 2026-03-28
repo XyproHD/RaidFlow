@@ -1,6 +1,6 @@
 # RaidFlow – Battle.net API & Profil-/Gilden-Anbindung
 
-Dieses Dokument beschreibt die **Battle.net-Integration** in RaidFlow: Konfiguration, Realm-Sync, **Gildenverwaltung** (Serverwahl, Gilden-ID), **Charaktere im Profil** (Synchronisation, Speicherung, BNet-Hinweis) und die **relevanten API-Routen**. Ergänzend zu technischen Details in `lib/battlenet.ts`, `lib/wow-realm-name.ts` und der Cursor-Regel **WoW Classic – Battle.net API** (`.cursor/rules/wow-classic-battlenet-api.mdc`).
+Dieses Dokument beschreibt die **Battle.net-Integration** in RaidFlow: Konfiguration, Realm-Sync, **Gildenverwaltung** (Serverwahl, Gilden-ID), **Charaktere im Profil** (Synchronisation, Speicherung, Kennzeichnung per **Battle.net-Logo** in Listen) und die **relevanten API-Routen**. Ergänzend zu technischen Details in `lib/battlenet.ts`, `lib/wow-realm-name.ts` und der Cursor-Regel **WoW Classic – Battle.net API** (`.cursor/rules/wow-classic-battlenet-api.mdc`).
 
 ---
 
@@ -124,12 +124,14 @@ Die **Haupt-Spezialisierung** wird aus der **Character-Specializations**-Ressour
 
 Implementierung: `lib/battlenet.ts` (`pickMainSpecNameFromSpecializations`, `resolveClassAndSpec`).
 
-### 5.4 BNet-Hinweis in Charakterlisten
+### 5.4 Battle.net-Kennzeichnung in Charakterlisten
 
-Liegt zu einem Charakter ein Eintrag in **`rf_battlenet_character_profile`** mit gesetzter **`battlenet_character_id`** vor, gilt der Charakter als **mit Battle.net verknüpft**. In der UI erscheint ein kleines **„BNet“**-Badge:
+Liegt zu einem Charakter ein Eintrag in **`rf_battlenet_character_profile`** mit gesetzter **`battlenet_character_id`** vor, gilt der Charakter als **mit Battle.net verknüpft**. In der UI erscheint das **Battle.net-Logo** (PNG unter `public/icons/bnet.png`, Komponente `components/battlenet-logo.tsx`, Tooltip aus i18n `profile.bnetLinkedBadgeTitle`), ohne zusätzlichen Rahmen, Größe an die übrigen Icons angepasst:
 
 - **Eigenes Profil** – Charakterliste (`profile-characters.tsx`)
-- **Gildenverwaltung** – Mitglieder/Charakterkarten (`GET /api/guilds/[guildId]/members` liefert `hasBattlenet`)
+- **Dashboard** – „Meine Anmeldungen“ (`dashboard-client.tsx`)
+- **Raidplaner** – Spielerliste Schritt 2 (`new-raid-wizard.tsx`)
+- **Gildenverwaltung** – Mitglieder/Charakterkarten (`GET /api/guilds/[guildId]/members` liefert `hasBattlenet`; `guild-management-content.tsx`)
 
 ---
 
@@ -155,6 +157,7 @@ Liegt zu einem Charakter ein Eintrag in **`rf_battlenet_character_profile`** mit
 | DTO inkl. `hasBattlenet` | `lib/character-api-dto.ts` |
 | Namespace-Hilfen | `lib/wow-realm-name.ts` |
 | Gilden + `battlenetRealmId` | `lib/user-guilds.ts` |
+| Battle.net-Logo (UI) | `components/battlenet-logo.tsx`, `public/icons/bnet.png` |
 | Profil-UI | `app/[locale]/(protected)/profile/profile-characters.tsx` |
 | Gilden-BNet-UI | `components/guild-battlenet-section.tsx` |
 

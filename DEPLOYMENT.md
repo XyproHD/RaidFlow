@@ -51,6 +51,22 @@ Konfiguration von Branch → Service erfolgt in Vercel (Production/Preview) und 
 
 **Datenbank-Schema:** Beim Webapp-Build führt Vercel `prisma migrate deploy` aus. Dadurch werden ausstehende Migrationen automatisch auf die **jeweils zugehörige** Supabase-DB angewendet (Preview-Deploy → Preview-DB, Production-Deploy → Production-DB). Schema-Änderungen: Migration lokal mit `prisma migrate dev` erzeugen (gegen Preview-DB), Migration-Dateien committen, auf Preview pushen; beim Merge nach `main` laufen dieselben Migrationen bei Production gegen die Production-DB. Details: [manual_setup.md](manual_setup.md) Abschnitt 1.5.
 
+**Hinweis `npm run build`:** Das Script führt `prisma migrate deploy` aus und fällt bei Fehler auf **`Skipping migrate deploy`** zurück (`|| echo …`), damit der **Next.js-Build** trotzdem läuft. Fehlende Spalten führen dann erst **zur Laufzeit** zu Prisma-Fehlern — die Datenbank muss dennoch zum Schema passen.
+
+### Prisma `P3009` (fehlgeschlagene Migration in der DB)
+
+Wenn `prisma migrate deploy` mit **P3009** abbricht („migrate found failed migrations …“), werden **keine neuen** Migrationen mehr angewendet, bis der Zustand bereinigt ist:
+
+1. In der DB-Tabelle `_prisma_migrations` den fehlgeschlagenen Eintrag prüfen (Migration-Name, Zeitstempel).
+2. Entweder die Migration **manuell reparieren** (fehlendes SQL nachziehen) und anschließend `prisma migrate resolve --applied <name>` bzw. je nach Fall `--rolled-back`, **oder** in Absprache die Migration als erledigt markieren, wenn die Änderungen bereits anderweitig in der DB sind.
+3. Danach `prisma migrate deploy` erneut ausführen (lokal oder durch erneutes Deploy).
+
+Ohne diese Bereinigung bleiben z. B. neue Spalten wie **`rf_raid.dungeon_ids`** unangewendet, obwohl der App-Build grün ist.
+
+### Preview-DB und MCP (Supabase)
+
+Für die **Preview-Datenbank** kann eine fehlende DDL-Änderung alternativ direkt per Supabase-MCP mit **`apply_migration`** nachgezogen werden (gleiches SQL wie in `prisma/migrations/…/migration.sql`). Danach sollte `list_migrations` den Eintrag zeigen und `information_schema` die Spalte enthalten.
+
 ---
 
 ## Vercel verbinden
@@ -75,9 +91,9 @@ Konfiguration von Branch → Service erfolgt in Vercel (Production/Preview) und 
 |--------|--------|
 | **Type/Prisma-Fehler** (z. B. unbekannte Felder in `where`) | Lokal `npm run build` ausführen; Fehler beheben (z. B. Relation nutzen statt nicht existierendes Feld). |
 | **Fehlende Env-Variablen** | In Vercel → Settings → Environment Variables für **Preview** prüfen: mindestens `DATABASE_URL`, `DIRECT_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`. |
-| **`prisma migrate deploy` schlägt fehl** | Build sollte trotzdem durchlaufen (Fallback im Script). Wenn nicht: Env `DATABASE_URL`/`DIRECT_URL` für Preview setzen oder Build-Command anpassen. |
+| **`prisma migrate deploy` schlägt fehl** | Zuerst **P3009** / fehlgeschlagene Migrationen prüfen (Abschnitt oben). Sonst: Env `DATABASE_URL`/`DIRECT_URL` für Preview. Der Build kann dank Fallback trotzdem grün sein — Laufzeitfehler bis Schema passt. |
 
-Der letzte fehlgeschlagene Preview-Build wurde durch einen **TypeScript-Fehler** in `app/api/guilds/[guildId]/raid-groups/[raidGroupId]/allowed-characters/route.ts` verursacht: Es wurde `raidGroupId` in der `where`-Clause von `rfGuildMember.findMany` verwendet; im Prisma-Schema hat `RfGuildMember` kein Feld `raidGroupId`. Stattdessen muss die Relation `memberRaidGroups: { some: { raidGroupId } }` verwendet werden. Diese Anpassung ist im Repo vorgenommen – nach Push auf `preview` sollte der Build durchlaufen.
+Beispiel für einen behobenen Build-Fehler (historisch): In `allowed-characters` wurde `raidGroupId` falsch in `rfGuildMember.where` verwendet; korrekt ist die Relation `memberRaidGroups: { some: { raidGroupId } }`.
 
 ---
 
