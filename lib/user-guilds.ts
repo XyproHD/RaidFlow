@@ -70,6 +70,42 @@ export function userGuildCanEditRaids(guildInfo: UserGuildInfo): boolean {
 }
 
 /**
+ * Verwaiste `rf_guild_member`-Zeile ohne `rf_user_guild`: Dashboard wäre leer.
+ * Läuft nach dem Sync auch dann, wenn Sync/Prune geworfen hat — sonst bleibt die Inkonsistenz dauerhaft.
+ */
+async function ensureUserGuildRowWhenMemberExists(userId: string, guildId: string): Promise<void> {
+  const [gm, ug] = await Promise.all([
+    prisma.rfGuildMember.findUnique({
+      where: { userId_guildId: { userId, guildId } },
+      select: { id: true },
+    }),
+    prisma.rfUserGuild.findUnique({
+      where: { userId_guildId: { userId, guildId } },
+      select: { role: true },
+    }),
+  ]);
+  if (!gm || ug) return;
+
+  try {
+    await prisma.rfUserGuild.upsert({
+      where: { userId_guildId: { userId, guildId } },
+      create: { userId, guildId, role: 'member' },
+      update: {},
+    });
+    console.warn(
+      JSON.stringify({
+        scope: 'getGuildsForUser',
+        step: 'ensure_orphan_rf_user_guild',
+        guildId,
+        hint: 'rf_user_guild ergänzt (member); nächster erfolgreicher Discord-Sync setzt die RaidFlow-Rolle.',
+      })
+    );
+  } catch (e) {
+    console.error('[getGuildsForUser] ensure orphan rf_user_guild', guildId, e);
+  }
+}
+
+/**
  * Lädt RaidFlow-Gilden des Users. Mit `DISCORD_BOT_TOKEN` wird die DB pro Gilde zuvor mit Discord abgeglichen.
  *
  * `discordId` optional: fehlt sie in der Session, wird `rf_user.discord_id` für dieses `userId` gelesen.
@@ -149,50 +185,23 @@ export async function getGuildsForUser(
                 step: 'orphan_discord_unknown',
                 guildId: guild.id,
                 guildName: guild.name,
-                hint: 'Weder Bot-Member-API noch OAuth-Member (guilds.members.read + gültiger Login) — rf_user_guild nicht reparierbar.',
+                hint: 'Weder Bot-Member-API noch OAuth-Member (guilds.members.read + gültiger Login) — rf_user_guild ggf. nur über ensure_orphan ergänzt.',
               })
             );
           }
         }
       }
+    } catch (e) {
+      console.error('[getGuildsForUser] sync', guild.id, guild.name, e);
+    }
 
-      let ug = await prisma.rfUserGuild.findUnique({
+    try {
+      await ensureUserGuildRowWhenMemberExists(userId, guild.id);
+
+      const ug = await prisma.rfUserGuild.findUnique({
         where: { userId_guildId: { userId, guildId: guild.id } },
         select: { role: true },
       });
-
-      // Verwaiste rf_guild_member-Zeile (ohne rf_user_guild): ohne funktionierenden Discord-Sync sonst leeres Dashboard.
-      // Konservativ Rolle `member` anlegen; nächster erfolgreicher Sync setzt Gildenmeister/Raider/Raidleader korrekt.
-      if (!ug) {
-        const gmBootstrap = await prisma.rfGuildMember.findUnique({
-          where: { userId_guildId: { userId, guildId: guild.id } },
-          select: { id: true },
-        });
-        if (gmBootstrap) {
-          try {
-            await prisma.rfUserGuild.create({
-              data: { userId, guildId: guild.id, role: 'member' },
-            });
-            console.warn(
-              JSON.stringify({
-                scope: 'getGuildsForUser',
-                step: 'bootstrap_rf_user_guild_from_member_row',
-                guildId: guild.id,
-                guildName: guild.name,
-                hint: 'rf_user_guild als member angelegt bis Discord-Sync die Rolle korrigiert.',
-              })
-            );
-          } catch (e) {
-            const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: string }).code) : '';
-            if (code !== 'P2002') console.error('[getGuildsForUser] bootstrap user_guild', e);
-          }
-          ug = await prisma.rfUserGuild.findUnique({
-            where: { userId_guildId: { userId, guildId: guild.id } },
-            select: { role: true },
-          });
-        }
-      }
-
       if (!ug) continue;
 
       const member = await prisma.rfGuildMember.findUnique({
@@ -222,7 +231,7 @@ export async function getGuildsForUser(
           : null,
       });
     } catch (e) {
-      console.error('[getGuildsForUser] guild:', guild.id, guild.name, e);
+      console.error('[getGuildsForUser] result row', guild.id, guild.name, e);
     }
   }
 

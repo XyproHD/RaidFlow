@@ -2,8 +2,8 @@
  * Zentrale Schreibpfad-Synchronisation: Discord-Rollen → rf_user_guild, rf_guild_member,
  * rf_guild_member_raid_group (und Anzeigenamen auf Charakteren der Gilde).
  *
- * Wird von POST /api/bot/sync-member (Bot-Events) und beim einmaligen Bootstrap in
- * getGuildsForUser (fehlende rf_user_guild-Zeile) aufgerufen.
+ * Wird von POST /api/bot/sync-member (Bot-Events) und getGuildsForUser (Discord-Abgleich) aufgerufen.
+ * Verwaiste rf_user_guild ergänzt getGuildsForUser separat (ensure_orphan), falls der Sync scheitert.
  */
 
 import { prisma } from '@/lib/prisma';
@@ -68,7 +68,11 @@ export async function syncMemberPermissionsFromDiscordState(params: {
     await prisma.rfUserGuild.deleteMany({
       where: { userId, guildId: guild.id },
     });
-    await pruneIneligibleOpenRaidSignups(userId, guild.id);
+    try {
+      await pruneIneligibleOpenRaidSignups(userId, guild.id);
+    } catch (e) {
+      console.error('[syncMemberPermissionsFromDiscordState] prune (left guild)', guild.id, e);
+    }
     return;
   }
 
@@ -182,5 +186,9 @@ export async function syncMemberPermissionsFromDiscordState(params: {
     }
   }
 
-  await pruneIneligibleOpenRaidSignups(userId, guild.id);
+  try {
+    await pruneIneligibleOpenRaidSignups(userId, guild.id);
+  } catch (e) {
+    console.error('[syncMemberPermissionsFromDiscordState] prune', guild.id, e);
+  }
 }

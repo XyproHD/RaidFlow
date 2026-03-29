@@ -32,9 +32,11 @@ export const authOptions: NextAuthOptions = {
 
       // Immer DB-User ermitteln: beim ersten Login (account/profile) oder Fallback per token.sub (jeder Request)
       if (discordId) {
+        const withDiscordTok = token as { discordAccessToken?: string };
         if (account?.access_token) {
-          (token as { discordAccessToken?: string }).discordAccessToken = account.access_token;
+          withDiscordTok.discordAccessToken = account.access_token;
         }
+        // Beim JWT-Refresh ist account leer — Feld bleibt aus dem dekodierten Token erhalten.
         try {
           const dbUser = await prisma.rfUser.upsert({
             where: { discordId },
