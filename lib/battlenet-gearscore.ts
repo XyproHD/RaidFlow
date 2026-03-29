@@ -36,7 +36,41 @@ function extractEquipmentHref(rawProfile: unknown): string | null {
     const href = links?.equipment?.href;
     if (typeof href === 'string' && href.trim().length > 0) return href;
   }
+  return findEquipmentHrefDeep(rawProfile, 0);
+}
+
+/** Fallback wenn `_links.equipment` tiefer liegt (z. B. andere API-/Serialisierungsform). */
+function findEquipmentHrefDeep(node: unknown, depth: number): string | null {
+  if (depth > 8 || node == null || typeof node !== 'object') return null;
+  const rec = node as Record<string, unknown>;
+  const links = rec._links;
+  if (links && typeof links === 'object' && !Array.isArray(links)) {
+    const equipment = (links as Record<string, unknown>).equipment;
+    if (equipment && typeof equipment === 'object') {
+      const href = (equipment as { href?: unknown }).href;
+      if (typeof href === 'string' && href.trim().length > 0) return href.trim();
+    }
+  }
+  for (const v of Object.values(rec)) {
+    const found = findEquipmentHrefDeep(v, depth + 1);
+    if (found) return found;
+  }
   return null;
+}
+
+function equipmentUrlFromHref(href: string, apiBaseUrl: string): URL | null {
+  const trimmed = href.trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(trimmed);
+  } catch {
+    try {
+      const base = apiBaseUrl.endsWith('/') ? apiBaseUrl : `${apiBaseUrl}/`;
+      return new URL(trimmed.replace(/^\//, ''), base);
+    } catch {
+      return null;
+    }
+  }
 }
 
 function profileNamespaceForWowVersion(region: WowRegion, wowVersion: string | null | undefined): string {
@@ -49,7 +83,8 @@ function profileNamespaceForWowVersion(region: WowRegion, wowVersion: string | n
 async function resolveEquipmentHrefViaProfileFetch(
   character: Awaited<ReturnType<typeof loadCharacterWithBattlenetProfile>>,
   config: Awaited<ReturnType<typeof getBattlenetConfigForRegion>>,
-  accessToken: string
+  accessToken: string,
+  apiBaseUrl: string
 ): Promise<string | null> {
   if (!character?.battlenetProfile || !config) return null;
   const realmSlug = character.battlenetProfile.realmSlug?.trim().toLowerCase();
@@ -58,7 +93,7 @@ async function resolveEquipmentHrefViaProfileFetch(
 
   const region = toWowRegion(character.battlenetProfile.region);
   const namespace = profileNamespaceForWowVersion(region, character.battlenetProfile.wowVersion);
-  const profileUrl = new URL(`${config.apiBaseUrl}${config.profileCharacterPath}/${realmSlug}/${characterNameLower}`);
+  const profileUrl = new URL(`${apiBaseUrl}${config.profileCharacterPath}/${realmSlug}/${characterNameLower}`);
   profileUrl.searchParams.set('namespace', namespace);
   profileUrl.searchParams.set('locale', config.locale);
 
@@ -74,7 +109,8 @@ async function resolveEquipmentHrefViaProfileFetch(
 
 function buildEquipmentUrlFromCharacter(
   character: Awaited<ReturnType<typeof loadCharacterWithBattlenetProfile>>,
-  config: Awaited<ReturnType<typeof getBattlenetConfigForRegion>>
+  config: Awaited<ReturnType<typeof getBattlenetConfigForRegion>>,
+  apiBaseUrl: string
 ): URL | null {
   if (!character?.battlenetProfile || !config) return null;
   const realmSlug = character.battlenetProfile.realmSlug?.trim().toLowerCase();
@@ -84,7 +120,7 @@ function buildEquipmentUrlFromCharacter(
   const region = toWowRegion(character.battlenetProfile.region);
   const namespace = profileNamespaceForWowVersion(region, character.battlenetProfile.wowVersion);
   const url = new URL(
-    `${config.apiBaseUrl}${config.profileCharacterPath}/${realmSlug}/${characterNameLower}/equipment`
+    `${apiBaseUrl}${config.profileCharacterPath}/${realmSlug}/${characterNameLower}/equipment`
   );
   url.searchParams.set('namespace', namespace);
   url.searchParams.set('locale', config.locale);
@@ -111,10 +147,12 @@ function toGearscoreItems(payload: BnetEquipmentPayload): GearscoreItem[] {
 async function resolveItemLevelFromHref(
   href: string,
   accessToken: string,
-  locale: string
+  locale: string,
+  apiBaseUrl: string
 ): Promise<number | null> {
   try {
-    const url = new URL(href);
+    const url = equipmentUrlFromHref(href, apiBaseUrl);
+    if (!url) return null;
     url.searchParams.set('locale', locale);
     url.searchParams.delete('access_token');
     const res = await fetch(url.toString(), battlenetBearerInit(accessToken));
@@ -134,7 +172,8 @@ async function resolveItemLevelFromHref(
 async function toGearscoreItemsWithItemFallback(
   payload: BnetEquipmentPayload,
   accessToken: string,
-  locale: string
+  locale: string,
+  apiBaseUrl: string
 ): Promise<GearscoreItem[]> {
   const out: GearscoreItem[] = [];
   for (const item of payload.equipped_items ?? []) {
@@ -146,7 +185,7 @@ async function toGearscoreItemsWithItemFallback(
     if (!Number.isFinite(itemLevel) || itemLevel <= 0) {
       const href = item.item?.key?.href;
       if (typeof href === 'string' && href.trim().length > 0) {
-        const resolved = await resolveItemLevelFromHref(href, accessToken, locale);
+        const resolved = await resolveItemLevelFromHref(href, accessToken, locale, apiBaseUrl);
         if (resolved != null) itemLevel = resolved;
       }
     }
@@ -201,16 +240,26 @@ export async function refreshCharacterGearscore(characterId: string): Promise<{
     throw new Error('Charakter ist nicht mit Battle.net verknüpft.');
   }
 
-  const config = await getBattlenetConfigForRegion(toWowRegion(character.battlenetProfile.region));
+  const region = toWowRegion(character.battlenetProfile.region);
+  const config = await getBattlenetConfigForRegion(region);
   if (!config) throw new Error('Keine aktive Battle.net Konfiguration gefunden.');
-  const accessToken = await getBattlenetAccessToken(config);
+  /** Regionales OAuth wie bei Profil-Sync; globales Token kann Profil-/Equipment-404 verursachen. */
+  const tokenConfig = {
+    ...config,
+    oauthTokenUrl: `https://${region}.battle.net/oauth/token`,
+  };
+  const accessToken = await getBattlenetAccessToken(tokenConfig);
+
+  const apiBaseUrl =
+    region === config.region ? config.apiBaseUrl : `https://${region}.api.blizzard.com`;
 
   const equipmentHref =
     extractEquipmentHref(character.battlenetProfile.rawProfile) ??
-    (await resolveEquipmentHrefViaProfileFetch(character, config, accessToken));
+    (await resolveEquipmentHrefViaProfileFetch(character, config, accessToken, apiBaseUrl));
 
   const equipmentUrl =
-    (equipmentHref ? new URL(equipmentHref) : null) ?? buildEquipmentUrlFromCharacter(character, config);
+    (equipmentHref ? equipmentUrlFromHref(equipmentHref, apiBaseUrl) : null) ??
+    buildEquipmentUrlFromCharacter(character, config, apiBaseUrl);
   if (!equipmentUrl) {
     throw new Error(
       'Keine Battle.net Equipment-Referenz gefunden. Bitte BNet Sync erneut ausführen.'
@@ -227,7 +276,7 @@ export async function refreshCharacterGearscore(characterId: string): Promise<{
   const payload = (await eqRes.json()) as BnetEquipmentPayload;
   let items = toGearscoreItems(payload);
   if (items.length === 0 && (payload.equipped_items?.length ?? 0) > 0) {
-    items = await toGearscoreItemsWithItemFallback(payload, accessToken, config.locale);
+    items = await toGearscoreItemsWithItemFallback(payload, accessToken, config.locale, apiBaseUrl);
   }
   const className = character.battlenetProfile.className ?? null;
   const { score } = calculateGearscoreFromItems(items, className);

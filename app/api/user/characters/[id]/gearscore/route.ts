@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { prisma } from '@/lib/prisma';
 import { refreshCharacterGearscore } from '@/lib/battlenet-gearscore';
+import { userIsGuildRaidLeaderOrMaster } from '@/lib/guild-master';
+import { requireAdmin } from '@/lib/require-admin';
 
 export async function POST(
   _request: Request,
@@ -14,11 +16,21 @@ export async function POST(
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await params;
-  const owner = await prisma.rfCharacter.findFirst({
-    where: { id, userId },
-    select: { id: true },
+  const row = await prisma.rfCharacter.findFirst({
+    where: { id },
+    select: { id: true, userId: true, guildId: true },
   });
-  if (!owner) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  const adminSession = await requireAdmin();
+  const isOwnCharacter = row.userId === userId;
+  const isAppAdminOrOwner = adminSession !== null;
+  const isGuildLeaderForAssignedGuild =
+    row.guildId != null && (await userIsGuildRaidLeaderOrMaster(userId, row.guildId));
+
+  if (!isOwnCharacter && !isAppAdminOrOwner && !isGuildLeaderForAssignedGuild) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
 
   try {
     const result = await refreshCharacterGearscore(id);
