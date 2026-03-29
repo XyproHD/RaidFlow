@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -16,7 +17,7 @@ type ConfigState = {
 };
 type AdminRow = { discordUserId: string; addedByDiscordId: string | null; createdAt: string };
 
-export function AdminContent() {
+export function AdminContent({ locale, isOwner }: { locale: string; isOwner: boolean }) {
   const t = useTranslations('admin');
   const [guilds, setGuilds] = useState<GuildRow[]>([]);
   const [config, setConfig] = useState<ConfigState | null>(null);
@@ -193,11 +194,35 @@ export function AdminContent() {
   };
 
   if (loading) {
-    return <p className="text-muted-foreground">{t('loading')}</p>;
+    return (
+      <div className="space-y-4">
+        {isOwner && (
+          <p className="text-sm text-muted-foreground">
+            <Link
+              href={`/${locale}/admin/sysdiag`}
+              className="underline hover:text-foreground decoration-muted-foreground/60"
+            >
+              {t('ownerDiagnosticsLink')}
+            </Link>
+          </p>
+        )}
+        <p className="text-muted-foreground">{t('loading')}</p>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-10">
+      {isOwner && (
+        <p className="text-sm text-muted-foreground -mt-2 mb-2">
+          <Link
+            href={`/${locale}/admin/sysdiag`}
+            className="underline hover:text-foreground decoration-muted-foreground/60"
+          >
+            {t('ownerDiagnosticsLink')}
+          </Link>
+        </p>
+      )}
       {error && (
         <p className="text-sm text-destructive" role="alert">
           {t('error')}: {error}
