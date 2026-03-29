@@ -44,11 +44,11 @@ export default async function ProfilePage() {
       );
     }
 
-    const guilds = discordId ? await getGuildsForUser(userId, discordId) : [];
+    const guilds = await getGuildsForUser(userId, discordId ?? null);
 
     // Charakter-Gilden-Zuordnung bereinigen: Wenn User nicht mehr in der Gilde ist / keine Rechte hat,
     // wird guildId entfernt (und isMain zurückgesetzt). Neue Zuweisung erfolgt über "Bearbeiten".
-    if (discordId) {
+    {
       const allowedGuildIds = guilds.map((g) => g.id);
       if (allowedGuildIds.length === 0) {
         await prisma.rfCharacter.updateMany({
