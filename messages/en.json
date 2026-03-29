@@ -533,6 +533,8 @@
     "dbPing": "Prisma ping (SELECT 1)",
     "ok": "OK",
     "failed": "Failed",
+    "prismaCountErrors": "Prisma count() errors",
+    "oauthMemberHintBody": "If the bot cannot read guild members (missing Server Members Intent), the app falls back to your Discord login scope guilds.members.read. After a scope change, sign out and sign in with Discord once.",
     "sectionNextAuth": "NextAuth",
     "sectionDiscord": "Discord",
     "discordBotApi": "Discord API (GET /users/@me as bot)",

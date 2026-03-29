@@ -6,7 +6,7 @@ import { refreshAllBattlenetCharactersForUser } from '@/lib/battlenet-gearscore'
 /**
  * NextAuth mit Discord Provider.
  * Datenminimierung: Nur id und discord_id in rf_user; keine E-Mail, kein Anzeigename.
- * Discord-Scope minimal: nur "identify" für User-ID.
+ * Scopes: identify, guilds, guilds.members.read (letzteres für Dashboard-Rollen ohne Bot-Member-Intent).
  */
 export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === 'development', // Fehler im Terminal anzeigen
@@ -16,7 +16,7 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.DISCORD_CLIENT_SECRET!,
       authorization: {
         params: {
-          scope: 'identify guilds', // identify = User-ID; guilds = für Bot-Einladung (Server wo User Owner/Manager)
+          scope: 'identify guilds guilds.members.read',
         },
       },
     }),
@@ -32,6 +32,9 @@ export const authOptions: NextAuthOptions = {
 
       // Immer DB-User ermitteln: beim ersten Login (account/profile) oder Fallback per token.sub (jeder Request)
       if (discordId) {
+        if (account?.access_token) {
+          (token as { discordAccessToken?: string }).discordAccessToken = account.access_token;
+        }
         try {
           const dbUser = await prisma.rfUser.upsert({
             where: { discordId },
@@ -44,7 +47,6 @@ export const authOptions: NextAuthOptions = {
           }
           t.uid = dbUser.id;
           t.discordId = dbUser.discordId;
-          if (account?.access_token) (token as { discordAccessToken?: string }).discordAccessToken = account.access_token;
         } catch (e) {
           console.error('[NextAuth] DB-Upsert fehlgeschlagen:', e);
           if (discordIdFromProfile) {

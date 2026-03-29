@@ -533,6 +533,8 @@
     "dbPing": "Prisma-Ping (SELECT 1)",
     "ok": "OK",
     "failed": "Fehler",
+    "prismaCountErrors": "Prisma-count()-Fehler",
+    "oauthMemberHintBody": "Wenn der Bot keine Mitglieder lesen darf (fehlender Server-Members-Intent), nutzt die App den Discord-Login-Scope guilds.members.read. Nach Scope-Änderung einmal abmelden und wieder mit Discord anmelden.",
     "sectionNextAuth": "NextAuth",
     "sectionDiscord": "Discord",
     "discordBotApi": "Discord-API (GET /users/@me als Bot)",

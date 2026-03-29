@@ -1,16 +1,14 @@
 /**
  * User-Gilden-Zuordnung: Gilden aus der DB (Spiegelung der Discord-Rollen).
  *
- * **Aktualisierung:** Primär der Discord-Bot (`POST /api/bot/sync-member`). Zusätzlich: Wenn
- * `DISCORD_BOT_TOKEN` in der **Webapp** gesetzt ist, wird pro Gilde vor dem Anzeigen ein Abgleich
- * per Discord REST ausgeführt (`getMemberRoleIds` → `syncMemberPermissionsFromDiscordState`).
- * Ohne Token in der Webapp kann keine Mitgliedschaft/Rolle ermittelt werden — dann bleibt nur der
- * Bot-Event-Pfad (benötigt Server-Members-Intent + `DISCORD_GUILD_MEMBERS_INTENT`).
+ * **Aktualisierung:** `resolveDiscordGuildMembership` (Bot GET member, sonst User-OAuth
+ * `guilds.members.read`) → `syncMemberPermissionsFromDiscordState`. Zusätzlich Bot-Events
+ * (`POST /api/bot/sync-member`).
  */
 
 import { prisma } from '@/lib/prisma';
 import { getAppConfig, filterGuildIdsByConfig } from '@/lib/app-config';
-import { getMemberRoleIds } from './discord-roles';
+import { resolveDiscordGuildMembership } from '@/lib/resolve-discord-guild-membership';
 import {
   guildRowToPermissionSyncShape,
   syncMemberPermissionsFromDiscordState,
@@ -75,7 +73,7 @@ export function userGuildCanEditRaids(guildInfo: UserGuildInfo): boolean {
  * Lädt RaidFlow-Gilden des Users. Mit `DISCORD_BOT_TOKEN` wird die DB pro Gilde zuvor mit Discord abgeglichen.
  *
  * `discordId` optional: fehlt sie in der Session, wird `rf_user.discord_id` für dieses `userId` gelesen.
- * Für Discord-API-Calls gilt immer die DB-Spalte (falls gesetzt), damit Session und Spiegel nicht auseinanderlaufen.
+ * Mitgliedschaft/Rollen: zuerst Bot-API, sonst OAuth `guilds.members.read` (User-Token im JWT).
  */
 export async function getGuildsForUser(
   userId: string,
@@ -111,38 +109,17 @@ export async function getGuildsForUser(
 
   const result: UserGuildInfo[] = [];
 
-  const hasWebappBotToken = Boolean(process.env.DISCORD_BOT_TOKEN?.trim());
-
   for (const guild of guilds) {
     try {
-      if (hasWebappBotToken) {
-        let roleIds: string[] = [];
-        let inGuild = false;
-        let displayNameInGuild: string | null = null;
-        let membershipKnown = false;
-        try {
-          const memberRoles = await getMemberRoleIds(guild.discordGuildId, effectiveDiscordId);
-          roleIds = memberRoles.roleIds;
-          inGuild = memberRoles.inGuild;
-          displayNameInGuild = memberRoles.displayNameInGuild;
-          membershipKnown = memberRoles.membershipKnown;
-        } catch (discordError) {
-          console.error(
-            '[getGuildsForUser] Discord API failed for guild:',
-            guild.id,
-            guild.name,
-            discordError
-          );
-        }
-        await syncMemberPermissionsFromDiscordState({
-          userId,
-          guild: guildRowToPermissionSyncShape(guild),
-          membershipKnown,
-          inGuild,
-          roleIds,
-          displayNameInGuild,
-        });
-      }
+      const resolved = await resolveDiscordGuildMembership(guild.discordGuildId, effectiveDiscordId);
+      await syncMemberPermissionsFromDiscordState({
+        userId,
+        guild: guildRowToPermissionSyncShape(guild),
+        membershipKnown: resolved.membershipKnown,
+        inGuild: resolved.inGuild,
+        roleIds: resolved.roleIds,
+        displayNameInGuild: resolved.displayNameInGuild,
+      });
 
       {
         const [gmOrphan, ugOrphan] = await Promise.all([
@@ -156,35 +133,23 @@ export async function getGuildsForUser(
           }),
         ]);
         if (gmOrphan && !ugOrphan) {
-          if (hasWebappBotToken) {
-            const again = await getMemberRoleIds(guild.discordGuildId, effectiveDiscordId);
-            await syncMemberPermissionsFromDiscordState({
-              userId,
-              guild: guildRowToPermissionSyncShape(guild),
-              membershipKnown: again.membershipKnown,
-              inGuild: again.inGuild,
-              roleIds: again.roleIds,
-              displayNameInGuild: again.displayNameInGuild,
-            });
-            if (!again.membershipKnown) {
-              console.warn(
-                JSON.stringify({
-                  scope: 'getGuildsForUser',
-                  step: 'orphan_discord_unknown',
-                  guildId: guild.id,
-                  guildName: guild.name,
-                  hint: 'Discord GET member failed or no token; rf_user_guild cannot be repaired on this request.',
-                })
-              );
-            }
-          } else {
+          const again = await resolveDiscordGuildMembership(guild.discordGuildId, effectiveDiscordId);
+          await syncMemberPermissionsFromDiscordState({
+            userId,
+            guild: guildRowToPermissionSyncShape(guild),
+            membershipKnown: again.membershipKnown,
+            inGuild: again.inGuild,
+            roleIds: again.roleIds,
+            displayNameInGuild: again.displayNameInGuild,
+          });
+          if (!again.membershipKnown) {
             console.warn(
               JSON.stringify({
                 scope: 'getGuildsForUser',
-                step: 'orphan_no_webapp_token',
+                step: 'orphan_discord_unknown',
                 guildId: guild.id,
                 guildName: guild.name,
-                hint: 'DISCORD_BOT_TOKEN fehlt auf dieser Webapp — Dashboard kann rf_user_guild nicht setzen. Token auf Vercel setzen (gleicher Bot wie auf dem Server).',
+                hint: 'Weder Bot-Member-API noch OAuth-Member (guilds.members.read + gültiger Login) — rf_user_guild nicht reparierbar.',
               })
             );
           }

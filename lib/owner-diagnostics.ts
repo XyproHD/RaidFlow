@@ -107,6 +107,8 @@ export interface OwnerDiagnosticsPayload {
     rfGuild: number;
     rfRaid: number;
     rfBotDiagnosticLog: number;
+    /** Prisma count()-Fehler pro Tabelle (z. B. RLS/Timeout) */
+    errors: Record<string, string>;
   };
   nextAuth: {
     url: string;
@@ -167,11 +169,20 @@ export async function collectOwnerDiagnostics(): Promise<OwnerDiagnosticsPayload
     pingError = e instanceof Error ? e.message : String(e);
   }
 
+  const countErrors: Record<string, string> = {};
+  async function safeCount(name: string, fn: () => Promise<number>): Promise<number> {
+    try {
+      return await fn();
+    } catch (e) {
+      countErrors[name] = e instanceof Error ? e.message : String(e);
+      return -1;
+    }
+  }
   const [rfUser, rfGuild, rfRaid, rfBotDiagnosticLog] = await Promise.all([
-    prisma.rfUser.count().catch(() => -1),
-    prisma.rfGuild.count().catch(() => -1),
-    prisma.rfRaid.count().catch(() => -1),
-    prisma.rfBotDiagnosticLog.count().catch(() => -1),
+    safeCount('rfUser', () => prisma.rfUser.count()),
+    safeCount('rfGuild', () => prisma.rfGuild.count()),
+    safeCount('rfRaid', () => prisma.rfRaid.count()),
+    safeCount('rfBotDiagnosticLog', () => prisma.rfBotDiagnosticLog.count()),
   ]);
 
   const botTokenRaw = process.env.DISCORD_BOT_TOKEN;
@@ -203,6 +214,7 @@ export async function collectOwnerDiagnostics(): Promise<OwnerDiagnosticsPayload
       rfGuild,
       rfRaid,
       rfBotDiagnosticLog,
+      errors: countErrors,
     },
     nextAuth: {
       url: (process.env.NEXTAUTH_URL ?? '').trim() || '—',

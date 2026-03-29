@@ -57,6 +57,15 @@ export async function OwnerDiagnosticsView({ data }: { data: OwnerDiagnosticsPay
           <Row label="rf_guild">{String(data.counts.rfGuild)}</Row>
           <Row label="rf_raid">{String(data.counts.rfRaid)}</Row>
           <Row label="rf_bot_diagnostic_log">{String(data.counts.rfBotDiagnosticLog)}</Row>
+          {Object.keys(data.counts.errors).length > 0 && (
+            <Row label={t('prismaCountErrors')}>
+              <span className="text-destructive whitespace-pre-wrap">
+                {Object.entries(data.counts.errors)
+                  .map(([k, v]) => `${k}: ${v}`)
+                  .join('\n')}
+              </span>
+            </Row>
+          )}
         </div>
       </section>
 
@@ -91,6 +100,7 @@ export async function OwnerDiagnosticsView({ data }: { data: OwnerDiagnosticsPay
             )}
           </Row>
         </div>
+        <p className="text-sm text-muted-foreground mt-3">{t('oauthMemberHintBody')}</p>
       </section>
 
       <section>
