@@ -22,8 +22,8 @@ import { BattlenetLogo } from '@/components/battlenet-logo';
 import { RaidAnmeldungen, type AnmeldungRow } from '@/components/raid-detail/raid-anmeldungen';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
-import type { RaidSignupPhase } from '@/lib/raid-detail-access';
-import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-access';
+import type { RaidSignupPhase } from '@/lib/raid-detail-shared';
+import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 
 type RoleStat = { normal: number; uncertain: number; reserve: number };
 
