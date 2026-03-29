@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import type { RaidSignupPhase } from '@/lib/raid-detail-access';
+import type { RaidSignupPhase } from '@/lib/raid-detail-shared';
 import { SpecIcon } from '@/components/spec-icon';
 import { ClassIcon } from '@/components/class-icon';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';

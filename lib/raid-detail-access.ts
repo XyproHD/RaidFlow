@@ -5,35 +5,15 @@ import {
   userGuildCanSeeRaid,
   type UserGuildInfo,
 } from '@/lib/user-guilds';
+import {
+  computeRaidSignupPhase,
+  type RaidPageMode,
+  type RaidSignupPhase,
+} from '@/lib/raid-detail-shared';
 
-export type RaidPageMode = 'view' | 'edit' | 'signup';
-
-/** Nach Ablauf „Anmeldung bis“ nur noch Reserve; sonst volle Typen. */
-export type RaidSignupPhase = 'full' | 'reserve_only' | 'closed';
-
-export function computeRaidSignupPhase(raid: {
-  status: string;
-  signupUntil: Date;
-}): RaidSignupPhase {
-  if (raid.status !== 'open') return 'closed';
-  if (Date.now() <= raid.signupUntil.getTime()) return 'full';
-  return 'reserve_only';
-}
-
-/**
- * Query-Parameter `mode` oder `modus` (deutsche Aliase).
- * Standard: Anzeigen (view), wenn kein oder unbekannter Wert.
- */
-export function parseRaidPageMode(searchParams: {
-  mode?: string;
-  modus?: string;
-}): RaidPageMode {
-  const raw = (searchParams.mode ?? searchParams.modus ?? 'view').toLowerCase().trim();
-  if (raw === '' || raw === 'view' || raw === 'anzeigen') return 'view';
-  if (raw === 'edit' || raw === 'bearbeiten') return 'edit';
-  if (raw === 'signup' || raw === 'anmelden') return 'signup';
-  return 'view';
-}
+export type { RaidPageMode, RaidSignupPhase };
+export { computeRaidSignupPhase, parseRaidPageMode } from '@/lib/raid-detail-shared';
+export { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 
 export type RaidDetailAccessReason =
   | 'guild_not_found'
@@ -184,21 +164,4 @@ export async function getRaidDetailContext(
     signupPhase: access.signupPhase,
     raid: { ...raid, dungeonNames },
   };
-}
-
-/** Anmeldeliste je nach signup_visibility und Rolle. Nach „Raid setzen“ (locked) ist die Liste bei raid_leader_only für alle sichtbar. */
-export function filterSignupsVisibleToViewer<T extends { userId: string }>(
-  signups: T[],
-  viewerUserId: string,
-  signupVisibility: string,
-  canEdit: boolean,
-  raidStatus?: string
-): T[] {
-  if (signupVisibility === 'public' || canEdit) {
-    return signups;
-  }
-  if (raidStatus === 'locked') {
-    return signups;
-  }
-  return signups.filter((s) => s.userId === viewerUserId);
 }
