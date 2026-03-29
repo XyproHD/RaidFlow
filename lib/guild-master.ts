@@ -38,6 +38,21 @@ export async function requireGuildMasterForGuildId(
 }
 
 /**
+ * True, wenn der User in dieser RaidFlow-Gilde als Gildenmeister oder Raidleiter geführt wird.
+ * (z. B. Gearscore-Refresh für alle Charaktere mit diesem `rf_character.guild_id`.)
+ */
+export async function userIsGuildRaidLeaderOrMaster(
+  userId: string,
+  guildId: string
+): Promise<boolean> {
+  const ug = await prisma.rfUserGuild.findUnique({
+    where: { userId_guildId: { userId, guildId } },
+    select: { role: true },
+  });
+  return ug?.role === 'guildmaster' || ug?.role === 'raidleader';
+}
+
+/**
  * Prüft Gildenmeister-Recht; gibt bei Fehlern NextResponse für 401/403 zurück.
  * Für API-Routen: const auth = await requireGuildMasterOrForbid(guildId);
  * if (auth instanceof NextResponse) return auth;
