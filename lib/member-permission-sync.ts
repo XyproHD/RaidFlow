@@ -83,8 +83,10 @@ export async function syncMemberPermissionsFromDiscordState(params: {
 
   if (resolved) {
     try {
+      // Kern zuerst: Member + rf_user_guild in einer TX. Raidgruppen-Links separat, damit ein Fehler
+      // dort nicht verhindert, dass rf_user_guild geschrieben wird (sonst leeres Dashboard trotz GM auf Discord).
       await prisma.$transaction(async (tx) => {
-        const member = await tx.rfGuildMember.upsert({
+        await tx.rfGuildMember.upsert({
           where: { userId_guildId: { userId, guildId: guild.id } },
           create: { userId, guildId: guild.id },
           update: {},
@@ -94,15 +96,27 @@ export async function syncMemberPermissionsFromDiscordState(params: {
           create: { userId, guildId: guild.id, role: resolved.role },
           update: { role: resolved.role },
         });
-        await tx.rfGuildMemberRaidGroup.deleteMany({
-          where: { guildMemberId: member.id },
-        });
-        for (const raidGroupId of resolved.raidGroupIds) {
-          await tx.rfGuildMemberRaidGroup.create({
-            data: { guildMemberId: member.id, raidGroupId },
-          });
-        }
       });
+      const memberRow = await prisma.rfGuildMember.findUnique({
+        where: { userId_guildId: { userId, guildId: guild.id } },
+        select: { id: true },
+      });
+      if (memberRow) {
+        try {
+          await prisma.$transaction(async (tx) => {
+            await tx.rfGuildMemberRaidGroup.deleteMany({
+              where: { guildMemberId: memberRow.id },
+            });
+            for (const raidGroupId of resolved.raidGroupIds) {
+              await tx.rfGuildMemberRaidGroup.create({
+                data: { guildMemberId: memberRow.id, raidGroupId },
+              });
+            }
+          });
+        } catch (e) {
+          console.error('[syncMemberPermissionsFromDiscordState] raid-group links', guild.id, e);
+        }
+      }
     } catch (e) {
       console.error('[syncMemberPermissionsFromDiscordState]', guild.id, e);
     }
@@ -129,6 +143,42 @@ export async function syncMemberPermissionsFromDiscordState(params: {
       });
     } catch (e) {
       console.error('[syncMemberPermissionsFromDiscordState] member-only', guild.id, e);
+    }
+  }
+
+  // Legacy / TX-Fehler: rf_guild_member ohne rf_user_guild, aber Discord-Rollen liefern eine RaidFlow-Rolle.
+  if (membershipKnown && inGuild) {
+    const [gmProbe, ugProbe] = await Promise.all([
+      prisma.rfGuildMember.findUnique({
+        where: { userId_guildId: { userId, guildId: guild.id } },
+        select: { id: true },
+      }),
+      prisma.rfUserGuild.findUnique({
+        where: { userId_guildId: { userId, guildId: guild.id } },
+        select: { role: true },
+      }),
+    ]);
+    if (gmProbe && !ugProbe) {
+      const r = resolveRaidFlowRole(guild, roleIds);
+      if (r) {
+        try {
+          await prisma.rfUserGuild.upsert({
+            where: { userId_guildId: { userId, guildId: guild.id } },
+            create: { userId, guildId: guild.id, role: r.role },
+            update: { role: r.role },
+          });
+          console.warn(
+            JSON.stringify({
+              scope: 'RF_SYNC',
+              step: 'healed_missing_user_guild',
+              guildId: guild.id,
+              role: r.role,
+            })
+          );
+        } catch (e) {
+          console.error('[syncMemberPermissionsFromDiscordState] heal user_guild', guild.id, e);
+        }
+      }
     }
   }
 

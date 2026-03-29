@@ -129,33 +129,51 @@ export async function getGuildsForUser(
           roleIds,
           displayNameInGuild,
         });
+      }
 
-        // Alte Teil-Schreibfehler: rf_guild_member ohne rf_user_guild → Sync erneut (gleiche Rollen, keine Extra-Discord-Runde).
-        if (membershipKnown && inGuild) {
-          const [ugProbe, gmProbe] = await Promise.all([
-            prisma.rfUserGuild.findUnique({
-              where: { userId_guildId: { userId, guildId: guild.id } },
-              select: { role: true },
-            }),
-            prisma.rfGuildMember.findUnique({
-              where: { userId_guildId: { userId, guildId: guild.id } },
-              select: { id: true },
-            }),
-          ]);
-          if (gmProbe && !ugProbe) {
-            console.warn(
-              '[getGuildsForUser] repaired orphan rf_guild_member (re-sync):',
-              guild.id,
-              guild.name
-            );
+      {
+        const [gmOrphan, ugOrphan] = await Promise.all([
+          prisma.rfGuildMember.findUnique({
+            where: { userId_guildId: { userId, guildId: guild.id } },
+            select: { id: true },
+          }),
+          prisma.rfUserGuild.findUnique({
+            where: { userId_guildId: { userId, guildId: guild.id } },
+            select: { role: true },
+          }),
+        ]);
+        if (gmOrphan && !ugOrphan) {
+          if (hasWebappBotToken) {
+            const again = await getMemberRoleIds(guild.discordGuildId, discordId);
             await syncMemberPermissionsFromDiscordState({
               userId,
               guild: guildRowToPermissionSyncShape(guild),
-              membershipKnown,
-              inGuild,
-              roleIds,
-              displayNameInGuild,
+              membershipKnown: again.membershipKnown,
+              inGuild: again.inGuild,
+              roleIds: again.roleIds,
+              displayNameInGuild: again.displayNameInGuild,
             });
+            if (!again.membershipKnown) {
+              console.warn(
+                JSON.stringify({
+                  scope: 'getGuildsForUser',
+                  step: 'orphan_discord_unknown',
+                  guildId: guild.id,
+                  guildName: guild.name,
+                  hint: 'Discord GET member failed or no token; rf_user_guild cannot be repaired on this request.',
+                })
+              );
+            }
+          } else {
+            console.warn(
+              JSON.stringify({
+                scope: 'getGuildsForUser',
+                step: 'orphan_no_webapp_token',
+                guildId: guild.id,
+                guildName: guild.name,
+                hint: 'DISCORD_BOT_TOKEN fehlt auf dieser Webapp — Dashboard kann rf_user_guild nicht setzen. Token auf Vercel setzen (gleicher Bot wie auf dem Server).',
+              })
+            );
           }
         }
       }
