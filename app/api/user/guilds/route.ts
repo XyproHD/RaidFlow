@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getGuildsForUser } from '@/lib/user-guilds';
 
 /**
@@ -10,15 +11,15 @@ import { getGuildsForUser } from '@/lib/user-guilds';
  */
 export async function GET() {
   const session = await getServerSession(authOptions);
-  const userId = (session as { userId?: string } | null)?.userId;
+  const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
   const discordId = (session as { discordId?: string } | null)?.discordId;
 
-  if (!userId || !discordId) {
+  if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const guilds = await getGuildsForUser(userId, discordId);
+    const guilds = await getGuildsForUser(userId, discordId ?? null);
     return NextResponse.json({ guilds });
   } catch (e) {
     console.error('[API user/guilds]', e);

@@ -22,11 +22,11 @@ export default async function NewRaidPage({
   );
   const discordId = (session as { discordId?: string } | null)?.discordId;
 
-  if (!userId || !discordId) {
+  if (!userId) {
     redirect(`/${locale}`);
   }
 
-  const guilds = await getGuildsForUser(userId, discordId);
+  const guilds = await getGuildsForUser(userId, discordId ?? null);
   const g = guilds.find((x) => x.id === guildId);
   if (!g || (g.role !== 'raidleader' && g.role !== 'guildmaster')) {
     return (

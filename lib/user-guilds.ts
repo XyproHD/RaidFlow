@@ -73,11 +73,24 @@ export function userGuildCanEditRaids(guildInfo: UserGuildInfo): boolean {
 
 /**
  * Lädt RaidFlow-Gilden des Users. Mit `DISCORD_BOT_TOKEN` wird die DB pro Gilde zuvor mit Discord abgeglichen.
+ *
+ * `discordId` optional: fehlt sie in der Session, wird `rf_user.discord_id` für dieses `userId` gelesen.
+ * Für Discord-API-Calls gilt immer die DB-Spalte (falls gesetzt), damit Session und Spiegel nicht auseinanderlaufen.
  */
 export async function getGuildsForUser(
   userId: string,
-  discordId: string
+  discordId?: string | null
 ): Promise<UserGuildInfo[]> {
+  const userRow = await prisma.rfUser.findUnique({
+    where: { id: userId },
+    select: { discordId: true },
+  });
+  const sessionDiscord =
+    typeof discordId === 'string' && discordId.trim() ? discordId.trim() : '';
+  const dbDiscord = userRow?.discordId?.trim() ?? '';
+  const effectiveDiscordId = dbDiscord || sessionDiscord || null;
+  if (!effectiveDiscordId) return [];
+
   const [config, allGuilds] = await Promise.all([
     getAppConfig(),
     prisma.rfGuild.findMany({
@@ -108,7 +121,7 @@ export async function getGuildsForUser(
         let displayNameInGuild: string | null = null;
         let membershipKnown = false;
         try {
-          const memberRoles = await getMemberRoleIds(guild.discordGuildId, discordId);
+          const memberRoles = await getMemberRoleIds(guild.discordGuildId, effectiveDiscordId);
           roleIds = memberRoles.roleIds;
           inGuild = memberRoles.inGuild;
           displayNameInGuild = memberRoles.displayNameInGuild;
@@ -144,7 +157,7 @@ export async function getGuildsForUser(
         ]);
         if (gmOrphan && !ugOrphan) {
           if (hasWebappBotToken) {
-            const again = await getMemberRoleIds(guild.discordGuildId, discordId);
+            const again = await getMemberRoleIds(guild.discordGuildId, effectiveDiscordId);
             await syncMemberPermissionsFromDiscordState({
               userId,
               guild: guildRowToPermissionSyncShape(guild),
@@ -178,10 +191,42 @@ export async function getGuildsForUser(
         }
       }
 
-      const ug = await prisma.rfUserGuild.findUnique({
+      let ug = await prisma.rfUserGuild.findUnique({
         where: { userId_guildId: { userId, guildId: guild.id } },
         select: { role: true },
       });
+
+      // Verwaiste rf_guild_member-Zeile (ohne rf_user_guild): ohne funktionierenden Discord-Sync sonst leeres Dashboard.
+      // Konservativ Rolle `member` anlegen; nächster erfolgreicher Sync setzt Gildenmeister/Raider/Raidleader korrekt.
+      if (!ug) {
+        const gmBootstrap = await prisma.rfGuildMember.findUnique({
+          where: { userId_guildId: { userId, guildId: guild.id } },
+          select: { id: true },
+        });
+        if (gmBootstrap) {
+          try {
+            await prisma.rfUserGuild.create({
+              data: { userId, guildId: guild.id, role: 'member' },
+            });
+            console.warn(
+              JSON.stringify({
+                scope: 'getGuildsForUser',
+                step: 'bootstrap_rf_user_guild_from_member_row',
+                guildId: guild.id,
+                guildName: guild.name,
+                hint: 'rf_user_guild als member angelegt bis Discord-Sync die Rolle korrigiert.',
+              })
+            );
+          } catch (e) {
+            const code = e && typeof e === 'object' && 'code' in e ? String((e as { code: string }).code) : '';
+            if (code !== 'P2002') console.error('[getGuildsForUser] bootstrap user_guild', e);
+          }
+          ug = await prisma.rfUserGuild.findUnique({
+            where: { userId_guildId: { userId, guildId: guild.id } },
+            select: { role: true },
+          });
+        }
+      }
 
       if (!ug) continue;
 

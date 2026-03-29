@@ -26,7 +26,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
     let guilds: Awaited<ReturnType<typeof getGuildsForUser>> = [];
     let raids: Awaited<ReturnType<typeof getRaidsForUser>> = [];
     try {
-      guilds = userId && discordId ? await getGuildsForUser(userId, discordId) : [];
+      guilds = userId ? await getGuildsForUser(userId, discordId ?? null) : [];
       raids = await getRaidsForUser(guilds);
     } catch (e) {
       console.error('[Dashboard]', e);

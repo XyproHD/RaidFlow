@@ -22,11 +22,11 @@ export default async function GuildsPage(props: {
   );
   const discordId = (session as { discordId?: string } | null)?.discordId;
 
-  if (!userId || !discordId) {
+  if (!userId) {
     redirect('/');
   }
 
-  const allGuilds = await getGuildsForUser(userId, discordId);
+  const allGuilds = await getGuildsForUser(userId, discordId ?? null);
   const guildmasterGuilds = allGuilds.filter((g) => g.role === 'guildmaster');
 
   if (guildmasterGuilds.length === 0) {

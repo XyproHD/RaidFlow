@@ -50,12 +50,10 @@ export default async function LocaleLayout({
         where: { userId, role: 'guildmaster' },
       });
       showGuildManagement = !!guildmaster;
-      if (discordId) {
-        try {
-          userGuilds = await getGuildsForUser(userId, discordId);
-        } catch (e) {
-          console.error('[Layout] getGuildsForUser:', e);
-        }
+      try {
+        userGuilds = await getGuildsForUser(userId, discordId ?? null);
+      } catch (e) {
+        console.error('[Layout] getGuildsForUser:', e);
       }
     }
     botInviteUrl = getBotInviteUrl();

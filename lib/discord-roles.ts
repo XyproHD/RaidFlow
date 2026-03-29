@@ -87,7 +87,22 @@ export async function getMemberRoleIds(
     if (res.status === 404) {
       return { roleIds: [], inGuild: false, displayNameInGuild: null, membershipKnown: true };
     }
-    if (!res.ok) return unknown;
+    if (!res.ok) {
+      console.warn(
+        JSON.stringify({
+          scope: 'discord_member_fetch',
+          discordGuildId,
+          httpStatus: res.status,
+          hint:
+            res.status === 401
+              ? 'DISCORD_BOT_TOKEN ungültig oder falsch'
+              : res.status === 403
+                ? 'Bot nicht auf dem Server oder fehlende Berechtigung'
+                : 'Discord-API-Fehler (Rate-Limit o. ä.)',
+        })
+      );
+      return unknown;
+    }
     const data = (await res.json()) as { roles?: string[] };
     const displayNameInGuild = discordDisplayNameFromGuildMemberPayload(data);
     return {
