@@ -102,6 +102,9 @@ export const TBC_CLASSES: TbcClass[] = [
   },
 ];
 
+/** Klassen-IDs in Reihenfolge wie `TBC_CLASSES` (z. B. Raidplaner Klassen-Filter). */
+export const TBC_CLASS_IDS: readonly string[] = TBC_CLASSES.map((c) => c.id);
+
 /** Englische Klassennamen für Spec-Display (Icon-Keys: "Fire Mage", "Protection Warrior") */
 const CLASS_DISPLAY: Record<string, string> = {
   druid: 'Druid', hunter: 'Hunter', mage: 'Mage', paladin: 'Paladin',

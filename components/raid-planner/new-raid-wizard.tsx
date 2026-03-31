@@ -14,7 +14,12 @@ import {
   type PrefSlot,
   type SlotHeat,
 } from '@/lib/raid-availability';
-import { getAllSpecDisplayNames, type TbcRole } from '@/lib/wow-tbc-classes';
+import {
+  getAllSpecDisplayNames,
+  getSpecByDisplayName,
+  TBC_CLASS_IDS,
+  type TbcRole,
+} from '@/lib/wow-tbc-classes';
 import {
   addMinutes,
   expandSlotIndicesForward,
@@ -30,6 +35,18 @@ import { BattlenetLogo } from '@/components/battlenet-logo';
 
 const ALL_SPECS = getAllSpecDisplayNames();
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
+/** i18n keys under `raidPlanner` für Klassen-Filter-Buttons */
+const RAID_PLANNER_CLASS_I18N = {
+  druid: 'classDruid',
+  hunter: 'classHunter',
+  mage: 'classMage',
+  paladin: 'classPaladin',
+  priest: 'classPriest',
+  rogue: 'classRogue',
+  shaman: 'classShaman',
+  warlock: 'classWarlock',
+  warrior: 'classWarrior',
+} as const;
 const SLOTS = TIME_SLOTS_30MIN as readonly string[];
 const DEFAULT_SLOT_IDX = Math.max(0, SLOTS.indexOf('19:00'));
 
@@ -57,6 +74,11 @@ type PoolMember = {
   raidGroupIds: string[];
   characters: PoolCharacter[];
 };
+
+function poolCharacterClassId(c: PoolCharacter): string | null {
+  if (c.classId) return c.classId;
+  return getSpecByDisplayName(c.mainSpec)?.classId ?? null;
+}
 
 type Bootstrap = {
   dungeons: { id: string; name: string; maxPlayers: number }[];
@@ -256,6 +278,11 @@ export function NewRaidWizard({
     Melee: true,
     Range: true,
   });
+  const [classFilter, setClassFilter] = useState<Record<string, boolean>>(() => {
+    const o: Record<string, boolean> = {};
+    for (const id of TBC_CLASS_IDS) o[id] = true;
+    return o;
+  });
   const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>('all');
 
   const editable = mode === 'create' ? true : (initialRaid?.status === 'open');
@@ -355,6 +382,7 @@ export function NewRaidWizard({
 
   const restriction = raidGroupRestrictionId.trim();
   const anyRoleSelected = ROLE_ORDER.some((r) => roleFilter[r]);
+  const anyClassSelected = TBC_CLASS_IDS.some((id) => classFilter[id]);
 
   const playerReps = useMemo(() => {
     if (!data) return [];
@@ -369,6 +397,8 @@ export function NewRaidWizard({
           return false;
         }
         if (c.role && anyRoleSelected && !roleFilter[c.role]) return false;
+        const cid = poolCharacterClassId(c);
+        if (cid && anyClassSelected && !classFilter[cid]) return false;
         return !!c.role;
       });
       if (eligible.length === 0) continue;
@@ -388,6 +418,8 @@ export function NewRaidWizard({
     restriction,
     roleFilter,
     anyRoleSelected,
+    classFilter,
+    anyClassSelected,
     raidGroupRestrictionId,
   ]);
 
@@ -404,6 +436,8 @@ export function NewRaidWizard({
           continue;
         }
         if (c.role && anyRoleSelected && !roleFilter[c.role]) continue;
+        const cid = poolCharacterClassId(c);
+        if (cid && anyClassSelected && !classFilter[cid]) continue;
         if (!c.role) continue;
         const color = availabilityColorForRaidWindow(m.raidTimeSlots, scheduledDate, rangeSlotStrings);
         if (availabilityFilter === 'available' && color !== 'green') continue;
@@ -421,6 +455,8 @@ export function NewRaidWizard({
     restriction,
     roleFilter,
     anyRoleSelected,
+    classFilter,
+    anyClassSelected,
     scheduledDate,
     rangeSlotStrings,
     raidGroupRestrictionId,
@@ -536,6 +572,14 @@ export function NewRaidWizard({
     setRoleFilter((prev) => {
       const next = { ...prev, [r]: !prev[r] };
       const any = ROLE_ORDER.some((x) => next[x]);
+      return any ? next : prev;
+    });
+  };
+
+  const toggleClass = (classId: string) => {
+    setClassFilter((prev) => {
+      const next = { ...prev, [classId]: !prev[classId] };
+      const any = TBC_CLASS_IDS.some((id) => next[id]);
       return any ? next : prev;
     });
   };
@@ -1375,6 +1419,32 @@ export function NewRaidWizard({
                     >
                       <RoleIcon role={r} size={18} />
                       <span>{r}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{t('filterClasses')}</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {TBC_CLASS_IDS.map((classId) => (
+                    <button
+                      key={classId}
+                      type="button"
+                      onClick={() => toggleClass(classId)}
+                      className={cn(
+                        'rounded-lg border px-2 py-1.5 text-sm flex items-center gap-2 justify-start min-w-0',
+                        classFilter[classId]
+                          ? 'border-primary/50 bg-primary/10 text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                      )}
+                      aria-pressed={!!classFilter[classId]}
+                      title={t(RAID_PLANNER_CLASS_I18N[classId as keyof typeof RAID_PLANNER_CLASS_I18N])}
+                    >
+                      <ClassIcon classId={classId} size={18} />
+                      <span className="truncate">
+                        {t(RAID_PLANNER_CLASS_I18N[classId as keyof typeof RAID_PLANNER_CLASS_I18N])}
+                      </span>
                     </button>
                   ))}
                 </div>
