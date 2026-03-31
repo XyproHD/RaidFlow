@@ -204,6 +204,26 @@
     "noteRequiredLabel": "Note for raid lead",
     "noteRequiredPlaceholder": "Short reason (e.g. tentative/reserve/late …)"
   },
+  "raidRosterPlanner": {
+    "pageTitle": "Plan raid",
+    "draftHint": "Draft: roster placement is not saved yet.",
+    "rosterTitle": "Roster",
+    "rosterCount": "{current} / {max}",
+    "rosterEmpty": "Nobody placed yet — drag from signups.",
+    "reserveTitle": "Bench",
+    "reserveEmpty": "No bench yet — drag characters here.",
+    "reserveFilteredEmpty": "No bench entries match the current filters.",
+    "signupsTitle": "Signups",
+    "poolEmpty": "All signups are placed on the left.",
+    "poolFilteredEmpty": "No signups match the current filters.",
+    "filterAttendance": "Attendance / punctuality",
+    "attendanceAll": "All",
+    "attendanceAvailable": "Available",
+    "attendanceMaybe": "Tentative",
+    "attendanceLate": "Late",
+    "menuRaidView": "Back to raid view",
+    "forbiddenPlan": "Only raid leaders can use the planner."
+  },
   "raidEdit": {
     "sectionBasics": "Basics & schedule",
     "saveBasics": "Save changes",
