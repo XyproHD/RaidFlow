@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/require-admin';
+import { requireAdmin, AdminDatabaseError } from '@/lib/require-admin';
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/app-config';
 
@@ -7,7 +7,15 @@ export const dynamic = 'force-dynamic';
 
 /** GET: Liste aller Admins (Discord-IDs) + Owner-Discord-ID (aus AppConfig, nicht entfernbar). */
 export async function GET() {
-  const admin = await requireAdmin();
+  let admin: Awaited<ReturnType<typeof requireAdmin>>;
+  try {
+    admin = await requireAdmin();
+  } catch (e) {
+    if (e instanceof AdminDatabaseError) {
+      return NextResponse.json({ error: 'Database unavailable' }, { status: 503 });
+    }
+    throw e;
+  }
   if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const [config, admins] = await Promise.all([
     getAppConfig(),
@@ -21,14 +29,22 @@ export async function GET() {
     admins: admins.map((a) => ({
       discordUserId: a.discordUserId,
       addedByDiscordId: a.addedByDiscordId,
-      createdAt: a.createdAt,
+      createdAt: a.createdAt.toISOString(),
     })),
   });
 }
 
 /** POST: Neuen Admin hinzufügen (Discord-ID). */
 export async function POST(request: NextRequest) {
-  const admin = await requireAdmin();
+  let admin: Awaited<ReturnType<typeof requireAdmin>>;
+  try {
+    admin = await requireAdmin();
+  } catch (e) {
+    if (e instanceof AdminDatabaseError) {
+      return NextResponse.json({ error: 'Database unavailable' }, { status: 503 });
+    }
+    throw e;
+  }
   if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   let body: { discordUserId?: string };
   try {

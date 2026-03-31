@@ -479,6 +479,7 @@
   "admin": {
     "title": "Admin",
     "forbidden": "Du hast keine Berechtigung für den Admin-Bereich. Nur Application-Admins können diese Seite nutzen.",
+    "dbUnavailable": "Die Datenbank ist vorübergehend nicht erreichbar. Bitte später erneut versuchen oder die Vercel-/Supabase-Umgebung prüfen (DATABASE_URL).",
     "guildsSection": "Gilden verwalten",
     "guildsSectionDescription": "Gilden löschen (inkl. zugehörige Raids, Anmeldungen, Rollen-Daten).",
     "guildName": "Gilde",

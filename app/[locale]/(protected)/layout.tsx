@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getServerSession } from 'next-auth';
 import { getLocale } from 'next-intl/server';
 import { authOptions } from '@/lib/auth';
-import { requireAdmin } from '@/lib/require-admin';
+import { requireAdmin, AdminDatabaseError } from '@/lib/require-admin';
 import { getAppConfig, DEFAULT_APP_CONFIG_STATE, type AppConfigState } from '@/lib/app-config';
 
 /** Geschützter Bereich: Nur für eingeloggte Nutzer. Bei Wartungsmodus sehen Nicht-Admins nur die Wartungsmeldung. */
@@ -22,9 +22,18 @@ export default async function ProtectedLayout({
   let admin: Awaited<ReturnType<typeof requireAdmin>> = null;
   let config: AppConfigState = DEFAULT_APP_CONFIG_STATE;
   try {
-    [admin, config] = await Promise.all([requireAdmin(), getAppConfig()]);
+    config = await getAppConfig();
   } catch (e) {
-    console.error('[ProtectedLayout] requireAdmin/getAppConfig:', e);
+    console.error('[ProtectedLayout] getAppConfig:', e);
+  }
+  try {
+    admin = await requireAdmin();
+  } catch (e) {
+    if (e instanceof AdminDatabaseError) {
+      console.error('[ProtectedLayout] requireAdmin (DB):', e);
+    } else {
+      console.error('[ProtectedLayout] requireAdmin:', e);
+    }
   }
   if (config.maintenanceMode && !admin) {
     const t = await getTranslations('maintenance');

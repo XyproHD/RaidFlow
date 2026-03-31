@@ -479,6 +479,7 @@
   "admin": {
     "title": "Admin",
     "forbidden": "You do not have permission for the admin area. Only application admins can access this page.",
+    "dbUnavailable": "The database is temporarily unavailable. Please try again later or check your Vercel/Supabase environment (DATABASE_URL).",
     "guildsSection": "Manage guilds",
     "guildsSectionDescription": "Delete guilds (including associated raids, signups, role data).",
     "guildName": "Guild",

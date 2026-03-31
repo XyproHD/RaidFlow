@@ -44,12 +44,22 @@ export default async function LocaleLayout({
     session = await getServerSession(authOptions);
     const discordId = (session as { discordId?: string } | null)?.discordId;
     const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
-    if (discordId) isAdmin = await isApplicationAdmin(discordId);
+    if (discordId) {
+      try {
+        isAdmin = await isApplicationAdmin(discordId);
+      } catch (e) {
+        console.error('[Layout] isApplicationAdmin:', e);
+      }
+    }
     if (userId) {
-      const guildmaster = await prisma.rfUserGuild.findFirst({
-        where: { userId, role: 'guildmaster' },
-      });
-      showGuildManagement = !!guildmaster;
+      try {
+        const guildmaster = await prisma.rfUserGuild.findFirst({
+          where: { userId, role: 'guildmaster' },
+        });
+        showGuildManagement = !!guildmaster;
+      } catch (e) {
+        console.error('[Layout] rfUserGuild.findFirst (guildmaster):', e);
+      }
       try {
         userGuilds = await getGuildsForUser(userId, discordId ?? null);
       } catch (e) {
