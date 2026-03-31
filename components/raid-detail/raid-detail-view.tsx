@@ -376,93 +376,105 @@ export function RaidDetailView({
 
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
-            {t('sectionMeta')}
+          <h2 className="text-sm font-semibold text-foreground shrink-0">
+            {t('sectionOverview')}
           </h2>
-          <div className="flex flex-col gap-2 sm:items-end">
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              {ROLE_KEYS.map((key) => {
-                const stats = roleStats[key];
-                const icon = ROLE_ICONS[key];
-                return (
-                  <span
-                    key={key}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
-                    title={key}
-                  >
-                    <Image src={icon.src} alt="" width={18} height={18} unoptimized />
-                    <span className="font-semibold text-green-600 dark:text-green-500">{stats.normal}</span>
-                    <span className="text-muted-foreground">(</span>
-                    <span className="font-semibold text-amber-600 dark:text-amber-500">{stats.uncertain}</span>
-                    <span className="text-muted-foreground"> / </span>
-                    <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
-                    <span className="text-muted-foreground">)</span>
-                  </span>
-                );
-              })}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              {ROLE_KEYS.filter((k) => roleMinByKey[k] > 0).map((key) => {
-                const min = roleMinByKey[key];
-                const stats = roleStats[key];
-                return (
-                  <span
-                    key={key}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
-                    title={key}
-                  >
-                    <Image src={ROLE_ICONS[key].src} alt="" width={18} height={18} unoptimized />
-                    <span className={cn('font-semibold', statusToneClass({ min, ...stats }))}>{min}</span>
-                    <span className="text-muted-foreground">/</span>
-                    <span className="font-semibold text-green-600 dark:text-green-500">{stats.normal}</span>
-                    <span className="text-muted-foreground">(</span>
-                    <span className="font-semibold text-amber-600 dark:text-amber-500">{stats.uncertain}</span>
-                    <span className="text-muted-foreground"> / </span>
-                    <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
-                    <span className="text-muted-foreground">)</span>
-                  </span>
-                );
-              })}
-            </div>
-
-            {minSpecsObj && Object.keys(minSpecsObj).length > 0 ? (
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                {Object.entries(minSpecsObj)
-                  .filter(([, need]) => typeof need === 'number' && Number.isFinite(need) && need > 0)
-                  .map(([spec, need]) => {
-                    const stats = specCountsByType[spec] ?? { normal: 0, uncertain: 0, reserve: 0 };
-                    return (
-                      <span
-                        key={spec}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
-                        title={spec}
-                      >
-                        <SpecIcon spec={spec} size={18} />
-                        <span
-                          className={cn(
-                            'font-semibold',
-                            statusToneClass({ min: need, ...stats })
-                          )}
-                        >
-                          {need}
-                        </span>
-                        <span className="text-muted-foreground">/</span>
-                        <span className="font-semibold text-green-600 dark:text-green-500">
-                          {stats.normal}
-                        </span>
-                        <span className="text-muted-foreground">(</span>
-                        <span className="font-semibold text-amber-600 dark:text-amber-500">
-                          {stats.uncertain}
-                        </span>
-                        <span className="text-muted-foreground"> / </span>
-                        <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
-                        <span className="text-muted-foreground">)</span>
-                      </span>
-                    );
-                  })}
+          <div className="grid gap-y-2 gap-x-3 sm:gap-x-4 sm:ml-auto w-full sm:w-auto">
+            <div className="grid grid-cols-[7.5rem_1fr] items-start gap-x-3">
+              <div className="text-xs font-medium text-muted-foreground pt-1">
+                {t('overviewRowSignups')}
               </div>
-            ) : null}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 justify-items-stretch">
+                {ROLE_KEYS.map((key) => {
+                  const stats = roleStats[key];
+                  const icon = ROLE_ICONS[key];
+                  return (
+                    <span
+                      key={key}
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
+                      title={key}
+                    >
+                      <Image src={icon.src} alt="" width={18} height={18} unoptimized />
+                      <span className="font-semibold text-green-600 dark:text-green-500">{stats.normal}</span>
+                      <span className="text-muted-foreground">(</span>
+                      <span className="font-semibold text-amber-600 dark:text-amber-500">{stats.uncertain}</span>
+                      <span className="text-muted-foreground"> / </span>
+                      <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
+                      <span className="text-muted-foreground">)</span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-[7.5rem_1fr] items-start gap-x-3">
+              <div className="text-xs font-medium text-muted-foreground pt-1">
+                {t('overviewRowMinRoles')}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 justify-items-stretch">
+                {ROLE_KEYS.map((key) => {
+                  const min = roleMinByKey[key];
+                  const stats = roleStats[key];
+                  return (
+                    <span
+                      key={key}
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
+                      title={key}
+                    >
+                      <Image src={ROLE_ICONS[key].src} alt="" width={18} height={18} unoptimized />
+                      <span className={cn('font-semibold', statusToneClass({ min, ...stats }))}>
+                        {min}
+                      </span>
+                      <span className="text-muted-foreground">/</span>
+                      <span className="font-semibold text-green-600 dark:text-green-500">{stats.normal}</span>
+                      <span className="text-muted-foreground">(</span>
+                      <span className="font-semibold text-amber-600 dark:text-amber-500">{stats.uncertain}</span>
+                      <span className="text-muted-foreground"> / </span>
+                      <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
+                      <span className="text-muted-foreground">)</span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-[7.5rem_1fr] items-start gap-x-3">
+              <div className="text-xs font-medium text-muted-foreground pt-1">
+                {t('overviewRowMinSpecs')}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 justify-items-stretch">
+                {minSpecsObj && Object.keys(minSpecsObj).length > 0
+                  ? Object.entries(minSpecsObj)
+                      .filter(([, need]) => typeof need === 'number' && Number.isFinite(need) && need > 0)
+                      .map(([spec, need]) => {
+                        const stats = specCountsByType[spec] ?? { normal: 0, uncertain: 0, reserve: 0 };
+                        return (
+                          <span
+                            key={spec}
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
+                            title={spec}
+                          >
+                            <SpecIcon spec={spec} size={18} />
+                            <span className={cn('font-semibold', statusToneClass({ min: need, ...stats }))}>
+                              {need}
+                            </span>
+                            <span className="text-muted-foreground">/</span>
+                            <span className="font-semibold text-green-600 dark:text-green-500">
+                              {stats.normal}
+                            </span>
+                            <span className="text-muted-foreground">(</span>
+                            <span className="font-semibold text-amber-600 dark:text-amber-500">
+                              {stats.uncertain}
+                            </span>
+                            <span className="text-muted-foreground"> / </span>
+                            <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
+                            <span className="text-muted-foreground">)</span>
+                          </span>
+                        );
+                      })
+                  : null}
+              </div>
+            </div>
           </div>
         </div>
 
