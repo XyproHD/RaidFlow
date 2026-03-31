@@ -1,5 +1,5 @@
 import { getLocale, getTranslations } from 'next-intl/server';
-import { requireAdmin } from '@/lib/require-admin';
+import { requireAdmin, AdminDatabaseError } from '@/lib/require-admin';
 import { OWNER_DISCORD_ID } from '@/lib/app-config';
 import { AdminContent } from './admin-content';
 
@@ -10,7 +10,20 @@ import { AdminContent } from './admin-content';
 export default async function AdminPage() {
   const t = await getTranslations('admin');
   const locale = await getLocale();
-  const admin = await requireAdmin();
+  let admin: Awaited<ReturnType<typeof requireAdmin>>;
+  try {
+    admin = await requireAdmin();
+  } catch (e) {
+    if (e instanceof AdminDatabaseError) {
+      return (
+        <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
+          <h1 className="text-2xl font-bold text-foreground mb-4">{t('title')}</h1>
+          <p className="text-muted-foreground">{t('dbUnavailable')}</p>
+        </div>
+      );
+    }
+    throw e;
+  }
 
   if (!admin) {
     return (

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/require-admin';
+import { requireAdmin, AdminDatabaseError } from '@/lib/require-admin';
 import { prisma } from '@/lib/prisma';
 import { getAppConfig } from '@/lib/app-config';
 
@@ -10,7 +10,15 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ discordUserId: string }> }
 ) {
-  const admin = await requireAdmin();
+  let admin: Awaited<ReturnType<typeof requireAdmin>>;
+  try {
+    admin = await requireAdmin();
+  } catch (e) {
+    if (e instanceof AdminDatabaseError) {
+      return NextResponse.json({ error: 'Database unavailable' }, { status: 503 });
+    }
+    throw e;
+  }
   if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const { discordUserId } = await params;
   const config = await getAppConfig();

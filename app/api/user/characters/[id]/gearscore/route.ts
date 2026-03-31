@@ -5,7 +5,7 @@ import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { prisma } from '@/lib/prisma';
 import { refreshCharacterGearscore } from '@/lib/battlenet-gearscore';
 import { userIsGuildRaidLeaderOrMaster } from '@/lib/guild-master';
-import { requireAdmin } from '@/lib/require-admin';
+import { requireAdmin, AdminDatabaseError } from '@/lib/require-admin';
 
 export async function POST(
   _request: Request,
@@ -22,7 +22,12 @@ export async function POST(
   });
   if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const adminSession = await requireAdmin();
+  let adminSession: Awaited<ReturnType<typeof requireAdmin>> = null;
+  try {
+    adminSession = await requireAdmin();
+  } catch (e) {
+    if (!(e instanceof AdminDatabaseError)) throw e;
+  }
   const isOwnCharacter = row.userId === userId;
   const isAppAdminOrOwner = adminSession !== null;
   const isGuildLeaderForAssignedGuild =

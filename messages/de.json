@@ -154,6 +154,10 @@
     "signupType_verfugbar": "Verfügbar",
     "raidSlotLabel": "Raidtermin",
     "sectionMeta": "Details",
+    "sectionOverview": "Übersicht",
+    "overviewRowSignups": "Anmeldungen",
+    "overviewRowMinRoles": "Min. Rollen",
+    "overviewRowMinSpecs": "Min. Specs",
     "mySignupSection": "Meine Anmeldung",
     "raidLeaderMenu": "Raid-Aktionen",
     "mySignupMenu": "Anmeldung",
@@ -479,6 +483,7 @@
   "admin": {
     "title": "Admin",
     "forbidden": "Du hast keine Berechtigung für den Admin-Bereich. Nur Application-Admins können diese Seite nutzen.",
+    "dbUnavailable": "Die Datenbank ist vorübergehend nicht erreichbar. Bitte später erneut versuchen oder die Vercel-/Supabase-Umgebung prüfen (DATABASE_URL).",
     "guildsSection": "Gilden verwalten",
     "guildsSectionDescription": "Gilden löschen (inkl. zugehörige Raids, Anmeldungen, Rollen-Daten).",
     "guildName": "Gilde",

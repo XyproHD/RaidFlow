@@ -132,6 +132,23 @@ function signupTypeOpenLabel(
   return t('signupType_verfugbar');
 }
 
+function typeNorm(v: string) {
+  return v === 'main' ? 'normal' : v;
+}
+
+function statusToneClass(args: {
+  min: number;
+  normal: number;
+  uncertain: number;
+  reserve: number;
+}): string {
+  const { min, normal, uncertain, reserve } = args;
+  if (min <= 0) return 'text-muted-foreground';
+  if (normal >= min) return 'text-green-600 dark:text-green-500';
+  if (normal + uncertain + reserve < min) return 'text-destructive';
+  return 'text-amber-600 dark:text-amber-500';
+}
+
 export function RaidDetailView({
   locale,
   guildId,
@@ -252,12 +269,26 @@ export function RaidDetailView({
   const visibilityLabel =
     raid.signupVisibility === 'raid_leader_only' ? t('visibilityLeaders') : t('visibilityPublic');
 
-  const roleRow = [
-    { key: 'Tank' as const, min: raid.minTanks, icon: ROLE_ICONS.Tank },
-    { key: 'Melee' as const, min: raid.minMelee, icon: ROLE_ICONS.Melee },
-    { key: 'Range' as const, min: raid.minRange, icon: ROLE_ICONS.Range },
-    { key: 'Healer' as const, min: raid.minHealers, icon: ROLE_ICONS.Healer },
-  ].filter((x) => x.min > 0);
+  const roleMinByKey: Record<(typeof ROLE_KEYS)[number], number> = {
+    Tank: raid.minTanks,
+    Melee: raid.minMelee,
+    Range: raid.minRange,
+    Healer: raid.minHealers,
+  };
+
+  const specCountsByType = useMemo(() => {
+    const out: Record<string, RoleStat> = {};
+    for (const s of raid.signups) {
+      const spec = (s.signedSpec?.trim() || s.character?.mainSpec?.trim() || '').trim();
+      if (!spec) continue;
+      const tn = typeNorm(s.type);
+      if (tn !== 'normal' && tn !== 'uncertain' && tn !== 'reserve') continue;
+      const cur = out[spec] ?? { normal: 0, uncertain: 0, reserve: 0 };
+      cur[tn] += 1;
+      out[spec] = cur;
+    }
+    return out;
+  }, [raid.signups]);
 
   const signupState = signupIndicator(raid.signupUntil);
   const statusIcon = myStatusIcon(raid.status, mySignup);
@@ -345,29 +376,105 @@ export function RaidDetailView({
 
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
-            {t('sectionMeta')}
+          <h2 className="text-sm font-semibold text-foreground shrink-0">
+            {t('sectionOverview')}
           </h2>
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-            {ROLE_KEYS.map((key) => {
-              const stats = roleStats[key];
-              const icon = ROLE_ICONS[key];
-              return (
-                <span
-                  key={key}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
-                  title={key}
-                >
-                  <Image src={icon.src} alt="" width={18} height={18} unoptimized />
-                  <span className="font-semibold text-green-600 dark:text-green-500">{stats.normal}</span>
-                  <span className="text-muted-foreground">(</span>
-                  <span className="font-semibold text-amber-600 dark:text-amber-500">{stats.uncertain}</span>
-                  <span className="text-muted-foreground"> / </span>
-                  <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
-                  <span className="text-muted-foreground">)</span>
-                </span>
-              );
-            })}
+          <div className="grid gap-y-2 gap-x-3 sm:gap-x-4 sm:ml-auto w-full sm:w-auto">
+            <div className="grid grid-cols-[7.5rem_1fr] items-start gap-x-3">
+              <div className="text-xs font-medium text-muted-foreground pt-1">
+                {t('overviewRowSignups')}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 justify-items-stretch">
+                {ROLE_KEYS.map((key) => {
+                  const stats = roleStats[key];
+                  const icon = ROLE_ICONS[key];
+                  return (
+                    <span
+                      key={key}
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
+                      title={key}
+                    >
+                      <Image src={icon.src} alt="" width={18} height={18} unoptimized />
+                      <span className="font-semibold text-green-600 dark:text-green-500">{stats.normal}</span>
+                      <span className="text-muted-foreground">(</span>
+                      <span className="font-semibold text-amber-600 dark:text-amber-500">{stats.uncertain}</span>
+                      <span className="text-muted-foreground"> / </span>
+                      <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
+                      <span className="text-muted-foreground">)</span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-[7.5rem_1fr] items-start gap-x-3">
+              <div className="text-xs font-medium text-muted-foreground pt-1">
+                {t('overviewRowMinRoles')}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 justify-items-stretch">
+                {ROLE_KEYS.map((key) => {
+                  const min = roleMinByKey[key];
+                  const stats = roleStats[key];
+                  return (
+                    <span
+                      key={key}
+                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
+                      title={key}
+                    >
+                      <Image src={ROLE_ICONS[key].src} alt="" width={18} height={18} unoptimized />
+                      <span className={cn('font-semibold', statusToneClass({ min, ...stats }))}>
+                        {min}
+                      </span>
+                      <span className="text-muted-foreground">/</span>
+                      <span className="font-semibold text-green-600 dark:text-green-500">{stats.normal}</span>
+                      <span className="text-muted-foreground">(</span>
+                      <span className="font-semibold text-amber-600 dark:text-amber-500">{stats.uncertain}</span>
+                      <span className="text-muted-foreground"> / </span>
+                      <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
+                      <span className="text-muted-foreground">)</span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-[7.5rem_1fr] items-start gap-x-3">
+              <div className="text-xs font-medium text-muted-foreground pt-1">
+                {t('overviewRowMinSpecs')}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 justify-items-stretch">
+                {minSpecsObj && Object.keys(minSpecsObj).length > 0
+                  ? Object.entries(minSpecsObj)
+                      .filter(([, need]) => typeof need === 'number' && Number.isFinite(need) && need > 0)
+                      .map(([spec, need]) => {
+                        const stats = specCountsByType[spec] ?? { normal: 0, uncertain: 0, reserve: 0 };
+                        return (
+                          <span
+                            key={spec}
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
+                            title={spec}
+                          >
+                            <SpecIcon spec={spec} size={18} />
+                            <span className={cn('font-semibold', statusToneClass({ min: need, ...stats }))}>
+                              {need}
+                            </span>
+                            <span className="text-muted-foreground">/</span>
+                            <span className="font-semibold text-green-600 dark:text-green-500">
+                              {stats.normal}
+                            </span>
+                            <span className="text-muted-foreground">(</span>
+                            <span className="font-semibold text-amber-600 dark:text-amber-500">
+                              {stats.uncertain}
+                            </span>
+                            <span className="text-muted-foreground"> / </span>
+                            <span className="font-semibold text-muted-foreground">{stats.reserve}</span>
+                            <span className="text-muted-foreground">)</span>
+                          </span>
+                        );
+                      })
+                  : null}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -418,73 +525,6 @@ export function RaidDetailView({
             </div>
           ) : null}
         </div>
-      </section>
-
-      {roleRow.length > 0 ? (
-        <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">{t('minRolesHeading')}</h3>
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            {roleRow.map(({ key, min, icon }) => (
-              <span
-                key={key}
-                className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5"
-              >
-                <Image src={icon.src} alt="" width={20} height={20} unoptimized />
-                <span className="tabular-nums font-medium">{min}</span>
-              </span>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {minSpecsObj && Object.keys(minSpecsObj).length > 0 ? (
-        <section className="space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">{t('minSpecsOneLine')}</h3>
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            {Object.entries(minSpecsObj).map(([spec, need]) => {
-              const have = countSignedPerSpec(compSignups, spec);
-              return (
-                <span
-                  key={spec}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1"
-                >
-                  <SpecIcon spec={spec} size={20} />
-                  <span className="tabular-nums">
-                    {have}/{need}
-                  </span>
-                </span>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      <section className="space-y-2 rounded-lg border border-dashed border-border bg-muted/15 px-4 py-3">
-        <h3 className="text-sm font-semibold text-foreground">{t('compositionGaps')}</h3>
-        {!hasGaps ? (
-          <p className="text-sm text-muted-foreground">—</p>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            {gapsStructured.roles.map((g) => (
-              <span
-                key={g.role}
-                className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1 text-sm"
-              >
-                <RoleIcon role={g.role} size={22} />
-                <span className="text-destructive font-medium tabular-nums">−{g.missing}</span>
-              </span>
-            ))}
-            {gapsStructured.specs.map((g) => (
-              <span
-                key={g.spec}
-                className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 px-2 py-1 text-sm"
-              >
-                <SpecIcon spec={g.spec} size={22} />
-                <span className="text-destructive font-medium tabular-nums">−{g.missing}</span>
-              </span>
-            ))}
-          </div>
-        )}
       </section>
 
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">

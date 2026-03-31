@@ -1,12 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/require-admin';
+import { requireAdmin, AdminDatabaseError } from '@/lib/require-admin';
 import { getAppConfig, setWhitelistBlacklist, setAdminFeatureFlags } from '@/lib/app-config';
 
 export const dynamic = 'force-dynamic';
 
+async function adminOr503() {
+  try {
+    return await requireAdmin();
+  } catch (e) {
+    if (e instanceof AdminDatabaseError) {
+      return NextResponse.json({ error: 'Database unavailable' }, { status: 503 });
+    }
+    throw e;
+  }
+}
+
 /** GET: App-Config (Whitelist/Blacklist, Bot-Einladung, Wartungsmodus, Statusmeldung). */
 export async function GET() {
-  const admin = await requireAdmin();
+  const admin = await adminOr503();
+  if (admin instanceof NextResponse) return admin;
   if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const config = await getAppConfig();
   return NextResponse.json({
@@ -22,7 +34,8 @@ export async function GET() {
 
 /** PATCH: Whitelist/Blacklist und/oder Feature-Flags (Bot-Einladung, Wartungsmodus, Statusmeldung) aktualisieren. */
 export async function PATCH(request: NextRequest) {
-  const admin = await requireAdmin();
+  const admin = await adminOr503();
+  if (admin instanceof NextResponse) return admin;
   if (!admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   let body: {
     useWhitelist?: boolean;
