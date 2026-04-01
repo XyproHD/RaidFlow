@@ -12,6 +12,7 @@ import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
+import { CharacterSpecIconsInline } from '@/components/character-display-parts';
 import type { LeaderPlacement } from '@/lib/raid-leader-placement';
 
 type GroupCharRule = { raidGroupId: string; characterId: string; allowed: boolean };
@@ -462,7 +463,7 @@ export function RaidEditPanel({
             <ClassIcon classId={classId} size={20} title={main} />
           </span>
         ) : null}
-        <SpecIcon spec={specShow} size={20} />
+        <CharacterSpecIconsInline mainSpec={specShow} size={20} slashClassName="hidden" offSpec={null} />
         {s.isLate ? <span title={t('late')}>⏱</span> : null}
         <span className="font-medium truncate max-w-[9rem]">{ch?.name ?? '—'}</span>
         <span className="text-muted-foreground text-xs whitespace-nowrap">

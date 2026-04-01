@@ -9,9 +9,13 @@ import { formatRaidTerminLine } from '@/lib/format-raid-termin';
 import { TBC_CLASS_IDS, type TbcRole } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { ClassIcon } from '@/components/class-icon';
-import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
+import {
+  CharacterDiscordPill,
+  CharacterGearscorePill,
+  CharacterSpecIconsInline,
+} from '@/components/character-display-parts';
 import {
   RaidOverviewSummaryRows,
   type RaidOverviewSummaryProps,
@@ -207,6 +211,8 @@ export function RaidRosterPlanner({
 
   const [openNote, setOpenNote] = useState<{ name: string; note: string } | null>(null);
   const [blinkDiscordForIds, setBlinkDiscordForIds] = useState<Set<string>>(() => new Set());
+
+  const [filtersOpen, setFiltersOpen] = useState(true);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState('');
@@ -570,7 +576,7 @@ export function RaidRosterPlanner({
           title={spec}
         >
           <span className={cn(gray && 'grayscale opacity-[0.85]')}>
-            <SpecIcon spec={spec} size={22} />
+            <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={22} slashClassName="hidden" />
           </span>
           {redOverlay ? (
             <span
@@ -636,25 +642,8 @@ export function RaidRosterPlanner({
         {renderSpecIcons(s, true)}
         <span className="font-medium min-w-0 truncate">{s.name}</span>
         <span className="ml-auto flex items-center gap-2">
-          {s.discordName ? (
-            <span
-              className={cn(
-                'rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground max-w-[9rem] truncate',
-                blinkDiscordForIds.has(s.id) && 'rf-blink-discord-conflict'
-              )}
-              title={s.discordName}
-            >
-              {s.discordName}
-            </span>
-          ) : null}
-          {typeof s.gearScore === 'number' ? (
-            <span
-              className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground tabular-nums"
-              title="Gearscore"
-            >
-              GS {s.gearScore}
-            </span>
-          ) : null}
+          <CharacterDiscordPill discordName={s.discordName} blink={blinkDiscordForIds.has(s.id)} />
+          <CharacterGearscorePill gearScore={s.gearScore} />
           {note.length > 0 ? (
             <button
               type="button"
@@ -799,148 +788,7 @@ export function RaidRosterPlanner({
       </section>
 
       <div className="flex flex-col xl:flex-row gap-4 items-start">
-        <aside
-          className={cn(
-            'w-full xl:w-64 shrink-0 rounded-xl border border-border bg-muted/15 p-4 space-y-3 transition-opacity duration-200',
-            dragActive && 'opacity-35 pointer-events-none'
-          )}
-        >
-          <p className="text-sm font-medium border-b border-border pb-2">{tPlanner('filters')}</p>
-
-          <div className="space-y-1.5">
-            <span className="text-muted-foreground text-xs">{tPlanner('filterChars')}</span>
-            <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
-              {(
-                [
-                  ['mains', tPlanner('filterCharsMains')],
-                  ['both', tPlanner('filterCharsBoth')],
-                  ['twinks', tPlanner('filterCharsTwinks')],
-                ] as const
-              ).map(([v, label]) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setMainAltFilter(v)}
-                  className={cn(
-                    'rounded-md px-2.5 py-1.5 text-sm flex-1',
-                    mainAltFilter === v
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-muted'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-muted-foreground text-xs">{tPlanner('filterDays')}</span>
-            <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
-              <button
-                type="button"
-                onClick={toggleAllowWeekday}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-sm flex-1',
-                  allowWeekday ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
-                )}
-                aria-pressed={allowWeekday}
-              >
-                {tPlanner('focusWeekday')}
-              </button>
-              <button
-                type="button"
-                onClick={toggleAllowWeekend}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-sm flex-1',
-                  allowWeekend ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
-                )}
-                aria-pressed={allowWeekend}
-              >
-                {tPlanner('focusWeekend')}
-              </button>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-muted-foreground text-xs">{tPlanner('filterRoles')}</span>
-            <div className="grid grid-cols-2 gap-2">
-              {ROLE_ORDER.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => toggleRole(r)}
-                  className={cn(
-                    'rounded-lg border px-2 py-1.5 text-sm flex items-center gap-2 justify-start',
-                    roleFilter[r]
-                      ? 'border-primary/50 bg-primary/10 text-foreground'
-                      : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
-                  )}
-                  aria-pressed={roleFilter[r]}
-                >
-                  <RoleIcon role={r} size={18} />
-                  <span>{r}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <span className="text-muted-foreground text-xs">{tPlanner('filterClasses')}</span>
-            <div className="grid grid-cols-3 gap-2">
-              {TBC_CLASS_IDS.map((classId) => (
-                <button
-                  key={classId}
-                  type="button"
-                  onClick={() => toggleClass(classId)}
-                  className={cn(
-                    'rounded-lg border px-2 py-1.5 text-sm flex items-center gap-2 justify-start min-w-0',
-                    classFilter[classId]
-                      ? 'border-primary/50 bg-primary/10 text-foreground'
-                      : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
-                  )}
-                  aria-pressed={!!classFilter[classId]}
-                  title={tPlanner(RAID_PLANNER_CLASS_I18N[classId as keyof typeof RAID_PLANNER_CLASS_I18N])}
-                >
-                  <ClassIcon classId={classId} size={18} />
-                  <span className="truncate">
-                    {tPlanner(RAID_PLANNER_CLASS_I18N[classId as keyof typeof RAID_PLANNER_CLASS_I18N])}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-1.5 pt-1">
-            <span className="text-muted-foreground text-xs">{tRoster('filterAttendance')}</span>
-            <div className="flex rounded-lg border border-border p-0.5 bg-muted/30 flex-wrap">
-              {(
-                [
-                  ['all', tRoster('attendanceAll')],
-                  ['available', tRoster('attendanceAvailable')],
-                  ['maybe', tRoster('attendanceMaybe')],
-                  ['late', tRoster('attendanceLate')],
-                ] as const
-              ).map(([v, label]) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setAttendanceFilter(v)}
-                  className={cn(
-                    'rounded-md px-2 py-1.5 text-xs sm:text-sm flex-1 min-w-[4.5rem]',
-                    attendanceFilter === v
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-muted'
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </aside>
-
-        <div className="flex-1 min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-4 w-full">
+        <div className="flex-1 min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-4 w-full order-2 xl:order-1">
           <div className="space-y-4 min-w-0">
             <div
               data-drop-zone="roster"
@@ -979,7 +827,7 @@ export function RaidRosterPlanner({
                           const cur = rosterSpecCounts.get(spec) ?? 0;
                           return (
                             <span key={spec} className="inline-flex items-center gap-1.5">
-                              <SpecIcon spec={spec} size={16} />
+                              <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={16} slashClassName="hidden" />
                               <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
                                 {countToMinLabel(cur, need)}
                               </span>
@@ -1110,6 +958,173 @@ export function RaidRosterPlanner({
             </div>
           </div>
         </div>
+
+        <aside
+          className={cn(
+            'shrink-0 transition-opacity duration-200 order-1 xl:order-2 xl:sticky xl:top-4',
+            dragActive && 'opacity-35 pointer-events-none'
+          )}
+        >
+          {filtersOpen ? (
+            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
+                <p className="text-sm font-medium">{tPlanner('filters')}</p>
+                <button
+                  type="button"
+                  onClick={() => setFiltersOpen(false)}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
+                  aria-label={tPlanner('filters')}
+                >
+                  ◀
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{tPlanner('filterChars')}</span>
+                <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+                  {(
+                    [
+                      ['mains', tPlanner('filterCharsMains')],
+                      ['both', tPlanner('filterCharsBoth')],
+                      ['twinks', tPlanner('filterCharsTwinks')],
+                    ] as const
+                  ).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setMainAltFilter(v)}
+                      className={cn(
+                        'rounded-md px-2.5 py-1.5 text-sm flex-1',
+                        mainAltFilter === v
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{tPlanner('filterDays')}</span>
+                <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+                  <button
+                    type="button"
+                    onClick={toggleAllowWeekday}
+                    className={cn(
+                      'rounded-md px-3 py-1.5 text-sm flex-1',
+                      allowWeekday ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
+                    )}
+                    aria-pressed={allowWeekday}
+                  >
+                    {tPlanner('focusWeekday')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleAllowWeekend}
+                    className={cn(
+                      'rounded-md px-3 py-1.5 text-sm flex-1',
+                      allowWeekend ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'
+                    )}
+                    aria-pressed={allowWeekend}
+                  >
+                    {tPlanner('focusWeekend')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{tPlanner('filterRoles')}</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {ROLE_ORDER.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => toggleRole(r)}
+                      className={cn(
+                        'rounded-lg border px-2 py-1.5 text-sm flex items-center gap-2 justify-start',
+                        roleFilter[r]
+                          ? 'border-primary/50 bg-primary/10 text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                      )}
+                      aria-pressed={roleFilter[r]}
+                    >
+                      <RoleIcon role={r} size={18} />
+                      <span>{r}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{tPlanner('filterClasses')}</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {TBC_CLASS_IDS.map((classId) => (
+                    <button
+                      key={classId}
+                      type="button"
+                      onClick={() => toggleClass(classId)}
+                      className={cn(
+                        'rounded-lg border px-2 py-1.5 text-sm flex items-center gap-2 justify-start min-w-0',
+                        classFilter[classId]
+                          ? 'border-primary/50 bg-primary/10 text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                      )}
+                      aria-pressed={!!classFilter[classId]}
+                      title={tPlanner(RAID_PLANNER_CLASS_I18N[classId as keyof typeof RAID_PLANNER_CLASS_I18N])}
+                    >
+                      <ClassIcon classId={classId} size={18} />
+                      <span className="truncate">
+                        {tPlanner(RAID_PLANNER_CLASS_I18N[classId as keyof typeof RAID_PLANNER_CLASS_I18N])}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <span className="text-muted-foreground text-xs">{tRoster('filterAttendance')}</span>
+                <div className="flex rounded-lg border border-border p-0.5 bg-muted/30 flex-wrap">
+                  {(
+                    [
+                      ['all', tRoster('attendanceAll')],
+                      ['available', tRoster('attendanceAvailable')],
+                      ['maybe', tRoster('attendanceMaybe')],
+                      ['late', tRoster('attendanceLate')],
+                    ] as const
+                  ).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setAttendanceFilter(v)}
+                      className={cn(
+                        'rounded-md px-2 py-1.5 text-xs sm:text-sm flex-1 min-w-[4.5rem]',
+                        attendanceFilter === v
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setFiltersOpen(true)}
+              className="w-full xl:w-10 rounded-xl border border-border bg-muted/15 py-4 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/25"
+              aria-label={tPlanner('filters')}
+              title={tPlanner('filters')}
+            >
+              <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
+                {tPlanner('filters')}
+              </span>
+            </button>
+          )}
+        </aside>
       </div>
 
       {leaderMenuOpen && leaderMenuPos
@@ -1343,27 +1358,19 @@ export function RaidRosterPlanner({
                                 />
                                 {c.classId ? <ClassIcon classId={c.classId} size={18} /> : null}
                                 <span className="flex items-center gap-1.5">
-                                  <SpecIcon spec={c.mainSpec} size={18} />
-                                  {c.offSpec ? (
-                                    <SpecIcon
-                                      spec={c.offSpec}
-                                      size={18}
-                                      className="grayscale contrast-200 brightness-75"
-                                    />
-                                  ) : null}
+                                  <CharacterSpecIconsInline
+                                    mainSpec={c.mainSpec}
+                                    offSpec={c.offSpec}
+                                    size={18}
+                                    slashClassName="hidden"
+                                    offSpecWrapperBaseClassName=""
+                                    offSpecIconClassName="grayscale contrast-200 brightness-75"
+                                  />
                                 </span>
                                 <span className="font-medium truncate">{c.name}</span>
                                 <span className="ml-auto flex items-center gap-2">
-                                  {c.guildDiscordDisplayName ? (
-                                    <span className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground max-w-[9rem] truncate">
-                                      {c.guildDiscordDisplayName}
-                                    </span>
-                                  ) : null}
-                                  {typeof c.gearScore === 'number' ? (
-                                    <span className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground tabular-nums">
-                                      GS {c.gearScore}
-                                    </span>
-                                  ) : null}
+                                  <CharacterDiscordPill discordName={c.guildDiscordDisplayName} />
+                                  <CharacterGearscorePill gearScore={c.gearScore} />
                                 </span>
                               </button>
                             );

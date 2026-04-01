@@ -12,6 +12,7 @@ import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
+import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
 
 export type DashboardGuild = {
   id: string;
@@ -352,32 +353,34 @@ export function DashboardClient({
                       sizePx={18}
                     />
                   </div>
-                  <div className="flex shrink-0 items-center justify-center w-10 h-10 rounded-md bg-muted/40">
-                    {c.classId ? <ClassIcon classId={c.classId} size={28} title={c.mainSpec} /> : null}
+                  <div className="flex shrink-0 items-center justify-center w-9 h-9 rounded-md bg-muted/40">
+                    {c.classId ? <ClassIcon classId={c.classId} size={24} title={c.mainSpec} /> : null}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="flex items-center gap-1 shrink-0">
-                        <SpecIcon spec={c.mainSpec} size={22} />
-                        {c.offSpec ? (
-                          <span className="grayscale contrast-90 inline-flex">
-                            <SpecIcon spec={c.offSpec} size={22} className="opacity-90" />
-                          </span>
-                        ) : null}
+                    <div className="flex items-start gap-2 min-w-0">
+                      <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                        <CharacterSpecIconsInline
+                          mainSpec={c.mainSpec}
+                          offSpec={c.offSpec}
+                          size={24}
+                          slashClassName="hidden"
+                          offSpecIconClassName="opacity-90"
+                        />
                       </div>
-                      <div className="min-w-0">
-                        <div className="font-semibold text-foreground truncate" title={c.name}>
-                          {c.name}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate" title={c.guildName ?? undefined}>
-                          {c.guildName ?? '–'}
-                        </div>
-                        <div className="mt-1">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="font-semibold text-foreground truncate" title={c.name}>
+                            {c.name}
+                          </div>
+                          {c.hasBattlenet ? <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} /> : null}
                           <CharacterGearscoreBadge
                             characterId={c.id}
                             hasBattlenet={c.hasBattlenet}
                             gearScore={c.gearScore}
                           />
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate" title={c.guildName ?? undefined}>
+                          {c.guildName ?? '–'}
                         </div>
                       </div>
                     </div>
@@ -466,11 +469,15 @@ export function DashboardClient({
                           {role ? <RoleIcon role={role} size={18} /> : null}
                           <span className="flex items-center gap-1 shrink-0">
                             {derivedClassId ? <ClassIcon classId={derivedClassId} size={22} title={specForIcon ?? undefined} /> : null}
-                            {specForIcon ? <SpecIcon spec={specForIcon} size={20} /> : null}
-                            {s.characterOffSpec ? (
-                              <span className="grayscale contrast-90 inline-flex">
-                                <SpecIcon spec={s.characterOffSpec} size={20} className="opacity-90" />
-                              </span>
+                            {specForIcon ? (
+                              <CharacterSpecIconsInline
+                                mainSpec={specForIcon}
+                                offSpec={s.characterOffSpec}
+                                size={20}
+                                slashClassName="hidden"
+                                offSpecWrapperClassName="grayscale contrast-90 inline-flex"
+                                offSpecIconClassName="opacity-90"
+                              />
                             ) : null}
                           </span>
                           {s.characterIsMain != null ? (
@@ -481,12 +488,14 @@ export function DashboardClient({
                               sizePx={16}
                             />
                           ) : null}
-                          <span className="font-medium text-foreground truncate">{s.signedCharacterName ?? '–'}</span>
-                          {s.characterHasBattlenet ? <BattlenetLogo size={18} title={t('bnetLinkedBadgeTitle')} /> : null}
-                          <CharacterGearscoreBadge
-                            characterId={s.signedCharacterId ?? ''}
+                          <CharacterNameBadges
+                            name={s.signedCharacterName ?? '–'}
                             hasBattlenet={s.characterHasBattlenet}
+                            characterId={s.signedCharacterId ?? ''}
                             gearScore={s.characterGearScore}
+                            wrapperClassName="contents"
+                            nameClassName="font-medium text-foreground truncate"
+                            bnetTitle={t('bnetLinkedBadgeTitle')}
                           />
                         </button>
                       </td>
