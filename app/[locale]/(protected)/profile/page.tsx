@@ -50,16 +50,22 @@ export default async function ProfilePage() {
     // wird guildId entfernt (und isMain zurückgesetzt). Neue Zuweisung erfolgt über "Bearbeiten".
     {
       const allowedGuildIds = guilds.map((g) => g.id);
-      if (allowedGuildIds.length === 0) {
-        await prisma.rfCharacter.updateMany({
-          where: { userId, guildId: { not: null } },
-          data: { guildId: null, isMain: false, guildDiscordDisplayName: null },
-        });
-      } else {
+      if (allowedGuildIds.length > 0) {
         await prisma.rfCharacter.updateMany({
           where: { userId, guildId: { not: null, notIn: allowedGuildIds } },
           data: { guildId: null, isMain: false, guildDiscordDisplayName: null },
         });
+      } else {
+        // Leere Liste kann bei transienten Discord/DB-Problemen vorkommen (Prod > Last als Preview).
+        // Alle Chars leeren nur, wenn die DB bestätigt, dass wirklich keine rf_user_guild mehr existiert
+        // (nach erfolgreichem Sync wären die Zeilen sonst weg).
+        const userGuildRowCount = await prisma.rfUserGuild.count({ where: { userId } });
+        if (userGuildRowCount === 0) {
+          await prisma.rfCharacter.updateMany({
+            where: { userId, guildId: { not: null } },
+            data: { guildId: null, isMain: false, guildDiscordDisplayName: null },
+          });
+        }
       }
     }
 
