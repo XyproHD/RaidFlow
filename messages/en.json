@@ -216,6 +216,8 @@
     "signupsTitle": "Signups",
     "poolEmpty": "All signups are placed on the left.",
     "poolFilteredEmpty": "No signups match the current filters.",
+    "addHint": "Pick exactly one character or cancel.",
+    "noResults": "No results.",
     "filterAttendance": "Attendance / punctuality",
     "attendanceAll": "All",
     "attendanceAvailable": "Available",

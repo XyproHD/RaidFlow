@@ -45,6 +45,7 @@ async function loadRaidForDetailPage(
               name: true,
               mainSpec: true,
               offSpec: true,
+              gearScore: true,
               isMain: true,
               guildDiscordDisplayName: true,
             },

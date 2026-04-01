@@ -35,16 +35,33 @@ type AttendanceFilter = 'all' | 'available' | 'maybe' | 'late';
 
 export type RosterPlannerSignup = {
   id: string;
+  characterId?: string | null;
   name: string;
   mainSpec: string;
+  offSpec?: string | null;
   classId: string | null;
   isMain: boolean;
   role: TbcRole;
   /** DB: normal | uncertain | reserve (main treated as normal) */
   signupType: string;
   isLate: boolean;
+  discordName?: string | null;
+  gearScore?: number | null;
+  note?: string | null;
   /** Profil-Fokus Werktag/Wochenende; fehlt = beide Filter erlauben */
   profileWeekFocus?: 'weekday' | 'weekend' | null;
+};
+
+export type GuildCharacterOption = {
+  id: string;
+  name: string;
+  mainSpec: string;
+  offSpec: string | null;
+  isMain: boolean;
+  gearScore: number | null;
+  guildDiscordDisplayName: string | null;
+  classId: string | null;
+  role: TbcRole;
 };
 
 type RaidHeaderMeta = {
@@ -116,6 +133,8 @@ export function RaidRosterPlanner({
   raid,
   overviewProps,
   initialSignups,
+  guildCharacters,
+  raidLeaderLabel,
   canEditRaid,
 }: {
   locale: string;
@@ -124,6 +143,8 @@ export function RaidRosterPlanner({
   raid: RaidHeaderMeta;
   overviewProps: RaidOverviewSummaryProps;
   initialSignups: RosterPlannerSignup[];
+  guildCharacters: GuildCharacterOption[];
+  raidLeaderLabel: string;
   canEditRaid: boolean;
 }) {
   const t = useTranslations('raidDetail');
@@ -134,7 +155,10 @@ export function RaidRosterPlanner({
   const router = useRouter();
   const intlLocale = useLocale();
 
-  const byId = useMemo(() => new Map(initialSignups.map((s) => [s.id, s])), [initialSignups]);
+  const [signups, setSignups] = useState<RosterPlannerSignup[]>(() => initialSignups);
+  useEffect(() => setSignups(initialSignups), [initialSignups]);
+
+  const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
 
   const [rosterOrder, setRosterOrder] = useState<string[]>([]);
   const [reserveOrder, setReserveOrder] = useState<string[]>([]);
@@ -158,6 +182,10 @@ export function RaidRosterPlanner({
   const [leaderMenuOpen, setLeaderMenuOpen] = useState(false);
   const [leaderMenuPos, setLeaderMenuPos] = useState<{ top: number; left: number } | null>(null);
 
+  const [addOpen, setAddOpen] = useState(false);
+  const [addQuery, setAddQuery] = useState('');
+  const [addSelectedId, setAddSelectedId] = useState<string | null>(null);
+
   const [dragSession, setDragSession] = useState<DragSession | null>(null);
   const [dragPoint, setDragPoint] = useState<{ clientX: number; clientY: number } | null>(null);
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
@@ -176,8 +204,8 @@ export function RaidRosterPlanner({
 
   const poolIds = useMemo(() => {
     const placed = new Set([...rosterOrder, ...reserveOrder]);
-    return initialSignups.map((s) => s.id).filter((id) => !placed.has(id));
-  }, [initialSignups, rosterOrder, reserveOrder]);
+    return signups.map((s) => s.id).filter((id) => !placed.has(id));
+  }, [signups, rosterOrder, reserveOrder]);
 
   const passesAttendance = useCallback(
     (s: RosterPlannerSignup) => {
@@ -189,6 +217,20 @@ export function RaidRosterPlanner({
       return true;
     },
     [attendanceFilter]
+  );
+
+  const addCandidates = useMemo(() => {
+    const q = addQuery.trim().toLowerCase();
+    const all = guildCharacters;
+    if (!q) return all.slice(0, 50);
+    return all
+      .filter((c) => c.name.toLowerCase().includes(q))
+      .slice(0, 50);
+  }, [addQuery, guildCharacters]);
+
+  const addSelected = useMemo(
+    () => (addSelectedId ? guildCharacters.find((c) => c.id === addSelectedId) ?? null : null),
+    [addSelectedId, guildCharacters]
   );
 
   const passesCharFilters = useCallback(
@@ -413,8 +455,35 @@ export function RaidRosterPlanner({
           sizePx={16}
         />
         {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
-        <SpecIcon spec={s.mainSpec} size={22} />
+        <span className="flex items-center gap-1.5">
+          <SpecIcon spec={s.mainSpec} size={22} />
+          {s.offSpec ? (
+            <SpecIcon
+              spec={s.offSpec}
+              size={22}
+              className="grayscale contrast-200 brightness-75"
+            />
+          ) : null}
+        </span>
         <span className="font-medium min-w-0 truncate">{s.name}</span>
+        <span className="ml-auto flex items-center gap-2">
+          {s.discordName ? (
+            <span
+              className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground max-w-[9rem] truncate"
+              title={s.discordName}
+            >
+              {s.discordName}
+            </span>
+          ) : null}
+          {typeof s.gearScore === 'number' ? (
+            <span
+              className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground tabular-nums"
+              title="Gearscore"
+            >
+              GS {s.gearScore}
+            </span>
+          ) : null}
+        </span>
         {s.isLate ? (
           <span className="text-xs text-muted-foreground shrink-0" title={t('lateCheckbox')}>
             ⏱
@@ -425,6 +494,34 @@ export function RaidRosterPlanner({
   }
 
   const draggedSignup = dragSession ? byId.get(dragSession.signupId) : null;
+
+  function addManualSignup() {
+    if (!addSelected) return;
+    const id = `manual:${addSelected.id}`;
+    setSignups((prev) => {
+      if (prev.some((x) => x.id === id)) return prev;
+      const row: RosterPlannerSignup = {
+        id,
+        characterId: addSelected.id,
+        name: addSelected.name,
+        mainSpec: addSelected.mainSpec,
+        offSpec: addSelected.offSpec,
+        classId: addSelected.classId,
+        isMain: addSelected.isMain,
+        role: addSelected.role,
+        signupType: 'normal',
+        isLate: false,
+        discordName: addSelected.guildDiscordDisplayName,
+        gearScore: addSelected.gearScore,
+        note: `Gesetzt von Raidleader ${raidLeaderLabel}`,
+        profileWeekFocus: null,
+      };
+      return [...prev, row];
+    });
+    setAddOpen(false);
+    setAddQuery('');
+    setAddSelectedId(null);
+  }
 
   async function doCancelRaid() {
     if (!window.confirm(tEdit('cancelConfirm'))) return;
@@ -716,7 +813,18 @@ export function RaidRosterPlanner({
             )}
           >
             <div className="border-b border-border bg-muted/20 px-4 py-3">
-              <h2 className="text-sm font-semibold text-foreground">{tRoster('signupsTitle')}</h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-foreground">{tRoster('signupsTitle')}</h2>
+                <button
+                  type="button"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0"
+                  aria-label={tPlanner('add')}
+                  title={tPlanner('add')}
+                  onClick={() => setAddOpen(true)}
+                >
+                  ➕
+                </button>
+              </div>
             </div>
             <div className="p-3 space-y-4 max-h-[min(70vh,720px)] overflow-y-auto">
               {ROLE_ORDER.map((role) => {
@@ -830,7 +938,16 @@ export function RaidRosterPlanner({
                 sizePx={16}
               />
               {draggedSignup.classId ? <ClassIcon classId={draggedSignup.classId} size={22} /> : null}
-              <SpecIcon spec={draggedSignup.mainSpec} size={22} />
+              <span className="flex items-center gap-1.5">
+                <SpecIcon spec={draggedSignup.mainSpec} size={22} />
+                {draggedSignup.offSpec ? (
+                  <SpecIcon
+                    spec={draggedSignup.offSpec}
+                    size={22}
+                    className="grayscale contrast-200 brightness-75"
+                  />
+                ) : null}
+              </span>
               <span className="font-medium truncate">{draggedSignup.name}</span>
             </div>,
             document.body
@@ -860,11 +977,145 @@ export function RaidRosterPlanner({
                       sizePx={16}
                     />
                     {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
-                    <SpecIcon spec={s.mainSpec} size={22} />
+                    <span className="flex items-center gap-1.5">
+                      <SpecIcon spec={s.mainSpec} size={22} />
+                      {s.offSpec ? (
+                        <SpecIcon
+                          spec={s.offSpec}
+                          size={22}
+                          className="grayscale contrast-200 brightness-75"
+                        />
+                      ) : null}
+                    </span>
                     <span className="font-medium truncate">{s.name}</span>
                   </>
                 );
               })()}
+            </div>,
+            document.body
+          )
+        : null}
+
+      {addOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-[1200]">
+              <div
+                className="absolute inset-0 bg-black/50"
+                onMouseDown={() => setAddOpen(false)}
+                role="button"
+                tabIndex={0}
+                aria-label="Close"
+              />
+              <div className="absolute inset-0 flex items-start justify-center p-4 sm:p-6">
+                <div
+                  className="w-full max-w-lg rounded-xl border border-border bg-background shadow-xl overflow-hidden"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <div className="border-b border-border bg-muted/20 px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">{tPlanner('addPlayer')}</p>
+                      <p className="text-xs text-muted-foreground">{tRoster('addHint')}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0"
+                      onClick={() => setAddOpen(false)}
+                      aria-label={tPlanner('cancel')}
+                      title={tPlanner('cancel')}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="p-4 space-y-3">
+                    <input
+                      value={addQuery}
+                      onChange={(e) => {
+                        setAddQuery(e.target.value);
+                        setAddSelectedId(null);
+                      }}
+                      placeholder={tPlanner('pickChar')}
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                      autoFocus
+                    />
+
+                    <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
+                      {addCandidates.length === 0 ? (
+                        <p className="p-3 text-sm text-muted-foreground">{tRoster('noResults')}</p>
+                      ) : (
+                        <div className="divide-y divide-border">
+                          {addCandidates.map((c) => {
+                            const selected = addSelectedId === c.id;
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => setAddSelectedId(c.id)}
+                                className={cn(
+                                  'w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2',
+                                  selected && 'bg-primary/10'
+                                )}
+                              >
+                                <CharacterMainStar
+                                  isMain={!!c.isMain}
+                                  titleMain={tProfile('mainLabel')}
+                                  titleAlt={tProfile('altLabel')}
+                                  sizePx={14}
+                                />
+                                {c.classId ? <ClassIcon classId={c.classId} size={18} /> : null}
+                                <span className="flex items-center gap-1.5">
+                                  <SpecIcon spec={c.mainSpec} size={18} />
+                                  {c.offSpec ? (
+                                    <SpecIcon
+                                      spec={c.offSpec}
+                                      size={18}
+                                      className="grayscale contrast-200 brightness-75"
+                                    />
+                                  ) : null}
+                                </span>
+                                <span className="font-medium truncate">{c.name}</span>
+                                <span className="ml-auto flex items-center gap-2">
+                                  {c.guildDiscordDisplayName ? (
+                                    <span className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground max-w-[9rem] truncate">
+                                      {c.guildDiscordDisplayName}
+                                    </span>
+                                  ) : null}
+                                  {typeof c.gearScore === 'number' ? (
+                                    <span className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground tabular-nums">
+                                      GS {c.gearScore}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        className="rounded-md border border-border bg-background px-3 py-2 text-sm hover:bg-muted"
+                        onClick={() => setAddOpen(false)}
+                      >
+                        {tPlanner('cancel')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!addSelected}
+                        className={cn(
+                          'rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground',
+                          !addSelected && 'opacity-50 cursor-not-allowed'
+                        )}
+                        onClick={addManualSignup}
+                      >
+                        {tPlanner('add')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>,
             document.body
           )

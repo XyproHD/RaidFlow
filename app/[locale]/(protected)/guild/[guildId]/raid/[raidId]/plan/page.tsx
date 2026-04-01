@@ -6,7 +6,12 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getSpecByDisplayName, type TbcRole } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
-import { RaidRosterPlanner, type RosterPlannerSignup } from '@/components/raid-planner/raid-roster-planner';
+import { prisma } from '@/lib/prisma';
+import {
+  RaidRosterPlanner,
+  type GuildCharacterOption,
+  type RosterPlannerSignup,
+} from '@/components/raid-planner/raid-roster-planner';
 import { getRaidDetailContext } from '@/lib/raid-detail-access';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 
@@ -128,23 +133,65 @@ export default async function RaidPlanPage(props: {
       const ch = s.character;
       const name = ch?.name?.trim() || t('signupAnonymous');
       const mainSpec = (ch?.mainSpec || s.signedSpec || '—').trim() || '—';
+      const offSpec = ch?.offSpec ?? null;
       const spec = (s.signedSpec?.trim() || ch?.mainSpec?.trim() || '') as string;
       const rawRole = roleFromSpecDisplayName(spec);
       const role = (rawRole ?? 'Melee') as TbcRole;
       const classId = getSpecByDisplayName(mainSpec)?.classId ?? null;
       return {
         id: s.id,
+        characterId: ch?.id ?? null,
         name,
         mainSpec,
+        offSpec,
         classId,
         isMain: !!ch?.isMain,
         role,
         signupType: s.type,
         isLate: s.isLate,
+        discordName: ch?.guildDiscordDisplayName ?? null,
+        gearScore: (ch as unknown as { gearScore?: number | null })?.gearScore ?? null,
+        note: s.note ?? null,
         profileWeekFocus: null,
       };
     })
     .filter((row) => row.name.length > 0);
+
+  const guildChars = await prisma.rfCharacter.findMany({
+    where: { guildId },
+    select: {
+      id: true,
+      name: true,
+      mainSpec: true,
+      offSpec: true,
+      isMain: true,
+      gearScore: true,
+      guildDiscordDisplayName: true,
+    },
+    orderBy: [{ name: 'asc' }],
+  });
+
+  const guildCharacters: GuildCharacterOption[] = guildChars.map((c) => {
+    const role = (roleFromSpecDisplayName(c.mainSpec) ?? 'Melee') as TbcRole;
+    return {
+      id: c.id,
+      name: c.name,
+      mainSpec: c.mainSpec,
+      offSpec: c.offSpec,
+      isMain: c.isMain,
+      gearScore: c.gearScore ?? null,
+      guildDiscordDisplayName: c.guildDiscordDisplayName ?? null,
+      classId: getSpecByDisplayName(c.mainSpec)?.classId ?? null,
+      role,
+    };
+  });
+
+  const leaderChar = await prisma.rfCharacter.findFirst({
+    where: { userId, guildId, guildDiscordDisplayName: { not: null } },
+    select: { guildDiscordDisplayName: true },
+    orderBy: [{ isMain: 'desc' }],
+  });
+  const raidLeaderLabel = leaderChar?.guildDiscordDisplayName?.trim() || discordId;
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto space-y-6">
@@ -162,6 +209,8 @@ export default async function RaidPlanPage(props: {
         guildId={guildId}
         raidId={raidId}
         canEditRaid={canEditRaid}
+        guildCharacters={guildCharacters}
+        raidLeaderLabel={raidLeaderLabel}
         raid={{
           name: raid.name,
           scheduledAt: raid.scheduledAt.toISOString(),
