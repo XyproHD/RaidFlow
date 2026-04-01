@@ -379,13 +379,16 @@ export function DashboardClient({
                             gearScore={c.gearScore}
                           />
                         </div>
-                        <div className="text-xs text-muted-foreground truncate" title={c.guildName ?? undefined}>
-                          {c.guildName ?? '–'}
-                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
+                <p
+                  className="mt-2 text-sm text-muted-foreground truncate"
+                  title={c.guildName ? `${t('guild')}: ${c.guildName}` : undefined}
+                >
+                  {t('guild')}: {c.guildName ?? '–'}
+                </p>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                   <div className="rounded-md bg-muted/30 px-2 py-1.5">
                     <div className="text-xs text-muted-foreground">{t('participatedRaids')}</div>
