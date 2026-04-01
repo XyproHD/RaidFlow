@@ -147,6 +147,8 @@ export default async function RaidPlanPage(props: {
         classId,
         isMain: !!ch?.isMain,
         role,
+        signedSpec: s.signedSpec,
+        onlySignedSpec: s.onlySignedSpec,
         signupType: s.type,
         isLate: s.isLate,
         discordName: ch?.guildDiscordDisplayName ?? null,

@@ -11,12 +11,14 @@ import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
+import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import {
   RaidOverviewSummaryRows,
   type RaidOverviewSummaryProps,
 } from '@/components/raid-detail/raid-overview-summary';
 
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
+const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
 
 const RAID_PLANNER_CLASS_I18N = {
   druid: 'classDruid',
@@ -42,6 +44,8 @@ export type RosterPlannerSignup = {
   classId: string | null;
   isMain: boolean;
   role: TbcRole;
+  signedSpec?: string | null;
+  onlySignedSpec?: boolean;
   /** DB: normal | uncertain | reserve (main treated as normal) */
   signupType: string;
   isLate: boolean;
@@ -102,6 +106,18 @@ function openMenuAtButton(btn: HTMLButtonElement) {
 
 function typeNorm(v: string) {
   return v === 'main' ? 'normal' : v;
+}
+
+function countToMinLabel(count: number, min: number) {
+  if (min > 0 && count < min) return `${count}/${min}`;
+  return String(count);
+}
+
+function toneForFulfillment(ratio: number | null) {
+  if (ratio == null) return 'text-muted-foreground';
+  if (ratio >= 1) return 'text-green-600 dark:text-green-500';
+  if (ratio >= 0.5) return 'text-amber-600 dark:text-amber-500';
+  return 'text-destructive';
 }
 
 function findDropZone(x: number, y: number): 'roster' | 'reserve' | 'pool' | null {
@@ -202,6 +218,47 @@ export function RaidRosterPlanner({
   }).format(scheduledAt);
   const raidTermin = formatRaidTerminLine(intlLocale, scheduledAt, scheduledEndAt);
 
+  const rosterRoleCounts = useMemo(() => {
+    const out: Record<(typeof ROLE_KEYS)[number], number> = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
+    for (const id of rosterOrder) {
+      const s = byId.get(id);
+      if (!s) continue;
+      const r = s.role;
+      if (r === 'Tank' || r === 'Melee' || r === 'Range' || r === 'Healer') out[r] += 1;
+    }
+    return out;
+  }, [rosterOrder, byId]);
+
+  const rosterSpecCounts = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const id of rosterOrder) {
+      const s = byId.get(id);
+      if (!s) continue;
+      const spec = (s.signedSpec?.trim() || s.mainSpec?.trim() || '').trim();
+      if (!spec) continue;
+      out.set(spec, (out.get(spec) ?? 0) + 1);
+    }
+    return out;
+  }, [rosterOrder, byId]);
+
+  const rosterMinFulfillmentRatio = useMemo(() => {
+    const roleMin = overviewProps.roleMinByKey;
+    const ratios: number[] = [];
+    for (const k of ROLE_KEYS) {
+      const need = roleMin[k] ?? 0;
+      if (need <= 0) continue;
+      ratios.push(Math.min(1, (rosterRoleCounts[k] ?? 0) / need));
+    }
+    const minSpecs = overviewProps.minSpecsObj
+      ? Object.entries(overviewProps.minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
+      : [];
+    for (const [spec, need] of minSpecs) {
+      ratios.push(Math.min(1, (rosterSpecCounts.get(spec) ?? 0) / need));
+    }
+    if (ratios.length === 0) return null;
+    return ratios.reduce((a, b) => a + b, 0) / ratios.length;
+  }, [overviewProps, rosterRoleCounts, rosterSpecCounts]);
+
   const poolIds = useMemo(() => {
     const placed = new Set([...rosterOrder, ...reserveOrder]);
     return signups.map((s) => s.id).filter((id) => !placed.has(id));
@@ -283,6 +340,26 @@ export function RaidRosterPlanner({
       m.get(s.role)?.push(id);
     }
     return m;
+  }, [filteredReserveIds, byId]);
+
+  const poolRoleCounts = useMemo(() => {
+    const out: Record<TbcRole, number> = { Tank: 0, Healer: 0, Melee: 0, Range: 0 };
+    for (const id of filteredPoolIds) {
+      const s = byId.get(id);
+      if (!s) continue;
+      out[s.role] += 1;
+    }
+    return out;
+  }, [filteredPoolIds, byId]);
+
+  const reserveRoleCounts = useMemo(() => {
+    const out: Record<TbcRole, number> = { Tank: 0, Healer: 0, Melee: 0, Range: 0 };
+    for (const id of filteredReserveIds) {
+      const s = byId.get(id);
+      if (!s) continue;
+      out[s.role] += 1;
+    }
+    return out;
   }, [filteredReserveIds, byId]);
 
   useEffect(() => {
@@ -446,7 +523,10 @@ export function RaidRosterPlanner({
         onPointerDown={(e) => onRowPointerDown(e, s.id, source)}
       >
         {source === 'roster' && typeof index === 'number' ? (
-          <span className="tabular-nums text-muted-foreground w-6 shrink-0 font-medium">{index + 1}.</span>
+          <span className="tabular-nums text-muted-foreground w-10 shrink-0 font-medium inline-flex items-center gap-1">
+            <span className="w-6 text-right">{index + 1}.</span>
+            <RoleIcon role={s.role} size={16} />
+          </span>
         ) : null}
         <CharacterMainStar
           isMain={!!s.isMain}
@@ -455,16 +535,12 @@ export function RaidRosterPlanner({
           sizePx={16}
         />
         {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
-        <span className="flex items-center gap-1.5">
-          <SpecIcon spec={s.mainSpec} size={22} />
-          {s.offSpec ? (
-            <SpecIcon
-              spec={s.offSpec}
-              size={22}
-              className="grayscale contrast-200 brightness-75"
-            />
-          ) : null}
-        </span>
+        <SignupSpecIcons
+          character={{ mainSpec: s.mainSpec, offSpec: s.offSpec ?? null }}
+          signedSpec={s.signedSpec ?? null}
+          onlySignedSpec={!!s.onlySignedSpec}
+          viewerIsRaidLeader={true}
+        />
         <span className="font-medium min-w-0 truncate">{s.name}</span>
         <span className="ml-auto flex items-center gap-2">
           {s.discordName ? (
@@ -509,6 +585,8 @@ export function RaidRosterPlanner({
         classId: addSelected.classId,
         isMain: addSelected.isMain,
         role: addSelected.role,
+        signedSpec: null,
+        onlySignedSpec: false,
         signupType: 'normal',
         isLate: false,
         discordName: addSelected.guildDiscordDisplayName,
@@ -746,11 +824,45 @@ export function RaidRosterPlanner({
                 dragActive && 'ring-2 ring-primary/45 ring-offset-2 ring-offset-background'
               )}
             >
-              <div className="border-b border-border bg-muted/20 px-4 py-3">
-                <h2 className="text-sm font-semibold text-foreground">{tRoster('rosterTitle')}</h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {tRoster('rosterCount', { current: rosterOrder.length, max: raid.maxPlayers })}
-                </p>
+              <div className="border-b border-border bg-muted/20 px-4 py-3 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="text-sm font-semibold text-foreground">{tRoster('rosterTitle')}</h2>
+                  <div className={cn('text-lg font-bold tabular-nums leading-none', toneForFulfillment(rosterMinFulfillmentRatio))}>
+                    {rosterOrder.length} / {raid.maxPlayers}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                  {ROLE_KEYS.map((roleKey) => {
+                    const need = overviewProps.roleMinByKey[roleKey] ?? 0;
+                    if (need <= 0) return null;
+                    const cur = rosterRoleCounts[roleKey] ?? 0;
+                    return (
+                      <span key={roleKey} className="inline-flex items-center gap-1.5">
+                        <RoleIcon role={roleKey} size={16} />
+                        <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
+                          {countToMinLabel(cur, need)}
+                        </span>
+                      </span>
+                    );
+                  })}
+
+                  {overviewProps.minSpecsObj
+                    ? Object.entries(overviewProps.minSpecsObj)
+                        .filter(([, need]) => typeof need === 'number' && need > 0)
+                        .map(([spec, need]) => {
+                          const cur = rosterSpecCounts.get(spec) ?? 0;
+                          return (
+                            <span key={spec} className="inline-flex items-center gap-1.5">
+                              <SpecIcon spec={spec} size={16} />
+                              <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
+                                {countToMinLabel(cur, need)}
+                              </span>
+                            </span>
+                          );
+                        })
+                    : null}
+                </div>
               </div>
               <div ref={rosterListRef} className="p-3 space-y-2" role="list">
                 {rosterOrder.length === 0 ? (
@@ -773,7 +885,17 @@ export function RaidRosterPlanner({
               )}
             >
               <div className="border-b border-border bg-muted/20 px-4 py-3">
-                <h2 className="text-sm font-semibold text-foreground">{tRoster('reserveTitle')}</h2>
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="text-sm font-semibold text-foreground">{tRoster('reserveTitle')}</h2>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+                    {ROLE_ORDER.map((r) => (
+                      <span key={r} className="inline-flex items-center gap-1">
+                        <RoleIcon role={r} size={14} />
+                        <span className="font-semibold">{reserveRoleCounts[r] ?? 0}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
               <div className="p-3 space-y-3" role="list">
                 {ROLE_ORDER.map((role) => {
@@ -815,6 +937,14 @@ export function RaidRosterPlanner({
             <div className="border-b border-border bg-muted/20 px-4 py-3">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold text-foreground">{tRoster('signupsTitle')}</h2>
+                <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+                  {ROLE_ORDER.map((r) => (
+                    <span key={r} className="inline-flex items-center gap-1">
+                      <RoleIcon role={r} size={14} />
+                      <span className="font-semibold">{poolRoleCounts[r] ?? 0}</span>
+                    </span>
+                  ))}
+                </div>
                 <button
                   type="button"
                   className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0"
@@ -938,16 +1068,12 @@ export function RaidRosterPlanner({
                 sizePx={16}
               />
               {draggedSignup.classId ? <ClassIcon classId={draggedSignup.classId} size={22} /> : null}
-              <span className="flex items-center gap-1.5">
-                <SpecIcon spec={draggedSignup.mainSpec} size={22} />
-                {draggedSignup.offSpec ? (
-                  <SpecIcon
-                    spec={draggedSignup.offSpec}
-                    size={22}
-                    className="grayscale contrast-200 brightness-75"
-                  />
-                ) : null}
-              </span>
+              <SignupSpecIcons
+                character={{ mainSpec: draggedSignup.mainSpec, offSpec: draggedSignup.offSpec ?? null }}
+                signedSpec={draggedSignup.signedSpec ?? null}
+                onlySignedSpec={!!draggedSignup.onlySignedSpec}
+                viewerIsRaidLeader={true}
+              />
               <span className="font-medium truncate">{draggedSignup.name}</span>
             </div>,
             document.body
@@ -977,16 +1103,12 @@ export function RaidRosterPlanner({
                       sizePx={16}
                     />
                     {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
-                    <span className="flex items-center gap-1.5">
-                      <SpecIcon spec={s.mainSpec} size={22} />
-                      {s.offSpec ? (
-                        <SpecIcon
-                          spec={s.offSpec}
-                          size={22}
-                          className="grayscale contrast-200 brightness-75"
-                        />
-                      ) : null}
-                    </span>
+                    <SignupSpecIcons
+                      character={{ mainSpec: s.mainSpec, offSpec: s.offSpec ?? null }}
+                      signedSpec={s.signedSpec ?? null}
+                      onlySignedSpec={!!s.onlySignedSpec}
+                      viewerIsRaidLeader={true}
+                    />
                     <span className="font-medium truncate">{s.name}</span>
                   </>
                 );
