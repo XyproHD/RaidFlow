@@ -13,7 +13,9 @@ import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
 import {
   CharacterDiscordPill,
+  CharacterForbidReserveBadge,
   CharacterGearscorePill,
+  CharacterSignupPunctualityMark,
   CharacterSpecIconsInline,
 } from '@/components/character-display-parts';
 import {
@@ -37,7 +39,7 @@ const RAID_PLANNER_CLASS_I18N = {
 } as const;
 
 type MainAltFilter = 'mains' | 'both' | 'twinks';
-type AttendanceFilter = 'all' | 'available' | 'maybe' | 'late';
+type PlannerPunctuality = 'on_time' | 'tight' | 'late';
 
 export type RosterPlannerSignup = {
   id: string;
@@ -55,6 +57,8 @@ export type RosterPlannerSignup = {
   /** DB: normal | uncertain | reserve (main treated as normal) */
   signupType: string;
   isLate: boolean;
+  punctuality?: PlannerPunctuality | null;
+  forbidReserve?: boolean;
   discordName?: string | null;
   gearScore?: number | null;
   note?: string | null;
@@ -113,6 +117,16 @@ function openMenuAtButton(btn: HTMLButtonElement) {
 
 function typeNorm(v: string) {
   return v === 'main' ? 'normal' : v;
+}
+
+function reserveSignupIdsFrom(signups: RosterPlannerSignup[]): string[] {
+  return signups.filter((s) => typeNorm(s.signupType) === 'reserve').map((s) => s.id);
+}
+
+function punctualityOf(s: RosterPlannerSignup): PlannerPunctuality {
+  const p = s.punctuality;
+  if (p === 'tight' || p === 'late' || p === 'on_time') return p;
+  return s.isLate ? 'late' : 'on_time';
 }
 
 function countToMinLabel(count: number, min: number) {
@@ -183,12 +197,26 @@ export function RaidRosterPlanner({
   const intlLocale = useLocale();
 
   const [signups, setSignups] = useState<RosterPlannerSignup[]>(() => initialSignups);
-  useEffect(() => setSignups(initialSignups), [initialSignups]);
+  useEffect(() => {
+    setSignups(initialSignups);
+    setReserveOrder((prev) => {
+      const want = reserveSignupIdsFrom(initialSignups);
+      const wantSet = new Set(want);
+      const next: string[] = [];
+      for (const id of prev) {
+        if (wantSet.has(id)) next.push(id);
+      }
+      for (const id of want) {
+        if (!next.includes(id)) next.push(id);
+      }
+      return next;
+    });
+  }, [initialSignups]);
 
   const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
 
   const [rosterOrder, setRosterOrder] = useState<string[]>([]);
-  const [reserveOrder, setReserveOrder] = useState<string[]>([]);
+  const [reserveOrder, setReserveOrder] = useState<string[]>(() => reserveSignupIdsFrom(initialSignups));
 
   const [mainAltFilter, setMainAltFilter] = useState<MainAltFilter>('both');
   const [allowWeekday, setAllowWeekday] = useState(true);
@@ -204,7 +232,12 @@ export function RaidRosterPlanner({
     for (const id of TBC_CLASS_IDS) o[id] = true;
     return o;
   });
-  const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>('all');
+  const [punctualityFilter, setPunctualityFilter] = useState<Record<PlannerPunctuality, boolean>>({
+    on_time: true,
+    tight: true,
+    late: true,
+  });
+  const [pulseForbidReserveId, setPulseForbidReserveId] = useState<string | null>(null);
 
   const [leaderMenuOpen, setLeaderMenuOpen] = useState(false);
   const [leaderMenuPos, setLeaderMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -280,26 +313,28 @@ export function RaidRosterPlanner({
     return signups.map((s) => s.id).filter((id) => !placed.has(id));
   }, [signups, rosterOrder, reserveOrder]);
 
-  const passesAttendance = useCallback(
-    (s: RosterPlannerSignup) => {
-      const tn = typeNorm(s.signupType);
-      if (attendanceFilter === 'all') return true;
-      if (attendanceFilter === 'available') return tn === 'normal';
-      if (attendanceFilter === 'maybe') return tn === 'uncertain';
-      if (attendanceFilter === 'late') return s.isLate;
-      return true;
-    },
-    [attendanceFilter]
+  const usedCharacterIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of signups) {
+      const cid = s.characterId?.trim();
+      if (cid) set.add(cid);
+    }
+    return set;
+  }, [signups]);
+
+  const passesPunctuality = useCallback(
+    (s: RosterPlannerSignup) => punctualityFilter[punctualityOf(s)],
+    [punctualityFilter]
   );
 
   const addCandidates = useMemo(() => {
     const q = addQuery.trim().toLowerCase();
-    const all = guildCharacters;
+    const all = guildCharacters.filter((c) => !usedCharacterIds.has(c.id));
     if (!q) return all.slice(0, 50);
     return all
       .filter((c) => c.name.toLowerCase().includes(q))
       .slice(0, 50);
-  }, [addQuery, guildCharacters]);
+  }, [addQuery, guildCharacters, usedCharacterIds]);
 
   const addSelected = useMemo(
     () => (addSelectedId ? guildCharacters.find((c) => c.id === addSelectedId) ?? null : null),
@@ -324,17 +359,17 @@ export function RaidRosterPlanner({
     return poolIds.filter((id) => {
       const s = byId.get(id);
       if (!s) return false;
-      return passesCharFilters(s) && passesAttendance(s);
+      return passesCharFilters(s) && passesPunctuality(s);
     });
-  }, [poolIds, byId, passesCharFilters, passesAttendance]);
+  }, [poolIds, byId, passesCharFilters, passesPunctuality]);
 
   const filteredReserveIds = useMemo(() => {
     return reserveOrder.filter((id) => {
       const s = byId.get(id);
       if (!s) return false;
-      return passesCharFilters(s) && passesAttendance(s);
+      return passesCharFilters(s) && passesPunctuality(s);
     });
-  }, [reserveOrder, byId, passesCharFilters, passesAttendance]);
+  }, [reserveOrder, byId, passesCharFilters, passesPunctuality]);
 
   const poolByRole = useMemo(() => {
     const m = new Map<TbcRole, string[]>();
@@ -407,6 +442,14 @@ export function RaidRosterPlanner({
     });
   };
 
+  const togglePunctuality = (k: PlannerPunctuality) => {
+    setPunctualityFilter((prev) => {
+      const next = { ...prev, [k]: !prev[k] };
+      if (!next.on_time && !next.tight && !next.late) return prev;
+      return next;
+    });
+  };
+
   const toggleAllowWeekday = () => setAllowWeekday((v) => (!v && !allowWeekend ? v : !v));
   const toggleAllowWeekend = () => setAllowWeekend((v) => (!v && !allowWeekday ? v : !v));
 
@@ -442,6 +485,24 @@ export function RaidRosterPlanner({
       }
 
       if (target === 'reserve') {
+        const dragged = byId.get(id);
+        if (dragged?.forbidReserve) {
+          setPulseForbidReserveId(id);
+          window.setTimeout(() => {
+            setPulseForbidReserveId((cur) => (cur === id ? null : cur));
+          }, 900);
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
+          });
+          endDrag();
+          return;
+        }
         setRosterOrder((o) => o.filter((x) => x !== id));
         setReserveOrder((o) => (o.includes(id) ? o : [...o, id]));
         endDrag();
@@ -506,7 +567,7 @@ export function RaidRosterPlanner({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragSession, endDrag]);
+  }, [dragSession, endDrag, byId, rosterOrder]);
 
   const onRowPointerDown = (
     e: React.PointerEvent,
@@ -614,6 +675,9 @@ export function RaidRosterPlanner({
   function renderRow(s: RosterPlannerSignup, source: 'roster' | 'reserve' | 'pool', index?: number) {
     const isDragging = draggingId === s.id;
     const note = s.note?.trim() ?? '';
+    const punct = punctualityOf(s);
+    const punctLabel =
+      punct === 'on_time' ? t('punctualityOnTime') : punct === 'tight' ? t('punctualityTight') : t('punctualityLate');
     return (
       <div
         key={`${source}-${s.id}`}
@@ -640,7 +704,16 @@ export function RaidRosterPlanner({
         />
         {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
         {renderSpecIcons(s, true)}
-        <span className="font-medium min-w-0 truncate">{s.name}</span>
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="font-medium truncate">{s.name}</span>
+          <CharacterSignupPunctualityMark kind={punct} label={punctLabel} />
+          {s.forbidReserve ? (
+            <CharacterForbidReserveBadge
+              title={t('conditionForbidReserve')}
+              pulse={pulseForbidReserveId === s.id}
+            />
+          ) : null}
+        </span>
         <span className="ml-auto flex items-center gap-2">
           <CharacterDiscordPill discordName={s.discordName} blink={blinkDiscordForIds.has(s.id)} />
           <CharacterGearscorePill gearScore={s.gearScore} />
@@ -659,11 +732,6 @@ export function RaidRosterPlanner({
             </button>
           ) : null}
         </span>
-        {s.isLate ? (
-          <span className="text-xs text-muted-foreground shrink-0" title={t('lateCheckbox')}>
-            ⏱
-          </span>
-        ) : null}
       </div>
     );
   }
@@ -672,9 +740,10 @@ export function RaidRosterPlanner({
 
   function addManualSignup() {
     if (!addSelected) return;
+    if (usedCharacterIds.has(addSelected.id)) return;
     const id = `manual:${addSelected.id}`;
     setSignups((prev) => {
-      if (prev.some((x) => x.id === id)) return prev;
+      if (prev.some((x) => x.id === id || x.characterId === addSelected.id)) return prev;
       const row: RosterPlannerSignup = {
         id,
         userId: addSelected.userId,
@@ -690,6 +759,8 @@ export function RaidRosterPlanner({
         onlySignedSpec: false,
         signupType: 'normal',
         isLate: false,
+        punctuality: 'on_time',
+        forbidReserve: false,
         discordName: addSelected.guildDiscordDisplayName,
         gearScore: addSelected.gearScore,
         note: `Gesetzt von Raidleader ${raidLeaderLabel}`,
@@ -739,6 +810,16 @@ export function RaidRosterPlanner({
         }
         .rf-blink-discord-conflict {
           animation: rfBlinkDiscordConflict 0.8s ease-in-out 1;
+        }
+        @keyframes rfPulseForbidReserve {
+          0% { transform: scale(1); filter: brightness(1); }
+          25% { transform: scale(1.2); filter: brightness(1.15); }
+          50% { transform: scale(1); filter: brightness(1); }
+          75% { transform: scale(1.15); filter: brightness(1.1); }
+          100% { transform: scale(1); filter: brightness(1); }
+        }
+        .rf-pulse-forbid-reserve {
+          animation: rfPulseForbidReserve 0.85s ease-in-out 1;
         }
       `}</style>
       <header
@@ -1084,28 +1165,32 @@ export function RaidRosterPlanner({
               </div>
 
               <div className="space-y-1.5 pt-1">
-                <span className="text-muted-foreground text-xs">{tRoster('filterAttendance')}</span>
-                <div className="flex rounded-lg border border-border p-0.5 bg-muted/30 flex-wrap">
+                <span className="text-muted-foreground text-xs">{tRoster('filterPunctuality')}</span>
+                <div className="grid grid-cols-3 gap-2">
                   {(
                     [
-                      ['all', tRoster('attendanceAll')],
-                      ['available', tRoster('attendanceAvailable')],
-                      ['maybe', tRoster('attendanceMaybe')],
-                      ['late', tRoster('attendanceLate')],
+                      ['on_time', tRoster('punctualityFilterOnTime'), '🟢'] as const,
+                      ['tight', tRoster('punctualityFilterTight'), '🟡'] as const,
+                      ['late', tRoster('punctualityFilterLate'), '🕒'] as const,
                     ] as const
-                  ).map(([v, label]) => (
+                  ).map(([k, label, icon]) => (
                     <button
-                      key={v}
+                      key={k}
                       type="button"
-                      onClick={() => setAttendanceFilter(v)}
+                      onClick={() => togglePunctuality(k)}
                       className={cn(
-                        'rounded-md px-2 py-1.5 text-xs sm:text-sm flex-1 min-w-[4.5rem]',
-                        attendanceFilter === v
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-muted-foreground hover:bg-muted'
+                        'rounded-lg border px-2 py-1.5 text-xs sm:text-sm flex items-center gap-1.5 justify-start min-w-0',
+                        punctualityFilter[k]
+                          ? 'border-primary/50 bg-primary/10 text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
                       )}
+                      aria-pressed={punctualityFilter[k]}
+                      title={label}
                     >
-                      {label}
+                      <span className="shrink-0" aria-hidden>
+                        {icon}
+                      </span>
+                      <span className="truncate">{label}</span>
                     </button>
                   ))}
                 </div>
@@ -1251,7 +1336,19 @@ export function RaidRosterPlanner({
               />
               {draggedSignup.classId ? <ClassIcon classId={draggedSignup.classId} size={22} /> : null}
               {renderSpecIcons(draggedSignup, false)}
-              <span className="font-medium truncate">{draggedSignup.name}</span>
+              <span className="font-medium truncate inline-flex items-center gap-1">
+                {draggedSignup.name}
+                <CharacterSignupPunctualityMark
+                  kind={punctualityOf(draggedSignup)}
+                  label={
+                    punctualityOf(draggedSignup) === 'on_time'
+                      ? t('punctualityOnTime')
+                      : punctualityOf(draggedSignup) === 'tight'
+                        ? t('punctualityTight')
+                        : t('punctualityLate')
+                  }
+                />
+              </span>
             </div>,
             document.body
           )
@@ -1281,7 +1378,19 @@ export function RaidRosterPlanner({
                     />
                     {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
                     {renderSpecIcons(s, false)}
-                    <span className="font-medium truncate">{s.name}</span>
+                    <span className="font-medium truncate inline-flex items-center gap-1">
+                      {s.name}
+                      <CharacterSignupPunctualityMark
+                        kind={punctualityOf(s)}
+                        label={
+                          punctualityOf(s) === 'on_time'
+                            ? t('punctualityOnTime')
+                            : punctualityOf(s) === 'tight'
+                              ? t('punctualityTight')
+                              : t('punctualityLate')
+                        }
+                      />
+                    </span>
                   </>
                 );
               })()}

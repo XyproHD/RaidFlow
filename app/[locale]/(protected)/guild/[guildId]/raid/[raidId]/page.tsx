@@ -13,6 +13,7 @@ import {
   type RaidPageMode,
 } from '@/lib/raid-detail-access';
 import { findManyRfCharactersForDashboard } from '@/lib/rf-character-gear-score-compat';
+import { normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
 
 type SearchParams = Promise<{ mode?: string; modus?: string }>;
 
@@ -110,6 +111,7 @@ export default async function RaidDetailPage(props: {
         characterId: mySignup.characterId,
         type: mySignup.type,
         isLate: mySignup.isLate,
+        punctuality: normalizeSignupPunctuality(mySignup.punctuality, mySignup.isLate),
         note: mySignup.note,
         signedSpec: mySignup.signedSpec,
         onlySignedSpec: mySignup.onlySignedSpec,

@@ -153,6 +153,12 @@ export default async function RaidPlanPage(props: {
         onlySignedSpec: s.onlySignedSpec,
         signupType: s.type,
         isLate: s.isLate,
+        punctuality: (s.punctuality === 'tight' || s.punctuality === 'late' || s.punctuality === 'on_time'
+          ? s.punctuality
+          : s.isLate
+            ? 'late'
+            : 'on_time') as 'on_time' | 'tight' | 'late',
+        forbidReserve: s.forbidReserve,
         discordName: ch?.guildDiscordDisplayName ?? null,
         gearScore: (ch as unknown as { gearScore?: number | null })?.gearScore ?? null,
         note: s.note ?? null,

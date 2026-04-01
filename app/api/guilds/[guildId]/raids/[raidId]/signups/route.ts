@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { prisma } from '@/lib/prisma';
 import { computeRaidSignupPhase, resolveRaidAccess } from '@/lib/raid-detail-access';
-import { normalizeSignupType } from '@/lib/raid-signup-constants';
+import { normalizeSignupPunctuality, normalizeSignupType } from '@/lib/raid-signup-constants';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 
@@ -82,7 +82,8 @@ export async function POST(
     typeof body.characterId === 'string' ? body.characterId.trim() : '';
   const typeRaw = typeof body.type === 'string' ? body.type.trim() : '';
   const typeNorm = normalizeSignupType(typeRaw);
-  const isLate = body.isLate === true;
+  const punctuality = normalizeSignupPunctuality(body.punctuality, body.isLate === true);
+  const isLate = punctuality === 'late';
   const note =
     typeof body.note === 'string' ? body.note.trim() : body.note === null ? '' : '';
   const signedSpecRaw =
@@ -152,6 +153,7 @@ export async function POST(
     onlySignedSpec,
     forbidReserve,
     isLate,
+    punctuality,
     note: note.length > 0 ? note : null,
   };
 
@@ -178,6 +180,7 @@ export async function POST(
         onlySignedSpec: true,
         forbidReserve: true,
         isLate: true,
+        punctuality: true,
         note: true,
         allowReserve: true,
         leaderAllowsReserve: true,
@@ -215,6 +218,7 @@ export async function POST(
       onlySignedSpec: true,
       forbidReserve: true,
       isLate: true,
+      punctuality: true,
       note: true,
       allowReserve: true,
       leaderAllowsReserve: true,

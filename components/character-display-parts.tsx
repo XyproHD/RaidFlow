@@ -74,6 +74,57 @@ export function CharacterGearscorePill({
   );
 }
 
+export type SignupPunctualityKind = 'on_time' | 'tight' | 'late';
+
+/** Kompaktes Pünktlichkeits-Icon (Planer, Listen); Label aus i18n übergeben. */
+export function CharacterSignupPunctualityMark({
+  kind,
+  label,
+  className,
+}: {
+  kind: SignupPunctualityKind;
+  label: string;
+  className?: string;
+}) {
+  const sym = kind === 'on_time' ? '🟢' : kind === 'tight' ? '🟡' : '🕒';
+  return (
+    <span
+      role="img"
+      aria-label={label}
+      title={label}
+      className={cn('inline-flex shrink-0 text-sm leading-none', className)}
+    >
+      {sym}
+    </span>
+  );
+}
+
+/** Hinweis „Reserve sperren“; pulse bei abgelehntem Drop (Planer). */
+export function CharacterForbidReserveBadge({
+  title,
+  pulse,
+  className,
+}: {
+  title: string;
+  pulse?: boolean;
+  className?: string;
+}) {
+  return (
+    <span
+      role="img"
+      aria-label={title}
+      title={title}
+      className={cn(
+        'inline-flex shrink-0 text-sm leading-none',
+        pulse && 'rf-pulse-forbid-reserve',
+        className
+      )}
+    >
+      ⚠️
+    </span>
+  );
+}
+
 export function CharacterNameAndGuildBlock({
   name,
   guildName,

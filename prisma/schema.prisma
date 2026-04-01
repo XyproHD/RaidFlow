@@ -260,8 +260,10 @@ model RfRaidSignup {
   type          String
   allowReserve  Boolean   @default(false) @map("allow_reserve")
   note          String?   @db.Text
-  /// „Komme verspätet“ – dann Notiz mit Verspätungstext verpflichtend
+  /// „Komme verspätet“ – dann Notiz mit Verspätungstext verpflichtend (spiegelt punctuality === late)
   isLate        Boolean   @default(false) @map("is_late")
+  /// on_time | tight | late (Anzeige/Filter im Planer)
+  punctuality   String    @default("on_time") @map("punctuality")
   /// Anmeldung mit Main- oder Off-Spec (Anzeigename wie in rf_character)
   signedSpec    String?   @map("signed_spec")
   /// User-Bedingung: nur angemeldeter Spec erlaubt (kein Leader-Spec-Wechsel)

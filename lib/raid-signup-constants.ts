@@ -14,3 +14,19 @@ export function normalizeSignupType(raw: string): RaidSignupType | null {
 export function isRaidSignupType(s: string): s is RaidSignupType {
   return normalizeSignupType(s) !== null;
 }
+
+export const RAID_SIGNUP_PUNCTUALITY = ['on_time', 'tight', 'late'] as const;
+export type RaidSignupPunctuality = (typeof RAID_SIGNUP_PUNCTUALITY)[number];
+
+const PUNCTUALITY_SET = new Set<string>(RAID_SIGNUP_PUNCTUALITY);
+
+/** API/Client: punctuality string; fallback aus Legacy isLate. */
+export function normalizeSignupPunctuality(
+  raw: unknown,
+  isLateFallback: boolean
+): RaidSignupPunctuality {
+  if (typeof raw === 'string' && PUNCTUALITY_SET.has(raw)) {
+    return raw as RaidSignupPunctuality;
+  }
+  return isLateFallback ? 'late' : 'on_time';
+}
