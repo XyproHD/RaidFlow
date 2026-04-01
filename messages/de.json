@@ -204,6 +204,28 @@
     "noteRequiredLabel": "Notiz an Raidleitung",
     "noteRequiredPlaceholder": "Kurz begründen (z. B. unklar/Reserve/verspätet …)"
   },
+  "raidRosterPlanner": {
+    "pageTitle": "Raid planen",
+    "draftHint": "Entwurf: Zuordnung wird hier noch nicht gespeichert.",
+    "rosterTitle": "Gesetzt",
+    "rosterCount": "{current} / {max}",
+    "rosterEmpty": "Noch niemand gesetzt — per Drag & Drop aus den Anmeldungen ziehen.",
+    "reserveTitle": "Reserve",
+    "reserveEmpty": "Noch keine Reserve — Charakter hierher ziehen.",
+    "reserveFilteredEmpty": "Keine Reserve-Einträge passen zu den aktuellen Filtern.",
+    "signupsTitle": "Anmeldungen",
+    "poolEmpty": "Alle Anmeldungen sind links einsortiert.",
+    "poolFilteredEmpty": "Keine Anmeldungen passen zu den aktuellen Filtern.",
+    "addHint": "Exakt einen Charakter auswählen oder abbrechen.",
+    "noResults": "Keine Treffer.",
+    "filterAttendance": "Teilnahme / Pünktlichkeit",
+    "attendanceAll": "Alle",
+    "attendanceAvailable": "Verfügbar",
+    "attendanceMaybe": "Eventuell",
+    "attendanceLate": "Verspätet",
+    "menuRaidView": "Zur Raid-Ansicht",
+    "forbiddenPlan": "Nur die Raidleitung kann den Planer nutzen."
+  },
   "raidEdit": {
     "sectionBasics": "Grunddaten & Termin",
     "saveBasics": "Änderungen speichern",
