@@ -140,6 +140,7 @@ export default async function RaidPlanPage(props: {
       const classId = getSpecByDisplayName(mainSpec)?.classId ?? null;
       return {
         id: s.id,
+        userId: s.userId,
         characterId: ch?.id ?? null,
         name,
         mainSpec,
@@ -148,6 +149,7 @@ export default async function RaidPlanPage(props: {
         isMain: !!ch?.isMain,
         role,
         signedSpec: s.signedSpec,
+        originalSignedSpec: (s.signedSpec?.trim() || ch?.mainSpec?.trim() || null) as string | null,
         onlySignedSpec: s.onlySignedSpec,
         signupType: s.type,
         isLate: s.isLate,
@@ -163,6 +165,7 @@ export default async function RaidPlanPage(props: {
     where: { guildId },
     select: {
       id: true,
+      userId: true,
       name: true,
       mainSpec: true,
       offSpec: true,
@@ -177,6 +180,7 @@ export default async function RaidPlanPage(props: {
     const role = (roleFromSpecDisplayName(c.mainSpec) ?? 'Melee') as TbcRole;
     return {
       id: c.id,
+      userId: c.userId,
       name: c.name,
       mainSpec: c.mainSpec,
       offSpec: c.offSpec,

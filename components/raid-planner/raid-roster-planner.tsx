@@ -7,11 +7,11 @@ import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { formatRaidTerminLine } from '@/lib/format-raid-termin';
 import { TBC_CLASS_IDS, type TbcRole } from '@/lib/wow-tbc-classes';
+import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
-import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import {
   RaidOverviewSummaryRows,
   type RaidOverviewSummaryProps,
@@ -37,6 +37,7 @@ type AttendanceFilter = 'all' | 'available' | 'maybe' | 'late';
 
 export type RosterPlannerSignup = {
   id: string;
+  userId?: string | null;
   characterId?: string | null;
   name: string;
   mainSpec: string;
@@ -45,6 +46,7 @@ export type RosterPlannerSignup = {
   isMain: boolean;
   role: TbcRole;
   signedSpec?: string | null;
+  originalSignedSpec?: string | null;
   onlySignedSpec?: boolean;
   /** DB: normal | uncertain | reserve (main treated as normal) */
   signupType: string;
@@ -58,6 +60,7 @@ export type RosterPlannerSignup = {
 
 export type GuildCharacterOption = {
   id: string;
+  userId: string;
   name: string;
   mainSpec: string;
   offSpec: string | null;
@@ -197,6 +200,8 @@ export function RaidRosterPlanner({
 
   const [leaderMenuOpen, setLeaderMenuOpen] = useState(false);
   const [leaderMenuPos, setLeaderMenuPos] = useState<{ top: number; left: number } | null>(null);
+
+  const [openNote, setOpenNote] = useState<{ name: string; note: string } | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState('');
@@ -367,6 +372,8 @@ export function RaidRosterPlanner({
       if (e.key === 'Escape') {
         setLeaderMenuOpen(false);
         setLeaderMenuPos(null);
+        setOpenNote(null);
+        setAddOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -431,6 +438,28 @@ export function RaidRosterPlanner({
       }
 
       if (target === 'roster') {
+        const dragged = byId.get(id);
+        const draggedUserId = dragged?.userId ?? null;
+        if (draggedUserId) {
+          const conflictId = rosterOrder.find((otherId) => {
+            if (otherId === id) return false;
+            const other = byId.get(otherId);
+            return (other?.userId ?? null) === draggedUserId;
+          });
+          if (conflictId) {
+            setFlyBack({
+              signupId: id,
+              fromLeft: e.clientX - sess.offsetX,
+              fromTop: e.clientY - sess.offsetY,
+              toLeft: origin.left,
+              toTop: origin.top,
+              width: origin.width,
+              height: origin.height,
+            });
+            endDrag();
+            return;
+          }
+        }
         const el = rosterListRef.current;
         const insertAt = el ? rosterInsertIndex(el, e.clientY, id) : 0;
         setReserveOrder((o) => o.filter((x) => x !== id));
@@ -491,6 +520,67 @@ export function RaidRosterPlanner({
   const dragActive = !!dragSession;
   const flyBackRef = useRef<HTMLDivElement | null>(null);
 
+  function effectiveSignedSpec(s: RosterPlannerSignup): string {
+    return (s.signedSpec?.trim() || s.originalSignedSpec?.trim() || s.mainSpec.trim()).trim();
+  }
+
+  function renderSpecIcons(s: RosterPlannerSignup, interactive: boolean) {
+    const main = s.mainSpec.trim();
+    const off = (s.offSpec ?? '').trim();
+    const signed = effectiveSignedSpec(s);
+    const hasOff = !!off;
+    const canSwitch = interactive && hasOff && !s.onlySignedSpec;
+    const isOverrideActive =
+      !!s.signedSpec?.trim() && !!s.originalSignedSpec?.trim() && s.signedSpec!.trim() !== s.originalSignedSpec!.trim();
+
+    const renderOne = (spec: string) => {
+      const isSigned = spec === signed;
+      const gray = !isSigned;
+      const redOverlay = !!s.onlySignedSpec && gray && hasOff;
+      const showOverrideRing = isSigned && isOverrideActive;
+
+      return (
+        <button
+          key={spec}
+          type="button"
+          disabled={!canSwitch || isSigned}
+          onClick={() => {
+            if (!canSwitch) return;
+            if (spec === signed) return;
+            setSignups((prev) =>
+              prev.map((row) => {
+                if (row.id !== s.id) return row;
+                const nextRole = (roleFromSpecDisplayName(spec) ?? row.role) as TbcRole;
+                return { ...row, signedSpec: spec, role: nextRole };
+              })
+            );
+          }}
+          className={cn(
+            'relative inline-flex shrink-0 rounded-sm',
+            canSwitch && !isSigned ? 'cursor-pointer' : 'cursor-default',
+            showOverrideRing && 'ring-2 ring-green-600/70 dark:ring-green-500/70 ring-offset-1 ring-offset-background'
+          )}
+          title={spec}
+        >
+          <span className={cn(gray && 'grayscale opacity-[0.85]')}>
+            <SpecIcon spec={spec} size={22} />
+          </span>
+          {redOverlay ? (
+            <span
+              className="pointer-events-none absolute inset-0 rounded-sm bg-red-500/35 mix-blend-multiply"
+              aria-hidden
+            />
+          ) : null}
+        </button>
+      );
+    };
+
+    if (!hasOff) {
+      return <span className="inline-flex items-center gap-1">{renderOne(main)}</span>;
+    }
+    return <span className="inline-flex items-center gap-1">{renderOne(main)}{renderOne(off)}</span>;
+  }
+
   useLayoutEffect(() => {
     if (!flyBack) return;
     const el = flyBackRef.current;
@@ -510,6 +600,7 @@ export function RaidRosterPlanner({
 
   function renderRow(s: RosterPlannerSignup, source: 'roster' | 'reserve' | 'pool', index?: number) {
     const isDragging = draggingId === s.id;
+    const note = s.note?.trim() ?? '';
     return (
       <div
         key={`${source}-${s.id}`}
@@ -535,12 +626,7 @@ export function RaidRosterPlanner({
           sizePx={16}
         />
         {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
-        <SignupSpecIcons
-          character={{ mainSpec: s.mainSpec, offSpec: s.offSpec ?? null }}
-          signedSpec={s.signedSpec ?? null}
-          onlySignedSpec={!!s.onlySignedSpec}
-          viewerIsRaidLeader={true}
-        />
+        {renderSpecIcons(s, true)}
         <span className="font-medium min-w-0 truncate">{s.name}</span>
         <span className="ml-auto flex items-center gap-2">
           {s.discordName ? (
@@ -558,6 +644,20 @@ export function RaidRosterPlanner({
             >
               GS {s.gearScore}
             </span>
+          ) : null}
+          {note.length > 0 ? (
+            <button
+              type="button"
+              className="shrink-0 text-base leading-none opacity-80 hover:opacity-100"
+              title={note}
+              aria-label={t('participantNotiz')}
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpenNote({ name: s.name, note });
+              }}
+            >
+              📒
+            </button>
           ) : null}
         </span>
         {s.isLate ? (
@@ -578,6 +678,7 @@ export function RaidRosterPlanner({
       if (prev.some((x) => x.id === id)) return prev;
       const row: RosterPlannerSignup = {
         id,
+        userId: addSelected.userId,
         characterId: addSelected.id,
         name: addSelected.name,
         mainSpec: addSelected.mainSpec,
@@ -586,6 +687,7 @@ export function RaidRosterPlanner({
         isMain: addSelected.isMain,
         role: addSelected.role,
         signedSpec: null,
+        originalSignedSpec: addSelected.mainSpec,
         onlySignedSpec: false,
         signupType: 'normal',
         isLate: false,
@@ -1050,6 +1152,48 @@ export function RaidRosterPlanner({
           )
         : null}
 
+      {openNote
+        ? createPortal(
+            <div className="fixed inset-0 z-[1210]">
+              <div
+                className="absolute inset-0 bg-black/50"
+                onMouseDown={() => setOpenNote(null)}
+                role="button"
+                tabIndex={0}
+                aria-label="Close"
+              />
+              <div className="absolute inset-0 flex items-start justify-center p-4 sm:p-6">
+                <div
+                  className="w-full max-w-lg rounded-xl border border-border bg-background shadow-xl overflow-hidden"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <div className="border-b border-border bg-muted/20 px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">{openNote.name}</p>
+                      <p className="text-xs text-muted-foreground">{t('participantNotiz')}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0"
+                      onClick={() => setOpenNote(null)}
+                      aria-label={tPlanner('cancel')}
+                      title={tPlanner('cancel')}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="p-4">
+                    <div className="rounded-lg border border-border bg-muted/15 p-3 text-sm whitespace-pre-wrap">
+                      {openNote.note}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
       {dragSession && dragPoint && draggedSignup
         ? createPortal(
             <div
@@ -1068,12 +1212,7 @@ export function RaidRosterPlanner({
                 sizePx={16}
               />
               {draggedSignup.classId ? <ClassIcon classId={draggedSignup.classId} size={22} /> : null}
-              <SignupSpecIcons
-                character={{ mainSpec: draggedSignup.mainSpec, offSpec: draggedSignup.offSpec ?? null }}
-                signedSpec={draggedSignup.signedSpec ?? null}
-                onlySignedSpec={!!draggedSignup.onlySignedSpec}
-                viewerIsRaidLeader={true}
-              />
+              {renderSpecIcons(draggedSignup, false)}
               <span className="font-medium truncate">{draggedSignup.name}</span>
             </div>,
             document.body
@@ -1103,12 +1242,7 @@ export function RaidRosterPlanner({
                       sizePx={16}
                     />
                     {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
-                    <SignupSpecIcons
-                      character={{ mainSpec: s.mainSpec, offSpec: s.offSpec ?? null }}
-                      signedSpec={s.signedSpec ?? null}
-                      onlySignedSpec={!!s.onlySignedSpec}
-                      viewerIsRaidLeader={true}
-                    />
+                    {renderSpecIcons(s, false)}
                     <span className="font-medium truncate">{s.name}</span>
                   </>
                 );
