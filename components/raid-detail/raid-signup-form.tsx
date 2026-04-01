@@ -41,6 +41,7 @@ export function RaidSignupForm({
   initialCharacterId,
   initialType,
   initialIsLate,
+  initialPunctuality,
   initialNote,
   initialSignedSpec,
   initialOnlySignedSpec,
@@ -55,6 +56,8 @@ export function RaidSignupForm({
   initialCharacterId: string | null;
   initialType: string;
   initialIsLate: boolean;
+  /** Wenn gesetzt, hat Vorrang vor initialIsLate (DB-Feld punctuality). */
+  initialPunctuality?: 'on_time' | 'tight' | 'late';
   initialNote: string;
   initialSignedSpec: string | null;
   initialOnlySignedSpec: boolean;
@@ -102,9 +105,9 @@ export function RaidSignupForm({
     reserveOnly ? 'reserve' : normalizeInitialType(initialType)
   );
   const [punctuality, setPunctuality] = useState<PunctualityType>(
-    initialIsLate ? 'late' : 'on_time'
+    initialPunctuality ?? (initialIsLate ? 'late' : 'on_time')
   );
-  const isLate = punctuality !== 'on_time';
+  const isLate = punctuality === 'late';
   const [note, setNote] = useState(initialNote);
   const [onlySignedSpec, setOnlySignedSpec] = useState(initialOnlySignedSpec);
   const [forbidReserve, setForbidReserve] = useState(initialForbidReserve);
@@ -152,6 +155,7 @@ export function RaidSignupForm({
           body: JSON.stringify({
             characterId,
             type: effType,
+            punctuality,
             isLate,
             note: note.trim() || null,
             signedSpec,
@@ -294,7 +298,7 @@ export function RaidSignupForm({
           {[
             { key: 'on_time' as const, icon: '🟢', label: t('punctualityOnTime') },
             { key: 'tight' as const, icon: '🟡', label: t('punctualityTight') },
-            { key: 'late' as const, icon: '🔴', label: t('punctualityLate') },
+            { key: 'late' as const, icon: '🕒', label: t('punctualityLate') },
           ].map((opt) => (
             <button
               key={opt.key}

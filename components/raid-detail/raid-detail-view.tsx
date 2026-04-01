@@ -51,6 +51,7 @@ export type RaidDetailRaid = {
     userId: string;
     type: string;
     isLate: boolean;
+    punctuality: string;
     note: string | null;
     signedSpec: string | null;
     leaderAllowsReserve: boolean;
@@ -84,6 +85,7 @@ export type MySignupSerialized = {
   characterId: string | null;
   type: string;
   isLate: boolean;
+  punctuality: 'on_time' | 'tight' | 'late';
   note: string | null;
   signedSpec: string | null;
   onlySignedSpec: boolean;
@@ -702,6 +704,7 @@ export function RaidDetailView({
                     initialCharacterId={mySignup?.characterId ?? null}
                     initialType={mySignup?.type ?? 'normal'}
                     initialIsLate={mySignup?.isLate ?? false}
+                    initialPunctuality={mySignup?.punctuality}
                     initialNote={mySignup?.note ?? ''}
                     initialSignedSpec={mySignup?.signedSpec ?? null}
                     initialOnlySignedSpec={mySignup?.onlySignedSpec ?? false}
