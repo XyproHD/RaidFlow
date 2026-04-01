@@ -32,6 +32,7 @@ import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
+import { CharacterSpecIconsInline } from '@/components/character-display-parts';
 
 const ALL_SPECS = getAllSpecDisplayNames();
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
@@ -1295,14 +1296,14 @@ export function NewRaidWizard({
                           {character.classId ? <ClassIcon classId={character.classId} size={22} /> : null}
 
                           <span className="flex items-center gap-1.5">
-                            <SpecIcon spec={character.mainSpec} size={22} />
-                            {character.offSpec ? (
-                              <SpecIcon
-                                spec={character.offSpec}
-                                size={22}
-                                className="grayscale contrast-200 brightness-75"
-                              />
-                            ) : null}
+                            <CharacterSpecIconsInline
+                              mainSpec={character.mainSpec}
+                              offSpec={character.offSpec}
+                              size={22}
+                              slashClassName="hidden"
+                              offSpecWrapperBaseClassName=""
+                              offSpecIconClassName="grayscale contrast-200 brightness-75"
+                            />
                           </span>
 
                           <span className="font-medium min-w-0 truncate">{character.name}</span>

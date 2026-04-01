@@ -3,14 +3,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { ClassIcon } from '@/components/class-icon';
-import { SpecIcon } from '@/components/spec-icon';
 import { cn } from '@/lib/utils';
-import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
 import { GuildBattlenetSection } from '@/components/guild-battlenet-section';
-import { getAllSpecDisplayNames } from '@/lib/wow-tbc-classes';
+import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
-import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
-import { BattlenetLogo } from '@/components/battlenet-logo';
+import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
 
 type RaidGroup = { id: string; name: string; discordRoleId: string | null; sortOrder: number };
 type GuildCharacter = {
@@ -40,10 +37,8 @@ type AllowedChannel = {
 };
 type DiscordChannel = { id: string; name: string; type: number };
 
-const allSpecs = getAllSpecDisplayNames();
 function getClassIdForSpec(displayName: string): string | null {
-  const s = allSpecs.find((x) => x.displayName === displayName);
-  return s?.classId ?? null;
+  return getSpecByDisplayName(displayName)?.classId ?? null;
 }
 
 const ICON_SIZE = 24;
@@ -660,27 +655,22 @@ function CharacterCard({
         {classId && <ClassIcon classId={classId} size={ICON_SIZE} title={ch.mainSpec} />}
       </div>
       <div className="flex shrink-0 items-center gap-1 min-w-0">
-        <SpecIcon spec={ch.mainSpec} size={ICON_SIZE} />
-        {ch.offSpec && (
-          <>
-            <span className="text-muted-foreground text-xs">/</span>
-            <span className="grayscale contrast-90 inline-flex">
-              <SpecIcon spec={ch.offSpec} size={ICON_SIZE} className="opacity-90" />
-            </span>
-          </>
-        )}
-      </div>
-      <div className="flex items-center gap-1.5 min-w-0">
-        <CharacterDiscordNameHint discordName={ch.guildDiscordDisplayName} className="font-medium text-sm min-w-0">
-          {ch.name}
-        </CharacterDiscordNameHint>
-        {ch.hasBattlenet ? <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} /> : null}
-        <CharacterGearscoreBadge
-          characterId={ch.id}
-          hasBattlenet={ch.hasBattlenet}
-          gearScore={ch.gearScore}
+        <CharacterSpecIconsInline
+          mainSpec={ch.mainSpec}
+          offSpec={ch.offSpec}
+          size={ICON_SIZE}
+          offSpecIconClassName="opacity-90"
         />
       </div>
+      <CharacterNameBadges
+        name={ch.name}
+        discordName={ch.guildDiscordDisplayName}
+        hasBattlenet={ch.hasBattlenet}
+        characterId={ch.id}
+        gearScore={ch.gearScore}
+        nameClassName="font-medium text-sm min-w-0"
+        bnetTitle={tProfile('bnetLinkedBadgeTitle')}
+      />
       {trailingAction != null && <div className="flex items-center shrink-0">{trailingAction}</div>}
     </div>
   );

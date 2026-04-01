@@ -12,6 +12,7 @@ import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
+import { CharacterDiscordPill, CharacterGearscorePill } from '@/components/character-display-parts';
 import {
   RaidOverviewSummaryRows,
   type RaidOverviewSummaryProps,
@@ -638,25 +639,8 @@ export function RaidRosterPlanner({
         {renderSpecIcons(s, true)}
         <span className="font-medium min-w-0 truncate">{s.name}</span>
         <span className="ml-auto flex items-center gap-2">
-          {s.discordName ? (
-            <span
-              className={cn(
-                'rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground max-w-[9rem] truncate',
-                blinkDiscordForIds.has(s.id) && 'rf-blink-discord-conflict'
-              )}
-              title={s.discordName}
-            >
-              {s.discordName}
-            </span>
-          ) : null}
-          {typeof s.gearScore === 'number' ? (
-            <span
-              className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground tabular-nums"
-              title="Gearscore"
-            >
-              GS {s.gearScore}
-            </span>
-          ) : null}
+          <CharacterDiscordPill discordName={s.discordName} blink={blinkDiscordForIds.has(s.id)} />
+          <CharacterGearscorePill gearScore={s.gearScore} />
           {note.length > 0 ? (
             <button
               type="button"
@@ -1382,16 +1366,8 @@ export function RaidRosterPlanner({
                                 </span>
                                 <span className="font-medium truncate">{c.name}</span>
                                 <span className="ml-auto flex items-center gap-2">
-                                  {c.guildDiscordDisplayName ? (
-                                    <span className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground max-w-[9rem] truncate">
-                                      {c.guildDiscordDisplayName}
-                                    </span>
-                                  ) : null}
-                                  {typeof c.gearScore === 'number' ? (
-                                    <span className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground tabular-nums">
-                                      GS {c.gearScore}
-                                    </span>
-                                  ) : null}
+                                  <CharacterDiscordPill discordName={c.guildDiscordDisplayName} />
+                                  <CharacterGearscorePill gearScore={c.gearScore} />
                                 </span>
                               </button>
                             );

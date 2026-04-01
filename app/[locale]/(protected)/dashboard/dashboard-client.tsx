@@ -12,6 +12,7 @@ import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
+import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
 
 export type DashboardGuild = {
   id: string;
@@ -358,12 +359,14 @@ export function DashboardClient({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="flex items-center gap-1 shrink-0">
-                        <SpecIcon spec={c.mainSpec} size={22} />
-                        {c.offSpec ? (
-                          <span className="grayscale contrast-90 inline-flex">
-                            <SpecIcon spec={c.offSpec} size={22} className="opacity-90" />
-                          </span>
-                        ) : null}
+                        <CharacterSpecIconsInline
+                          mainSpec={c.mainSpec}
+                          offSpec={c.offSpec}
+                          size={22}
+                          slashClassName="hidden"
+                          offSpecWrapperClassName="grayscale contrast-90 inline-flex"
+                          offSpecIconClassName="opacity-90"
+                        />
                       </div>
                       <div className="min-w-0">
                         <div className="font-semibold text-foreground truncate" title={c.name}>
@@ -466,11 +469,15 @@ export function DashboardClient({
                           {role ? <RoleIcon role={role} size={18} /> : null}
                           <span className="flex items-center gap-1 shrink-0">
                             {derivedClassId ? <ClassIcon classId={derivedClassId} size={22} title={specForIcon ?? undefined} /> : null}
-                            {specForIcon ? <SpecIcon spec={specForIcon} size={20} /> : null}
-                            {s.characterOffSpec ? (
-                              <span className="grayscale contrast-90 inline-flex">
-                                <SpecIcon spec={s.characterOffSpec} size={20} className="opacity-90" />
-                              </span>
+                            {specForIcon ? (
+                              <CharacterSpecIconsInline
+                                mainSpec={specForIcon}
+                                offSpec={s.characterOffSpec}
+                                size={20}
+                                slashClassName="hidden"
+                                offSpecWrapperClassName="grayscale contrast-90 inline-flex"
+                                offSpecIconClassName="opacity-90"
+                              />
                             ) : null}
                           </span>
                           {s.characterIsMain != null ? (
@@ -481,12 +488,14 @@ export function DashboardClient({
                               sizePx={16}
                             />
                           ) : null}
-                          <span className="font-medium text-foreground truncate">{s.signedCharacterName ?? '–'}</span>
-                          {s.characterHasBattlenet ? <BattlenetLogo size={18} title={t('bnetLinkedBadgeTitle')} /> : null}
-                          <CharacterGearscoreBadge
-                            characterId={s.signedCharacterId ?? ''}
+                          <CharacterNameBadges
+                            name={s.signedCharacterName ?? '–'}
                             hasBattlenet={s.characterHasBattlenet}
+                            characterId={s.signedCharacterId ?? ''}
                             gearScore={s.characterGearScore}
+                            wrapperClassName="contents"
+                            nameClassName="font-medium text-foreground truncate"
+                            bnetTitle={t('bnetLinkedBadgeTitle')}
                           />
                         </button>
                       </td>

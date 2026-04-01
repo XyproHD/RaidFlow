@@ -8,6 +8,7 @@ import { CharacterMainStar } from '@/components/character-main-star';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { RoleIcon } from '@/components/role-icon';
+import { CharacterNameWithDiscordInline } from '@/components/character-display-parts';
 
 export type AnmeldungRow = {
   id: string;
@@ -137,12 +138,11 @@ export function RaidAnmeldungen({
                           ⏱
                         </span>
                       )}
-                      <span className="font-medium text-foreground min-w-0 truncate">
-                        {s.character?.name ?? t('signupAnonymous')}
-                        {discordName ? (
-                          <span className="text-muted-foreground font-normal"> · {discordName}</span>
-                        ) : null}
-                      </span>
+                      <CharacterNameWithDiscordInline
+                        name={s.character?.name ?? t('signupAnonymous')}
+                        discordName={discordName}
+                        className="font-medium text-foreground min-w-0 truncate"
+                      />
                       <span className="text-sm text-muted-foreground shrink-0">{typeLabel(s.type)}</span>
                       {s.leaderMarkedTeilnehmer && (
                         <span className="text-xs rounded bg-primary/15 text-primary px-1.5 py-0.5 shrink-0">
@@ -246,12 +246,11 @@ export function RaidAnmeldungen({
                         ⏱
                       </span>
                     )}
-                    <span className="font-medium text-foreground min-w-0 truncate">
-                      {s.character?.name ?? t('signupAnonymous')}
-                      {discordName ? (
-                        <span className="text-muted-foreground font-normal"> · {discordName}</span>
-                      ) : null}
-                    </span>
+                    <CharacterNameWithDiscordInline
+                      name={s.character?.name ?? t('signupAnonymous')}
+                      discordName={discordName}
+                      className="font-medium text-foreground min-w-0 truncate"
+                    />
                     <span className="text-sm text-muted-foreground shrink-0">{typeLabel(s.type)}</span>
                     {s.leaderMarkedTeilnehmer && (
                       <span className="text-xs rounded bg-primary/15 text-primary px-1.5 py-0.5 shrink-0">

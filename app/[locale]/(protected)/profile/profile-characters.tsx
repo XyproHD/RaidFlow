@@ -8,17 +8,14 @@ import { ClassIcon } from '@/components/class-icon';
 import {
   TBC_CLASSES,
   getSpecDisplayName,
-  getAllSpecDisplayNames,
   getSpecByDisplayName,
 } from '@/lib/wow-tbc-classes';
 import type { BattlenetProfileJson } from '@/lib/battlenet-character-persist';
 import {
   type WowRealm,
 } from '@/lib/wow-classic-realms';
-import { CharacterDiscordNameHint } from '@/components/character-discord-name-hint';
 import { CharacterMainStar } from '@/components/character-main-star';
-import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
-import { BattlenetLogo } from '@/components/battlenet-logo';
+import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
 
 type CharacterRow = {
   id: string;
@@ -38,11 +35,8 @@ type CharacterRow = {
 
 type GuildOption = { id: string; name: string; battlenetRealmId?: string | null };
 
-const allSpecs = getAllSpecDisplayNames();
-
 function getClassIdForSpec(displayName: string): string | null {
-  const s = allSpecs.find((x) => x.displayName === displayName);
-  return s?.classId ?? null;
+  return getSpecByDisplayName(displayName)?.classId ?? null;
 }
 
 function formatRealmLabel(realm: WowRealm): string {
@@ -144,7 +138,7 @@ export function ProfileCharacters({
     setName(c.name);
     setGuildId(c.guildId || '');
     setSaveWithoutGuild(!c.guildId);
-    const parsed = allSpecs.find((s) => s.displayName === c.mainSpec);
+    const parsed = getSpecByDisplayName(c.mainSpec);
     if (parsed) {
       setClassId(parsed.classId);
       setMainSpecId(parsed.specId);
@@ -152,7 +146,7 @@ export function ProfileCharacters({
       setClassId('');
       setMainSpecId('');
     }
-    const offParsed = c.offSpec ? allSpecs.find((s) => s.displayName === c.offSpec) : null;
+    const offParsed = c.offSpec ? getSpecByDisplayName(c.offSpec) : null;
     if (offParsed && offParsed.classId === (parsed?.classId ?? '')) {
       setOffSpecId(offParsed.specId);
     } else {
@@ -846,32 +840,27 @@ export function ProfileCharacters({
                     {cClassId && <ClassIcon classId={cClassId} size={ICON_SIZE} title={c.mainSpec} />}
                   </div>
                   <div className="flex items-center gap-1 min-w-0 sm:col-span-2">
-                    <SpecIcon spec={c.mainSpec} size={ICON_SIZE} />
-                    {c.offSpec && (
-                      <>
-                        <span className="text-muted-foreground text-xs font-medium shrink-0">/</span>
-                        <span className="grayscale contrast-90 inline-flex shrink-0">
-                          <SpecIcon spec={c.offSpec} size={ICON_SIZE} className="opacity-90" />
-                        </span>
-                      </>
-                    )}
-                    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                      <CharacterDiscordNameHint
-                        discordName={c.guildDiscordDisplayName}
-                        className="font-medium text-base min-w-0"
-                      >
-                        {c.name}
-                      </CharacterDiscordNameHint>
-                      {c.hasBattlenet ? <BattlenetLogo size={18} title={t('bnetLinkedBadgeTitle')} /> : null}
-                      <CharacterGearscoreBadge
-                        characterId={c.id}
-                        hasBattlenet={c.hasBattlenet}
-                        gearScore={c.gearScore}
-                        onUpdated={(nextStored) => {
-                          setList((prev) => prev.map((row) => (row.id === c.id ? { ...row, gearScore: nextStored } : row)));
-                        }}
-                      />
-                    </div>
+                    <CharacterSpecIconsInline
+                      mainSpec={c.mainSpec}
+                      offSpec={c.offSpec}
+                      size={ICON_SIZE}
+                      slashClassName="font-medium shrink-0"
+                      offSpecWrapperClassName="shrink-0"
+                      offSpecIconClassName="opacity-90"
+                    />
+                    <CharacterNameBadges
+                      name={c.name}
+                      discordName={c.guildDiscordDisplayName}
+                      hasBattlenet={c.hasBattlenet}
+                      characterId={c.id}
+                      gearScore={c.gearScore}
+                      containerClassName="flex-wrap"
+                      nameClassName="font-medium text-base min-w-0"
+                      bnetTitle={t('bnetLinkedBadgeTitle')}
+                      onGearscoreUpdated={(nextStored) => {
+                        setList((prev) => prev.map((row) => (row.id === c.id ? { ...row, gearScore: nextStored } : row)));
+                      }}
+                    />
                   </div>
                   <span
                     className="text-sm text-muted-foreground truncate min-w-0 hidden sm:block text-center"

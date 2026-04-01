@@ -16,6 +16,7 @@ import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
+import { CharacterNameWithDiscordInline } from '@/components/character-display-parts';
 import { RaidAnmeldungen, type AnmeldungRow } from '@/components/raid-detail/raid-anmeldungen';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
@@ -475,12 +476,11 @@ export function RaidDetailView({
                           ⏱
                         </span>
                       ) : null}
-                      <span className="font-semibold text-foreground truncate">
-                        {myChar.name}
-                        {myDiscord ? (
-                          <span className="text-muted-foreground font-normal"> · {myDiscord}</span>
-                        ) : null}
-                      </span>
+                      <CharacterNameWithDiscordInline
+                        name={myChar.name}
+                        discordName={myDiscord}
+                        className="font-semibold text-foreground truncate"
+                      />
                       {myChar.hasBattlenet ? (
                         <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} />
                       ) : null}

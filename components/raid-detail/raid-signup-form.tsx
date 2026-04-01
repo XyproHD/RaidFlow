@@ -8,6 +8,7 @@ import { SpecIcon } from '@/components/spec-icon';
 import { ClassIcon } from '@/components/class-icon';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
+import { CharacterSpecIconsInline } from '@/components/character-display-parts';
 
 type Char = {
   id: string;
@@ -233,7 +234,7 @@ export function RaidSignupForm({
                     }}
                     className={`inline-flex rounded ${characterId === c.id && signedSpec === c.mainSpec ? 'ring-2 ring-primary/60' : ''}`}
                   >
-                    <SpecIcon spec={c.mainSpec} size={22} />
+                    <CharacterSpecIconsInline mainSpec={c.mainSpec} size={22} slashClassName="hidden" offSpec={null} />
                   </button>
                   {c.offSpec && (
                     <button
@@ -246,7 +247,7 @@ export function RaidSignupForm({
                       }}
                       className={`inline-flex rounded ${characterId === c.id && signedSpec === c.offSpec ? 'ring-2 ring-primary/60' : 'opacity-75'}`}
                     >
-                      <SpecIcon spec={c.offSpec} size={22} />
+                      <CharacterSpecIconsInline mainSpec={c.offSpec} size={22} slashClassName="hidden" offSpec={null} />
                     </button>
                   )}
                 </span>
