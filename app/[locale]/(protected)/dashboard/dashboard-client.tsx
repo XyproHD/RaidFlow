@@ -12,7 +12,6 @@ import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
-import { CharacterNameAndGuildBlock } from '@/components/character-display-parts';
 import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
 
 export type DashboardGuild = {
@@ -354,34 +353,34 @@ export function DashboardClient({
                       sizePx={18}
                     />
                   </div>
-                  <div className="flex shrink-0 items-center justify-center w-10 h-10 rounded-md bg-muted/40">
-                    {c.classId ? <ClassIcon classId={c.classId} size={28} title={c.mainSpec} /> : null}
+                  <div className="flex shrink-0 items-center justify-center w-9 h-9 rounded-md bg-muted/40">
+                    {c.classId ? <ClassIcon classId={c.classId} size={24} title={c.mainSpec} /> : null}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <div className="flex items-center gap-1 shrink-0 pt-0.5">
                         <CharacterSpecIconsInline
                           mainSpec={c.mainSpec}
                           offSpec={c.offSpec}
-                          size={22}
+                          size={24}
                           slashClassName="hidden"
-                          offSpecWrapperClassName="grayscale contrast-90 inline-flex"
                           offSpecIconClassName="opacity-90"
                         />
                       </div>
-                      <div className="min-w-0">
-                        <CharacterNameAndGuildBlock
-                          name={c.name}
-                          guildName={c.guildName}
-                          nameClassName="font-semibold text-foreground truncate"
-                          guildClassName="text-xs text-muted-foreground truncate"
-                        />
-                        <div className="mt-1">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <div className="font-semibold text-foreground truncate" title={c.name}>
+                            {c.name}
+                          </div>
+                          {c.hasBattlenet ? <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} /> : null}
                           <CharacterGearscoreBadge
                             characterId={c.id}
                             hasBattlenet={c.hasBattlenet}
                             gearScore={c.gearScore}
                           />
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate" title={c.guildName ?? undefined}>
+                          {c.guildName ?? '–'}
                         </div>
                       </div>
                     </div>
