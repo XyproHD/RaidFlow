@@ -9,10 +9,13 @@ import { formatRaidTerminLine } from '@/lib/format-raid-termin';
 import { TBC_CLASS_IDS, type TbcRole } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { ClassIcon } from '@/components/class-icon';
-import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
-import { CharacterDiscordPill, CharacterGearscorePill } from '@/components/character-display-parts';
+import {
+  CharacterDiscordPill,
+  CharacterGearscorePill,
+  CharacterSpecIconsInline,
+} from '@/components/character-display-parts';
 import {
   RaidOverviewSummaryRows,
   type RaidOverviewSummaryProps,
@@ -573,7 +576,7 @@ export function RaidRosterPlanner({
           title={spec}
         >
           <span className={cn(gray && 'grayscale opacity-[0.85]')}>
-            <SpecIcon spec={spec} size={22} />
+            <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={22} slashClassName="hidden" />
           </span>
           {redOverlay ? (
             <span
@@ -824,7 +827,7 @@ export function RaidRosterPlanner({
                           const cur = rosterSpecCounts.get(spec) ?? 0;
                           return (
                             <span key={spec} className="inline-flex items-center gap-1.5">
-                              <SpecIcon spec={spec} size={16} />
+                              <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={16} slashClassName="hidden" />
                               <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
                                 {countToMinLabel(cur, need)}
                               </span>
@@ -1355,14 +1358,14 @@ export function RaidRosterPlanner({
                                 />
                                 {c.classId ? <ClassIcon classId={c.classId} size={18} /> : null}
                                 <span className="flex items-center gap-1.5">
-                                  <SpecIcon spec={c.mainSpec} size={18} />
-                                  {c.offSpec ? (
-                                    <SpecIcon
-                                      spec={c.offSpec}
-                                      size={18}
-                                      className="grayscale contrast-200 brightness-75"
-                                    />
-                                  ) : null}
+                                  <CharacterSpecIconsInline
+                                    mainSpec={c.mainSpec}
+                                    offSpec={c.offSpec}
+                                    size={18}
+                                    slashClassName="hidden"
+                                    offSpecWrapperBaseClassName=""
+                                    offSpecIconClassName="grayscale contrast-200 brightness-75"
+                                  />
                                 </span>
                                 <span className="font-medium truncate">{c.name}</span>
                                 <span className="ml-auto flex items-center gap-2">

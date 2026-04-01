@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { ROLE_ICONS } from '@/lib/role-spec-icons';
 import Image from 'next/image';
-import { SpecIcon } from '@/components/spec-icon';
+import { CharacterSpecIconsInline } from '@/components/character-display-parts';
 
 const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
 
@@ -109,7 +109,7 @@ export function RaidOverviewSummaryRows({
                       className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
                       title={spec}
                     >
-                      <SpecIcon spec={spec} size={18} />
+                      <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={18} slashClassName="hidden" />
                       <span className={cn('font-semibold', statusToneClass({ min: need, ...stats }))}>
                         {need}
                       </span>

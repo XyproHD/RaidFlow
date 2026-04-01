@@ -1,7 +1,7 @@
 'use client';
 
-import { SpecIcon } from '@/components/spec-icon';
 import { cn } from '@/lib/utils';
+import { CharacterSpecIconsInline } from '@/components/character-display-parts';
 
 type CharSpecs = {
   mainSpec: string;
@@ -27,7 +27,7 @@ export function SignupSpecIcons({
     signedSpec?.trim() || character?.mainSpec?.trim() || '';
 
   if (!character) {
-    return signed ? <SpecIcon spec={signed} size={22} /> : null;
+    return signed ? <CharacterSpecIconsInline mainSpec={signed} offSpec={null} size={22} slashClassName="hidden" /> : null;
   }
 
   const main = character.mainSpec.trim();
@@ -41,7 +41,7 @@ export function SignupSpecIcons({
     return (
       <span key={spec} className="relative inline-flex shrink-0 rounded-sm">
         <span className={cn(gray && 'grayscale opacity-[0.85]')}>
-          <SpecIcon spec={spec} size={22} />
+          <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={22} slashClassName="hidden" />
         </span>
         {redOverlay ? (
           <span
