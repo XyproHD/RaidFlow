@@ -123,6 +123,10 @@ function toneForFulfillment(ratio: number | null) {
   return 'text-destructive';
 }
 
+function setFromArray(ids: (string | null | undefined)[]) {
+  return new Set(ids.filter((x): x is string => typeof x === 'string' && x.length > 0));
+}
+
 function findDropZone(x: number, y: number): 'roster' | 'reserve' | 'pool' | null {
   const stack = document.elementsFromPoint(x, y);
   for (const el of stack) {
@@ -202,6 +206,7 @@ export function RaidRosterPlanner({
   const [leaderMenuPos, setLeaderMenuPos] = useState<{ top: number; left: number } | null>(null);
 
   const [openNote, setOpenNote] = useState<{ name: string; note: string } | null>(null);
+  const [blinkDiscordForIds, setBlinkDiscordForIds] = useState<Set<string>>(() => new Set());
 
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState('');
@@ -447,6 +452,8 @@ export function RaidRosterPlanner({
             return (other?.userId ?? null) === draggedUserId;
           });
           if (conflictId) {
+            setBlinkDiscordForIds(setFromArray([id, conflictId]));
+            window.setTimeout(() => setBlinkDiscordForIds(new Set()), 900);
             setFlyBack({
               signupId: id,
               fromLeft: e.clientX - sess.offsetX,
@@ -631,7 +638,10 @@ export function RaidRosterPlanner({
         <span className="ml-auto flex items-center gap-2">
           {s.discordName ? (
             <span
-              className="rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground max-w-[9rem] truncate"
+              className={cn(
+                'rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground max-w-[9rem] truncate',
+                blinkDiscordForIds.has(s.id) && 'rf-blink-discord-conflict'
+              )}
               title={s.discordName}
             >
               {s.discordName}
@@ -729,6 +739,19 @@ export function RaidRosterPlanner({
 
   return (
     <div className="space-y-6">
+      <style jsx global>{`
+        @keyframes rfBlinkDiscordConflict {
+          0% { background-color: rgba(239, 68, 68, 0.0); border-color: rgba(239, 68, 68, 0.0); }
+          15% { background-color: rgba(239, 68, 68, 0.25); border-color: rgba(239, 68, 68, 0.65); }
+          35% { background-color: rgba(239, 68, 68, 0.0); border-color: rgba(239, 68, 68, 0.0); }
+          50% { background-color: rgba(239, 68, 68, 0.25); border-color: rgba(239, 68, 68, 0.65); }
+          70% { background-color: rgba(239, 68, 68, 0.0); border-color: rgba(239, 68, 68, 0.0); }
+          100% { background-color: rgba(239, 68, 68, 0.0); border-color: rgba(239, 68, 68, 0.0); }
+        }
+        .rf-blink-discord-conflict {
+          animation: rfBlinkDiscordConflict 0.8s ease-in-out 1;
+        }
+      `}</style>
       <header
         className={cn(
           'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b border-border pb-5 transition-opacity duration-200',
