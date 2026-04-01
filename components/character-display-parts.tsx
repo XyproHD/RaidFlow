@@ -74,6 +74,29 @@ export function CharacterGearscorePill({
   );
 }
 
+export function CharacterNameAndGuildBlock({
+  name,
+  guildName,
+  nameClassName,
+  guildClassName,
+}: {
+  name: string;
+  guildName?: string | null;
+  nameClassName: string;
+  guildClassName: string;
+}) {
+  return (
+    <>
+      <div className={nameClassName} title={name}>
+        {name}
+      </div>
+      <div className={guildClassName} title={guildName ?? undefined}>
+        {guildName ?? '–'}
+      </div>
+    </>
+  );
+}
+
 export function CharacterSpecIconsInline({
   mainSpec,
   offSpec,

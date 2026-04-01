@@ -12,6 +12,7 @@ import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
+import { CharacterNameAndGuildBlock } from '@/components/character-display-parts';
 import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
 
 export type DashboardGuild = {
@@ -369,12 +370,12 @@ export function DashboardClient({
                         />
                       </div>
                       <div className="min-w-0">
-                        <div className="font-semibold text-foreground truncate" title={c.name}>
-                          {c.name}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate" title={c.guildName ?? undefined}>
-                          {c.guildName ?? '–'}
-                        </div>
+                        <CharacterNameAndGuildBlock
+                          name={c.name}
+                          guildName={c.guildName}
+                          nameClassName="font-semibold text-foreground truncate"
+                          guildClassName="text-xs text-muted-foreground truncate"
+                        />
                         <div className="mt-1">
                           <CharacterGearscoreBadge
                             characterId={c.id}
