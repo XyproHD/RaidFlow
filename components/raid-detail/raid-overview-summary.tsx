@@ -4,8 +4,8 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { ROLE_ICONS } from '@/lib/role-spec-icons';
 import Image from 'next/image';
-import { CharacterSpecIconsInline } from '@/components/character-display-parts';
 import { ClassIcon } from '@/components/class-icon';
+import { SpecIcon } from '@/components/spec-icon';
 import { minSpecKeyTitle, parseMinSpecClassKey } from '@/lib/min-spec-keys';
 
 const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
@@ -117,7 +117,7 @@ export function RaidOverviewSummaryRows({
                       {classId ? (
                         <ClassIcon classId={classId} size={18} title={title} />
                       ) : (
-                        <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={18} slashClassName="hidden" />
+                        <SpecIcon spec={spec} size={18} />
                       )}
                       <span className={cn('font-semibold', statusToneClass({ min: need, ...stats }))}>
                         {need}

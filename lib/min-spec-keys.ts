@@ -6,10 +6,15 @@
 import {
   getClassEnglishName,
   getSpecByDisplayName,
+  getSpecDisplayName,
   TBC_CLASS_IDS,
+  getClassSpecs,
 } from '@/lib/wow-tbc-classes';
 
 export const MIN_SPEC_CLASS_PREFIX = 'class:' as const;
+
+/** Spec-Dropdown: nur Klasse, keine feste Spec (Speicher: `class:<id>`). */
+export const MIN_SPEC_CLASS_ONLY = '__class_only__' as const;
 
 export function isMinSpecClassKey(key: string): boolean {
   return key.trim().startsWith(MIN_SPEC_CLASS_PREFIX);
@@ -26,23 +31,60 @@ export function minSpecClassKey(classId: string): string {
   return `${MIN_SPEC_CLASS_PREFIX}${classId}`;
 }
 
-/** Formularzeile (Wizard / Bearbeiten) ↔ Persistenz-Key in `min_specs`. */
-export type MinSpecRowForm =
-  | { kind: 'spec'; spec: string; count: number }
-  | { kind: 'class'; classId: string; count: number };
+/** Formularzeile: Klasse + Spec oder „nur Klasse“ ↔ Persistenz-Key in `min_specs`. */
+export type MinSpecRowForm = {
+  classId: string;
+  /** `MIN_SPEC_CLASS_ONLY` oder Spec-ID (balance, holy, …). */
+  specChoice: typeof MIN_SPEC_CLASS_ONLY | string;
+  count: number;
+  /** Nicht zuordenbarer Key (ältere Daten); beim Speichern unverändert, bis die Zeile geändert wird. */
+  legacyDisplayKey?: string;
+};
+
+export function normalizeMinSpecRow(row: MinSpecRowForm): MinSpecRowForm {
+  if (row.legacyDisplayKey) return row;
+  const specs = getClassSpecs(row.classId);
+  if (row.specChoice !== MIN_SPEC_CLASS_ONLY && !specs.some((s) => s.id === row.specChoice)) {
+    return { ...row, specChoice: MIN_SPEC_CLASS_ONLY };
+  }
+  return row;
+}
 
 export function minSpecRowToStorageKey(r: MinSpecRowForm): string | null {
-  if (r.kind === 'spec') {
-    const s = r.spec.trim();
-    return s.length > 0 ? s : null;
-  }
-  return minSpecClassKey(r.classId);
+  const row = normalizeMinSpecRow(r);
+  if (row.legacyDisplayKey?.trim()) return row.legacyDisplayKey.trim();
+  if (!TBC_CLASS_IDS.includes(row.classId)) return null;
+  if (row.specChoice === MIN_SPEC_CLASS_ONLY) return minSpecClassKey(row.classId);
+  return getSpecDisplayName(row.classId, row.specChoice);
 }
 
 export function minSpecRowFromStorageKey(key: string, count: number): MinSpecRowForm {
-  const cid = parseMinSpecClassKey(key);
-  if (cid) return { kind: 'class', classId: cid, count };
-  return { kind: 'spec', spec: key, count };
+  const t = key.trim();
+  const cid = parseMinSpecClassKey(t);
+  if (cid) return { classId: cid, specChoice: MIN_SPEC_CLASS_ONLY, count };
+  const parsed = getSpecByDisplayName(t);
+  if (parsed) {
+    return { classId: parsed.classId, specChoice: parsed.specId, count };
+  }
+  return {
+    classId: TBC_CLASS_IDS[0] ?? 'warrior',
+    specChoice: MIN_SPEC_CLASS_ONLY,
+    count,
+    legacyDisplayKey: t || undefined,
+  };
+}
+
+/** Für Icons: Klassen-Icon nur bei „nur Klasse“, sonst Spec-Icon. */
+export function minSpecRowUsesClassIconOnly(row: MinSpecRowForm): boolean {
+  if (row.legacyDisplayKey) return true;
+  return row.specChoice === MIN_SPEC_CLASS_ONLY;
+}
+
+/** Spec-Anzeigename für SpecIcon, falls nicht nur Klasse. */
+export function minSpecRowSpecDisplayName(row: MinSpecRowForm): string | null {
+  const rowN = normalizeMinSpecRow(row);
+  if (rowN.legacyDisplayKey || rowN.specChoice === MIN_SPEC_CLASS_ONLY) return null;
+  return getSpecDisplayName(rowN.classId, rowN.specChoice);
 }
 
 export function isValidMinSpecKey(key: string): boolean {
@@ -136,9 +178,6 @@ function typeNorm(v: string) {
 
 export type RoleStatSlice = { normal: number; uncertain: number; reserve: number };
 
-/**
- * Statistik pro Eintrag in `min_specs` (normal / uncertain / reserve), für die Übersicht.
- */
 /** API: `min_specs` aus JSON parsen und Keys validieren (Spec-Anzeigename oder `class:<id>`). */
 export function parseMinSpecsPayload(raw: unknown): Record<string, number> | null {
   if (raw == null) return {};

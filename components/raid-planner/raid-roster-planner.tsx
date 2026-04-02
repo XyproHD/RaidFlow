@@ -19,6 +19,7 @@ import {
   CharacterSignupPunctualityMark,
   CharacterSpecIconsInline,
 } from '@/components/character-display-parts';
+import { SpecIcon } from '@/components/spec-icon';
 import {
   RaidOverviewSummaryRows,
   type RaidOverviewSummaryProps,
@@ -938,7 +939,7 @@ export function RaidRosterPlanner({
                               {classId ? (
                                 <ClassIcon classId={classId} size={16} title={title} />
                               ) : (
-                                <CharacterSpecIconsInline mainSpec={specKey} offSpec={null} size={16} slashClassName="hidden" />
+                                <SpecIcon spec={specKey} size={16} />
                               )}
                               <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
                                 {countToMinLabel(cur, need)}

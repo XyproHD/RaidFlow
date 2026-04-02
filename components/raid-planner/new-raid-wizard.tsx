@@ -16,16 +16,15 @@ import {
 } from '@/lib/raid-availability';
 import {
   countFromSpecDisplayCounts,
+  MIN_SPEC_CLASS_ONLY,
   minSpecRowFromStorageKey,
+  minSpecRowSpecDisplayName,
   minSpecRowToStorageKey,
+  minSpecRowUsesClassIconOnly,
+  normalizeMinSpecRow,
   type MinSpecRowForm,
 } from '@/lib/min-spec-keys';
-import {
-  getAllSpecDisplayNames,
-  getSpecByDisplayName,
-  TBC_CLASS_IDS,
-  type TbcRole,
-} from '@/lib/wow-tbc-classes';
+import { getSpecByDisplayName, TBC_CLASS_IDS, type TbcRole } from '@/lib/wow-tbc-classes';
 import {
   addMinutes,
   expandSlotIndicesForward,
@@ -40,8 +39,8 @@ import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
 import { CharacterSpecIconsInline } from '@/components/character-display-parts';
+import { MinSpecRequirementRow } from '@/components/raid-planner/min-spec-requirement-row';
 
-const ALL_SPECS = getAllSpecDisplayNames();
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
 /** i18n keys under `raidPlanner` für Klassen-Filter-Buttons */
 const RAID_PLANNER_CLASS_I18N = {
@@ -645,14 +644,11 @@ export function NewRaidWizard({
   const addMinSpecRow = () => {
     setMinSpecRows((rows) => [
       ...rows,
-      { kind: 'spec', spec: ALL_SPECS[0]?.displayName ?? '', count: 1 },
-    ]);
-  };
-
-  const addMinClassRow = () => {
-    setMinSpecRows((rows) => [
-      ...rows,
-      { kind: 'class', classId: TBC_CLASS_IDS[0] ?? 'warrior', count: 1 },
+      {
+        classId: TBC_CLASS_IDS[0] ?? 'warrior',
+        specChoice: MIN_SPEC_CLASS_ONLY,
+        count: 1,
+      },
     ]);
   };
 
@@ -1127,115 +1123,19 @@ export function NewRaidWizard({
                 >
                   {t('addMinSpec')}
                 </button>
-                <button
-                  type="button"
-                  className="text-sm text-primary hover:underline"
-                  onClick={addMinClassRow}
-                >
-                  {t('addMinClass')}
-                </button>
               </div>
               {minSpecRows.map((row, idx) => (
-                <div
+                <MinSpecRequirementRow
                   key={idx}
-                  className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/15 px-3 py-2"
-                >
-                  <select
-                    className="min-w-[7.5rem] rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                    value={row.kind}
-                    onChange={(e) => {
-                      const kind = e.target.value === 'class' ? 'class' : 'spec';
-                      setMinSpecRows((rows) =>
-                        rows.map((r, i) => {
-                          if (i !== idx) return r;
-                          if (kind === 'class') {
-                            return {
-                              kind: 'class',
-                              classId: TBC_CLASS_IDS[0] ?? 'warrior',
-                              count: r.count,
-                            };
-                          }
-                          return {
-                            kind: 'spec',
-                            spec: ALL_SPECS[0]?.displayName ?? '',
-                            count: r.count,
-                          };
-                        })
-                      );
-                    }}
-                    aria-label={t('minSpecKind')}
-                  >
-                    <option value="spec">{t('minSpecModeSpec')}</option>
-                    <option value="class">{t('minSpecModeClass')}</option>
-                  </select>
-                  {row.kind === 'spec' ? (
-                    <>
-                      <SpecIcon spec={row.spec} size={28} />
-                      <select
-                        className="flex-1 min-w-[180px] rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                        value={row.spec}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setMinSpecRows((rows) =>
-                            rows.map((r, i) =>
-                              i === idx && r.kind === 'spec' ? { ...r, spec: v } : r
-                            )
-                          );
-                        }}
-                        aria-label={t('minSpecs')}
-                      >
-                        {ALL_SPECS.map((s) => (
-                          <option key={s.displayName} value={s.displayName}>
-                            {s.displayName}
-                          </option>
-                        ))}
-                      </select>
-                    </>
-                  ) : (
-                    <>
-                      <ClassIcon classId={row.classId} size={28} />
-                      <select
-                        className="flex-1 min-w-[180px] rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                        value={row.classId}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setMinSpecRows((rows) =>
-                            rows.map((r, i) =>
-                              i === idx && r.kind === 'class' ? { ...r, classId: v } : r
-                            )
-                          );
-                        }}
-                        aria-label={t('minSpecClassPick')}
-                      >
-                        {TBC_CLASS_IDS.map((cid) => (
-                          <option key={cid} value={cid}>
-                            {tProfile(RAID_PLANNER_CLASS_I18N[cid as keyof typeof RAID_PLANNER_CLASS_I18N])}
-                          </option>
-                        ))}
-                      </select>
-                    </>
-                  )}
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    className="w-16 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-center"
-                    value={row.count}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      setMinSpecRows((rows) =>
-                        rows.map((r, i) => (i === idx ? { ...r, count: n } : r))
-                      );
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="text-sm text-destructive hover:underline shrink-0"
-                    onClick={() => setMinSpecRows((rows) => rows.filter((_, i) => i !== idx))}
-                  >
-                    {t('remove')}
-                  </button>
-                </div>
+                  row={row}
+                  onChange={(next) =>
+                    setMinSpecRows((rows) => rows.map((r, i) => (i === idx ? next : r)))
+                  }
+                  onRemove={() => setMinSpecRows((rows) => rows.filter((_, i) => i !== idx))}
+                  removeLabel={t('remove')}
+                  t={t}
+                  tProfile={tProfile}
+                />
               ))}
             </div>
           </section>
@@ -1403,12 +1303,21 @@ export function NewRaidWizard({
               const key = minSpecRowToStorageKey(row);
               if (!key || row.count <= 0) return null;
               const cur = countFromSpecDisplayCounts(key, liveStats.specCounts);
+              const rowN = normalizeMinSpecRow(row);
+              const specLabel = minSpecRowSpecDisplayName(rowN);
+              const title =
+                rowN.legacyDisplayKey ??
+                (minSpecRowUsesClassIconOnly(rowN)
+                  ? tProfile(RAID_PLANNER_CLASS_I18N[rowN.classId as keyof typeof RAID_PLANNER_CLASS_I18N])
+                  : specLabel ?? key);
               return (
-                <span key={`${key}-${idx}`} className="flex items-center gap-1.5" title={key}>
-                  {row.kind === 'spec' ? (
-                    <SpecIcon spec={row.spec} size={24} />
+                <span key={`${key}-${idx}`} className="flex items-center gap-1.5" title={title}>
+                  {rowN.legacyDisplayKey ? (
+                    <ClassIcon classId={rowN.classId} size={24} title={rowN.legacyDisplayKey} />
+                  ) : minSpecRowUsesClassIconOnly(rowN) ? (
+                    <ClassIcon classId={rowN.classId} size={24} />
                   ) : (
-                    <ClassIcon classId={row.classId} size={24} />
+                    <SpecIcon spec={specLabel!} size={24} />
                   )}
                   <span className="tabular-nums text-lg font-semibold">{cur}</span>
                   <span className="text-muted-foreground tabular-nums">/</span>

@@ -7,19 +7,15 @@ import { cn } from '@/lib/utils';
 import { addMinutes } from '@/lib/raid-planner-time';
 import { formatCompositionGaps } from '@/lib/raid-composition-summary';
 import { computeTwoGroupsPossible } from '@/lib/raid-two-groups';
+import { getSpecByDisplayName, TBC_CLASS_IDS, type TbcRole } from '@/lib/wow-tbc-classes';
 import {
-  getAllSpecDisplayNames,
-  getSpecByDisplayName,
-  TBC_CLASS_IDS,
-  type TbcRole,
-} from '@/lib/wow-tbc-classes';
-import {
+  MIN_SPEC_CLASS_ONLY,
   minSpecRowFromStorageKey,
   minSpecRowToStorageKey,
   type MinSpecRowForm,
 } from '@/lib/min-spec-keys';
 import { ClassIcon } from '@/components/class-icon';
-import { SpecIcon } from '@/components/spec-icon';
+import { MinSpecRequirementRow } from '@/components/raid-planner/min-spec-requirement-row';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterSpecIconsInline } from '@/components/character-display-parts';
@@ -109,19 +105,6 @@ export type RaidEditSerialized = {
 type WeekFocusFilter = 'both' | 'weekday' | 'weekend';
 
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
-const ALL_SPECS = getAllSpecDisplayNames();
-const RAID_PLANNER_CLASS_I18N = {
-  druid: 'classDruid',
-  hunter: 'classHunter',
-  mage: 'classMage',
-  paladin: 'classPaladin',
-  priest: 'classPriest',
-  rogue: 'classRogue',
-  shaman: 'classShaman',
-  warlock: 'classWarlock',
-  warrior: 'classWarrior',
-} as const;
-
 function toDatetimeLocalValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -716,111 +699,32 @@ export function RaidEditPanel({
               onClick={() =>
                 setMinSpecRows([
                   ...minSpecRows,
-                  { kind: 'spec', spec: ALL_SPECS[0]?.displayName ?? '', count: 1 },
+                  {
+                    classId: TBC_CLASS_IDS[0] ?? 'warrior',
+                    specChoice: MIN_SPEC_CLASS_ONLY,
+                    count: 1,
+                  },
                 ])
               }
             >
               {tPlanner('addMinSpec')}
             </button>
-            <button
-              type="button"
-              className="text-sm text-primary"
-              onClick={() =>
-                setMinSpecRows([
-                  ...minSpecRows,
-                  { kind: 'class', classId: TBC_CLASS_IDS[0] ?? 'warrior', count: 1 },
-                ])
-              }
-            >
-              {tPlanner('addMinClass')}
-            </button>
           </div>
           {minSpecRows.map((row, i) => (
-            <div key={i} className="flex flex-wrap gap-2 items-center">
-              <select
-                className="min-w-[7rem] rounded-md border border-input bg-background px-2 py-1 text-sm"
-                value={row.kind}
-                onChange={(e) => {
-                  const kind = e.target.value === 'class' ? 'class' : 'spec';
-                  setMinSpecRows((rows) =>
-                    rows.map((r, j) => {
-                      if (j !== i) return r;
-                      if (kind === 'class') {
-                        return {
-                          kind: 'class',
-                          classId: TBC_CLASS_IDS[0] ?? 'warrior',
-                          count: r.count,
-                        };
-                      }
-                      return {
-                        kind: 'spec',
-                        spec: ALL_SPECS[0]?.displayName ?? '',
-                        count: r.count,
-                      };
-                    })
-                  );
-                }}
-                aria-label={tPlanner('minSpecKind')}
-              >
-                <option value="spec">{tPlanner('minSpecModeSpec')}</option>
-                <option value="class">{tPlanner('minSpecModeClass')}</option>
-              </select>
-              {row.kind === 'spec' ? (
-                <select
-                  className="flex-1 min-w-[160px] rounded-md border border-input bg-background px-2 py-1 text-sm"
-                  value={row.spec}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setMinSpecRows((rows) =>
-                      rows.map((r, j) => (j === i && r.kind === 'spec' ? { ...r, spec: v } : r))
-                    );
-                  }}
-                  aria-label={tPlanner('minSpecs')}
-                >
-                  {ALL_SPECS.map((s) => (
-                    <option key={s.displayName} value={s.displayName}>
-                      {s.displayName}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <select
-                  className="flex-1 min-w-[160px] rounded-md border border-input bg-background px-2 py-1 text-sm"
-                  value={row.classId}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setMinSpecRows((rows) =>
-                      rows.map((r, j) => (j === i && r.kind === 'class' ? { ...r, classId: v } : r))
-                    );
-                  }}
-                  aria-label={tPlanner('minSpecClassPick')}
-                >
-                  {TBC_CLASS_IDS.map((cid) => (
-                    <option key={cid} value={cid}>
-                      {tProfile(RAID_PLANNER_CLASS_I18N[cid as keyof typeof RAID_PLANNER_CLASS_I18N])}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <input
-                type="number"
-                min={0}
-                className="w-20 rounded-md border border-input bg-background px-2 py-1 text-sm"
-                value={row.count}
-                onChange={(e) => {
-                  const next = [...minSpecRows];
-                  next[i] = { ...next[i], count: Number(e.target.value) };
-                  setMinSpecRows(next);
-                }}
-              />
-              <button
-                type="button"
-                className="text-xs text-destructive"
-                onClick={() => setMinSpecRows(minSpecRows.filter((_, j) => j !== i))}
-              >
-                ×
-              </button>
-            </div>
+            <MinSpecRequirementRow
+              key={i}
+              row={row}
+              onChange={(next) =>
+                setMinSpecRows((rows) => rows.map((r, j) => (j === i ? next : r)))
+              }
+              onRemove={() => setMinSpecRows(minSpecRows.filter((_, j) => j !== i))}
+              removeLabel="×"
+              countMin={0}
+              countMax={99}
+              t={tPlanner}
+              tProfile={tProfile}
+              variant="edit"
+            />
           ))}
         </div>
 

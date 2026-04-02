@@ -125,6 +125,11 @@ export function getSpecDisplayName(classId: string, specId: string): string {
   return `${spec.name} ${c}`;
 }
 
+/** Specs einer Klasse (für Mindestbesetzung: Klasse → Spec-Dropdown). */
+export function getClassSpecs(classId: string): TbcSpec[] {
+  return TBC_CLASSES.find((c) => c.id === classId)?.specs ?? [];
+}
+
 export function getSpecByDisplayName(displayName: string): { classId: string; specId: string } | null {
   for (const cls of TBC_CLASSES) {
     const spec = cls.specs.find((s) => {
