@@ -23,6 +23,7 @@ import {
 import {
   addMinutes,
   expandSlotIndicesForward,
+  localDateTimeToNearestRaidBaseAndSlotIndex,
   raidSlotToLocalDate,
   slotStringsForIndices,
 } from '@/lib/raid-planner-time';
@@ -180,6 +181,15 @@ export function NewRaidWizard({
   const router = useRouter();
 
   const [step, setStep] = useState<1 | 2>(1);
+  /** Schritt 2 über „🔎 Verfügbarkeit“: Übernehmen/Abbrechen statt Speichern; Abbrechen stellt Snapshot wieder her. */
+  const [step2Entry, setStep2Entry] = useState<'normal' | 'fromTermin'>('normal');
+  const [scheduleSnapshot, setScheduleSnapshot] = useState<null | {
+    scheduledDate: string;
+    rangeStartIdx: number;
+    rangeEndIdx: number;
+    pickingEnd: boolean;
+    signupDatetimeLocal: string;
+  }>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -619,6 +629,54 @@ export function NewRaidWizard({
     }
   };
 
+  const handleRaidStartDatetimeChange = (s: string) => {
+    const d = parseDatetimeLocal(s);
+    const { baseYmd, slotIndex } = localDateTimeToNearestRaidBaseAndSlotIndex(d);
+    setScheduledDate(baseYmd);
+    const N = SLOTS.length;
+    const oldIndices = expandSlotIndicesForward(rangeStartIdx, rangeEndIdx);
+    const len = Math.max(1, oldIndices.length);
+    let endIdx = slotIndex;
+    for (let k = 1; k < len; k++) {
+      endIdx = (endIdx + 1) % N;
+    }
+    setRangeStartIdx(slotIndex);
+    setRangeEndIdx(endIdx);
+    setPickingEnd(false);
+  };
+
+  const openAvailabilityPlanner = () => {
+    setScheduleSnapshot({
+      scheduledDate,
+      rangeStartIdx,
+      rangeEndIdx,
+      pickingEnd,
+      signupDatetimeLocal,
+    });
+    setStep2Entry('fromTermin');
+    setPickingEnd(false);
+    setStep(2);
+  };
+
+  const cancelAvailabilityPlanner = () => {
+    if (scheduleSnapshot) {
+      setScheduledDate(scheduleSnapshot.scheduledDate);
+      setRangeStartIdx(scheduleSnapshot.rangeStartIdx);
+      setRangeEndIdx(scheduleSnapshot.rangeEndIdx);
+      setPickingEnd(scheduleSnapshot.pickingEnd);
+      setSignupDatetimeLocal(scheduleSnapshot.signupDatetimeLocal);
+    }
+    setScheduleSnapshot(null);
+    setStep2Entry('normal');
+    setStep(1);
+  };
+
+  const applyAvailabilityPlanner = () => {
+    setScheduleSnapshot(null);
+    setStep2Entry('normal');
+    setStep(1);
+  };
+
   const submit = async () => {
     setSaveError(null);
     setSaving(true);
@@ -954,6 +1012,44 @@ export function NewRaidWizard({
 
           <section className="rounded-xl border border-border bg-card p-4 md:p-6 space-y-4">
             <h2 className="text-lg font-semibold text-foreground border-b border-border pb-2">
+              {t('sectionTermin')}
+            </h2>
+            <fieldset disabled={!editable} className="space-y-4 disabled:opacity-70">
+              <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-md">
+                  <span className="text-muted-foreground">{t('scheduledDate')}</span>
+                  <input
+                    type="datetime-local"
+                    className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
+                    value={toDatetimeLocalValue(scheduledAt)}
+                    onChange={(e) => handleRaidStartDatetimeChange(e.target.value)}
+                  />
+                </label>
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-md">
+                  <span className="text-muted-foreground">{t('signupUntilCombined')}</span>
+                  <input
+                    type="datetime-local"
+                    className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
+                    value={signupDatetimeLocal}
+                    onChange={(e) => setSignupDatetimeLocal(e.target.value)}
+                  />
+                </label>
+                <div className="flex shrink-0 pb-0.5">
+                  <button
+                    type="button"
+                    className="rounded-md border border-border bg-muted/30 px-4 py-2 text-sm font-medium hover:bg-muted/50"
+                    onClick={openAvailabilityPlanner}
+                  >
+                    {t('openAvailabilityPlanner')}
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">{t('raidDateHint')}</p>
+            </fieldset>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 md:p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-foreground border-b border-border pb-2">
               {t('sectionMinimum')}
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -1077,8 +1173,6 @@ export function NewRaidWizard({
             </label>
           </section>
 
-          <p className="text-sm text-muted-foreground">{t('raidDateHint')}</p>
-
           {isEdit ? (
             <div className="rounded-xl border border-border bg-muted/15 p-4 text-sm text-muted-foreground">
               <span className="font-medium text-foreground">ℹ️</span>{' '}
@@ -1126,6 +1220,7 @@ export function NewRaidWizard({
                 }
                 setSaveError(null);
                 setPickingEnd(false);
+                setStep2Entry('normal');
                 setStep(2);
               }}
             >
@@ -1162,26 +1257,11 @@ export function NewRaidWizard({
 
       {step === 2 && (
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 sm:items-end max-w-2xl">
-            <label className="flex flex-col gap-1 text-sm min-w-0">
-              <span className="text-muted-foreground">{t('scheduledDate')}</span>
-              <input
-                type="date"
-                className="rounded-md border border-input bg-background px-3 py-2"
-                value={scheduledDate}
-                onChange={(e) => setScheduledDate(e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm min-w-0">
-              <span className="text-muted-foreground">{t('signupUntilCombined')}</span>
-              <input
-                type="datetime-local"
-                className="rounded-md border border-input bg-background px-3 py-2"
-                value={signupDatetimeLocal}
-                onChange={(e) => setSignupDatetimeLocal(e.target.value)}
-              />
-            </label>
-          </div>
+          {step2Entry === 'normal' ? (
+            <p className="text-sm text-muted-foreground max-w-2xl">{t('step2ScheduleHint')}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground max-w-2xl">{t('step2FromTerminHint')}</p>
+          )}
 
           <div
             className={cn(
@@ -1523,41 +1603,62 @@ export function NewRaidWizard({
           ) : null}
 
           <div className="flex flex-wrap gap-3 pt-2">
-            <button
-              type="button"
-              className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
-              onClick={() => setStep(1)}
-            >
-              {t('back')}
-            </button>
-            <button
-              type="button"
-              disabled={saving || (requiresReset && !resetAck) || !editable}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-              onClick={submit}
-            >
-              {saving ? t('saving') : t('saveRaid')}
-            </button>
-            {isEdit ? (
+            {step2Entry === 'fromTermin' ? (
               <>
                 <button
                   type="button"
-                  disabled={saving || !editable}
-                  className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  onClick={() => void doCancelRaid()}
+                  className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+                  onClick={cancelAvailabilityPlanner}
                 >
-                  🚫 {tEdit('cancelRaid')}
+                  {t('cancelFromAvailability')}
                 </button>
                 <button
                   type="button"
-                  disabled={saving}
-                  className="rounded-md border border-destructive bg-destructive/10 text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  onClick={() => void doDeleteRaid()}
+                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                  onClick={applyAvailabilityPlanner}
                 >
-                  🗑️ {tDetail('menuDeleteRaid')}
+                  {t('applyFromAvailability')}
                 </button>
               </>
-            ) : null}
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+                  onClick={() => setStep(1)}
+                >
+                  {t('back')}
+                </button>
+                <button
+                  type="button"
+                  disabled={saving || (requiresReset && !resetAck) || !editable}
+                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  onClick={submit}
+                >
+                  {saving ? t('saving') : t('saveRaid')}
+                </button>
+                {isEdit ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={saving || !editable}
+                      className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
+                      onClick={() => void doCancelRaid()}
+                    >
+                      🚫 {tEdit('cancelRaid')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      className="rounded-md border border-destructive bg-destructive/10 text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
+                      onClick={() => void doDeleteRaid()}
+                    >
+                      🗑️ {tDetail('menuDeleteRaid')}
+                    </button>
+                  </>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       )}

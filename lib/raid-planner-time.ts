@@ -43,3 +43,28 @@ export function slotStringsForIndices(indices: number[]): string[] {
   const slots = TIME_SLOTS_30MIN as readonly string[];
   return indices.map((i) => slots[i] ?? '19:00');
 }
+
+/**
+ * Findet die nächstliegende (baseYmd, Slot-Index)-Kombination zu einem lokalen DateTime,
+ * konsistent mit {@link raidSlotToLocalDate} (Raid-Abend 16:00–03:00).
+ */
+export function localDateTimeToNearestRaidBaseAndSlotIndex(d: Date): { baseYmd: string; slotIndex: number } {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const slots = TIME_SLOTS_30MIN as readonly string[];
+  let bestDiff = Infinity;
+  let best: { baseYmd: string; slotIndex: number } = { baseYmd: '', slotIndex: 0 };
+  for (let dayDelta = -2; dayDelta <= 2; dayDelta++) {
+    const t = new Date(d.getFullYear(), d.getMonth(), d.getDate() + dayDelta);
+    const baseYmd = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i]!;
+      const dt = raidSlotToLocalDate(baseYmd, slot);
+      const diff = Math.abs(dt.getTime() - d.getTime());
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        best = { baseYmd, slotIndex: i };
+      }
+    }
+  }
+  return best;
+}
