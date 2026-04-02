@@ -2,7 +2,7 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getGuildsForUser } from '@/lib/user-guilds';
+import { getGuildsForUserCached } from '@/lib/user-guilds';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { expandRaidTimeSlot } from '@/lib/profile-constants';
 import { characterToClientDto } from '@/lib/character-api-dto';
@@ -44,7 +44,7 @@ export default async function ProfilePage() {
       );
     }
 
-    const guilds = await getGuildsForUser(userId, discordId ?? null);
+    const guilds = await getGuildsForUserCached(userId, discordId ?? null);
 
     // Charakter-Gilden-Zuordnung bereinigen: Wenn User nicht mehr in der Gilde ist / keine Rechte hat,
     // wird guildId entfernt (und isMain zurückgesetzt). Neue Zuweisung erfolgt über "Bearbeiten".

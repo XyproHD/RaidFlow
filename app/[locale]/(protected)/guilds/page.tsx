@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { getGuildsForUser } from '@/lib/user-guilds';
+import { getGuildsForUserCached } from '@/lib/user-guilds';
 import { GuildManagementContent } from './guild-management-content';
 
 type SearchParams = Promise<{ guild?: string }>;
@@ -26,7 +26,7 @@ export default async function GuildsPage(props: {
     redirect('/');
   }
 
-  const allGuilds = await getGuildsForUser(userId, discordId ?? null);
+  const allGuilds = await getGuildsForUserCached(userId, discordId ?? null);
   const guildmasterGuilds = allGuilds.filter((g) => g.role === 'guildmaster');
 
   if (guildmasterGuilds.length === 0) {

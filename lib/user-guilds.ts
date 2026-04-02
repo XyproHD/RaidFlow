@@ -6,6 +6,7 @@
  * (`POST /api/bot/sync-member`).
  */
 
+import { cache } from 'react';
 import { prisma } from '@/lib/prisma';
 import { getAppConfig, filterGuildIdsByConfig } from '@/lib/app-config';
 import { resolveDiscordGuildMembership } from '@/lib/resolve-discord-guild-membership';
@@ -237,6 +238,12 @@ export async function getGuildsForUser(
 
   return result;
 }
+
+/**
+ * Request-lokale Deduplizierung (Next/React cache): Layout + Page rufen getGuildsForUser oft mehrfach auf.
+ * Diese Hülle verhindert doppelte Discord/DB-Arbeit innerhalb desselben Requests.
+ */
+export const getGuildsForUserCached = cache(getGuildsForUser);
 
 /**
  * Raids aus den Gilden des Users, auf die er Zugriff hat (RaidFlow-Raider bzw. Raidgruppe bei Einschränkung).
