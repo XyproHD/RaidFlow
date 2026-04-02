@@ -14,9 +14,12 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // Optimierung: nur die benötigten Felder laden (keine komplette Completion-Liste) und in-memory aggregieren.
+  // Relation-GroupBy (guildId/dungeonId über raid) ist in Prisma nicht trivial; daher: schlanker Select + Aggregation.
   const completions = await prisma.rfRaidCompletion.findMany({
     where: { userId },
-    include: {
+    select: {
+      participationCounter: true,
       raid: {
         select: {
           guildId: true,
@@ -28,14 +31,16 @@ export async function GET() {
     },
   });
 
-  const byKey = new Map<string, { guildId: string; guildName: string; dungeonId: string; dungeonName: string; participationCount: number }>();
+  const byKey = new Map<
+    string,
+    { guildId: string; guildName: string; dungeonId: string; dungeonName: string; participationCount: number }
+  >();
   for (const c of completions) {
     const key = `${c.raid.guildId}:${c.raid.dungeonId}`;
     const current = byKey.get(key);
     const add = Number(c.participationCounter);
-    if (current) {
-      current.participationCount += add;
-    } else {
+    if (current) current.participationCount += add;
+    else
       byKey.set(key, {
         guildId: c.raid.guildId,
         guildName: c.raid.guild.name,
@@ -43,7 +48,6 @@ export async function GET() {
         dungeonName: c.raid.dungeon.name,
         participationCount: add,
       });
-    }
   }
 
   const stats = Array.from(byKey.values()).sort(

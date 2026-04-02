@@ -2,7 +2,7 @@ import { getTranslations } from 'next-intl/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { getGuildsForUser, getRaidsForUser } from '@/lib/user-guilds';
+import { getGuildsForUserCached, getRaidsForUser } from '@/lib/user-guilds';
 import { getLocale } from 'next-intl/server';
 import { prisma } from '@/lib/prisma';
 import {
@@ -23,10 +23,10 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
     const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
     const discordId = (session as { discordId?: string } | null)?.discordId;
 
-    let guilds: Awaited<ReturnType<typeof getGuildsForUser>> = [];
+    let guilds: Awaited<ReturnType<typeof getGuildsForUserCached>> = [];
     let raids: Awaited<ReturnType<typeof getRaidsForUser>> = [];
     try {
-      guilds = userId ? await getGuildsForUser(userId, discordId ?? null) : [];
+      guilds = userId ? await getGuildsForUserCached(userId, discordId ?? null) : [];
       raids = await getRaidsForUser(guilds);
     } catch (e) {
       console.error('[Dashboard]', e);
@@ -92,28 +92,31 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
 
     const chars = userId ? await findManyRfCharactersForDashboard(userId) : [];
 
-    const completionRows = userId
-      ? await prisma.rfRaidCompletion.findMany({
-          where: { userId },
-          select: { characterId: true },
-        })
-      : [];
-    const lootRows = userId
-      ? await prisma.rfLoot.findMany({
-          where: { userId },
-          select: { characterId: true },
-        })
-      : [];
-    const completionCountByChar = new Map<string, number>();
-    for (const r of completionRows) {
-      if (!r.characterId) continue;
-      completionCountByChar.set(r.characterId, (completionCountByChar.get(r.characterId) ?? 0) + 1);
-    }
-    const lootCountByChar = new Map<string, number>();
-    for (const r of lootRows) {
-      if (!r.characterId) continue;
-      lootCountByChar.set(r.characterId, (lootCountByChar.get(r.characterId) ?? 0) + 1);
-    }
+    const [completionCounts, lootCounts] = userId
+      ? await Promise.all([
+          prisma.rfRaidCompletion.groupBy({
+            by: ['characterId'],
+            where: { userId, characterId: { not: null } },
+            _count: { _all: true },
+          }),
+          prisma.rfLoot.groupBy({
+            by: ['characterId'],
+            where: { userId, characterId: { not: null } },
+            _count: { _all: true },
+          }),
+        ])
+      : [[], []];
+
+    const completionCountByChar = new Map<string, number>(
+      completionCounts
+        .filter((r) => typeof r.characterId === 'string' && r.characterId.length > 0)
+        .map((r) => [r.characterId as string, r._count._all])
+    );
+    const lootCountByChar = new Map<string, number>(
+      lootCounts
+        .filter((r) => typeof r.characterId === 'string' && r.characterId.length > 0)
+        .map((r) => [r.characterId as string, r._count._all])
+    );
 
     const dashboardCharacters: DashboardCharacter[] = chars.map((c) => ({
       id: c.id,

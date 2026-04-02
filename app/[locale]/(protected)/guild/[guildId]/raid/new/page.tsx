@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { getGuildsForUser } from '@/lib/user-guilds';
+import { getGuildsForUserCached } from '@/lib/user-guilds';
 import { NewRaidWizard } from '@/components/raid-planner/new-raid-wizard';
 
 /**
@@ -26,7 +26,7 @@ export default async function NewRaidPage({
     redirect(`/${locale}`);
   }
 
-  const guilds = await getGuildsForUser(userId, discordId ?? null);
+  const guilds = await getGuildsForUserCached(userId, discordId ?? null);
   const g = guilds.find((x) => x.id === guildId);
   if (!g || (g.role !== 'raidleader' && g.role !== 'guildmaster')) {
     return (

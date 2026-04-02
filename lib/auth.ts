@@ -30,7 +30,13 @@ export const authOptions: NextAuthOptions = {
       const discordIdFromProfile = profile && typeof (profile as { id?: string }).id === 'string' ? (profile as { id: string }).id : null;
       const discordId = discordIdFromProfile ?? (typeof t.sub === 'string' ? t.sub : null);
 
-      // Immer DB-User ermitteln: beim ersten Login (account/profile) oder Fallback per token.sub (jeder Request)
+      // Wichtig für Serverless/Pooler: nicht bei JEDEM Request in die DB schreiben.
+      // Wenn wir bereits eine DB-UID im Token haben und es kein echter Login/Refresh ist, skippen wir DB-Zugriffe.
+      if (t.uid && t.discordId && !account && !profile) {
+        return token;
+      }
+
+      // DB-User ermitteln: beim ersten Login (account/profile) oder wenn uid fehlt.
       if (discordId) {
         const withDiscordTok = token as { discordAccessToken?: string };
         if (account?.access_token) {
@@ -38,11 +44,15 @@ export const authOptions: NextAuthOptions = {
         }
         // Beim JWT-Refresh ist account leer — Feld bleibt aus dem dekodierten Token erhalten.
         try {
-          const dbUser = await prisma.rfUser.upsert({
-            where: { discordId },
-            create: { discordId },
-            update: { updatedAt: new Date() },
-          });
+          const dbUser =
+            account || profile || !t.uid
+              ? await prisma.rfUser.upsert({
+                  where: { discordId },
+                  create: { discordId },
+                  update: { updatedAt: new Date() },
+                })
+              : // Fallback: nur lesen, wenn uid bereits existiert (keine Schreiblast im Normalbetrieb).
+                await prisma.rfUser.findUniqueOrThrow({ where: { discordId } });
           // Run heavy BNet updates only on actual login refreshes.
           if (account || profile) {
             void refreshAllBattlenetCharactersForUser(dbUser.id);

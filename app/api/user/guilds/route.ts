@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { getGuildsForUser } from '@/lib/user-guilds';
+import { getGuildsForUserCached } from '@/lib/user-guilds';
 
 /**
  * GET /api/user/guilds
@@ -19,7 +19,7 @@ export async function GET() {
   }
 
   try {
-    const guilds = await getGuildsForUser(userId, discordId ?? null);
+    const guilds = await getGuildsForUserCached(userId, discordId ?? null);
     return NextResponse.json({ guilds });
   } catch (e) {
     console.error('[API user/guilds]', e);

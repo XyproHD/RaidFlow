@@ -11,8 +11,8 @@ import { prisma } from '@/lib/prisma';
 import { getAppConfig, OWNER_DISCORD_ID } from '@/lib/app-config';
 import { getBotInviteUrl } from '@/lib/bot-invite';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { getGuildsForUser } from '@/lib/user-guilds';
 import type { UserGuildInfo } from '@/lib/user-guilds';
+import { getGuildsForUserCached } from '@/lib/user-guilds';
 import '../globals.css';
 
 export const metadata: Metadata = {
@@ -61,7 +61,7 @@ export default async function LocaleLayout({
         console.error('[Layout] rfUserGuild.findFirst (guildmaster):', e);
       }
       try {
-        userGuilds = await getGuildsForUser(userId, discordId ?? null);
+        userGuilds = await getGuildsForUserCached(userId, discordId ?? null);
       } catch (e) {
         console.error('[Layout] getGuildsForUser:', e);
       }

@@ -19,6 +19,10 @@ export async function getEffectiveUserId(session: SessionLike): Promise<string |
 
   try {
     if (candidateId) {
+      // Hot path: in der Regel ist userId bereits die rf_user UUID (aus NextAuth jwt/session).
+      // Zusätzliche DB-Lookups pro Request sind in Serverless teuer und können Pool-Limits sprengen.
+      if (isUuid(candidateId)) return candidateId;
+
       const user = await prisma.rfUser.findUnique({ where: { id: candidateId } });
       if (user) return user.id;
       // Alte Session / Fallback: userId ist oft Discord-ID (token.sub), dann per discordId suchen oder anlegen

@@ -281,7 +281,7 @@ async function pushMemberPermissionSync(guildDiscordId, discordUserId, payload) 
       level: res.ok ? 'info' : 'error',
       scope: 'RF_MEMBER_SYNC',
       httpStatus: res.status,
-      discordGuildId,
+      discordGuildId: guildDiscordId,
       discordUserId,
       left: payload.left === true,
       roleIdCount: Array.isArray(payload.roleIds) ? payload.roleIds.length : 0,
@@ -298,7 +298,7 @@ async function pushMemberPermissionSync(guildDiscordId, discordUserId, payload) 
       JSON.stringify({
         level: 'error',
         scope: 'RF_MEMBER_SYNC',
-        discordGuildId,
+        discordGuildId: guildDiscordId,
         discordUserId,
         error: String(e?.message || e),
       })
