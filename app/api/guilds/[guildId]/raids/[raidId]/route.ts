@@ -135,6 +135,12 @@ export async function PATCH(
       : typeof body.discordChannelId === 'string'
         ? body.discordChannelId.trim() || null
         : raid.discordChannelId;
+  const discordLeaderChannelId =
+    body.discordLeaderChannelId === null
+      ? null
+      : typeof body.discordLeaderChannelId === 'string'
+        ? body.discordLeaderChannelId.trim() || null
+        : raid.discordLeaderChannelId;
 
   const dungeonId =
     typeof body.dungeonId === 'string' && body.dungeonId.trim()
@@ -258,6 +264,18 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid loot master' }, { status: 400 });
   }
 
+  if (discordLeaderChannelId) {
+    const allowedLeader = await prisma.rfGuildAllowedChannel.findFirst({
+      where: { guildId, discordChannelId: discordLeaderChannelId },
+    });
+    if (!allowedLeader) {
+      return NextResponse.json(
+        { error: 'Leader channel is not in the guild allowed list' },
+        { status: 400 }
+      );
+    }
+  }
+
   if ((timeChanged || dungeonChanged) && confirmResetSignups) {
     await prisma.$transaction([
       prisma.rfRaidSignup.deleteMany({ where: { raidId } }),
@@ -277,6 +295,7 @@ export async function PATCH(
           minSpecs: nextMinSpecs,
           raidGroupRestrictionId,
           discordChannelId,
+          discordLeaderChannelId,
           maxPlayers,
           scheduledAt,
           scheduledEndAt,
@@ -302,6 +321,7 @@ export async function PATCH(
         minSpecs: nextMinSpecs,
         raidGroupRestrictionId,
         discordChannelId,
+        discordLeaderChannelId,
         maxPlayers,
         scheduledAt,
         scheduledEndAt,

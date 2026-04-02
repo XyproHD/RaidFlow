@@ -168,6 +168,7 @@ export function NewRaidWizard({
     signupVisibility: string;
     discordThreadId: string | null;
     discordChannelId: string | null;
+    discordLeaderChannelId?: string | null;
     status: string;
   };
 }) {
@@ -248,8 +249,12 @@ export function NewRaidWizard({
     if (mode === 'edit' && initialRaid) return initialRaid.signupVisibility === 'raid_leader_only' ? 'raid_leader_only' : 'public';
     return 'public';
   });
-  const [discordChannelId, setDiscordChannelId] = useState(() => (mode === 'edit' && initialRaid ? (initialRaid.discordChannelId ?? '') : ''));
-  const [createDiscordThread, setCreateDiscordThread] = useState(() => (mode === 'edit' && initialRaid ? !!initialRaid.discordThreadId : false));
+  const [discordChannelId, setDiscordChannelId] = useState(() =>
+    mode === 'edit' && initialRaid ? (initialRaid.discordChannelId ?? '') : ''
+  );
+  const [discordLeaderChannelId, setDiscordLeaderChannelId] = useState(() =>
+    mode === 'edit' && initialRaid ? (initialRaid.discordLeaderChannelId ?? '') : ''
+  );
 
   const [rangeStartIdx, setRangeStartIdx] = useState(() => {
     if (mode === 'edit' && initialRaid) {
@@ -647,8 +652,8 @@ export function NewRaidWizard({
         scheduledEndAt: scheduledEndAt.toISOString(),
         signupUntil: signupUntil.toISOString(),
         signupVisibility,
-        discordChannelId: createDiscordThread ? discordChannelId || null : null,
-        createDiscordThread,
+        discordChannelId: discordChannelId.trim() || null,
+        discordLeaderChannelId: discordLeaderChannelId.trim() || null,
       };
 
       const res = await fetch(isEdit ? `/api/guilds/${guildId}/raids/${raidId}` : `/api/guilds/${guildId}/raids`, {
@@ -929,6 +934,21 @@ export function NewRaidWizard({
                   ))}
                 </select>
               </label>
+              <label className="flex flex-col gap-1.5 text-sm sm:col-span-2">
+                <span className="text-muted-foreground">{t('signupVisibility')}</span>
+                <select
+                  className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
+                  value={signupVisibility}
+                  onChange={(e) =>
+                    setSignupVisibility(
+                      e.target.value === 'raid_leader_only' ? 'raid_leader_only' : 'public'
+                    )
+                  }
+                >
+                  <option value="public">{t('visibilityPublic')}</option>
+                  <option value="raid_leader_only">{t('visibilityLeaders')}</option>
+                </select>
+              </label>
             </fieldset>
           </section>
 
@@ -936,23 +956,28 @@ export function NewRaidWizard({
             <h2 className="text-lg font-semibold text-foreground border-b border-border pb-2">
               {t('sectionMinimum')}
             </h2>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {roleMinConfig.map(({ role, val, set, key }) => (
                 <div
                   key={key}
-                  className="flex flex-col items-center gap-2 rounded-lg border border-border bg-muted/20 p-3"
+                  className="rounded-lg border border-border bg-muted/20 p-2.5 flex flex-col gap-1.5"
                 >
-                  <RoleIcon role={role} size={28} />
-                  <span className="text-xs text-muted-foreground text-center">{t(key)}</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={25}
-                    className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-center text-sm"
-                    value={val}
-                    onChange={(e) => set(Number(e.target.value))}
-                    aria-label={t(key)}
-                  />
+                  <div className="text-sm font-medium text-foreground">{t(key)}</div>
+                  <div className="flex items-center justify-center gap-2 min-h-[2.25rem]">
+                    <RoleIcon role={role} size={22} />
+                    <span className="text-muted-foreground select-none" aria-hidden>
+                      |
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={25}
+                      className="w-12 shrink-0 rounded-md border border-input bg-background px-1.5 py-1 text-center text-sm tabular-nums"
+                      value={val}
+                      onChange={(e) => set(Number(e.target.value))}
+                      aria-label={t(key)}
+                    />
+                  </div>
                 </div>
               ))}
             </div>
@@ -1018,36 +1043,6 @@ export function NewRaidWizard({
 
           <section className="rounded-xl border border-border bg-card p-4 md:p-6 space-y-4">
             <h2 className="text-lg font-semibold text-foreground border-b border-border pb-2">
-              {t('sectionSignup')}
-            </h2>
-            <label className="flex flex-col gap-1.5 text-sm max-w-md">
-              <span className="text-muted-foreground">{t('signupUntilCombined')}</span>
-              <input
-                type="datetime-local"
-                className="rounded-md border border-input bg-background px-3 py-2"
-                value={signupDatetimeLocal}
-                onChange={(e) => setSignupDatetimeLocal(e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 text-sm max-w-md">
-              <span className="text-muted-foreground">{t('signupVisibility')}</span>
-              <select
-                className="rounded-md border border-input bg-background px-3 py-2"
-                value={signupVisibility}
-                onChange={(e) =>
-                  setSignupVisibility(
-                    e.target.value === 'raid_leader_only' ? 'raid_leader_only' : 'public'
-                  )
-                }
-              >
-                <option value="public">{t('visibilityPublic')}</option>
-                <option value="raid_leader_only">{t('visibilityLeaders')}</option>
-              </select>
-            </label>
-          </section>
-
-          <section className="rounded-xl border border-border bg-card p-4 md:p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-foreground border-b border-border pb-2">
               {t('sectionDiscord')}
             </h2>
             <label className="flex flex-col gap-1.5 text-sm max-w-md">
@@ -1057,7 +1052,7 @@ export function NewRaidWizard({
                 value={discordChannelId}
                 onChange={(e) => setDiscordChannelId(e.target.value)}
               >
-                <option value="">{t('channelPlaceholder')}</option>
+                <option value="">{t('channelNoPost')}</option>
                 {data.allowedChannels.map((ch) => (
                   <option key={ch.id} value={ch.discordChannelId}>
                     {ch.name || ch.discordChannelId}
@@ -1065,13 +1060,20 @@ export function NewRaidWizard({
                 ))}
               </select>
             </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={createDiscordThread}
-                onChange={(e) => setCreateDiscordThread(e.target.checked)}
-              />
-              {t('createThread')}
+            <label className="flex flex-col gap-1.5 text-sm max-w-md">
+              <span className="text-muted-foreground">{t('leaderChannelLabel')}</span>
+              <select
+                className="rounded-md border border-input bg-background px-3 py-2"
+                value={discordLeaderChannelId}
+                onChange={(e) => setDiscordLeaderChannelId(e.target.value)}
+              >
+                <option value="">{t('lootmasterNone')}</option>
+                {data.allowedChannels.map((ch) => (
+                  <option key={ch.id} value={ch.discordChannelId}>
+                    {ch.name || ch.discordChannelId}
+                  </option>
+                ))}
+              </select>
             </label>
           </section>
 
@@ -1160,15 +1162,26 @@ export function NewRaidWizard({
 
       {step === 2 && (
         <div className="space-y-4">
-          <label className="flex flex-col gap-1 text-sm max-w-xs">
-            <span className="text-muted-foreground">{t('scheduledDate')}</span>
-            <input
-              type="date"
-              className="rounded-md border border-input bg-background px-3 py-2"
-              value={scheduledDate}
-              onChange={(e) => setScheduledDate(e.target.value)}
-            />
-          </label>
+          <div className="grid gap-4 sm:grid-cols-2 sm:items-end max-w-2xl">
+            <label className="flex flex-col gap-1 text-sm min-w-0">
+              <span className="text-muted-foreground">{t('scheduledDate')}</span>
+              <input
+                type="date"
+                className="rounded-md border border-input bg-background px-3 py-2"
+                value={scheduledDate}
+                onChange={(e) => setScheduledDate(e.target.value)}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm min-w-0">
+              <span className="text-muted-foreground">{t('signupUntilCombined')}</span>
+              <input
+                type="datetime-local"
+                className="rounded-md border border-input bg-background px-3 py-2"
+                value={signupDatetimeLocal}
+                onChange={(e) => setSignupDatetimeLocal(e.target.value)}
+              />
+            </label>
+          </div>
 
           <div
             className={cn(
