@@ -103,7 +103,13 @@ export async function POST(
       ? body.discordChannelId.trim()
       : null;
 
-  const createDiscordThread = body.createDiscordThread === true;
+  const discordLeaderChannelId =
+    typeof body.discordLeaderChannelId === 'string' && body.discordLeaderChannelId.trim()
+      ? body.discordLeaderChannelId.trim()
+      : null;
+
+  /** Thread wird angelegt, sobald ein Raid-Thread-Kanal gewählt ist (kein separater Schalter). */
+  const createDiscordThread = !!discordChannelId;
 
   const minSpecsParsed = parseMinSpecs(body.minSpecs);
   if (minSpecsParsed === null) {
@@ -178,13 +184,19 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid loot master' }, { status: 400 });
   }
 
-  if (createDiscordThread) {
-    if (!discordChannelId) {
+  if (discordLeaderChannelId) {
+    const allowedLeader = await prisma.rfGuildAllowedChannel.findFirst({
+      where: { guildId, discordChannelId: discordLeaderChannelId },
+    });
+    if (!allowedLeader) {
       return NextResponse.json(
-        { error: 'discordChannelId required when createDiscordThread is true' },
+        { error: 'Leader channel is not in the guild allowed list' },
         { status: 400 }
       );
     }
+  }
+
+  if (createDiscordThread) {
     const allowed = await prisma.rfGuildAllowedChannel.findFirst({
       where: { guildId, discordChannelId },
     });
@@ -194,10 +206,10 @@ export async function POST(
         { status: 400 }
       );
     }
-    const exists = await channelExists(discordChannelId);
+    const exists = await channelExists(discordChannelId!);
     if (!exists) {
       await prisma.rfGuildAllowedChannel.deleteMany({
-        where: { guildId, discordChannelId },
+        where: { guildId, discordChannelId: discordChannelId! },
       });
       return NextResponse.json(
         { error: 'Discord channel no longer exists' },
@@ -229,6 +241,7 @@ export async function POST(
       status: 'open',
       discordThreadId: null,
       discordChannelId: null,
+      discordLeaderChannelId,
     },
   });
 

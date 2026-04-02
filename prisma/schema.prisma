@@ -236,6 +236,8 @@ model RfRaid {
   status                  String
   discordThreadId                String?   @map("discord_thread_id")
   discordChannelId               String?   @map("discord_channel_id")
+  /// Discord-Kanal für Raidleader (z. B. spätere Bot-Benachrichtigungen)
+  discordLeaderChannelId         String?   @map("discord_leader_channel_id")
   /// Erste Zusammenfassungs-Nachricht im Thread (PATCH bei Anmelde-Updates)
   discordThreadSummaryMessageId  String?   @map("discord_thread_summary_message_id")
   createdAt               DateTime  @default(now()) @map("created_at")

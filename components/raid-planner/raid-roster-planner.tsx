@@ -246,6 +246,18 @@ export function RaidRosterPlanner({
   const [blinkDiscordForIds, setBlinkDiscordForIds] = useState<Set<string>>(() => new Set());
 
   const [filtersOpen, setFiltersOpen] = useState(true);
+  const [raidOptionsOpen, setRaidOptionsOpen] = useState(true);
+  /** Dummy UI state (no backend yet) */
+  const [unsetPlayersMode, setUnsetPlayersMode] = useState<'reserve' | 'decline'>('reserve');
+  const [botNotifyTargets, setBotNotifyTargets] = useState({
+    roster: true,
+    reserve: false,
+    decline: false,
+  });
+  const [changeNotifyTargets, setChangeNotifyTargets] = useState({
+    channel: true,
+    leader: false,
+  });
 
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState('');
@@ -1042,7 +1054,7 @@ export function RaidRosterPlanner({
 
         <aside
           className={cn(
-            'shrink-0 transition-opacity duration-200 order-1 xl:order-2 xl:sticky xl:top-4',
+            'shrink-0 flex flex-col gap-3 transition-opacity duration-200 order-1 xl:order-2 xl:sticky xl:top-4',
             dragActive && 'opacity-35 pointer-events-none'
           )}
         >
@@ -1206,6 +1218,125 @@ export function RaidRosterPlanner({
             >
               <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
                 {tPlanner('filters')}
+              </span>
+            </button>
+          )}
+
+          {raidOptionsOpen ? (
+            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-4">
+              <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
+                <p className="text-sm font-medium">{tPlanner('raidOptions')}</p>
+                <button
+                  type="button"
+                  onClick={() => setRaidOptionsOpen(false)}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
+                  aria-label={tPlanner('raidOptions')}
+                >
+                  ◀
+                </button>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsUnsetPlayers')}</span>
+                <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+                  <button
+                    type="button"
+                    onClick={() => setUnsetPlayersMode('reserve')}
+                    className={cn(
+                      'rounded-md px-2.5 py-1.5 text-sm flex-1',
+                      unsetPlayersMode === 'reserve'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                    )}
+                    aria-pressed={unsetPlayersMode === 'reserve'}
+                  >
+                    {tPlanner('raidOptionsUnsetReserve')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUnsetPlayersMode('decline')}
+                    className={cn(
+                      'rounded-md px-2.5 py-1.5 text-sm flex-1',
+                      unsetPlayersMode === 'decline'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                    )}
+                    aria-pressed={unsetPlayersMode === 'decline'}
+                  >
+                    {tPlanner('raidOptionsUnsetDecline')}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsBotNotify')}</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      ['roster', tPlanner('raidOptionsBotNotifyRoster')] as const,
+                      ['reserve', tPlanner('raidOptionsBotNotifyReserve')] as const,
+                      ['decline', tPlanner('raidOptionsBotNotifyDecline')] as const,
+                    ] as const
+                  ).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() =>
+                        setBotNotifyTargets((prev) => ({ ...prev, [k]: !prev[k] }))
+                      }
+                      className={cn(
+                        'rounded-lg border px-2 py-1.5 text-xs sm:text-sm flex items-center justify-center min-w-0',
+                        botNotifyTargets[k]
+                          ? 'border-primary/50 bg-primary/10 text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                      )}
+                      aria-pressed={botNotifyTargets[k]}
+                    >
+                      <span className="truncate">{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsNotifyChanges')}</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      ['channel', tPlanner('raidOptionsNotifyChannel')] as const,
+                      ['leader', tPlanner('raidOptionsNotifyLeader')] as const,
+                    ] as const
+                  ).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() =>
+                        setChangeNotifyTargets((prev) => ({ ...prev, [k]: !prev[k] }))
+                      }
+                      className={cn(
+                        'rounded-lg border px-2 py-1.5 text-xs sm:text-sm flex items-center justify-center min-w-0',
+                        changeNotifyTargets[k]
+                          ? 'border-primary/50 bg-primary/10 text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                      )}
+                      aria-pressed={changeNotifyTargets[k]}
+                    >
+                      <span className="truncate">{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setRaidOptionsOpen(true)}
+              className="w-full xl:w-10 rounded-xl border border-border bg-muted/15 py-4 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/25"
+              aria-label={tPlanner('raidOptions')}
+              title={tPlanner('raidOptions')}
+            >
+              <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
+                {tPlanner('raidOptions')}
               </span>
             </button>
           )}
