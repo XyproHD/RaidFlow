@@ -509,7 +509,21 @@
     "alt": "Twink",
     "back": "Zurück",
     "saving": "Speichern …",
-    "saveRaid": "Raid speichern"
+    "saveRaid": "Raid speichern",
+    "add": "Hinzufügen",
+    "addPlayer": "Spieler hinzufügen",
+    "pickChar": "Charakter suchen …",
+    "raidOptions": "Raid-Optionen",
+    "raidOptionsUnsetPlayers": "Nicht gesetzte Spieler",
+    "raidOptionsUnsetReserve": "Als Reserve setzen",
+    "raidOptionsUnsetDecline": "Absagen",
+    "raidOptionsBotNotify": "Spieler per Bot informieren",
+    "raidOptionsBotNotifyRoster": "Gesetzt",
+    "raidOptionsBotNotifyReserve": "Reserve",
+    "raidOptionsBotNotifyDecline": "Absagen",
+    "raidOptionsNotifyChanges": "Änderungen melden an",
+    "raidOptionsNotifyChannel": "Raidleader-Channel",
+    "raidOptionsNotifyLeader": "Raidleiter"
   },
   "admin": {
     "title": "Admin",

@@ -509,7 +509,21 @@
     "alt": "Alt",
     "back": "Back",
     "saving": "Saving…",
-    "saveRaid": "Save raid"
+    "saveRaid": "Save raid",
+    "add": "Add",
+    "addPlayer": "Add player",
+    "pickChar": "Search character…",
+    "raidOptions": "Raid options",
+    "raidOptionsUnsetPlayers": "Unset players",
+    "raidOptionsUnsetReserve": "Set as reserve",
+    "raidOptionsUnsetDecline": "Decline",
+    "raidOptionsBotNotify": "Notify players via bot",
+    "raidOptionsBotNotifyRoster": "Roster",
+    "raidOptionsBotNotifyReserve": "Reserve",
+    "raidOptionsBotNotifyDecline": "Declined",
+    "raidOptionsNotifyChanges": "Report changes to",
+    "raidOptionsNotifyChannel": "Raid leader channel",
+    "raidOptionsNotifyLeader": "Raid leader"
   },
   "admin": {
     "title": "Admin",
