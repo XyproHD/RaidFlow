@@ -158,6 +158,7 @@ export function DashboardClient({
   canCreateGuildIds: string[];
 }) {
   const t = useTranslations('dashboard');
+  const tRaidDetail = useTranslations('raidDetail');
   const tProfile = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
@@ -959,7 +960,7 @@ export function DashboardClient({
                   const raid = calendarRaids.find((x) => x.id === openCalendarActionRaidId);
                   if (!raid) return null;
                   return (
-                    <div className="w-52 rounded-md border border-border bg-background shadow-md overflow-hidden">
+                    <div className="w-52 rounded-md border border-border bg-background shadow-lg overflow-hidden">
                       {raid.status === 'open' ? (
                         <Link
                           href={`/${locale}/guild/${raid.guildId}/raid/${raid.id}?mode=signup`}
@@ -973,9 +974,19 @@ export function DashboardClient({
                       )}
                       {raid.canEdit ? (
                         <>
+                          <button
+                            type="button"
+                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
+                            onClick={() => {
+                              closeAllMenus();
+                              router.push(`/${locale}/guild/${raid.guildId}/raid/${raid.id}/plan`);
+                            }}
+                          >
+                            📅 {tRaidDetail('menuPlan')}
+                          </button>
                           <Link
                             href={`/${locale}/guild/${raid.guildId}/raid/${raid.id}?mode=edit`}
-                            className="block px-3 py-2 text-sm hover:bg-muted"
+                            className="block px-3 py-2.5 text-sm hover:bg-muted"
                             onClick={() => closeAllMenus()}
                           >
                             ✏️ {t('raidEdit')}
@@ -983,7 +994,7 @@ export function DashboardClient({
                           {raid.status === 'open' ? (
                             <button
                               type="button"
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted"
+                              className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
                               onClick={async () => {
                                 await fetch(
                                   `/api/guilds/${encodeURIComponent(raid.guildId)}/raids/${encodeURIComponent(raid.id)}`,
@@ -1002,7 +1013,7 @@ export function DashboardClient({
                           ) : null}
                           <button
                             type="button"
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted text-destructive"
+                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted text-destructive"
                             onClick={async () => {
                               await fetch(
                                 `/api/guilds/${encodeURIComponent(raid.guildId)}/raids/${encodeURIComponent(raid.id)}`,
