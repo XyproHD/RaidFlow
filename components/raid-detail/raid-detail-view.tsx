@@ -6,11 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { formatRaidTerminLine } from '@/lib/format-raid-termin';
-import {
-  countSignedPerSpec,
-  getCompositionGapsStructured,
-  type CompositionSignupRow,
-} from '@/lib/raid-composition-summary';
+import { buildSpecStatsByMinKeys } from '@/lib/min-spec-keys';
 import { ClassIcon } from '@/components/class-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
@@ -133,10 +129,6 @@ function signupTypeOpenLabel(
   return t('signupType_verfugbar');
 }
 
-function typeNorm(v: string) {
-  return v === 'main' ? 'normal' : v;
-}
-
 export function RaidDetailView({
   locale,
   guildId,
@@ -216,22 +208,6 @@ export function RaidDetailView({
       ? (raid.minSpecs as Record<string, number>)
       : null;
 
-  const compSignups: CompositionSignupRow[] = raid.signups.map((s) => ({
-    type: s.type,
-    signedSpec: s.signedSpec,
-    character: s.character ? { mainSpec: s.character.mainSpec } : null,
-  }));
-
-  const gapsStructured = getCompositionGapsStructured({
-    minTanks: raid.minTanks,
-    minMelee: raid.minMelee,
-    minRange: raid.minRange,
-    minHealers: raid.minHealers,
-    minSpecs: minSpecsObj,
-    signups: compSignups,
-  });
-  const hasGaps = gapsStructured.roles.length > 0 || gapsStructured.specs.length > 0;
-
   const visibleSignups = filterSignupsVisibleToViewer(
     raid.signups,
     userId,
@@ -264,19 +240,18 @@ export function RaidDetailView({
     Healer: raid.minHealers,
   };
 
-  const specCountsByType = useMemo(() => {
-    const out: Record<string, RoleStat> = {};
-    for (const s of raid.signups) {
-      const spec = (s.signedSpec?.trim() || s.character?.mainSpec?.trim() || '').trim();
-      if (!spec) continue;
-      const tn = typeNorm(s.type);
-      if (tn !== 'normal' && tn !== 'uncertain' && tn !== 'reserve') continue;
-      const cur = out[spec] ?? { normal: 0, uncertain: 0, reserve: 0 };
-      cur[tn] += 1;
-      out[spec] = cur;
-    }
-    return out;
-  }, [raid.signups]);
+  const specCountsByType = useMemo(
+    () =>
+      buildSpecStatsByMinKeys(
+        raid.signups.map((s) => ({
+          type: s.type,
+          signedSpec: s.signedSpec,
+          character: s.character ? { mainSpec: s.character.mainSpec } : null,
+        })),
+        minSpecsObj
+      ),
+    [raid.signups, minSpecsObj]
+  );
 
   const signupState = signupIndicator(raid.signupUntil);
   const statusIcon = myStatusIcon(raid.status, mySignup);

@@ -7,7 +7,17 @@ import { cn } from '@/lib/utils';
 import { addMinutes } from '@/lib/raid-planner-time';
 import { formatCompositionGaps } from '@/lib/raid-composition-summary';
 import { computeTwoGroupsPossible } from '@/lib/raid-two-groups';
-import { getSpecByDisplayName, type TbcRole } from '@/lib/wow-tbc-classes';
+import {
+  getAllSpecDisplayNames,
+  getSpecByDisplayName,
+  TBC_CLASS_IDS,
+  type TbcRole,
+} from '@/lib/wow-tbc-classes';
+import {
+  minSpecRowFromStorageKey,
+  minSpecRowToStorageKey,
+  type MinSpecRowForm,
+} from '@/lib/min-spec-keys';
 import { ClassIcon } from '@/components/class-icon';
 import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
@@ -99,6 +109,18 @@ export type RaidEditSerialized = {
 type WeekFocusFilter = 'both' | 'weekday' | 'weekend';
 
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
+const ALL_SPECS = getAllSpecDisplayNames();
+const RAID_PLANNER_CLASS_I18N = {
+  druid: 'classDruid',
+  hunter: 'classHunter',
+  mage: 'classMage',
+  paladin: 'classPaladin',
+  priest: 'classPriest',
+  rogue: 'classRogue',
+  shaman: 'classShaman',
+  warlock: 'classWarlock',
+  warrior: 'classWarrior',
+} as const;
 
 function toDatetimeLocalValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -169,12 +191,12 @@ export function RaidEditPanel({
   const [minMelee, setMinMelee] = useState(raid.minMelee);
   const [minRange, setMinRange] = useState(raid.minRange);
   const [minHealers, setMinHealers] = useState(raid.minHealers);
-  const [minSpecRows, setMinSpecRows] = useState<{ spec: string; count: number }[]>(() => {
+  const [minSpecRows, setMinSpecRows] = useState<MinSpecRowForm[]>(() => {
     const o =
       raid.minSpecs && typeof raid.minSpecs === 'object' && !Array.isArray(raid.minSpecs)
         ? (raid.minSpecs as Record<string, number>)
         : {};
-    return Object.entries(o).map(([spec, count]) => ({ spec, count }));
+    return Object.entries(o).map(([key, count]) => minSpecRowFromStorageKey(key, count));
   });
   const [maxPlayers, setMaxPlayers] = useState(raid.maxPlayers);
   const [signupVisibility, setSignupVisibility] = useState(raid.signupVisibility);
@@ -255,7 +277,8 @@ export function RaidEditPanel({
   const minSpecsObj = useMemo(() => {
     const o: Record<string, number> = {};
     for (const r of minSpecRows) {
-      if (r.spec && r.count > 0) o[r.spec] = r.count;
+      const key = minSpecRowToStorageKey(r);
+      if (key && r.count > 0) o[key] = r.count;
     }
     return o;
   }, [minSpecRows]);
@@ -348,7 +371,8 @@ export function RaidEditPanel({
       const timeChanged = scheduledAtNew.getTime() !== origStart;
       const minSpecs: Record<string, number> = {};
       for (const r of minSpecRows) {
-        if (r.spec && r.count > 0) minSpecs[r.spec] = r.count;
+        const key = minSpecRowToStorageKey(r);
+        if (key && r.count > 0) minSpecs[key] = r.count;
       }
       const body: Record<string, unknown> = {
         name,
@@ -684,19 +708,100 @@ export function RaidEditPanel({
         </div>
 
         <div className="space-y-2">
-          <p className="text-sm font-medium">{tPlanner('minSpecs')}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium">{tPlanner('minSpecs')}</p>
+            <button
+              type="button"
+              className="text-sm text-primary"
+              onClick={() =>
+                setMinSpecRows([
+                  ...minSpecRows,
+                  { kind: 'spec', spec: ALL_SPECS[0]?.displayName ?? '', count: 1 },
+                ])
+              }
+            >
+              {tPlanner('addMinSpec')}
+            </button>
+            <button
+              type="button"
+              className="text-sm text-primary"
+              onClick={() =>
+                setMinSpecRows([
+                  ...minSpecRows,
+                  { kind: 'class', classId: TBC_CLASS_IDS[0] ?? 'warrior', count: 1 },
+                ])
+              }
+            >
+              {tPlanner('addMinClass')}
+            </button>
+          </div>
           {minSpecRows.map((row, i) => (
-            <div key={i} className="flex gap-2 items-center">
-              <input
-                className="rounded-md border border-input bg-background px-2 py-1 text-sm flex-1"
-                value={row.spec}
+            <div key={i} className="flex flex-wrap gap-2 items-center">
+              <select
+                className="min-w-[7rem] rounded-md border border-input bg-background px-2 py-1 text-sm"
+                value={row.kind}
                 onChange={(e) => {
-                  const next = [...minSpecRows];
-                  next[i] = { ...next[i], spec: e.target.value };
-                  setMinSpecRows(next);
+                  const kind = e.target.value === 'class' ? 'class' : 'spec';
+                  setMinSpecRows((rows) =>
+                    rows.map((r, j) => {
+                      if (j !== i) return r;
+                      if (kind === 'class') {
+                        return {
+                          kind: 'class',
+                          classId: TBC_CLASS_IDS[0] ?? 'warrior',
+                          count: r.count,
+                        };
+                      }
+                      return {
+                        kind: 'spec',
+                        spec: ALL_SPECS[0]?.displayName ?? '',
+                        count: r.count,
+                      };
+                    })
+                  );
                 }}
-                placeholder="Spec"
-              />
+                aria-label={tPlanner('minSpecKind')}
+              >
+                <option value="spec">{tPlanner('minSpecModeSpec')}</option>
+                <option value="class">{tPlanner('minSpecModeClass')}</option>
+              </select>
+              {row.kind === 'spec' ? (
+                <select
+                  className="flex-1 min-w-[160px] rounded-md border border-input bg-background px-2 py-1 text-sm"
+                  value={row.spec}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setMinSpecRows((rows) =>
+                      rows.map((r, j) => (j === i && r.kind === 'spec' ? { ...r, spec: v } : r))
+                    );
+                  }}
+                  aria-label={tPlanner('minSpecs')}
+                >
+                  {ALL_SPECS.map((s) => (
+                    <option key={s.displayName} value={s.displayName}>
+                      {s.displayName}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  className="flex-1 min-w-[160px] rounded-md border border-input bg-background px-2 py-1 text-sm"
+                  value={row.classId}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setMinSpecRows((rows) =>
+                      rows.map((r, j) => (j === i && r.kind === 'class' ? { ...r, classId: v } : r))
+                    );
+                  }}
+                  aria-label={tPlanner('minSpecClassPick')}
+                >
+                  {TBC_CLASS_IDS.map((cid) => (
+                    <option key={cid} value={cid}>
+                      {tProfile(RAID_PLANNER_CLASS_I18N[cid as keyof typeof RAID_PLANNER_CLASS_I18N])}
+                    </option>
+                  ))}
+                </select>
+              )}
               <input
                 type="number"
                 min={0}
@@ -717,13 +822,6 @@ export function RaidEditPanel({
               </button>
             </div>
           ))}
-          <button
-            type="button"
-            className="text-sm text-primary"
-            onClick={() => setMinSpecRows([...minSpecRows, { spec: '', count: 1 }])}
-          >
-            + Spec
-          </button>
         </div>
 
         <div className="space-y-2">

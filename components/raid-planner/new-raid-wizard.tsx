@@ -15,6 +15,12 @@ import {
   type SlotHeat,
 } from '@/lib/raid-availability';
 import {
+  countFromSpecDisplayCounts,
+  minSpecRowFromStorageKey,
+  minSpecRowToStorageKey,
+  type MinSpecRowForm,
+} from '@/lib/min-spec-keys';
+import {
   getAllSpecDisplayNames,
   getSpecByDisplayName,
   TBC_CLASS_IDS,
@@ -218,7 +224,7 @@ export function NewRaidWizard({
   const [minMelee, setMinMelee] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minMelee : 0));
   const [minRange, setMinRange] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minRange : 0));
   const [minHealers, setMinHealers] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minHealers : 0));
-  const [minSpecRows, setMinSpecRows] = useState<{ spec: string; count: number }[]>(() => {
+  const [minSpecRows, setMinSpecRows] = useState<MinSpecRowForm[]>(() => {
     if (
       mode === 'edit' &&
       initialRaid &&
@@ -227,7 +233,7 @@ export function NewRaidWizard({
       !Array.isArray(initialRaid.minSpecs)
     ) {
       const src = initialRaid.minSpecs as Record<string, number>;
-      return Object.entries(src).map(([spec, count]) => ({ spec, count }));
+      return Object.entries(src).map(([key, count]) => minSpecRowFromStorageKey(key, count));
     }
     return [];
   });
@@ -479,8 +485,19 @@ export function NewRaidWizard({
     availabilityFilter,
   ]);
 
+  const minSpecRowsFlat = useMemo(
+    () =>
+      minSpecRows
+        .map((r) => {
+          const spec = minSpecRowToStorageKey(r);
+          return spec && r.count > 0 ? { spec, count: r.count } : null;
+        })
+        .filter((x): x is { spec: string; count: number } => x !== null),
+    [minSpecRows]
+  );
+
   const slotHeat = useMemo((): SlotHeat[] => {
-    const activeSpecs = minSpecRows.filter((r) => r.spec && r.count > 0);
+    const activeSpecs = minSpecRowsFlat;
     return SLOTS.map((slotStr, _i) => {
       const wd = dateToRfWeekday(raidSlotToLocalDate(scheduledDate, slotStr));
       const tanks = new Set<string>();
@@ -508,7 +525,7 @@ export function NewRaidWizard({
         range.size >= minRange &&
         healers.size >= minHealers;
 
-      const ratio = specFulfillmentRatio(specCounts, minSpecRows);
+      const ratio = specFulfillmentRatio(specCounts, minSpecRowsFlat);
 
       if (!rolesMet) return 'yellow';
       if (activeSpecs.length === 0) return 'green';
@@ -516,7 +533,7 @@ export function NewRaidWizard({
       if (ratio >= 0.8) return 'orange';
       return 'red';
     });
-  }, [playerReps, scheduledDate, minTanks, minMelee, minRange, minHealers, minSpecRows]);
+  }, [playerReps, scheduledDate, minTanks, minMelee, minRange, minHealers, minSpecRowsFlat]);
 
   const liveStats = useMemo(() => {
     const tanks = new Set<string>();
@@ -540,8 +557,9 @@ export function NewRaidWizard({
 
     const specOk: Record<string, boolean> = {};
     for (const row of minSpecRows) {
-      if (row.count <= 0 || !row.spec) continue;
-      specOk[row.spec] = (specCounts[row.spec] ?? 0) >= row.count;
+      const key = minSpecRowToStorageKey(row);
+      if (!key || row.count <= 0) continue;
+      specOk[key] = countFromSpecDisplayCounts(key, specCounts) >= row.count;
     }
 
     const rolesMet =
@@ -549,7 +567,7 @@ export function NewRaidWizard({
       melee.size >= minMelee &&
       range.size >= minRange &&
       healers.size >= minHealers;
-    const specRatio = specFulfillmentRatio(specCounts, minSpecRows);
+    const specRatio = specFulfillmentRatio(specCounts, minSpecRowsFlat);
     const minOk = rolesMet && specRatio >= 1;
 
     return {
@@ -563,7 +581,17 @@ export function NewRaidWizard({
       availablePlayers: new Set(playerReps.map((p) => p.userId)).size,
       signupCount: 0,
     };
-  }, [playerReps, scheduledDate, rangeSlotStrings, minTanks, minMelee, minRange, minHealers, minSpecRows]);
+  }, [
+    playerReps,
+    scheduledDate,
+    rangeSlotStrings,
+    minTanks,
+    minMelee,
+    minRange,
+    minHealers,
+    minSpecRows,
+    minSpecRowsFlat,
+  ]);
 
   const groupedList = useMemo(() => {
     const byRole = new Map<TbcRole, typeof filteredPool>();
@@ -615,7 +643,17 @@ export function NewRaidWizard({
   };
 
   const addMinSpecRow = () => {
-    setMinSpecRows((rows) => [...rows, { spec: ALL_SPECS[0]?.displayName ?? '', count: 1 }]);
+    setMinSpecRows((rows) => [
+      ...rows,
+      { kind: 'spec', spec: ALL_SPECS[0]?.displayName ?? '', count: 1 },
+    ]);
+  };
+
+  const addMinClassRow = () => {
+    setMinSpecRows((rows) => [
+      ...rows,
+      { kind: 'class', classId: TBC_CLASS_IDS[0] ?? 'warrior', count: 1 },
+    ]);
   };
 
   const handleTimelineClick = (i: number) => {
@@ -689,7 +727,8 @@ export function NewRaidWizard({
       const dungeonId = dungeonIds[0] ?? '';
       const minSpecs: Record<string, number> = {};
       for (const r of minSpecRows) {
-        if (r.spec && r.count > 0) minSpecs[r.spec] = r.count;
+        const key = minSpecRowToStorageKey(r);
+        if (key && r.count > 0) minSpecs[key] = r.count;
       }
 
       const body = {
@@ -1088,30 +1127,94 @@ export function NewRaidWizard({
                 >
                   {t('addMinSpec')}
                 </button>
+                <button
+                  type="button"
+                  className="text-sm text-primary hover:underline"
+                  onClick={addMinClassRow}
+                >
+                  {t('addMinClass')}
+                </button>
               </div>
               {minSpecRows.map((row, idx) => (
                 <div
                   key={idx}
                   className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/15 px-3 py-2"
                 >
-                  <SpecIcon spec={row.spec} size={28} />
                   <select
-                    className="flex-1 min-w-[180px] rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                    value={row.spec}
+                    className="min-w-[7.5rem] rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                    value={row.kind}
                     onChange={(e) => {
-                      const v = e.target.value;
+                      const kind = e.target.value === 'class' ? 'class' : 'spec';
                       setMinSpecRows((rows) =>
-                        rows.map((r, i) => (i === idx ? { ...r, spec: v } : r))
+                        rows.map((r, i) => {
+                          if (i !== idx) return r;
+                          if (kind === 'class') {
+                            return {
+                              kind: 'class',
+                              classId: TBC_CLASS_IDS[0] ?? 'warrior',
+                              count: r.count,
+                            };
+                          }
+                          return {
+                            kind: 'spec',
+                            spec: ALL_SPECS[0]?.displayName ?? '',
+                            count: r.count,
+                          };
+                        })
                       );
                     }}
-                    aria-label={t('minSpecs')}
+                    aria-label={t('minSpecKind')}
                   >
-                    {ALL_SPECS.map((s) => (
-                      <option key={s.displayName} value={s.displayName}>
-                        {s.displayName}
-                      </option>
-                    ))}
+                    <option value="spec">{t('minSpecModeSpec')}</option>
+                    <option value="class">{t('minSpecModeClass')}</option>
                   </select>
+                  {row.kind === 'spec' ? (
+                    <>
+                      <SpecIcon spec={row.spec} size={28} />
+                      <select
+                        className="flex-1 min-w-[180px] rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                        value={row.spec}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setMinSpecRows((rows) =>
+                            rows.map((r, i) =>
+                              i === idx && r.kind === 'spec' ? { ...r, spec: v } : r
+                            )
+                          );
+                        }}
+                        aria-label={t('minSpecs')}
+                      >
+                        {ALL_SPECS.map((s) => (
+                          <option key={s.displayName} value={s.displayName}>
+                            {s.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  ) : (
+                    <>
+                      <ClassIcon classId={row.classId} size={28} />
+                      <select
+                        className="flex-1 min-w-[180px] rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                        value={row.classId}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setMinSpecRows((rows) =>
+                            rows.map((r, i) =>
+                              i === idx && r.kind === 'class' ? { ...r, classId: v } : r
+                            )
+                          );
+                        }}
+                        aria-label={t('minSpecClassPick')}
+                      >
+                        {TBC_CLASS_IDS.map((cid) => (
+                          <option key={cid} value={cid}>
+                            {tProfile(RAID_PLANNER_CLASS_I18N[cid as keyof typeof RAID_PLANNER_CLASS_I18N])}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
                   <input
                     type="number"
                     min={1}
@@ -1296,20 +1399,23 @@ export function NewRaidWizard({
               <span className="text-muted-foreground tabular-nums">/</span>
               <span className="tabular-nums text-muted-foreground">{minRange}</span>
             </span>
-            {minSpecRows.map(
-              (row) =>
-                row.spec &&
-                row.count > 0 && (
-                  <span key={row.spec} className="flex items-center gap-1.5" title={row.spec}>
+            {minSpecRows.map((row, idx) => {
+              const key = minSpecRowToStorageKey(row);
+              if (!key || row.count <= 0) return null;
+              const cur = countFromSpecDisplayCounts(key, liveStats.specCounts);
+              return (
+                <span key={`${key}-${idx}`} className="flex items-center gap-1.5" title={key}>
+                  {row.kind === 'spec' ? (
                     <SpecIcon spec={row.spec} size={24} />
-                    <span className="tabular-nums text-lg font-semibold">
-                      {liveStats.specCounts[row.spec] ?? 0}
-                    </span>
-                    <span className="text-muted-foreground tabular-nums">/</span>
-                    <span className="tabular-nums text-muted-foreground">{row.count}</span>
-                  </span>
-                )
-            )}
+                  ) : (
+                    <ClassIcon classId={row.classId} size={24} />
+                  )}
+                  <span className="tabular-nums text-lg font-semibold">{cur}</span>
+                  <span className="text-muted-foreground tabular-nums">/</span>
+                  <span className="tabular-nums text-muted-foreground">{row.count}</span>
+                </span>
+              );
+            })}
             <span className="flex items-center gap-1.5" title={t('maxPlayers')}>
               <span className="text-xl leading-none" aria-hidden>
                 👥

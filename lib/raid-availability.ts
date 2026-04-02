@@ -2,6 +2,7 @@
  * Verfügbarkeit für Raidplaner (DatePicker): Wochentag, Slot, Farbe pro Charakter.
  */
 
+import { countFromSpecDisplayCounts } from '@/lib/min-spec-keys';
 import { TIME_SLOTS_30MIN } from '@/lib/profile-constants';
 import { raidSlotToLocalDate } from '@/lib/raid-planner-time';
 
@@ -120,7 +121,7 @@ export function specFulfillmentRatio(
   if (rows.length === 0) return 1;
   let met = 0;
   for (const r of rows) {
-    if ((counts[r.spec] ?? 0) >= r.count) met += 1;
+    if (countFromSpecDisplayCounts(r.spec, counts) >= r.count) met += 1;
   }
   return met / rows.length;
 }

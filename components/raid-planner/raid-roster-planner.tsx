@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { formatRaidTerminLine } from '@/lib/format-raid-termin';
-import { TBC_CLASS_IDS, type TbcRole } from '@/lib/wow-tbc-classes';
+import { getSpecByDisplayName, TBC_CLASS_IDS, type TbcRole } from '@/lib/wow-tbc-classes';
+import { isMinSpecClassKey, minSpecKeyTitle, parseMinSpecClassKey } from '@/lib/min-spec-keys';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { ClassIcon } from '@/components/class-icon';
 import { RoleIcon } from '@/components/role-icon';
@@ -290,17 +291,29 @@ export function RaidRosterPlanner({
     return out;
   }, [rosterOrder, byId]);
 
-  const rosterSpecCounts = useMemo(() => {
+  const rosterMinSpecKeyCounts = useMemo(() => {
     const out = new Map<string, number>();
-    for (const id of rosterOrder) {
-      const s = byId.get(id);
-      if (!s) continue;
-      const spec = (s.signedSpec?.trim() || s.mainSpec?.trim() || '').trim();
-      if (!spec) continue;
-      out.set(spec, (out.get(spec) ?? 0) + 1);
+    const minSpecs = overviewProps.minSpecsObj
+      ? Object.entries(overviewProps.minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
+      : [];
+    for (const [key] of minSpecs) {
+      let n = 0;
+      for (const id of rosterOrder) {
+        const s = byId.get(id);
+        if (!s) continue;
+        const spec = (s.signedSpec?.trim() || s.mainSpec?.trim() || '').trim();
+        if (!spec) continue;
+        if (isMinSpecClassKey(key)) {
+          const cid = parseMinSpecClassKey(key);
+          if (cid && getSpecByDisplayName(spec)?.classId === cid) n++;
+        } else if (spec === key) {
+          n++;
+        }
+      }
+      out.set(key, n);
     }
     return out;
-  }, [rosterOrder, byId]);
+  }, [overviewProps.minSpecsObj, rosterOrder, byId]);
 
   const rosterMinFulfillmentRatio = useMemo(() => {
     const roleMin = overviewProps.roleMinByKey;
@@ -314,11 +327,11 @@ export function RaidRosterPlanner({
       ? Object.entries(overviewProps.minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
       : [];
     for (const [spec, need] of minSpecs) {
-      ratios.push(Math.min(1, (rosterSpecCounts.get(spec) ?? 0) / need));
+      ratios.push(Math.min(1, (rosterMinSpecKeyCounts.get(spec) ?? 0) / need));
     }
     if (ratios.length === 0) return null;
     return ratios.reduce((a, b) => a + b, 0) / ratios.length;
-  }, [overviewProps, rosterRoleCounts, rosterSpecCounts]);
+  }, [overviewProps, rosterRoleCounts, rosterMinSpecKeyCounts]);
 
   const poolIds = useMemo(() => {
     const placed = new Set([...rosterOrder, ...reserveOrder]);
@@ -916,11 +929,17 @@ export function RaidRosterPlanner({
                   {overviewProps.minSpecsObj
                     ? Object.entries(overviewProps.minSpecsObj)
                         .filter(([, need]) => typeof need === 'number' && need > 0)
-                        .map(([spec, need]) => {
-                          const cur = rosterSpecCounts.get(spec) ?? 0;
+                        .map(([specKey, need]) => {
+                          const cur = rosterMinSpecKeyCounts.get(specKey) ?? 0;
+                          const classId = parseMinSpecClassKey(specKey);
+                          const title = minSpecKeyTitle(specKey, tProfile);
                           return (
-                            <span key={spec} className="inline-flex items-center gap-1.5">
-                              <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={16} slashClassName="hidden" />
+                            <span key={specKey} className="inline-flex items-center gap-1.5" title={title}>
+                              {classId ? (
+                                <ClassIcon classId={classId} size={16} title={title} />
+                              ) : (
+                                <CharacterSpecIconsInline mainSpec={specKey} offSpec={null} size={16} slashClassName="hidden" />
+                              )}
                               <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
                                 {countToMinLabel(cur, need)}
                               </span>
