@@ -195,6 +195,7 @@ export function RaidRosterPlanner({
   const t = useTranslations('raidDetail');
   const tEdit = useTranslations('raidEdit');
   const tRoster = useTranslations('raidRosterPlanner');
+  const tPlanner = useTranslations('raidPlanner');
   const tProfile = useTranslations('profile');
   const router = useRouter();
   const intlLocale = useLocale();
