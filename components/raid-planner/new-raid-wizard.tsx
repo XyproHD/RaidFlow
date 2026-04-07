@@ -15,14 +15,20 @@ import {
   type SlotHeat,
 } from '@/lib/raid-availability';
 import {
-  getAllSpecDisplayNames,
-  getSpecByDisplayName,
-  TBC_CLASS_IDS,
-  type TbcRole,
-} from '@/lib/wow-tbc-classes';
+  countFromSpecDisplayCounts,
+  MIN_SPEC_CLASS_ONLY,
+  minSpecRowFromStorageKey,
+  minSpecRowSpecDisplayName,
+  minSpecRowToStorageKey,
+  minSpecRowUsesClassIconOnly,
+  normalizeMinSpecRow,
+  type MinSpecRowForm,
+} from '@/lib/min-spec-keys';
+import { getSpecByDisplayName, TBC_CLASS_IDS, type TbcRole } from '@/lib/wow-tbc-classes';
 import {
   addMinutes,
   expandSlotIndicesForward,
+  localDateTimeToNearestRaidBaseAndSlotIndex,
   raidSlotToLocalDate,
   slotStringsForIndices,
 } from '@/lib/raid-planner-time';
@@ -33,8 +39,8 @@ import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
 import { CharacterSpecIconsInline } from '@/components/character-display-parts';
+import { MinSpecRequirementRow } from '@/components/raid-planner/min-spec-requirement-row';
 
-const ALL_SPECS = getAllSpecDisplayNames();
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
 /** i18n keys under `raidPlanner` für Klassen-Filter-Buttons */
 const RAID_PLANNER_CLASS_I18N = {
@@ -180,6 +186,15 @@ export function NewRaidWizard({
   const router = useRouter();
 
   const [step, setStep] = useState<1 | 2>(1);
+  /** Schritt 2 über „🔎 Verfügbarkeit“: Übernehmen/Abbrechen statt Speichern; Abbrechen stellt Snapshot wieder her. */
+  const [step2Entry, setStep2Entry] = useState<'normal' | 'fromTermin'>('normal');
+  const [scheduleSnapshot, setScheduleSnapshot] = useState<null | {
+    scheduledDate: string;
+    rangeStartIdx: number;
+    rangeEndIdx: number;
+    pickingEnd: boolean;
+    signupDatetimeLocal: string;
+  }>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -208,7 +223,7 @@ export function NewRaidWizard({
   const [minMelee, setMinMelee] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minMelee : 0));
   const [minRange, setMinRange] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minRange : 0));
   const [minHealers, setMinHealers] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minHealers : 0));
-  const [minSpecRows, setMinSpecRows] = useState<{ spec: string; count: number }[]>(() => {
+  const [minSpecRows, setMinSpecRows] = useState<MinSpecRowForm[]>(() => {
     if (
       mode === 'edit' &&
       initialRaid &&
@@ -217,7 +232,7 @@ export function NewRaidWizard({
       !Array.isArray(initialRaid.minSpecs)
     ) {
       const src = initialRaid.minSpecs as Record<string, number>;
-      return Object.entries(src).map(([spec, count]) => ({ spec, count }));
+      return Object.entries(src).map(([key, count]) => minSpecRowFromStorageKey(key, count));
     }
     return [];
   });
@@ -469,8 +484,19 @@ export function NewRaidWizard({
     availabilityFilter,
   ]);
 
+  const minSpecRowsFlat = useMemo(
+    () =>
+      minSpecRows
+        .map((r) => {
+          const spec = minSpecRowToStorageKey(r);
+          return spec && r.count > 0 ? { spec, count: r.count } : null;
+        })
+        .filter((x): x is { spec: string; count: number } => x !== null),
+    [minSpecRows]
+  );
+
   const slotHeat = useMemo((): SlotHeat[] => {
-    const activeSpecs = minSpecRows.filter((r) => r.spec && r.count > 0);
+    const activeSpecs = minSpecRowsFlat;
     return SLOTS.map((slotStr, _i) => {
       const wd = dateToRfWeekday(raidSlotToLocalDate(scheduledDate, slotStr));
       const tanks = new Set<string>();
@@ -498,7 +524,7 @@ export function NewRaidWizard({
         range.size >= minRange &&
         healers.size >= minHealers;
 
-      const ratio = specFulfillmentRatio(specCounts, minSpecRows);
+      const ratio = specFulfillmentRatio(specCounts, minSpecRowsFlat);
 
       if (!rolesMet) return 'yellow';
       if (activeSpecs.length === 0) return 'green';
@@ -506,7 +532,7 @@ export function NewRaidWizard({
       if (ratio >= 0.8) return 'orange';
       return 'red';
     });
-  }, [playerReps, scheduledDate, minTanks, minMelee, minRange, minHealers, minSpecRows]);
+  }, [playerReps, scheduledDate, minTanks, minMelee, minRange, minHealers, minSpecRowsFlat]);
 
   const liveStats = useMemo(() => {
     const tanks = new Set<string>();
@@ -530,8 +556,9 @@ export function NewRaidWizard({
 
     const specOk: Record<string, boolean> = {};
     for (const row of minSpecRows) {
-      if (row.count <= 0 || !row.spec) continue;
-      specOk[row.spec] = (specCounts[row.spec] ?? 0) >= row.count;
+      const key = minSpecRowToStorageKey(row);
+      if (!key || row.count <= 0) continue;
+      specOk[key] = countFromSpecDisplayCounts(key, specCounts) >= row.count;
     }
 
     const rolesMet =
@@ -539,7 +566,7 @@ export function NewRaidWizard({
       melee.size >= minMelee &&
       range.size >= minRange &&
       healers.size >= minHealers;
-    const specRatio = specFulfillmentRatio(specCounts, minSpecRows);
+    const specRatio = specFulfillmentRatio(specCounts, minSpecRowsFlat);
     const minOk = rolesMet && specRatio >= 1;
 
     return {
@@ -553,7 +580,17 @@ export function NewRaidWizard({
       availablePlayers: new Set(playerReps.map((p) => p.userId)).size,
       signupCount: 0,
     };
-  }, [playerReps, scheduledDate, rangeSlotStrings, minTanks, minMelee, minRange, minHealers, minSpecRows]);
+  }, [
+    playerReps,
+    scheduledDate,
+    rangeSlotStrings,
+    minTanks,
+    minMelee,
+    minRange,
+    minHealers,
+    minSpecRows,
+    minSpecRowsFlat,
+  ]);
 
   const groupedList = useMemo(() => {
     const byRole = new Map<TbcRole, typeof filteredPool>();
@@ -605,7 +642,14 @@ export function NewRaidWizard({
   };
 
   const addMinSpecRow = () => {
-    setMinSpecRows((rows) => [...rows, { spec: ALL_SPECS[0]?.displayName ?? '', count: 1 }]);
+    setMinSpecRows((rows) => [
+      ...rows,
+      {
+        classId: TBC_CLASS_IDS[0] ?? 'warrior',
+        specChoice: MIN_SPEC_CLASS_ONLY,
+        count: 1,
+      },
+    ]);
   };
 
   const handleTimelineClick = (i: number) => {
@@ -617,6 +661,54 @@ export function NewRaidWizard({
       setRangeEndIdx(i);
       setPickingEnd(false);
     }
+  };
+
+  const handleRaidStartDatetimeChange = (s: string) => {
+    const d = parseDatetimeLocal(s);
+    const { baseYmd, slotIndex } = localDateTimeToNearestRaidBaseAndSlotIndex(d);
+    setScheduledDate(baseYmd);
+    const N = SLOTS.length;
+    const oldIndices = expandSlotIndicesForward(rangeStartIdx, rangeEndIdx);
+    const len = Math.max(1, oldIndices.length);
+    let endIdx = slotIndex;
+    for (let k = 1; k < len; k++) {
+      endIdx = (endIdx + 1) % N;
+    }
+    setRangeStartIdx(slotIndex);
+    setRangeEndIdx(endIdx);
+    setPickingEnd(false);
+  };
+
+  const openAvailabilityPlanner = () => {
+    setScheduleSnapshot({
+      scheduledDate,
+      rangeStartIdx,
+      rangeEndIdx,
+      pickingEnd,
+      signupDatetimeLocal,
+    });
+    setStep2Entry('fromTermin');
+    setPickingEnd(false);
+    setStep(2);
+  };
+
+  const cancelAvailabilityPlanner = () => {
+    if (scheduleSnapshot) {
+      setScheduledDate(scheduleSnapshot.scheduledDate);
+      setRangeStartIdx(scheduleSnapshot.rangeStartIdx);
+      setRangeEndIdx(scheduleSnapshot.rangeEndIdx);
+      setPickingEnd(scheduleSnapshot.pickingEnd);
+      setSignupDatetimeLocal(scheduleSnapshot.signupDatetimeLocal);
+    }
+    setScheduleSnapshot(null);
+    setStep2Entry('normal');
+    setStep(1);
+  };
+
+  const applyAvailabilityPlanner = () => {
+    setScheduleSnapshot(null);
+    setStep2Entry('normal');
+    setStep(1);
   };
 
   const submit = async () => {
@@ -631,7 +723,8 @@ export function NewRaidWizard({
       const dungeonId = dungeonIds[0] ?? '';
       const minSpecs: Record<string, number> = {};
       for (const r of minSpecRows) {
-        if (r.spec && r.count > 0) minSpecs[r.spec] = r.count;
+        const key = minSpecRowToStorageKey(r);
+        if (key && r.count > 0) minSpecs[key] = r.count;
       }
 
       const body = {
@@ -954,6 +1047,44 @@ export function NewRaidWizard({
 
           <section className="rounded-xl border border-border bg-card p-4 md:p-6 space-y-4">
             <h2 className="text-lg font-semibold text-foreground border-b border-border pb-2">
+              {t('sectionTermin')}
+            </h2>
+            <fieldset disabled={!editable} className="space-y-4 disabled:opacity-70">
+              <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-md">
+                  <span className="text-muted-foreground">{t('scheduledDate')}</span>
+                  <input
+                    type="datetime-local"
+                    className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
+                    value={toDatetimeLocalValue(scheduledAt)}
+                    onChange={(e) => handleRaidStartDatetimeChange(e.target.value)}
+                  />
+                </label>
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-md">
+                  <span className="text-muted-foreground">{t('signupUntilCombined')}</span>
+                  <input
+                    type="datetime-local"
+                    className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
+                    value={signupDatetimeLocal}
+                    onChange={(e) => setSignupDatetimeLocal(e.target.value)}
+                  />
+                </label>
+                <div className="flex shrink-0 pb-0.5">
+                  <button
+                    type="button"
+                    className="rounded-md border border-border bg-muted/30 px-4 py-2 text-sm font-medium hover:bg-muted/50"
+                    onClick={openAvailabilityPlanner}
+                  >
+                    {t('openAvailabilityPlanner')}
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">{t('raidDateHint')}</p>
+            </fieldset>
+          </section>
+
+          <section className="rounded-xl border border-border bg-card p-4 md:p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-foreground border-b border-border pb-2">
               {t('sectionMinimum')}
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -994,49 +1125,17 @@ export function NewRaidWizard({
                 </button>
               </div>
               {minSpecRows.map((row, idx) => (
-                <div
+                <MinSpecRequirementRow
                   key={idx}
-                  className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/15 px-3 py-2"
-                >
-                  <SpecIcon spec={row.spec} size={28} />
-                  <select
-                    className="flex-1 min-w-[180px] rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                    value={row.spec}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setMinSpecRows((rows) =>
-                        rows.map((r, i) => (i === idx ? { ...r, spec: v } : r))
-                      );
-                    }}
-                    aria-label={t('minSpecs')}
-                  >
-                    {ALL_SPECS.map((s) => (
-                      <option key={s.displayName} value={s.displayName}>
-                        {s.displayName}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    className="w-16 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-center"
-                    value={row.count}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      setMinSpecRows((rows) =>
-                        rows.map((r, i) => (i === idx ? { ...r, count: n } : r))
-                      );
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="text-sm text-destructive hover:underline shrink-0"
-                    onClick={() => setMinSpecRows((rows) => rows.filter((_, i) => i !== idx))}
-                  >
-                    {t('remove')}
-                  </button>
-                </div>
+                  row={row}
+                  onChange={(next) =>
+                    setMinSpecRows((rows) => rows.map((r, i) => (i === idx ? next : r)))
+                  }
+                  onRemove={() => setMinSpecRows((rows) => rows.filter((_, i) => i !== idx))}
+                  removeLabel={t('remove')}
+                  t={t}
+                  tProfile={tProfile}
+                />
               ))}
             </div>
           </section>
@@ -1076,8 +1175,6 @@ export function NewRaidWizard({
               </select>
             </label>
           </section>
-
-          <p className="text-sm text-muted-foreground">{t('raidDateHint')}</p>
 
           {isEdit ? (
             <div className="rounded-xl border border-border bg-muted/15 p-4 text-sm text-muted-foreground">
@@ -1126,6 +1223,7 @@ export function NewRaidWizard({
                 }
                 setSaveError(null);
                 setPickingEnd(false);
+                setStep2Entry('normal');
                 setStep(2);
               }}
             >
@@ -1162,26 +1260,11 @@ export function NewRaidWizard({
 
       {step === 2 && (
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 sm:items-end max-w-2xl">
-            <label className="flex flex-col gap-1 text-sm min-w-0">
-              <span className="text-muted-foreground">{t('scheduledDate')}</span>
-              <input
-                type="date"
-                className="rounded-md border border-input bg-background px-3 py-2"
-                value={scheduledDate}
-                onChange={(e) => setScheduledDate(e.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm min-w-0">
-              <span className="text-muted-foreground">{t('signupUntilCombined')}</span>
-              <input
-                type="datetime-local"
-                className="rounded-md border border-input bg-background px-3 py-2"
-                value={signupDatetimeLocal}
-                onChange={(e) => setSignupDatetimeLocal(e.target.value)}
-              />
-            </label>
-          </div>
+          {step2Entry === 'normal' ? (
+            <p className="text-sm text-muted-foreground max-w-2xl">{t('step2ScheduleHint')}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground max-w-2xl">{t('step2FromTerminHint')}</p>
+          )}
 
           <div
             className={cn(
@@ -1216,20 +1299,32 @@ export function NewRaidWizard({
               <span className="text-muted-foreground tabular-nums">/</span>
               <span className="tabular-nums text-muted-foreground">{minRange}</span>
             </span>
-            {minSpecRows.map(
-              (row) =>
-                row.spec &&
-                row.count > 0 && (
-                  <span key={row.spec} className="flex items-center gap-1.5" title={row.spec}>
-                    <SpecIcon spec={row.spec} size={24} />
-                    <span className="tabular-nums text-lg font-semibold">
-                      {liveStats.specCounts[row.spec] ?? 0}
-                    </span>
-                    <span className="text-muted-foreground tabular-nums">/</span>
-                    <span className="tabular-nums text-muted-foreground">{row.count}</span>
-                  </span>
-                )
-            )}
+            {minSpecRows.map((row, idx) => {
+              const key = minSpecRowToStorageKey(row);
+              if (!key || row.count <= 0) return null;
+              const cur = countFromSpecDisplayCounts(key, liveStats.specCounts);
+              const rowN = normalizeMinSpecRow(row);
+              const specLabel = minSpecRowSpecDisplayName(rowN);
+              const title =
+                rowN.legacyDisplayKey ??
+                (minSpecRowUsesClassIconOnly(rowN)
+                  ? tProfile(RAID_PLANNER_CLASS_I18N[rowN.classId as keyof typeof RAID_PLANNER_CLASS_I18N])
+                  : specLabel ?? key);
+              return (
+                <span key={`${key}-${idx}`} className="flex items-center gap-1.5" title={title}>
+                  {rowN.legacyDisplayKey ? (
+                    <ClassIcon classId={rowN.classId} size={24} title={rowN.legacyDisplayKey} />
+                  ) : minSpecRowUsesClassIconOnly(rowN) ? (
+                    <ClassIcon classId={rowN.classId} size={24} />
+                  ) : (
+                    <SpecIcon spec={specLabel!} size={24} />
+                  )}
+                  <span className="tabular-nums text-lg font-semibold">{cur}</span>
+                  <span className="text-muted-foreground tabular-nums">/</span>
+                  <span className="tabular-nums text-muted-foreground">{row.count}</span>
+                </span>
+              );
+            })}
             <span className="flex items-center gap-1.5" title={t('maxPlayers')}>
               <span className="text-xl leading-none" aria-hidden>
                 👥
@@ -1523,41 +1618,62 @@ export function NewRaidWizard({
           ) : null}
 
           <div className="flex flex-wrap gap-3 pt-2">
-            <button
-              type="button"
-              className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
-              onClick={() => setStep(1)}
-            >
-              {t('back')}
-            </button>
-            <button
-              type="button"
-              disabled={saving || (requiresReset && !resetAck) || !editable}
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-              onClick={submit}
-            >
-              {saving ? t('saving') : t('saveRaid')}
-            </button>
-            {isEdit ? (
+            {step2Entry === 'fromTermin' ? (
               <>
                 <button
                   type="button"
-                  disabled={saving || !editable}
-                  className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  onClick={() => void doCancelRaid()}
+                  className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+                  onClick={cancelAvailabilityPlanner}
                 >
-                  🚫 {tEdit('cancelRaid')}
+                  {t('cancelFromAvailability')}
                 </button>
                 <button
                   type="button"
-                  disabled={saving}
-                  className="rounded-md border border-destructive bg-destructive/10 text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  onClick={() => void doDeleteRaid()}
+                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                  onClick={applyAvailabilityPlanner}
                 >
-                  🗑️ {tDetail('menuDeleteRaid')}
+                  {t('applyFromAvailability')}
                 </button>
               </>
-            ) : null}
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+                  onClick={() => setStep(1)}
+                >
+                  {t('back')}
+                </button>
+                <button
+                  type="button"
+                  disabled={saving || (requiresReset && !resetAck) || !editable}
+                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  onClick={submit}
+                >
+                  {saving ? t('saving') : t('saveRaid')}
+                </button>
+                {isEdit ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={saving || !editable}
+                      className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
+                      onClick={() => void doCancelRaid()}
+                    >
+                      🚫 {tEdit('cancelRaid')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={saving}
+                      className="rounded-md border border-destructive bg-destructive/10 text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
+                      onClick={() => void doDeleteRaid()}
+                    >
+                      🗑️ {tDetail('menuDeleteRaid')}
+                    </button>
+                  </>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       )}

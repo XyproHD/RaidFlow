@@ -14,6 +14,7 @@ import {
 } from '@/components/raid-planner/raid-roster-planner';
 import { getRaidDetailContext } from '@/lib/raid-detail-access';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
+import { buildSpecStatsByMinKeys } from '@/lib/min-spec-keys';
 
 export default async function RaidPlanPage(props: {
   params: Promise<{ locale: string; guildId: string; raidId: string }>;
@@ -92,21 +93,19 @@ export default async function RaidPlanPage(props: {
     }
   }
 
-  const specCountsByType: Record<string, RoleStat> = {};
-  for (const s of raid.signups) {
-    const spec = (s.signedSpec?.trim() || s.character?.mainSpec?.trim() || '').trim();
-    if (!spec) continue;
-    const tn = typeNorm(s.type);
-    if (tn !== 'normal' && tn !== 'uncertain' && tn !== 'reserve') continue;
-    const cur = specCountsByType[spec] ?? { normal: 0, uncertain: 0, reserve: 0 };
-    cur[tn] += 1;
-    specCountsByType[spec] = cur;
-  }
-
   const minSpecsObj =
     raid.minSpecs && typeof raid.minSpecs === 'object' && !Array.isArray(raid.minSpecs)
       ? (raid.minSpecs as Record<string, number>)
       : null;
+
+  const specCountsByType: Record<string, RoleStat> = buildSpecStatsByMinKeys(
+    raid.signups.map((s) => ({
+      type: s.type,
+      signedSpec: s.signedSpec,
+      character: s.character ? { mainSpec: s.character.mainSpec } : null,
+    })),
+    minSpecsObj
+  );
 
   const roleMinByKey: Record<(typeof ROLE_KEYS)[number], number> = {
     Tank: raid.minTanks,
@@ -142,6 +141,7 @@ export default async function RaidPlanPage(props: {
         id: s.id,
         userId: s.userId,
         characterId: ch?.id ?? null,
+        originalCharacterId: ch?.id ?? null,
         name,
         mainSpec,
         offSpec,
@@ -152,6 +152,9 @@ export default async function RaidPlanPage(props: {
         originalSignedSpec: (s.signedSpec?.trim() || ch?.mainSpec?.trim() || null) as string | null,
         onlySignedSpec: s.onlySignedSpec,
         signupType: s.type,
+        leaderPlacement: (typeof (s as unknown as { leaderPlacement?: unknown }).leaderPlacement === 'string'
+          ? ((s as unknown as { leaderPlacement: string }).leaderPlacement.trim() || 'signup')
+          : 'signup') as 'signup' | 'substitute' | 'confirmed',
         isLate: s.isLate,
         punctuality: (s.punctuality === 'tight' || s.punctuality === 'late' || s.punctuality === 'on_time'
           ? s.punctuality

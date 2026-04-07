@@ -3,18 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
 import { syncRaidThreadSummary, postRaidLockedThreadNotice } from '@/lib/raid-thread-sync';
-
-function parseMinSpecs(raw: unknown): Record<string, number> | null {
-  if (raw == null) return {};
-  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 99) return null;
-    if (k.trim().length === 0) return null;
-    out[k.trim()] = Math.floor(v);
-  }
-  return out;
-}
+import { parseMinSpecsPayload } from '@/lib/min-spec-keys';
 
 /**
  * PATCH /api/guilds/[guildId]/raids/[raidId]
@@ -100,7 +89,7 @@ export async function PATCH(
 
   let nextMinSpecs: Record<string, number> | null;
   if (body.minSpecs !== undefined) {
-    const p = parseMinSpecs(body.minSpecs);
+    const p = parseMinSpecsPayload(body.minSpecs);
     if (p === null) {
       return NextResponse.json({ error: 'Invalid minSpecs' }, { status: 400 });
     }

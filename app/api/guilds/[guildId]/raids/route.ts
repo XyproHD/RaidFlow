@@ -4,18 +4,7 @@ import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
 import { channelExists, createPublicThreadInChannel } from '@/lib/discord-guild-api';
 import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
-
-function parseMinSpecs(raw: unknown): Record<string, number> | null {
-  if (raw == null) return {};
-  if (typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 99) return null;
-    if (k.trim().length === 0) return null;
-    out[k.trim()] = Math.floor(v);
-  }
-  return out;
-}
+import { parseMinSpecsPayload } from '@/lib/min-spec-keys';
 
 /**
  * POST /api/guilds/[guildId]/raids
@@ -111,7 +100,7 @@ export async function POST(
   /** Thread wird angelegt, sobald ein Raid-Thread-Kanal gewählt ist (kein separater Schalter). */
   const createDiscordThread = !!discordChannelId;
 
-  const minSpecsParsed = parseMinSpecs(body.minSpecs);
+  const minSpecsParsed = parseMinSpecsPayload(body.minSpecs);
   if (minSpecsParsed === null) {
     return NextResponse.json({ error: 'Invalid minSpecs' }, { status: 400 });
   }

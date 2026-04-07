@@ -111,6 +111,11 @@ const CLASS_DISPLAY: Record<string, string> = {
   priest: 'Priest', rogue: 'Rogue', shaman: 'Shaman', warlock: 'Warlock', warrior: 'Warrior',
 };
 
+/** Kurzname z. B. für Mindestbesetzung „Klasse (egal welche Spec)“ / Discord-Zeilen. */
+export function getClassEnglishName(classId: string): string {
+  return CLASS_DISPLAY[classId] ?? classId;
+}
+
 /** Spec-Anzeigename für DB (main_spec/off_spec): z. B. "Fire Mage" für Kompatibilität mit Icons */
 export function getSpecDisplayName(classId: string, specId: string): string {
   const cls = TBC_CLASSES.find((c) => c.id === classId);
@@ -118,6 +123,11 @@ export function getSpecDisplayName(classId: string, specId: string): string {
   if (!spec) return specId;
   const c = CLASS_DISPLAY[classId] ?? classId;
   return `${spec.name} ${c}`;
+}
+
+/** Specs einer Klasse (für Mindestbesetzung: Klasse → Spec-Dropdown). */
+export function getClassSpecs(classId: string): TbcSpec[] {
+  return TBC_CLASSES.find((c) => c.id === classId)?.specs ?? [];
 }
 
 export function getSpecByDisplayName(displayName: string): { classId: string; specId: string } | null {

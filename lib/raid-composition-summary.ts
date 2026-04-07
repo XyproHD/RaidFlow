@@ -1,4 +1,8 @@
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
+import {
+  countSignupsMatchingMinSpecKey,
+  formatMinSpecGapLabel,
+} from '@/lib/min-spec-keys';
 
 type MinSpecs = Record<string, number> | null | undefined;
 
@@ -68,16 +72,10 @@ export function formatCompositionGaps(args: {
   }
 
   const specNeed = parseMinSpecs(args.minSpecs);
-  const specCounts: Record<string, number> = {};
-  for (const s of args.signups) {
-    if (s.type === 'reserve') continue;
-    const name = effectiveSpec(s);
-    if (name) specCounts[name] = (specCounts[name] ?? 0) + 1;
-  }
   for (const [specName, need] of Object.entries(specNeed)) {
-    const have = specCounts[specName] ?? 0;
+    const have = countSignupsMatchingMinSpecKey(specName, args.signups);
     const miss = need - have;
-    if (miss > 0) parts.push(`${specName} −${miss}`);
+    if (miss > 0) parts.push(`${formatMinSpecGapLabel(specName)} −${miss}`);
   }
 
   return parts.length ? parts.join(', ') : '—';
@@ -117,15 +115,9 @@ export function getCompositionGapsStructured(args: {
   }
 
   const specNeed = parseMinSpecs(args.minSpecs);
-  const specCounts: Record<string, number> = {};
-  for (const s of args.signups) {
-    if (s.type === 'reserve') continue;
-    const name = effectiveSpec(s);
-    if (name) specCounts[name] = (specCounts[name] ?? 0) + 1;
-  }
   const specs: CompositionGapSpec[] = [];
   for (const [specName, need] of Object.entries(specNeed)) {
-    const have = specCounts[specName] ?? 0;
+    const have = countSignupsMatchingMinSpecKey(specName, args.signups);
     const miss = need - have;
     if (miss > 0) specs.push({ spec: specName, missing: miss });
   }
@@ -133,15 +125,10 @@ export function getCompositionGapsStructured(args: {
   return { roles, specs };
 }
 
-/** Für Min-Spec-Zeile: Ist / Soll je Spec. */
+/** Für Min-Spec-Zeile: Ist / Soll (Spec-Anzeigename oder `class:<id>`). */
 export function countSignedPerSpec(
   signups: CompositionSignupRow[],
-  specDisplayName: string
+  minSpecKey: string
 ): number {
-  let n = 0;
-  for (const s of signups) {
-    if (s.type === 'reserve') continue;
-    if (effectiveSpec(s) === specDisplayName) n++;
-  }
-  return n;
+  return countSignupsMatchingMinSpecKey(minSpecKey, signups);
 }

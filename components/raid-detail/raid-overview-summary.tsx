@@ -4,7 +4,9 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { ROLE_ICONS } from '@/lib/role-spec-icons';
 import Image from 'next/image';
-import { CharacterSpecIconsInline } from '@/components/character-display-parts';
+import { ClassIcon } from '@/components/class-icon';
+import { SpecIcon } from '@/components/spec-icon';
+import { minSpecKeyTitle, parseMinSpecClassKey } from '@/lib/min-spec-keys';
 
 const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
 
@@ -40,6 +42,7 @@ export function RaidOverviewSummaryRows({
   specCountsByType,
 }: RaidOverviewSummaryProps) {
   const t = useTranslations('raidDetail');
+  const tProfile = useTranslations('profile');
 
   return (
     <div className="grid gap-y-2 gap-x-3 sm:gap-x-4 sm:ml-auto w-full sm:w-auto">
@@ -103,13 +106,19 @@ export function RaidOverviewSummaryRows({
                 .filter(([, need]) => typeof need === 'number' && Number.isFinite(need) && need > 0)
                 .map(([spec, need]) => {
                   const stats = specCountsByType[spec] ?? { normal: 0, uncertain: 0, reserve: 0 };
+                  const classId = parseMinSpecClassKey(spec);
+                  const title = minSpecKeyTitle(spec, tProfile);
                   return (
                     <span
                       key={spec}
                       className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
-                      title={spec}
+                      title={title}
                     >
-                      <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={18} slashClassName="hidden" />
+                      {classId ? (
+                        <ClassIcon classId={classId} size={18} title={title} />
+                      ) : (
+                        <SpecIcon spec={spec} size={18} />
+                      )}
                       <span className={cn('font-semibold', statusToneClass({ min: need, ...stats }))}>
                         {need}
                       </span>

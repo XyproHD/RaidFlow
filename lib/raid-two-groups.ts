@@ -1,3 +1,4 @@
+import { countSignupsMatchingMinSpecKey } from '@/lib/min-spec-keys';
 import {
   countRolesFromSignups,
   type CompositionSignupRow,
@@ -12,25 +13,6 @@ function parseMinSpecs(raw: unknown): Record<string, number> {
     }
   }
   return out;
-}
-
-function effectiveSpec(s: CompositionSignupRow): string | null {
-  const a = s.signedSpec?.trim();
-  if (a) return a;
-  return s.character?.mainSpec?.trim() ?? null;
-}
-
-/**
- * Zählt Specs aus Anmeldungen (ohne Reserve).
- */
-function countSpecsFromSignups(signups: CompositionSignupRow[]): Record<string, number> {
-  const specCounts: Record<string, number> = {};
-  for (const s of signups) {
-    if (s.type === 'reserve') continue;
-    const name = effectiveSpec(s);
-    if (name) specCounts[name] = (specCounts[name] ?? 0) + 1;
-  }
-  return specCounts;
 }
 
 /**
@@ -63,9 +45,8 @@ export function computeTwoGroupsPossible(args: {
   }
 
   const specNeed = parseMinSpecs(args.minSpecs);
-  const specCounts = countSpecsFromSignups(pool);
   for (const [specName, need] of Object.entries(specNeed)) {
-    const have = specCounts[specName] ?? 0;
+    const have = countSignupsMatchingMinSpecKey(specName, pool);
     if (have < need * 2) return false;
   }
 

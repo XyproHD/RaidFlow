@@ -51,6 +51,9 @@ export async function POST(
   const typeNorm = normalizeSignupType(typeRaw);
   const signedSpecRaw =
     typeof body.signedSpec === 'string' ? body.signedSpec.trim() : '';
+  const noteRaw =
+    typeof body.note === 'string' ? body.note.trim() : body.note === null ? '' : '';
+  const note = noteRaw.length > 0 ? noteRaw : null;
   const placementRaw = parseLeaderPlacement(body.leaderPlacement);
   const leaderPlacement: LeaderPlacement = placementRaw ?? 'signup';
 
@@ -89,8 +92,11 @@ export async function POST(
 
   const setConfirmed = setConfirmedForPlacement(leaderPlacement);
 
+  // Allow multiple signups per user (e.g. main + twink). We treat (raidId,userId,characterId) as the identity here:
+  // - If a signup for this character already exists, update it.
+  // - Otherwise create a new signup row.
   const existing = await prisma.rfRaidSignup.findFirst({
-    where: { raidId, userId: targetUserId },
+    where: { raidId, userId: targetUserId, characterId },
   });
 
   if (existing) {
@@ -117,6 +123,7 @@ export async function POST(
         characterId,
         type: typeNorm,
         signedSpec: signedSpecRaw,
+        note,
         leaderAllowsReserve: existing.forbidReserve ? false : existing.leaderAllowsReserve,
         leaderPlacement,
         setConfirmed,
@@ -144,7 +151,7 @@ export async function POST(
       signedSpec: signedSpecRaw,
       allowReserve: false,
       isLate: false,
-      note: null,
+      note,
       leaderAllowsReserve: true,
       leaderMarkedTeilnehmer: false,
       onlySignedSpec: false,
