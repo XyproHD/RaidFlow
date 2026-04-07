@@ -916,14 +916,14 @@ export function RaidRosterPlanner({
 
       const saveOne = async (id: string): Promise<{ oldId: string; newId: string } | null> => {
         const row = idToRow.get(id);
-        if (!row) return;
+        if (!row) return null;
         const leaderPlacement = placementForId(id);
         const signedSpec = (row.signedSpec?.trim() || row.originalSignedSpec?.trim() || row.mainSpec.trim()).trim();
 
         if (id.startsWith('manual:')) {
           const targetUserId = (row.userId ?? '').trim();
           const characterId = (row.characterId ?? '').trim();
-          if (!targetUserId || !characterId) return;
+          if (!targetUserId || !characterId) return null;
           const res = await fetch(
             `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups/leader`,
             {
