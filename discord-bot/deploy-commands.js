@@ -15,6 +15,7 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(__dirname, '.env.local') });
 dotenv.config({ path: path.join(__dirname, '..', '.env.local') });
 import { REST, Routes, SlashCommandBuilder } from 'discord.js';
+import { ApplicationCommandType, EntryPointCommandHandlerType } from 'discord-api-types/v10';
 
 const token = process.env.DISCORD_BOT_TOKEN;
 const clientId = process.env.DISCORD_BOT_CLIENT_ID || process.env.DISCORD_CLIENT_ID;
@@ -24,14 +25,18 @@ if (!token || !clientId) {
   process.exit(1);
 }
 
-const commands = [
-  new SlashCommandBuilder()
+const raidflowSlash = new SlashCommandBuilder()
     .setName('raidflow')
     .setDescription('RaidFlow: Server einrichten und Raidgruppen verwalten')
     .addSubcommand((sub) =>
       sub
         .setName('check')
         .setDescription('Status: Webapp/DB, Mindestrollen, deine Discord- und Webapp-Zuordnung')
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('home')
+        .setDescription('Profil-Dashboard: Charaktere anzeigen und in Discord anlegen')
     )
     .addSubcommand((sub) =>
       sub
@@ -54,8 +59,16 @@ const commands = [
             .setRequired(true)
         )
     )
-    .toJSON(),
-];
+    .toJSON();
+
+/** App Home (DM / „App öffnen“): erfordert im Developer Portal ggf. User-Install. */
+const appHomeEntry = {
+  name: 'start',
+  type: ApplicationCommandType.PrimaryEntryPoint,
+  handler: EntryPointCommandHandlerType.AppHandler,
+};
+
+const commands = [raidflowSlash, appHomeEntry];
 
 const rest = new REST().setToken(token);
 
