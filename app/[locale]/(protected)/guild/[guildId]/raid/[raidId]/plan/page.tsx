@@ -141,6 +141,7 @@ export default async function RaidPlanPage(props: {
         id: s.id,
         userId: s.userId,
         characterId: ch?.id ?? null,
+        originalCharacterId: ch?.id ?? null,
         name,
         mainSpec,
         offSpec,
