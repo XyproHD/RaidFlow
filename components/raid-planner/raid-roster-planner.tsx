@@ -861,29 +861,6 @@ export function RaidRosterPlanner({
     const id = `manual:${addSelected.id}`;
     setSignups((prev) => {
       if (prev.some((x) => x.id === id || x.characterId === addSelected.id)) return prev;
-      const existingIdx = prev.findIndex((x) => (x.userId ?? '').trim() && (x.userId ?? '').trim() === addSelected.userId);
-      if (existingIdx >= 0) {
-        // One signup per user per raid. If the user already has a signup, switch it to the selected character
-        // and persist via leader endpoint on save (characterId differs from originalCharacterId).
-        const cur = prev[existingIdx]!;
-        const nextRole = (roleFromSpecDisplayName(addSelected.mainSpec) ?? addSelected.role) as TbcRole;
-        const nextRow: RosterPlannerSignup = {
-          ...cur,
-          characterId: addSelected.id,
-          name: addSelected.name,
-          mainSpec: addSelected.mainSpec,
-          offSpec: addSelected.offSpec,
-          classId: addSelected.classId,
-          isMain: addSelected.isMain,
-          role: nextRole,
-          signedSpec: null,
-          originalSignedSpec: addSelected.mainSpec,
-          note,
-        };
-        const out = [...prev];
-        out[existingIdx] = nextRow;
-        return out;
-      }
       const row: RosterPlannerSignup = {
         id,
         userId: addSelected.userId,
@@ -949,7 +926,7 @@ export function RaidRosterPlanner({
         const signedSpec = (row.signedSpec?.trim() || row.originalSignedSpec?.trim() || row.mainSpec.trim()).trim();
         const note = row.note ?? null;
 
-        if (id.startsWith('manual:') || (row.originalCharacterId ?? null) !== (row.characterId ?? null)) {
+        if (id.startsWith('manual:')) {
           const targetUserId = (row.userId ?? '').trim();
           const characterId = (row.characterId ?? '').trim();
           if (!targetUserId || !characterId) return null;
@@ -975,9 +952,7 @@ export function RaidRosterPlanner({
           const json = (await res.json()) as { signup?: { id?: string } };
           const newId = (json.signup?.id ?? '').trim();
           if (!newId) throw new Error('Invalid create response');
-          // Existing signup keeps its id; manual rows get replaced.
-          if (id.startsWith('manual:')) return { oldId: id, newId };
-          return null;
+          return { oldId: id, newId };
         }
 
         const res = await fetch(
@@ -1013,9 +988,6 @@ export function RaidRosterPlanner({
         setRosterOrder((prev) => prev.map((id) => map.get(id) ?? id));
         setReserveOrder((prev) => prev.map((id) => map.get(id) ?? id));
       }
-
-      // After successful save, the current character becomes the baseline.
-      setSignups((prev) => prev.map((row) => ({ ...row, originalCharacterId: row.characterId ?? null })));
 
       // Persist order locally for next visit.
       if (typeof window !== 'undefined') {

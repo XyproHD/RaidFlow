@@ -92,8 +92,11 @@ export async function POST(
 
   const setConfirmed = setConfirmedForPlacement(leaderPlacement);
 
+  // Allow multiple signups per user (e.g. main + twink). We treat (raidId,userId,characterId) as the identity here:
+  // - If a signup for this character already exists, update it.
+  // - Otherwise create a new signup row.
   const existing = await prisma.rfRaidSignup.findFirst({
-    where: { raidId, userId: targetUserId },
+    where: { raidId, userId: targetUserId, characterId },
   });
 
   if (existing) {
