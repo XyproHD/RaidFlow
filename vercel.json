@@ -2,5 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "npm run build",
-  "installCommand": "npm ci && npx prisma generate"
+  "installCommand": "npm cache clean --force && npm ci --prefer-online && npx prisma generate"
 }
