@@ -151,6 +151,9 @@ export default async function RaidPlanPage(props: {
         originalSignedSpec: (s.signedSpec?.trim() || ch?.mainSpec?.trim() || null) as string | null,
         onlySignedSpec: s.onlySignedSpec,
         signupType: s.type,
+        leaderPlacement: (typeof (s as unknown as { leaderPlacement?: unknown }).leaderPlacement === 'string'
+          ? ((s as unknown as { leaderPlacement: string }).leaderPlacement.trim() || 'signup')
+          : 'signup') as 'signup' | 'substitute' | 'confirmed',
         isLate: s.isLate,
         punctuality: (s.punctuality === 'tight' || s.punctuality === 'late' || s.punctuality === 'on_time'
           ? s.punctuality

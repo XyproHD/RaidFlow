@@ -58,6 +58,8 @@ export type RosterPlannerSignup = {
   onlySignedSpec?: boolean;
   /** DB: normal | uncertain | reserve (main treated as normal) */
   signupType: string;
+  /** DB: signup | substitute | confirmed */
+  leaderPlacement?: 'signup' | 'substitute' | 'confirmed';
   isLate: boolean;
   punctuality?: PlannerPunctuality | null;
   forbidReserve?: boolean;
@@ -193,12 +195,21 @@ export function RaidRosterPlanner({
   const t = useTranslations('raidDetail');
   const tEdit = useTranslations('raidEdit');
   const tRoster = useTranslations('raidRosterPlanner');
-  const tPlanner = useTranslations('raidPlanner');
   const tProfile = useTranslations('profile');
   const router = useRouter();
   const intlLocale = useLocale();
 
   const [signups, setSignups] = useState<RosterPlannerSignup[]>(() => initialSignups);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState<{
+    signups: RosterPlannerSignup[];
+    rosterOrder: string[];
+    reserveOrder: string[];
+  } | null>(null);
+
+  const orderStorageKey = useMemo(() => `rf:raidPlannerOrder:${raidId}`, [raidId]);
   useEffect(() => {
     setSignups(initialSignups);
     setReserveOrder((prev) => {
@@ -219,6 +230,82 @@ export function RaidRosterPlanner({
 
   const [rosterOrder, setRosterOrder] = useState<string[]>([]);
   const [reserveOrder, setReserveOrder] = useState<string[]>(() => reserveSignupIdsFrom(initialSignups));
+
+  function safeJsonParse<T>(raw: string | null): T | null {
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  const applySavedOrders = useCallback(
+    (rows: RosterPlannerSignup[]) => {
+      const ids = rows.map((s) => s.id);
+      const idsSet = new Set(ids);
+      const placementOf = (id: string): 'signup' | 'substitute' | 'confirmed' => {
+        const row = rows.find((x) => x.id === id);
+        const p = row?.leaderPlacement;
+        return p === 'confirmed' || p === 'substitute' || p === 'signup' ? p : 'signup';
+      };
+
+      const stored = typeof window !== 'undefined'
+        ? safeJsonParse<{ rosterOrder?: unknown; reserveOrder?: unknown }>(window.localStorage.getItem(orderStorageKey))
+        : null;
+      const storedRoster =
+        stored && Array.isArray(stored.rosterOrder) ? (stored.rosterOrder.filter((x) => typeof x === 'string') as string[]) : null;
+      const storedReserve =
+        stored && Array.isArray(stored.reserveOrder) ? (stored.reserveOrder.filter((x) => typeof x === 'string') as string[]) : null;
+
+      const normalize = (arr: string[] | null) => {
+        if (!arr) return [];
+        const out: string[] = [];
+        for (const id of arr) {
+          if (!idsSet.has(id)) continue;
+          if (!out.includes(id)) out.push(id);
+        }
+        return out;
+      };
+
+      let nextRoster = normalize(storedRoster);
+      let nextReserve = normalize(storedReserve);
+
+      // If we have no stored order yet, derive from leaderPlacement.
+      if (nextRoster.length === 0 && nextReserve.length === 0) {
+        nextRoster = ids.filter((id) => placementOf(id) === 'confirmed');
+        nextReserve = ids.filter((id) => placementOf(id) === 'substitute');
+      }
+
+      // Ensure ids are in the correct column according to leaderPlacement (if stored data drifted).
+      const placed = new Set([...nextRoster, ...nextReserve]);
+      const remaining = ids.filter((id) => !placed.has(id));
+      for (const id of remaining) {
+        const p = placementOf(id);
+        if (p === 'confirmed') nextRoster.push(id);
+        else if (p === 'substitute') nextReserve.push(id);
+      }
+
+      // Filter out wrong placements if underlying DB changed
+      nextRoster = nextRoster.filter((id) => placementOf(id) === 'confirmed');
+      nextReserve = nextReserve.filter((id) => placementOf(id) === 'substitute');
+
+      setRosterOrder(nextRoster);
+      setReserveOrder(nextReserve);
+
+      setSavedSnapshot({
+        signups: rows,
+        rosterOrder: nextRoster,
+        reserveOrder: nextReserve,
+      });
+    },
+    [orderStorageKey]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    applySavedOrders(initialSignups);
+  }, [raidId, initialSignups, applySavedOrders]);
 
   const [mainAltFilter, setMainAltFilter] = useState<MainAltFilter>('both');
   const [allowWeekday, setAllowWeekday] = useState(true);
@@ -812,6 +899,123 @@ export function RaidRosterPlanner({
     router.refresh();
   }
 
+  async function doSaveDraft() {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const placementForId = (id: string): 'signup' | 'substitute' | 'confirmed' => {
+        if (rosterOrder.includes(id)) return 'confirmed';
+        if (reserveOrder.includes(id)) return 'substitute';
+        return 'signup';
+      };
+
+      const idToRow = new Map(signups.map((s) => [s.id, s]));
+
+      const mappings: Array<{ oldId: string; newId: string }> = [];
+
+      const saveOne = async (id: string): Promise<{ oldId: string; newId: string } | null> => {
+        const row = idToRow.get(id);
+        if (!row) return;
+        const leaderPlacement = placementForId(id);
+        const signedSpec = (row.signedSpec?.trim() || row.originalSignedSpec?.trim() || row.mainSpec.trim()).trim();
+
+        if (id.startsWith('manual:')) {
+          const targetUserId = (row.userId ?? '').trim();
+          const characterId = (row.characterId ?? '').trim();
+          if (!targetUserId || !characterId) return;
+          const res = await fetch(
+            `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups/leader`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                targetUserId,
+                characterId,
+                type: 'normal',
+                signedSpec,
+                leaderPlacement,
+              }),
+            }
+          );
+          if (!res.ok) {
+            const txt = await res.text().catch(() => '');
+            throw new Error(txt || 'Failed to create signup');
+          }
+          const json = (await res.json()) as { signup?: { id?: string } };
+          const newId = (json.signup?.id ?? '').trim();
+          if (!newId) throw new Error('Invalid create response');
+          return { oldId: id, newId };
+        }
+
+        const res = await fetch(
+          `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups/${encodeURIComponent(id)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ leaderPlacement, signedSpec }),
+          }
+        );
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          throw new Error(txt || 'Failed to save');
+        }
+        return null;
+      };
+
+      // Execute sequentially to keep errors deterministic.
+      for (const s of signups) {
+        const m = await saveOne(s.id);
+        if (m) mappings.push(m);
+      }
+
+      if (mappings.length > 0) {
+        const map = new Map(mappings.map((m) => [m.oldId, m.newId]));
+        setSignups((prev) =>
+          prev.map((row) => {
+            const nid = map.get(row.id);
+            if (!nid) return row;
+            return { ...row, id: nid, leaderPlacement: placementForId(row.id) };
+          })
+        );
+        setRosterOrder((prev) => prev.map((id) => map.get(id) ?? id));
+        setReserveOrder((prev) => prev.map((id) => map.get(id) ?? id));
+      }
+
+      // Persist order locally for next visit.
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(
+          orderStorageKey,
+          JSON.stringify({ rosterOrder, reserveOrder })
+        );
+      }
+
+      setSavedSnapshot({
+        signups,
+        rosterOrder,
+        reserveOrder,
+      });
+      setLastSavedAt(Date.now());
+      router.refresh();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function doUndoToLastSave() {
+    if (!savedSnapshot) return;
+    setSaveError(null);
+    setSignups(savedSnapshot.signups);
+    setRosterOrder(savedSnapshot.rosterOrder);
+    setReserveOrder(savedSnapshot.reserveOrder);
+  }
+
+  function doCancelToDashboard() {
+    router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
+  }
+
   async function doDeleteRaid() {
     if (!window.confirm(t('deleteRaidConfirm'))) return;
     const res = await fetch(`/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`, {
@@ -891,6 +1095,103 @@ export function RaidRosterPlanner({
         <div className="flex flex-col gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <h2 className="text-sm font-semibold text-foreground shrink-0">{t('sectionOverview')}</h2>
           <RaidOverviewSummaryRows {...overviewProps} />
+        </div>
+      </section>
+
+      <section
+        aria-label={tRoster('actions')}
+        className={cn(
+          'rounded-xl border border-border bg-card/40 shadow-sm px-4 py-3 transition-opacity duration-200',
+          dragActive && 'opacity-35 pointer-events-none'
+        )}
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void doSaveDraft()}
+              disabled={saving}
+              className={cn(
+                'rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                'border-emerald-600/60 text-emerald-700 hover:bg-emerald-50',
+                'dark:border-emerald-400/60 dark:text-emerald-400 dark:hover:bg-emerald-950/30',
+                saving && 'opacity-60 cursor-not-allowed'
+              )}
+              title={tRoster('save')}
+            >
+              {tRoster('save')}
+            </button>
+
+            <button
+              type="button"
+              onClick={doUndoToLastSave}
+              disabled={!savedSnapshot || saving}
+              className={cn(
+                'rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                'border-amber-600/60 text-amber-700 hover:bg-amber-50',
+                'dark:border-amber-400/70 dark:text-amber-400 dark:hover:bg-amber-950/30',
+                (!savedSnapshot || saving) && 'opacity-60 cursor-not-allowed'
+              )}
+              title={tRoster('undo')}
+            >
+              {tRoster('undo')}
+            </button>
+
+            <button
+              type="button"
+              onClick={doCancelToDashboard}
+              className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground/90 hover:bg-muted transition-colors"
+              title={tRoster('cancel')}
+            >
+              {tRoster('cancel')}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                // Dummy for now; logic will be delivered later.
+                window.alert(tRoster('announceSoon'));
+              }}
+              className={cn(
+                'rounded-md px-3 py-2 text-sm font-semibold transition-colors',
+                'bg-emerald-600 text-white hover:bg-emerald-700',
+                'dark:bg-emerald-500 dark:hover:bg-emerald-600'
+              )}
+              title={tRoster('announce')}
+            >
+              {tRoster('announce')}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void doCancelRaid()}
+              disabled={saving}
+              className={cn(
+                'rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                'border-red-600/60 text-red-700 hover:bg-red-50',
+                'dark:border-red-400/70 dark:text-red-400 dark:hover:bg-red-950/30',
+                saving && 'opacity-60 cursor-not-allowed'
+              )}
+              title={t('menuCancelRaid')}
+            >
+              {t('menuCancelRaid')}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-2 flex flex-col gap-1">
+          {saveError ? (
+            <p className="text-xs text-destructive" role="status">
+              {saveError}
+            </p>
+          ) : null}
+          {lastSavedAt ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              {tRoster('savedAt', { ts: new Date(lastSavedAt).toLocaleTimeString(intlLocale) })}
+            </p>
+          ) : null}
         </div>
       </section>
 
