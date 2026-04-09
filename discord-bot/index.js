@@ -1,6 +1,7 @@
 /**
  * RaidFlow Discord-Bot
- * Slash-Commands: /raidflow help, /raidflow setup, /raidflow group <groupname>
+ * Slash-Commands: /raidflow help, /raidflow home, /raidflow setup, /raidflow group <groupname>
+ * App Home: Primary-Entry-Command „start“ (DM-Dashboard, analog Web-Profil).
  * Rechte: Nur Server-Owner oder ADMINISTRATOR oder MANAGE_GUILD.
  * Gateway: optional GuildMembers (privileged). Nur nutzen, wenn im Discord Developer Portal
  * unter Bot → „Privileged Gateway Intents“ → **Server Members Intent** aktiviert ist **und**
@@ -30,6 +31,7 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
+import { handleAppHomeInteraction, sendAppHome } from './app-home.js';
 
 const DISCORD_ADMINISTRATOR = Number(PermissionFlagsBits.Administrator);
 const DISCORD_MANAGE_GUILD = Number(PermissionFlagsBits.ManageGuild);
@@ -340,6 +342,13 @@ console.info(
 function buildHelpContent() {
   return [
     '**RaidFlow – Befehle**',
+    '',
+    '**`/raidflow home`** – Home-Übersicht (Embeds, icon-lastig):',
+    '• ✍️ **Deine Anmeldungen** + kurzer **Stats**-Block (mit Link zur Bearbeitung/Anmeldung)',
+    '• 🗓️ **Anstehende Raids** (Dungeon, Termin, Anmeldungen) mit Link zur Anmeldung; als Raidleader zusätzlich ⚙️ Edit / 🧩 Plan',
+    '• 🔗 Links: 📊 Dashboard, 👤 Profil, ➕ Neuer Raid (nur wenn möglich)',
+    '',
+    '**App Home** – Wenn du RaidFlow als **Nutzer-App** installiert hast, öffnet die **Start**-Schaltfläche dieselbe Home-Übersicht in den Direktnachrichten (Primary Entry Point).',
     '',
     '**`/raidflow help`** – Zeigt diese Übersicht aller Befehle.',
     '',
@@ -946,9 +955,19 @@ async function handleChangeAssign(interaction, roleKey, selectedRoleId) {
 
 // —— Slash-Command Handler ———————————————————————————————————————————————————
 client.on('interactionCreate', async (interaction) => {
+  const homeHandled = await handleAppHomeInteraction(interaction, {
+    getWebappJson,
+    callWebapp,
+  });
+  if (homeHandled) return;
+
   // Help (nur Slash)
   if (interaction.isChatInputCommand() && interaction.commandName === 'raidflow') {
     const sub = interaction.options.getSubcommand();
+    if (sub === 'home') {
+      await sendAppHome(interaction, { getWebappJson, callWebapp });
+      return;
+    }
     if (sub === 'check') {
       if (!interaction.guild) {
         return interaction.reply({
