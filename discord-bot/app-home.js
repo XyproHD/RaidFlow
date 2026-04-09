@@ -11,8 +11,7 @@ function isEphemeralContext(interaction) {
 function fmtDateTime(locale, iso) {
   const d = new Date(iso);
   const day = new Intl.DateTimeFormat(locale, { weekday: 'short', day: '2-digit', month: '2-digit' }).format(d);
-  const time = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(d);
-  return `${day} ${time}`;
+  return day;
 }
 
 function raidStatusIcon(status) {
@@ -42,17 +41,23 @@ function buildDashboardEmbeds(payload) {
   const accent = 0x3b82f6;
   const locale = 'de';
 
-  const top = new EmbedBuilder().setColor(accent).setTitle('🏠 RaidFlow Home').setTimestamp(new Date());
+  const top = new EmbedBuilder().setColor(accent).setTitle('🏠 RaidFlow Home');
 
   if (!payload?.linked) {
     top.setDescription('🔒 Bitte einmal in der Webapp mit Discord anmelden.');
     return [top];
   }
 
-  const s = payload.stats || { signupCount: 0, confirmedCount: 0, reserveCount: 0, uncertainCount: 0 };
+  const s = payload.stats || {
+    signupCount: 0,
+    confirmedCount: 0,
+    reserveCount: 0,
+    uncertainCount: 0,
+    declinedCount: 0,
+  };
   top.addFields({
-    name: '📌 Meine Stats',
-    value: `✍️ ${s.signupCount}  •  ✅ ${s.confirmedCount}  •  🪑 ${s.reserveCount}  •  ❓ ${s.uncertainCount}`,
+    name: '📌 Anmeldung(en) Statusübersicht',
+    value: `✅ Ges. ${s.confirmedCount}  •  🪑 Res. ${s.reserveCount}  •  ❓ Uns. ${s.uncertainCount}  •  🚫 Abs. ${s.declinedCount}`,
     inline: false,
   });
 
@@ -103,17 +108,17 @@ function buildDashboardEmbeds(payload) {
 
 function buildDashboardRows(payload) {
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('rf_home_refresh').setLabel('🔄').setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId('rf_home_refresh').setLabel('🔄 Refresh').setStyle(ButtonStyle.Secondary)
   );
 
   if (payload?.links?.dashboard) {
-    row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('📊').setURL(payload.links.dashboard));
+    row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('📊 Dashboard').setURL(payload.links.dashboard));
   }
   if (payload?.links?.profile) {
-    row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('👤').setURL(payload.links.profile));
+    row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('👤 Profil').setURL(payload.links.profile));
   }
   if (payload?.links?.newRaid) {
-    row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('➕').setURL(payload.links.newRaid));
+    row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('➕ Neuer Raid').setURL(payload.links.newRaid));
   }
 
   return [row];

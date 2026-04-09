@@ -44,6 +44,7 @@ export async function GET(request: Request) {
         confirmedCount: 0,
         reserveCount: 0,
         uncertainCount: 0,
+        declinedCount: 0,
       },
       mySignups: [] as const,
       upcomingRaids: [] as const,
@@ -142,6 +143,9 @@ export async function GET(request: Request) {
   const confirmedCount = mySignupRows.filter((s) => s.setConfirmed).length;
   const reserveCount = mySignupRows.filter((s) => s.leaderPlacement === 'substitute').length;
   const uncertainCount = mySignupRows.filter((s) => typeNorm(s.type) === 'uncertain').length;
+  const declinedCount = mySignupRows.filter(
+    (s) => !s.setConfirmed && s.leaderPlacement !== 'substitute'
+  ).length;
 
   const canCreateGuildIds = guildRows
     .filter((g) => g.role === 'raidleader' || g.role === 'guildmaster')
@@ -163,6 +167,7 @@ export async function GET(request: Request) {
       confirmedCount,
       reserveCount,
       uncertainCount,
+      declinedCount,
     },
     mySignups,
     upcomingRaids,
