@@ -16,6 +16,7 @@ const KEY_SERVER_BLACKLIST = 'server_blacklist';
 const KEY_DISCORD_BOT_INVITE_ENABLED = 'discord_bot_invite_enabled';
 const KEY_MAINTENANCE_MODE = 'maintenance_mode';
 const KEY_STATUS_MESSAGE = 'status_message';
+const KEY_DISCORD_EMOJIS = 'discord_emojis';
 
 export interface AppConfigState {
   ownerDiscordId: string | null;
@@ -26,6 +27,8 @@ export interface AppConfigState {
   discordBotInviteEnabled: boolean;
   maintenanceMode: boolean;
   statusMessage: string;
+  /** Discord Emoji-Markup (z. B. "<:wow_tank:123>") für Bot-UI (UseExternalEmojis). */
+  discordEmojis: Record<string, string>;
 }
 
 /** Sichere Defaults wenn `getAppConfig()` fehlschlägt (DB/Env in Prod). */
@@ -38,6 +41,7 @@ export const DEFAULT_APP_CONFIG_STATE: AppConfigState = {
   discordBotInviteEnabled: true,
   maintenanceMode: false,
   statusMessage: '',
+  discordEmojis: {},
 };
 
 async function getConfigValue(key: string): Promise<string | null> {
@@ -55,6 +59,21 @@ function parseJsonArray(value: string | null): string[] {
   }
 }
 
+function parseJsonStringRecord(value: string | null): Record<string, string> {
+  if (!value || value.trim() === '') return {};
+  try {
+    const obj = JSON.parse(value) as unknown;
+    if (!obj || typeof obj !== 'object') return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (typeof k === 'string' && typeof v === 'string' && v.trim()) out[k] = v.trim();
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 /** Lädt die komplette App-Config (Owner, Whitelist/Blacklist, Bot-Einladung, Wartungsmodus). */
 export async function getAppConfig(): Promise<AppConfigState> {
   const [
@@ -66,6 +85,7 @@ export async function getAppConfig(): Promise<AppConfigState> {
     discordBotInviteEnabled,
     maintenanceMode,
     statusMessage,
+    discordEmojisRaw,
   ] = await Promise.all([
     getConfigValue(KEY_OWNER),
     getConfigValue(KEY_USE_WHITELIST),
@@ -75,6 +95,7 @@ export async function getAppConfig(): Promise<AppConfigState> {
     getConfigValue(KEY_DISCORD_BOT_INVITE_ENABLED),
     getConfigValue(KEY_MAINTENANCE_MODE),
     getConfigValue(KEY_STATUS_MESSAGE),
+    getConfigValue(KEY_DISCORD_EMOJIS),
   ]);
   return {
     ownerDiscordId: OWNER_DISCORD_ID,
@@ -85,6 +106,7 @@ export async function getAppConfig(): Promise<AppConfigState> {
     discordBotInviteEnabled: discordBotInviteEnabled !== 'false',
     maintenanceMode: maintenanceMode === 'true',
     statusMessage: statusMessage ?? '',
+    discordEmojis: parseJsonStringRecord(discordEmojisRaw),
   };
 }
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyBotSecret } from '@/lib/bot-auth';
 import { findManyRaidSignupsForDashboard } from '@/lib/rf-character-gear-score-compat';
+import { getAppConfig } from '@/lib/app-config';
 
 /**
  * GET /api/bot/user-home?discordUserId=...
@@ -32,6 +33,7 @@ export async function GET(request: Request) {
   });
 
   if (!user) {
+    const config = await getAppConfig().catch(() => null);
     return NextResponse.json({
       linked: false,
       links: {
@@ -39,6 +41,7 @@ export async function GET(request: Request) {
         profile: baseUrl ? `${baseUrl}/${locale}/profile` : null,
         newRaid: null as string | null,
       },
+      emojis: config?.discordEmojis ?? {},
       stats: {
         signupCount: 0,
         confirmedCount: 0,
@@ -51,6 +54,7 @@ export async function GET(request: Request) {
     });
   }
 
+  const config = await getAppConfig().catch(() => null);
   const guildRows = await prisma.rfUserGuild.findMany({
     where: { userId: user.id },
     include: { guild: { select: { id: true, name: true } } },
@@ -162,6 +166,7 @@ export async function GET(request: Request) {
       profile: baseUrl ? `${baseUrl}/${locale}/profile` : null,
       newRaid: newRaidLink,
     },
+    emojis: config?.discordEmojis ?? {},
     stats: {
       signupCount,
       confirmedCount,
