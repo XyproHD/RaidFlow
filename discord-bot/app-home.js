@@ -2,7 +2,14 @@
  * App Home / Dashboard-Light: Embeds für Signups + anstehende Raids (analog Web-Dashboard).
  * Fokus: viele Icons, wenig Text, Links zum Signup/Edit/Plan.
  */
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  StringSelectMenuBuilder,
+  StringSelectMenuOptionBuilder,
+} from 'discord.js';
 
 function isEphemeralContext(interaction) {
   return interaction.guildId != null;
@@ -228,30 +235,39 @@ function buildSelectRows(payload) {
   const rows = [];
 
   if (payload?.linked && Array.isArray(payload.mySignups) && payload.mySignups.length > 0) {
+    const select = new StringSelectMenuBuilder()
+      .setCustomId('rf_home_select_my_signup')
+      .setPlaceholder('Meine Anmeldungen – Raid wählen')
+      .addOptions(
+        payload.mySignups.slice(0, 25).map((s) =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(`${s.dungeonName} · ${fmtDateTime('de', s.scheduledAtIso)}`.slice(0, 100))
+            .setValue(raidKey(s.guildId, s.raidId))
+        )
+      );
     rows.push(
-      new ActionRowBuilder().addComponents({
-        type: 3,
-        custom_id: 'rf_home_select_my_signup',
-        placeholder: 'Meine Anmeldungen – Raid wählen',
-        options: payload.mySignups.slice(0, 25).map((s) => ({
-          label: `${s.dungeonName} · ${fmtDateTime('de', s.scheduledAtIso)}`.slice(0, 100),
-          value: raidKey(s.guildId, s.raidId),
-        })),
-      })
+      new ActionRowBuilder().addComponents(select)
     );
   }
 
   if (payload?.linked && Array.isArray(payload.upcomingRaids) && payload.upcomingRaids.length > 0) {
+    const select = new StringSelectMenuBuilder()
+      .setCustomId('rf_home_select_upcoming')
+      .setPlaceholder('Anstehende Raids – Raid wählen')
+      .addOptions(
+        payload.upcomingRaids.slice(0, 25).map((r) =>
+          new StringSelectMenuOptionBuilder()
+            .setLabel(
+              `${r.dungeonName} · ${fmtDateTime('de', r.scheduledAtIso)} · ${r.signupCount}/${r.maxPlayers}`.slice(
+                0,
+                100
+              )
+            )
+            .setValue(raidKey(r.guildId, r.id))
+        )
+      );
     rows.push(
-      new ActionRowBuilder().addComponents({
-        type: 3,
-        custom_id: 'rf_home_select_upcoming',
-        placeholder: 'Anstehende Raids – Raid wählen',
-        options: payload.upcomingRaids.slice(0, 25).map((r) => ({
-          label: `${r.dungeonName} · ${fmtDateTime('de', r.scheduledAtIso)} · ${r.signupCount}/${r.maxPlayers}`.slice(0, 100),
-          value: raidKey(r.guildId, r.id),
-        })),
-      })
+      new ActionRowBuilder().addComponents(select)
     );
   }
 
