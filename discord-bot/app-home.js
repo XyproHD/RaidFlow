@@ -166,7 +166,6 @@ function buildDashboardEmbeds(payload) {
   if (rows.length === 0) {
     signups.setDescription('_Keine anstehenden Anmeldungen._');
   } else {
-    const legend = `_Legende: ${e(emojis, 'wow_tank', '🛡️')} Tank · ${e(emojis, 'wow_melee', '⚔️')} Melee · ${e(emojis, 'wow_range', '🏹')} Range · ${e(emojis, 'wow_heal', '💚')} Heal · 📅 normal · ❓ unsicher · 🪑 reserve · ✅ gesetzt · >[🛠️]< bearbeiten · >[🚪]< abmelden_`;
     const lines = rows.slice(0, 10).map((r) => {
       const when = fmtDateTime(locale, r.scheduledAtIso);
       const place = placementIcon(r.leaderPlacement);
@@ -179,10 +178,23 @@ function buildDashboardEmbeds(payload) {
       const sp = r.signedSpec
         ? `${roleKey ? e(emojis, roleKey, '') + ' ' : ''}${specKey ? e(emojis, specKey, '') + ' ' : ''}${clsKey ? e(emojis, clsKey, '') + ' ' : ''}${r.signedSpec}`
         : '';
-      const link = r.links?.signup ? `>[🛠️](${r.links.signup})<` : '';
-      return `${place}${confirm}${typ} **${when}** · 🗺️ ${r.dungeonName} · ${ch}${sp ? ` · ${sp}` : ''} ${link}`.trim();
+      const view = r.links?.view ? `[👁️](${r.links.view})` : '';
+      const tools = r.raidId ? `|| --> Tools: [🚪 Abmelden] [⚡ One-Click] [✍️ Formular] ${view}`.trim() : view;
+      return `${place}${confirm}${typ} **${when}** · 🗺️ ${r.dungeonName} · ${ch}${sp ? ` · ${sp}` : ''} ${tools}`.trim();
     });
-    signups.setDescription([legend, '', ...lines].join('\n').slice(0, 4000));
+    const legendLines = [
+      '-# Legende:',
+      `-# ${e(emojis, 'wow_tank', '🛡️')} Tank`,
+      `-# ${e(emojis, 'wow_melee', '⚔️')} Melee`,
+      `-# ${e(emojis, 'wow_range', '🏹')} Range`,
+      `-# ${e(emojis, 'wow_heal', '💚')} Heal`,
+      '-# 📅 normal',
+      '-# ❓ unsicher',
+      '-# 🪑 reserve',
+      '-# ✅ gesetzt',
+      '-# [🚪 Abmelden] / [⚡ One-Click] / [✍️ Formular] / [👁️] View',
+    ];
+    signups.setDescription([...lines, '', ...legendLines].join('\n').slice(0, 4000));
   }
 
   const raids = new EmbedBuilder().setColor(accent).setTitle('🗓️ Anstehende Raids');
@@ -190,17 +202,26 @@ function buildDashboardEmbeds(payload) {
   if (rrows.length === 0) {
     raids.setDescription('_Keine Raids im Zeitraum._');
   } else {
-    const legend = '_Legende: >[⚡]< one-click · >[✍️]< anmelden · >[🚪]< abmelden · >[👁️]< view · >[⚙️]< edit · >[🧩]< planen_';
     const lines = rrows.slice(0, 10).map((r) => {
       const when = fmtDateTime(locale, r.scheduledAtIso);
       const st = raidStatusIcon(r.status);
       const counts = `👥 ${r.signupCount}/${r.maxPlayers}`;
-      const signup = r.links?.signup ? `>[✍️](${r.links.signup})<` : '';
-      const edit = r.links?.edit ? `>[⚙️](${r.links.edit})<` : '';
-      const plan = r.links?.plan ? `>[🧩](${r.links.plan})<` : '';
-      return `${st} **${when}** · 🗺️ ${r.dungeonName} · ${counts} ${signup} ${edit} ${plan}`.trim();
+      const view = r.links?.view ? `[👁️](${r.links.view})` : '';
+      const edit = r.links?.edit ? `[⚙️](${r.links.edit})` : '';
+      const plan = r.links?.plan ? `[🧩](${r.links.plan})` : '';
+      const signed = r.mySignup ? '[🚪 Abmelden]' : '[⚡ One-Click] [✍️ Formular]';
+      const tools = `|| --> Tools: ${signed} ${view} ${edit} ${plan}`.trim();
+      return `${st} **${when}** · 🗺️ ${r.dungeonName} · ${counts} ${tools}`.trim();
     });
-    raids.setDescription([legend, '', ...lines].join('\n').slice(0, 4000));
+    const legendLines = [
+      '-# Legende:',
+      '-# [⚡ One-Click] = Main-Char + Defaults',
+      '-# [✍️ Formular] = Anmeldung via Discord-Form (Char/Typ)',
+      '-# [🚪 Abmelden] = Abmeldung',
+      '-# [👁️] View = Raid ansehen (Browser)',
+      '-# [⚙️] Edit / [🧩] Plan = nur Raidleader',
+    ];
+    raids.setDescription([...lines, '', ...legendLines].join('\n').slice(0, 4000));
   }
 
   const links = new EmbedBuilder().setColor(accent).setTitle('🔗 Links');
