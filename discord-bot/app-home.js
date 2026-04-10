@@ -90,10 +90,6 @@ function classKeyFromSpecDisplayName(displayName) {
   return CLASS_KEY_BY_EN[last] ?? null;
 }
 
-function raidKey(guildId, raidId) {
-  return `${guildId}:${raidId}`;
-}
-
 function fmtDateTime(locale, iso) {
   const d = new Date(iso);
   const day = new Intl.DateTimeFormat(locale, { weekday: 'short', day: '2-digit', month: '2-digit' }).format(d);
@@ -219,103 +215,20 @@ function buildHeaderRow(payload) {
   return [row];
 }
 
-/** Bis zu 4 Raid-Zeilen (Discord max. 5 Action Rows, eine für Header). */
-function collectHomeRaidsSorted(payload) {
-  const byKey = new Map();
-  const upcoming = [...(payload?.upcomingRaids || [])].sort(
-    (a, b) => new Date(a.scheduledAtIso) - new Date(b.scheduledAtIso)
-  );
-  for (const r of upcoming) {
-    byKey.set(raidKey(r.guildId, r.id), r);
-  }
-  for (const s of payload?.mySignups || []) {
-    const k = raidKey(s.guildId, s.raidId);
-    if (!byKey.has(k)) {
-      const r = findRaidInPayload(payload, s.guildId, s.raidId);
-      if (r) byKey.set(k, r);
-    }
-  }
-  return [...byKey.values()].sort((a, b) => new Date(a.scheduledAtIso) - new Date(b.scheduledAtIso));
-}
-
-function shortRaidLabel(dungeonName, scheduledAtIso) {
-  const dun = String(dungeonName || '?').replace(/\s+/g, ' ').trim().slice(0, 14);
-  const day = fmtDateTime('de', scheduledAtIso);
-  return `${dun} ${day}`.slice(0, 78);
-}
-
-function buildRaidButtonRows(payload) {
-  const rows = [];
-  if (!payload?.linked) return rows;
-
-  const list = collectHomeRaidsSorted(payload).slice(0, 4);
-  for (const raid of list) {
-    const isSignedUp = !!(
-      raid.mySignup ||
-      (payload.mySignups || []).some((s) => s.guildId === raid.guildId && s.raidId === raid.id)
-    );
-    const labelBase = shortRaidLabel(raid.dungeonName, raid.scheduledAtIso);
-    const row = new ActionRowBuilder();
-
-    if (isSignedUp) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`rf_home_unsub:${raid.guildId}:${raid.id}`)
-          .setLabel(`🚪 ${labelBase}`)
-          .setStyle(ButtonStyle.Danger)
-      );
-    } else {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`rf_home_signup1:${raid.guildId}:${raid.id}`)
-          .setLabel(`⚡ ${labelBase}`)
-          .setStyle(ButtonStyle.Primary)
-      );
-    }
-
-    if (raid.links?.view) {
-      row.addComponents(
-        new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(`👁️ ${labelBase}`).setURL(raid.links.view)
-      );
-    }
-    if (raid.canEdit && raid.links?.edit) {
-      row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('⚙️ Edit').setURL(raid.links.edit));
-    }
-    if (raid.canEdit && raid.links?.plan) {
-      row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('🧩 Plan').setURL(raid.links.plan));
-    }
-
-    rows.push(row);
-  }
-  return rows;
-}
-
-function findRaidInPayload(payload, guildId, raidId) {
-  const upcoming = (payload?.upcomingRaids || []).find((r) => r.guildId === guildId && r.id === raidId);
-  const my = (payload?.mySignups || []).find((s) => s.guildId === guildId && s.raidId === raidId);
-  if (upcoming) return upcoming;
-  if (!my) return null;
-  return {
-    id: my.raidId,
-    guildId: my.guildId,
-    dungeonName: my.dungeonName,
-    scheduledAtIso: my.scheduledAtIso,
-    signupCount: null,
-    maxPlayers: null,
-    status: my.raidStatus,
-    links: {
-      view: my.links?.view ?? null,
-      signup: my.links?.signup ?? null,
-      edit: null,
-      plan: null,
-    },
-    canEdit: false,
-    mySignup: null,
-  };
-}
-
 async function fetchUserHome(getWebappJson, discordUserId) {
   return getWebappJson('/api/bot/user-home', { discordUserId });
+}
+
+/**
+ * Zentraler Rechte-Sync (Webapp) vor Bot-Home — gleiche Pipeline wie Member-Events, keine zweite Berechtigungslogik.
+ * @param {import('discord.js').Interaction} interaction
+ * @param {{ syncRaidFlowMemberFromDiscord?: (guildId: string, userId: string) => Promise<void> }} api
+ */
+async function maybeSyncRaidFlowMemberFromDiscord(interaction, api) {
+  const guildId = interaction.guildId;
+  const uid = interaction.user?.id;
+  if (!guildId || !uid || typeof api.syncRaidFlowMemberFromDiscord !== 'function') return;
+  await api.syncRaidFlowMemberFromDiscord(guildId, uid);
 }
 
 export async function sendAppHome(interaction, api) {
@@ -326,10 +239,11 @@ export async function sendAppHome(interaction, api) {
     if (!interaction.deferred && !interaction.replied) {
       await interaction.deferReply({ ephemeral });
     }
+    await maybeSyncRaidFlowMemberFromDiscord(interaction, api);
     const payload = await fetchUserHome(api.getWebappJson, discordUserId);
     await interaction.editReply({
       embeds: buildDashboardEmbeds(payload),
-      components: [...buildHeaderRow(payload), ...buildRaidButtonRows(payload)],
+      components: buildHeaderRow(payload),
     });
   } catch (e) {
     const msg = `Home konnte nicht geladen werden: ${e.message}`;
@@ -343,7 +257,7 @@ export async function sendAppHome(interaction, api) {
 
 /** @returns {Promise<boolean>} */
 export async function handleAppHomeInteraction(interaction, api) {
-  const { getWebappJson, callWebapp } = api;
+  const { getWebappJson } = api;
   const uid = interaction.user.id;
 
   if (interaction.isPrimaryEntryPointCommand()) {
@@ -354,10 +268,11 @@ export async function handleAppHomeInteraction(interaction, api) {
   if (interaction.isButton() && interaction.customId === 'rf_home_refresh') {
     await interaction.deferUpdate().catch(() => {});
     try {
+      await maybeSyncRaidFlowMemberFromDiscord(interaction, api);
       const payload = await fetchUserHome(getWebappJson, uid);
       await interaction.editReply({
         embeds: buildDashboardEmbeds(payload),
-        components: [...buildHeaderRow(payload), ...buildRaidButtonRows(payload)],
+        components: buildHeaderRow(payload),
       });
     } catch (e) {
       await interaction.editReply({
@@ -367,55 +282,6 @@ export async function handleAppHomeInteraction(interaction, api) {
       }).catch(() => {});
     }
     return true;
-  }
-
-  if (interaction.isButton()) {
-    const cid = interaction.customId || '';
-    const m1 = cid.match(/^rf_home_unsub:([^:]+):([^:]+)$/);
-    const m2 = cid.match(/^rf_home_signup1:([^:]+):([^:]+)$/);
-
-    if (m1) {
-      await interaction.deferUpdate().catch(() => {});
-      try {
-        await callWebapp('/api/bot/raid-signup', {
-          action: 'delete',
-          discordUserId: uid,
-          guildId: m1[1],
-          raidId: m1[2],
-        });
-        const payload = await fetchUserHome(getWebappJson, uid);
-        await interaction.editReply({
-          content: '✅ Abgemeldet.',
-          embeds: buildDashboardEmbeds(payload),
-          components: [...buildHeaderRow(payload), ...buildRaidButtonRows(payload)],
-        });
-      } catch (e) {
-        await interaction.editReply({ content: `Abmelden fehlgeschlagen: ${e.message}`, embeds: [], components: [] }).catch(() => {});
-      }
-      return true;
-    }
-
-    if (m2) {
-      await interaction.deferUpdate().catch(() => {});
-      try {
-        await callWebapp('/api/bot/raid-signup', {
-          action: 'create',
-          mode: 'oneclick',
-          discordUserId: uid,
-          guildId: m2[1],
-          raidId: m2[2],
-        });
-        const payload = await fetchUserHome(getWebappJson, uid);
-        await interaction.editReply({
-          content: '✅ Angemeldet (One-Click).',
-          embeds: buildDashboardEmbeds(payload),
-          components: [...buildHeaderRow(payload), ...buildRaidButtonRows(payload)],
-        });
-      } catch (e) {
-        await interaction.editReply({ content: `Anmelden fehlgeschlagen: ${e.message}`, embeds: [], components: [] }).catch(() => {});
-      }
-      return true;
-    }
   }
 
   return false;

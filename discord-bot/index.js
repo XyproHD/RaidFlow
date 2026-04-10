@@ -308,6 +308,63 @@ async function pushMemberPermissionSync(guildDiscordId, discordUserId, payload) 
   }
 }
 
+/**
+ * Webapp: POST /api/bot/sync-member mit fetchMemberFromDiscord — gleicher zentraler Sync wie bei Member-Events,
+ * aber Rollen/Nick werden per Discord-API geladen (z. B. erste Bot-Interaktion ohne Webapp-Login / ohne Member-Intent-Events).
+ */
+async function syncRaidFlowMemberFromDiscord(discordGuildId, discordUserId) {
+  if (!discordGuildId || !discordUserId) return;
+  const base = (process.env.WEBAPP_URL || 'http://localhost:3000').replace(/\/$/, '');
+  const url = `${base}/api/bot/sync-member`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getWebappHeaders(),
+      },
+      body: JSON.stringify({
+        discordGuildId,
+        discordUserId,
+        fetchMemberFromDiscord: true,
+      }),
+    });
+    const text = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* nicht JSON */
+    }
+    if (!res.ok) {
+      console.warn(
+        JSON.stringify({
+          scope: 'RF_MEMBER_FETCH_SYNC',
+          httpStatus: res.status,
+          discordGuildId,
+          discordUserId,
+          error: json?.error ?? text.slice(0, 240),
+        })
+      );
+    }
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        scope: 'RF_MEMBER_FETCH_SYNC',
+        discordGuildId,
+        discordUserId,
+        error: String(e?.message || e),
+      })
+    );
+  }
+}
+
+const homeApiDeps = () => ({
+  getWebappJson,
+  callWebapp,
+  syncRaidFlowMemberFromDiscord,
+});
+
 /** Server-Rollen für Auswahl (ohne @everyone, ohne verwaltete Rollen), max 24 + "Neue Rolle". */
 function getSelectableRoles(guild) {
   const roles = guild.roles.cache
@@ -955,17 +1012,14 @@ async function handleChangeAssign(interaction, roleKey, selectedRoleId) {
 
 // —— Slash-Command Handler ———————————————————————————————————————————————————
 client.on('interactionCreate', async (interaction) => {
-  const homeHandled = await handleAppHomeInteraction(interaction, {
-    getWebappJson,
-    callWebapp,
-  });
+  const homeHandled = await handleAppHomeInteraction(interaction, homeApiDeps());
   if (homeHandled) return;
 
   // Help (nur Slash)
   if (interaction.isChatInputCommand() && interaction.commandName === 'raidflow') {
     const sub = interaction.options.getSubcommand();
     if (sub === 'home') {
-      await sendAppHome(interaction, { getWebappJson, callWebapp });
+      await sendAppHome(interaction, homeApiDeps());
       return;
     }
     if (sub === 'check') {
