@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import {
   BattlenetCharacterRequestError,
   fetchClassicCharacterFromBattlenetByRealm,
 } from '@/lib/battlenet';
-import type { WowRegion } from '@/lib/wow-classic-realms';
-import { appLocaleToBnetLocale, pickRealmNameFromJson, titleCaseFromSlug } from '@/lib/wow-realm-name';
 import { classicFetchResultToJson } from '@/lib/battlenet-character-persist';
+import { loadRfBattlenetRealmRow, realmRowToBattlenetRealmArg } from '@/lib/battlenet-realm-resolve';
 
 /**
  * POST: Charakter von Battle.net laden (Vorschau für Formular), ohne DB-Schreiben.
@@ -39,26 +37,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const realm = await prisma.rfBattlenetRealm.findUnique({
-      where: { id: realmId },
-      select: { region: true, version: true, name: true, slug: true, namespace: true },
-    });
+    const realm = await loadRfBattlenetRealmRow(realmId);
     if (!realm) {
       return NextResponse.json({ error: 'Ausgewaehlter Realm wurde nicht gefunden.' }, { status: 400 });
     }
 
-    const bnetLocale = appLocaleToBnetLocale(body.appLocale ?? 'en');
-    const realmDisplay =
-      pickRealmNameFromJson(realm.name, bnetLocale) || titleCaseFromSlug(realm.slug);
-
     const fetched = await fetchClassicCharacterFromBattlenetByRealm(
-      {
-        region: (realm.region as WowRegion | undefined) ?? 'eu',
-        namespace: realm.namespace,
-        slug: realm.slug,
-        version: realm.version,
-        name: realmDisplay,
-      },
+      realmRowToBattlenetRealmArg(realm, body.appLocale),
       name
     );
 

@@ -5,6 +5,7 @@ import {
   guildRowToPermissionSyncShape,
   syncMemberPermissionsFromDiscordState,
 } from '@/lib/member-permission-sync';
+import { getMemberRoleIds } from '@/lib/discord-roles';
 
 /**
  * POST /api/bot/sync-member
@@ -16,6 +17,8 @@ import {
  * - left: true → Mitglied hat den Server verlassen (bekannte Leave-Info)
  * - roleIds: string[] – Discord-Rollen-IDs (bei left ignorieren)
  * - displayName: string | null – optional Anzeigename im Server (Server-Nick o. ä.)
+ * - fetchMemberFromDiscord: true → Rollen/Nick per Discord-API laden (ignoriert roleIds/displayName);
+ *   nutzbar wenn der Bot noch kein Member-Event hatte (z. B. erste Interaktion ohne Webapp-Login).
  */
 export async function POST(request: Request) {
   if (!verifyBotSecret(request)) {
@@ -28,6 +31,7 @@ export async function POST(request: Request) {
     left?: boolean;
     roleIds?: string[];
     displayName?: string | null;
+    fetchMemberFromDiscord?: boolean;
   };
   try {
     body = await request.json();
@@ -72,15 +76,27 @@ export async function POST(request: Request) {
   });
 
   const left = body.left === true;
-  const roleIds = Array.isArray(body.roleIds)
+  const fetchMemberFromDiscord = body.fetchMemberFromDiscord === true;
+
+  let membershipKnown = true;
+  let inGuild = true;
+  let roleIds: string[] = Array.isArray(body.roleIds)
     ? body.roleIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
     : [];
-  const displayNameInGuild =
+  let displayNameInGuild: string | null =
     body.displayName === null || body.displayName === undefined
       ? null
       : typeof body.displayName === 'string'
         ? body.displayName.trim() || null
         : null;
+
+  if (!left && fetchMemberFromDiscord) {
+    const fromApi = await getMemberRoleIds(discordGuildId, discordUserId);
+    membershipKnown = fromApi.membershipKnown;
+    inGuild = fromApi.inGuild;
+    roleIds = fromApi.roleIds;
+    displayNameInGuild = fromApi.displayNameInGuild;
+  }
 
   try {
     if (left) {
@@ -96,8 +112,8 @@ export async function POST(request: Request) {
       await syncMemberPermissionsFromDiscordState({
         userId: user.id,
         guild: guildRowToPermissionSyncShape(guild),
-        membershipKnown: true,
-        inGuild: true,
+        membershipKnown,
+        inGuild,
         roleIds,
         displayNameInGuild,
       });
@@ -111,6 +127,8 @@ export async function POST(request: Request) {
         discordUserId,
         left,
         roleIdCount: roleIds.length,
+        fetchMemberFromDiscord: fetchMemberFromDiscord && !left,
+        membershipKnown: left ? true : membershipKnown,
       })
     );
     return NextResponse.json({ ok: true });

@@ -156,3 +156,21 @@ export function getAllSpecDisplayNames(): { displayName: string; classId: string
   }
   return out;
 }
+
+/** Englische Klassenbezeichnung aus der Battle.net Profile API → TBC_CLASSES.id */
+export function battlenetClassNameToTbcClassId(className: string | null | undefined): string {
+  if (!className?.trim()) return '';
+  const n = className.trim().toLowerCase();
+  const map: Record<string, string> = {
+    druid: 'druid',
+    hunter: 'hunter',
+    mage: 'mage',
+    paladin: 'paladin',
+    priest: 'priest',
+    rogue: 'rogue',
+    shaman: 'shaman',
+    warlock: 'warlock',
+    warrior: 'warrior',
+  };
+  return map[n] ?? '';
+}

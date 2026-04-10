@@ -8,12 +8,18 @@ import {
   BattlenetCharacterRequestError,
   fetchClassicCharacterFromBattlenetByRealm,
 } from '@/lib/battlenet';
-import type { WowRegion } from '@/lib/wow-classic-realms';
-import { appLocaleToBnetLocale, pickRealmNameFromJson, titleCaseFromSlug } from '@/lib/wow-realm-name';
+import { loadRfBattlenetRealmRow, realmRowToBattlenetRealmArg } from '@/lib/battlenet-realm-resolve';
+import {
+  battlenetProfileJsonToUpsertData,
+  classicFetchResultToJson,
+} from '@/lib/battlenet-character-persist';
+import { getGuildsForUserCached } from '@/lib/user-guilds';
+import { assertBattlenetProfileForNewCharacter } from '@/lib/character-battlenet-requirements';
 
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
   const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
+  const discordId = (session as { discordId?: string } | null)?.discordId ?? null;
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -38,33 +44,45 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const realm = await prisma.rfBattlenetRealm.findUnique({
-      where: { id: realmId },
-      select: { region: true, version: true, name: true, slug: true, namespace: true },
-    });
+    const realm = await loadRfBattlenetRealmRow(realmId);
     if (!realm) {
       return NextResponse.json({ error: 'Ausgewaehlter Realm wurde nicht gefunden.' }, { status: 400 });
     }
 
-    const bnetLocale = appLocaleToBnetLocale(body.appLocale ?? 'en');
-    const realmDisplay =
-      pickRealmNameFromJson(realm.name, bnetLocale) || titleCaseFromSlug(realm.slug);
+    const fetched = await fetchClassicCharacterFromBattlenetByRealm(
+      realmRowToBattlenetRealmArg(realm, body.appLocale),
+      name
+    );
+    const { profile: profileJson, mainSpec, characterName } = classicFetchResultToJson(fetched);
+    const bnetCheck = assertBattlenetProfileForNewCharacter(profileJson);
+    if (!bnetCheck.ok) {
+      return NextResponse.json(
+        { error: bnetCheck.error, code: 'BNET_LEVEL_OR_PROFILE' },
+        { status: 400 }
+      );
+    }
 
-    const profile = await fetchClassicCharacterFromBattlenetByRealm({
-      region: (realm?.region as WowRegion | undefined) ?? 'eu',
-      namespace: realm.namespace,
-      slug: realm.slug,
-      version: realm.version,
-      name: realmDisplay,
-    }, name);
+    const userGuilds = await getGuildsForUserCached(userId, discordId);
+    const allowedGuildIds = new Set(userGuilds.map((g) => g.id));
+    const nextGuildId = body.guildId || null;
+    if (userGuilds.length > 0) {
+      if (!nextGuildId || !allowedGuildIds.has(nextGuildId)) {
+        return NextResponse.json(
+          { error: 'Bitte eine Gilde aus deinen Discord-Servern wählen.' },
+          { status: 400 }
+        );
+      }
+    } else if (nextGuildId != null && !allowedGuildIds.has(nextGuildId)) {
+      return NextResponse.json({ error: 'Ungültige Gilde.' }, { status: 400 });
+    }
 
     const created = await prisma.$transaction(async (tx) => {
       const character = await tx.rfCharacter.create({
         data: {
           userId,
-          name: profile.characterName,
-          guildId: body.guildId || null,
-          mainSpec: profile.mainSpec,
+          name: characterName,
+          guildId: nextGuildId,
+          mainSpec,
           offSpec: null,
           isMain: false,
         },
@@ -74,22 +92,7 @@ export async function POST(request: NextRequest) {
       await tx.rfBattlenetCharacterProfile.create({
         data: {
           characterId: character.id,
-          battlenetConfigId: profile.configId,
-          region: profile.region,
-          wowVersion: profile.wowVersion,
-          realmSlug: profile.realmSlug,
-          realmName: profile.realmName,
-          characterNameLower: profile.characterNameLower,
-          battlenetCharacterId: profile.battlenetCharacterId,
-          level: profile.level,
-          raceName: profile.raceName,
-          className: profile.className,
-          activeSpecName: profile.activeSpecName,
-          guildName: profile.guildName,
-          faction: profile.faction,
-          profileUrl: profile.profileUrl,
-          rawProfile: profile.rawProfile as Prisma.InputJsonValue,
-          lastSyncedAt: new Date(),
+          ...battlenetProfileJsonToUpsertData(profileJson),
         },
       });
 

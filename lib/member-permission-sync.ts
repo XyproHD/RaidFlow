@@ -12,6 +12,40 @@ import { pruneIneligibleOpenRaidSignups } from '@/lib/raid-signup-prune';
 
 export type GuildForPermissionSync = RfGuildWithRoles & { id: string };
 
+/**
+ * Entfernt RaidFlow-Gildenbezug für diesen User (rf_user_guild, rf_guild_member, Raidgruppen-Links).
+ * Gleiche Datenbereinigung wie „User hat Discord-Server verlassen“ — zentrale Stelle, keine zweite Logik.
+ */
+export async function clearRaidFlowGuildMembershipForUser(
+  userId: string,
+  guild: GuildForPermissionSync
+): Promise<void> {
+  await prisma.rfCharacter.updateMany({
+    where: { userId, guildId: guild.id },
+    data: { guildDiscordDisplayName: null },
+  });
+  const existingMember = await prisma.rfGuildMember.findUnique({
+    where: { userId_guildId: { userId, guildId: guild.id } },
+    select: { id: true },
+  });
+  if (existingMember) {
+    await prisma.rfGuildMemberRaidGroup.deleteMany({
+      where: { guildMemberId: existingMember.id },
+    });
+    await prisma.rfGuildMember.delete({
+      where: { id: existingMember.id },
+    });
+  }
+  await prisma.rfUserGuild.deleteMany({
+    where: { userId, guildId: guild.id },
+  });
+  try {
+    await pruneIneligibleOpenRaidSignups(userId, guild.id);
+  } catch (e) {
+    console.error('[clearRaidFlowGuildMembershipForUser] prune', guild.id, e);
+  }
+}
+
 export function guildRowToPermissionSyncShape(guild: {
   id: string;
   discordGuildId: string;
@@ -49,43 +83,19 @@ export async function syncMemberPermissionsFromDiscordState(params: {
   if (!membershipKnown) return;
 
   if (!inGuild) {
-    await prisma.rfCharacter.updateMany({
-      where: { userId, guildId: guild.id },
-      data: { guildDiscordDisplayName: null },
-    });
-    const existingMember = await prisma.rfGuildMember.findUnique({
-      where: { userId_guildId: { userId, guildId: guild.id } },
-      select: { id: true },
-    });
-    if (existingMember) {
-      await prisma.rfGuildMemberRaidGroup.deleteMany({
-        where: { guildMemberId: existingMember.id },
-      });
-      await prisma.rfGuildMember.delete({
-        where: { id: existingMember.id },
-      });
-    }
-    await prisma.rfUserGuild.deleteMany({
-      where: { userId, guildId: guild.id },
-    });
-    try {
-      await pruneIneligibleOpenRaidSignups(userId, guild.id);
-    } catch (e) {
-      console.error('[syncMemberPermissionsFromDiscordState] prune (left guild)', guild.id, e);
-    }
+    await clearRaidFlowGuildMembershipForUser(userId, guild);
     return;
-  }
-
-  if (displayNameInGuild !== undefined) {
-    await prisma.rfCharacter.updateMany({
-      where: { userId, guildId: guild.id },
-      data: { guildDiscordDisplayName: displayNameInGuild },
-    });
   }
 
   const resolved = resolveRaidFlowRole(guild, roleIds);
 
   if (resolved) {
+    if (displayNameInGuild !== undefined) {
+      await prisma.rfCharacter.updateMany({
+        where: { userId, guildId: guild.id },
+        data: { guildDiscordDisplayName: displayNameInGuild },
+      });
+    }
     try {
       // Kern zuerst: Member + rf_user_guild in einer TX. Raidgruppen-Links separat, damit ein Fehler
       // dort nicht verhindert, dass rf_user_guild geschrieben wird (sonst leeres Dashboard trotz GM auf Discord).
@@ -125,29 +135,11 @@ export async function syncMemberPermissionsFromDiscordState(params: {
       console.error('[syncMemberPermissionsFromDiscordState]', guild.id, e);
     }
   } else {
-    try {
-      await prisma.$transaction(async (tx) => {
-        const existingMember = await tx.rfGuildMember.findUnique({
-          where: { userId_guildId: { userId, guildId: guild.id } },
-          select: { id: true },
-        });
-        if (existingMember) {
-          await tx.rfGuildMemberRaidGroup.deleteMany({
-            where: { guildMemberId: existingMember.id },
-          });
-          await tx.rfGuildMember.delete({
-            where: { id: existingMember.id },
-          });
-        }
-        await tx.rfUserGuild.upsert({
-          where: { userId_guildId: { userId, guildId: guild.id } },
-          create: { userId, guildId: guild.id, role: 'member' },
-          update: { role: 'member' },
-        });
-      });
-    } catch (e) {
-      console.error('[syncMemberPermissionsFromDiscordState] member-only', guild.id, e);
-    }
+    /**
+     * Auf dem Discord-Server, aber ohne konfigurierte RaidFlow-Rolle (Gildenmeister / Raidleader / Raider):
+     * keine rf_user_guild-Zeile — Mindestrecht für RaidFlow-Gilde ist Raider (oder höher), siehe resolveRaidFlowRole.
+     */
+    await clearRaidFlowGuildMembershipForUser(userId, guild);
   }
 
   // Legacy / TX-Fehler: rf_guild_member ohne rf_user_guild, aber Discord-Rollen liefern eine RaidFlow-Rolle.
