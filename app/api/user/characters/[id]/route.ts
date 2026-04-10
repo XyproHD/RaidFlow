@@ -11,6 +11,7 @@ import {
   isBattlenetProfileJson,
 } from '@/lib/battlenet-character-persist';
 import { getGuildsForUserCached } from '@/lib/user-guilds';
+import { assertBattlenetProfileForNewCharacter } from '@/lib/character-battlenet-requirements';
 
 /** PATCH: Charakter aktualisieren */
 export async function PATCH(
@@ -46,10 +47,28 @@ export async function PATCH(
   }
   const existing = await prisma.rfCharacter.findFirst({
     where: { id, userId },
-    select: { id: true, guildId: true },
+    select: { id: true, guildId: true, name: true },
   });
   if (!existing) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  const nameChanging =
+    body.name != null && body.name.trim().length > 0 && body.name.trim() !== existing.name;
+  if (nameChanging && !bnet) {
+    return NextResponse.json(
+      {
+        error:
+          'Beim Ändern des Charakternamens ist ein erneuter Battle.net-Sync erforderlich (battlenetProfile mitsenden).',
+      },
+      { status: 400 }
+    );
+  }
+  if (nameChanging && bnet) {
+    const levelCheck = assertBattlenetProfileForNewCharacter(bnet);
+    if (!levelCheck.ok) {
+      return NextResponse.json({ error: levelCheck.error, code: 'BNET_LEVEL_OR_PROFILE' }, { status: 400 });
+    }
   }
 
   if (body.guildId !== undefined) {

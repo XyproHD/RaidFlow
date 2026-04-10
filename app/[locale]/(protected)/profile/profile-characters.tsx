@@ -9,6 +9,7 @@ import {
   TBC_CLASSES,
   getSpecDisplayName,
   getSpecByDisplayName,
+  battlenetClassNameToTbcClassId,
 } from '@/lib/wow-tbc-classes';
 import type { BattlenetProfileJson } from '@/lib/battlenet-character-persist';
 import { MIN_CHARACTER_LEVEL_FOR_NEW_CHARACTER, isBattlenetLevelEligibleForNewCharacter } from '@/lib/character-battlenet-requirements';
@@ -101,6 +102,11 @@ export function ProfileCharacters({
   const [pendingBattlenetProfile, setPendingBattlenetProfile] = useState<BattlenetProfileJson | null>(null);
   const [bnetSyncHint, setBnetSyncHint] = useState<string | null>(null);
   const [bnetSyncLoading, setBnetSyncLoading] = useState(false);
+  /** Nach erfolgreichem BNet-Sync: exakter Charaktername von Blizzard (Abgleich mit Eingabefeld). */
+  const [bnetValidatedName, setBnetValidatedName] = useState<string | null>(null);
+  /** Beim Bearbeiten: Name beim Öffnen des Modals. */
+  const [initialEditName, setInitialEditName] = useState('');
+  const [editHadBnetAtOpen, setEditHadBnetAtOpen] = useState(false);
 
   const mainSpecOptions = useMemo(() => {
     if (!classId) return [];
@@ -121,6 +127,9 @@ export function ProfileCharacters({
     setPendingBattlenetProfile(null);
     setBnetSyncHint(null);
     setBnetSyncLoading(false);
+    setBnetValidatedName(null);
+    setInitialEditName('');
+    setEditHadBnetAtOpen(false);
   }, []);
 
   const openAdd = useCallback(() => {
@@ -155,6 +164,9 @@ export function ProfileCharacters({
     setRealmMenuOpen(false);
     setRealmsLoadError(null);
     setError(null);
+    setInitialEditName(c.name.trim());
+    setEditHadBnetAtOpen(!!c.hasBattlenet);
+    setBnetValidatedName(c.hasBattlenet ? c.name.trim() : null);
     setModalOpen('edit');
   }, [guilds]);
 
@@ -192,6 +204,27 @@ export function ProfileCharacters({
     }
   };
 
+  const handleCharacterNameInputChange = (value: string) => {
+    setName(value);
+    const trimmed = value.trim();
+    if (modalOpen === 'add') {
+      if (bnetValidatedName != null && trimmed !== bnetValidatedName) {
+        setPendingBattlenetProfile(null);
+        setMainSpecId('');
+        setOffSpecId('');
+        setClassId('');
+        setBnetValidatedName(null);
+      }
+    } else if (modalOpen === 'edit') {
+      if (trimmed !== initialEditName) {
+        setPendingBattlenetProfile(null);
+        setBnetValidatedName(null);
+      } else if (editHadBnetAtOpen) {
+        setBnetValidatedName(initialEditName);
+      }
+    }
+  };
+
   const handleBnetSync = async () => {
     setBnetSyncHint(null);
     setError(null);
@@ -211,7 +244,6 @@ export function ProfileCharacters({
       const text = await res.text();
       let data: {
         characterName?: string;
-        mainSpec?: string;
         profile?: BattlenetProfileJson;
         error?: string;
         notFound?: boolean;
@@ -222,23 +254,24 @@ export function ProfileCharacters({
       } catch {
         /* ignore */
       }
-      if (res.ok && data.profile && data.characterName != null && data.mainSpec) {
+      if (res.ok && data.profile && data.characterName != null) {
         if (!isBattlenetLevelEligibleForNewCharacter(data.profile.level)) {
           setPendingBattlenetProfile(null);
+          setBnetValidatedName(null);
           setError(
             t('bnetLevelTooLowFun', { min: MIN_CHARACTER_LEVEL_FOR_NEW_CHARACTER })
           );
           setBnetSyncHint(null);
           return;
         }
+        const resolvedName = data.characterName.trim();
         setPendingBattlenetProfile(data.profile);
-        setName(data.characterName);
-        const specParsed = getSpecByDisplayName(data.mainSpec);
-        if (specParsed) {
-          setClassId(specParsed.classId);
-          setMainSpecId(specParsed.specId);
-          setOffSpecId('');
-        }
+        setName(resolvedName);
+        setBnetValidatedName(resolvedName);
+        const cls = battlenetClassNameToTbcClassId(data.profile.className);
+        setClassId(cls);
+        setMainSpecId('');
+        setOffSpecId('');
         setBnetSyncHint(null);
         return;
       }
@@ -265,7 +298,14 @@ export function ProfileCharacters({
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!pendingBattlenetProfile) return;
+    const aligned =
+      !!pendingBattlenetProfile &&
+      bnetValidatedName !== null &&
+      name.trim() === bnetValidatedName;
+    if (!aligned) {
+      setError(t('bnetResyncRequiredAfterNameChange'));
+      return;
+    }
     if (!autoRealmId) return;
     if (guilds.length > 0 && !guildId) return;
     if (!name.trim() || !classId || !mainSpecId) return;
@@ -340,6 +380,15 @@ export function ProfileCharacters({
     setError(null);
     if (!editingId || !name.trim() || !classId || !mainSpecId) return;
     if (guilds.length > 0 && !guildId) return;
+    const editBnetOk =
+      name.trim() === initialEditName ||
+      (!!pendingBattlenetProfile &&
+        bnetValidatedName !== null &&
+        name.trim() === bnetValidatedName);
+    if (!editBnetOk) {
+      setError(t('bnetResyncRequiredAfterNameChange'));
+      return;
+    }
     const mainSpec = getSpecDisplayName(classId, mainSpecId);
     setLoading(true);
     try {
@@ -579,8 +628,12 @@ export function ProfileCharacters({
   }, [modalOpen, t, locale]);
 
   const userHasGuilds = guilds.length > 0;
-  const addBnetDone = modalOpen === 'add' && !!pendingBattlenetProfile;
-  const lockNameClassFromBnet = modalOpen === 'add' && addBnetDone;
+  const addBnetAligned =
+    modalOpen === 'add' &&
+    !!pendingBattlenetProfile &&
+    bnetValidatedName !== null &&
+    name.trim() === bnetValidatedName;
+  const lockBnetNameAndRealmOnAdd = addBnetAligned;
 
   const formContent = (
     <>
@@ -632,7 +685,7 @@ export function ProfileCharacters({
             aria-controls="realm-suggestion-list"
             aria-autocomplete="list"
             className="rounded border border-input bg-background px-3 py-2 w-full disabled:opacity-60"
-            disabled={modalOpen === 'add' && addBnetDone}
+            disabled={modalOpen === 'add' && lockBnetNameAndRealmOnAdd}
           />
           {realmMenuOpen && realmListBox && (
             <ul
@@ -702,33 +755,27 @@ export function ProfileCharacters({
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => handleCharacterNameInputChange(e.target.value)}
             placeholder={t('characterName')}
-            readOnly={lockNameClassFromBnet}
+            readOnly={lockBnetNameAndRealmOnAdd}
             className="rounded border border-input bg-background px-3 py-2 w-full min-w-0 flex-1 read-only:opacity-80"
           />
           <button
             type="button"
             onClick={() => void handleBnetSync()}
-            disabled={
-              loading ||
-              bnetSyncLoading ||
-              !autoRealmId ||
-              !name.trim() ||
-              (modalOpen === 'add' && addBnetDone)
-            }
+            disabled={loading || bnetSyncLoading || !autoRealmId || !name.trim()}
             className="rounded border border-input bg-background px-3 py-2 text-sm font-medium whitespace-nowrap shrink-0 disabled:opacity-50"
           >
             {bnetSyncLoading ? t('bnetSyncLoading') : t('bnetSync')}
           </button>
         </div>
-        {modalOpen === 'add' && !addBnetDone ? (
+        {modalOpen === 'add' && !addBnetAligned ? (
           <p className="text-xs text-muted-foreground">{t('bnetSyncRequiredBeforeSave')}</p>
         ) : null}
-        {addBnetDone ? (
+        {addBnetAligned ? (
           <p className="text-xs text-muted-foreground">{t('bnetPendingSaveHint')}</p>
         ) : null}
-        {(modalOpen === 'edit' || addBnetDone) &&
+        {(modalOpen === 'edit' || addBnetAligned) &&
           (classId || selectedMainSpecDisplay || name.trim()) && (
             <div
               className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
@@ -762,7 +809,7 @@ export function ProfileCharacters({
               </span>
             </div>
           )}
-        {modalOpen === 'edit' || addBnetDone ? (
+        {modalOpen === 'edit' || addBnetAligned ? (
           <>
             {!userHasGuilds ? (
               <p className="text-sm text-muted-foreground">{t('noRaidFlowGuildMembership')}</p>
@@ -793,10 +840,10 @@ export function ProfileCharacters({
             ) : null}
           </>
         ) : null}
-        {(modalOpen === 'edit' || addBnetDone) && (
+        {(modalOpen === 'edit' || addBnetAligned) && (
           <>
-            {addBnetDone ? (
-              <p className="text-xs text-muted-foreground">{t('bnetClassSpecFromApi')}</p>
+            {addBnetAligned ? (
+              <p className="text-xs text-muted-foreground">{t('bnetMainSpecManualHint')}</p>
             ) : null}
             <label className="text-sm font-medium">
               {t('class')} <span className="text-destructive">*</span>
@@ -808,7 +855,6 @@ export function ProfileCharacters({
                 setMainSpecId('');
                 setOffSpecId('');
               }}
-              disabled={lockNameClassFromBnet}
               className="rounded border border-input bg-background px-3 py-2 w-full disabled:opacity-60"
             >
               <option value="">{t('class')} …</option>
@@ -824,7 +870,6 @@ export function ProfileCharacters({
             <select
               value={mainSpecId}
               onChange={(e) => setMainSpecId(e.target.value)}
-              disabled={lockNameClassFromBnet}
               className="rounded border border-input bg-background px-3 py-2 w-full disabled:opacity-60"
             >
               <option value="">{t('mainSpec')} …</option>
@@ -1026,7 +1071,7 @@ export function ProfileCharacters({
                     !name.trim() ||
                     !classId ||
                     !mainSpecId ||
-                    (modalOpen === 'add' && !pendingBattlenetProfile) ||
+                    (modalOpen === 'add' && !addBnetAligned) ||
                     (modalOpen === 'add' && !autoRealmId) ||
                     (guilds.length > 0 && !guildId)
                   }
