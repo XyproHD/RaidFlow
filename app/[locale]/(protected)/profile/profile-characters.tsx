@@ -11,6 +11,7 @@ import {
   getSpecByDisplayName,
 } from '@/lib/wow-tbc-classes';
 import type { BattlenetProfileJson } from '@/lib/battlenet-character-persist';
+import { MIN_CHARACTER_LEVEL_FOR_NEW_CHARACTER, isBattlenetLevelEligibleForNewCharacter } from '@/lib/character-battlenet-requirements';
 import {
   type WowRealm,
 } from '@/lib/wow-classic-realms';
@@ -80,7 +81,6 @@ export function ProfileCharacters({
   }, [openMenuId]);
   const [name, setName] = useState('');
   const [guildId, setGuildId] = useState('');
-  const [saveWithoutGuild, setSaveWithoutGuild] = useState(false);
   const [classId, setClassId] = useState('');
   const [mainSpecId, setMainSpecId] = useState('');
   const [offSpecId, setOffSpecId] = useState('');
@@ -110,7 +110,6 @@ export function ProfileCharacters({
   const resetForm = useCallback(() => {
     setName('');
     setGuildId('');
-    setSaveWithoutGuild(false);
     setClassId('');
     setMainSpecId('');
     setOffSpecId('');
@@ -127,17 +126,13 @@ export function ProfileCharacters({
   const openAdd = useCallback(() => {
     setEditingId(null);
     resetForm();
-    if (guilds.length >= 1) {
-      setGuildId(guilds[0].id);
-    }
     setModalOpen('add');
-  }, [resetForm, guilds]);
+  }, [resetForm]);
 
   const openEdit = useCallback((c: CharacterRow) => {
     setEditingId(c.id);
     setName(c.name);
-    setGuildId(c.guildId || '');
-    setSaveWithoutGuild(!c.guildId);
+    setGuildId(c.guildId || (guilds.length === 1 ? guilds[0].id : ''));
     const parsed = getSpecByDisplayName(c.mainSpec);
     if (parsed) {
       setClassId(parsed.classId);
@@ -161,7 +156,7 @@ export function ProfileCharacters({
     setRealmsLoadError(null);
     setError(null);
     setModalOpen('edit');
-  }, []);
+  }, [guilds]);
 
   const closeModal = useCallback(() => {
     setModalOpen(null);
@@ -228,6 +223,14 @@ export function ProfileCharacters({
         /* ignore */
       }
       if (res.ok && data.profile && data.characterName != null && data.mainSpec) {
+        if (!isBattlenetLevelEligibleForNewCharacter(data.profile.level)) {
+          setPendingBattlenetProfile(null);
+          setError(
+            t('bnetLevelTooLowFun', { min: MIN_CHARACTER_LEVEL_FOR_NEW_CHARACTER })
+          );
+          setBnetSyncHint(null);
+          return;
+        }
         setPendingBattlenetProfile(data.profile);
         setName(data.characterName);
         const specParsed = getSpecByDisplayName(data.mainSpec);
@@ -236,6 +239,7 @@ export function ProfileCharacters({
           setMainSpecId(specParsed.specId);
           setOffSpecId('');
         }
+        setBnetSyncHint(null);
         return;
       }
       if (data.battlenetDebug?.requestUrl) {
@@ -246,10 +250,12 @@ export function ProfileCharacters({
           message: data.error,
         });
       }
+      setPendingBattlenetProfile(null);
       setError((data.error ?? text) || t('errorSave'));
-      if (data.notFound) setBnetSyncHint(t('bnetExactSpellingHint'));
+      setBnetSyncHint(t('bnetExactSpellingHint'));
     } catch (err) {
       setError(t('errorSave'));
+      setBnetSyncHint(t('bnetExactSpellingHint'));
       console.error(err);
     } finally {
       setBnetSyncLoading(false);
@@ -259,6 +265,9 @@ export function ProfileCharacters({
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!pendingBattlenetProfile) return;
+    if (!autoRealmId) return;
+    if (guilds.length > 0 && !guildId) return;
     if (!name.trim() || !classId || !mainSpecId) return;
     const mainSpec = getSpecDisplayName(classId, mainSpecId);
     setLoading(true);
@@ -272,7 +281,7 @@ export function ProfileCharacters({
           guildId: guildId || null,
           mainSpec,
           offSpec: offSpecId ? getSpecDisplayName(classId, offSpecId) : null,
-          ...(pendingBattlenetProfile ? { battlenetProfile: pendingBattlenetProfile } : {}),
+          battlenetProfile: pendingBattlenetProfile,
         }),
       });
       if (res.ok) {
@@ -330,6 +339,7 @@ export function ProfileCharacters({
     e.preventDefault();
     setError(null);
     if (!editingId || !name.trim() || !classId || !mainSpecId) return;
+    if (guilds.length > 0 && !guildId) return;
     const mainSpec = getSpecDisplayName(classId, mainSpecId);
     setLoading(true);
     try {
@@ -481,9 +491,9 @@ export function ProfileCharacters({
   }, [autoRealmId]);
 
   useEffect(() => {
-    if (modalOpen !== 'add' && modalOpen !== 'edit') return;
+    if (modalOpen !== 'edit') return;
     if (realmOptions.length === 0) return;
-    if (!guildId || saveWithoutGuild) return;
+    if (!guildId) return;
     const g = guilds.find((x) => x.id === guildId);
     const rid = g?.battlenetRealmId;
     if (!rid) return;
@@ -492,12 +502,19 @@ export function ProfileCharacters({
       setAutoRealmId(realm.id);
       setRealmComboInput(formatRealmLabel(realm));
     }
-  }, [guildId, saveWithoutGuild, guilds, realmOptions, modalOpen]);
+  }, [guildId, guilds, realmOptions, modalOpen]);
+
+  useEffect(() => {
+    if (modalOpen !== 'add' || !pendingBattlenetProfile) return;
+    if (guilds.length === 1) {
+      setGuildId(guilds[0].id);
+    }
+  }, [modalOpen, pendingBattlenetProfile, guilds]);
 
   useEffect(() => {
     if (modalOpen !== 'edit' || !editingId) return;
     if (realmOptions.length === 0) return;
-    if (guildId && !saveWithoutGuild) return;
+    if (guildId) return;
     const c = list.find((x) => x.id === editingId);
     const slug = c?.battlenetRealmSlug;
     if (!slug) return;
@@ -506,7 +523,7 @@ export function ProfileCharacters({
       setAutoRealmId(realm.id);
       setRealmComboInput(formatRealmLabel(realm));
     }
-  }, [modalOpen, editingId, list, realmOptions, guildId, saveWithoutGuild]);
+  }, [modalOpen, editingId, list, realmOptions, guildId]);
 
   useEffect(() => {
     if (modalOpen !== 'add' && modalOpen !== 'edit') return;
@@ -561,6 +578,10 @@ export function ProfileCharacters({
     };
   }, [modalOpen, t, locale]);
 
+  const userHasGuilds = guilds.length > 0;
+  const addBnetDone = modalOpen === 'add' && !!pendingBattlenetProfile;
+  const lockNameClassFromBnet = modalOpen === 'add' && addBnetDone;
+
   const formContent = (
     <>
       {error && (
@@ -573,71 +594,17 @@ export function ProfileCharacters({
           {bnetSyncHint}
         </p>
       )}
-      <p className="text-sm text-muted-foreground mb-3">{t('characterAddBnetHint')}</p>
-      {/* Vorschau wie tatsächlicher Charakter-Button (ohne Main/Twink, ohne Burger-Menü) */}
-      {(classId || selectedMainSpecDisplay || name.trim()) && (
-        <div className="mb-3 grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm" style={{ gridTemplateColumns: '28px auto 1fr minmax(4rem, 1fr)' }}>
-          <div className="flex shrink-0 items-center justify-center w-7 h-7">
-            {classId ? <ClassIcon classId={classId} size={24} title={TBC_CLASSES.find((c) => c.id === classId)?.name} /> : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-1 min-w-0">
-            {selectedMainSpecDisplay && <SpecIcon spec={selectedMainSpecDisplay} size={24} />}
-            {selectedOffSpecDisplay && (
-              <>
-                <span className="text-muted-foreground text-xs font-medium">/</span>
-                <span className="grayscale contrast-90 inline-flex">
-                  <SpecIcon spec={selectedOffSpecDisplay} size={24} className="opacity-90" />
-                </span>
-              </>
-            )}
-          </div>
-          <span className="font-medium text-base truncate min-w-0 text-muted-foreground">
-            {name.trim() || '…'}
-          </span>
-          <span className="text-sm text-muted-foreground text-center truncate min-w-0">
-            {guildId ? (guilds.find((g) => g.id === guildId)?.name ?? '–') : '–'}
-          </span>
-        </div>
+      {modalOpen === 'add' && (
+        <p className="text-sm text-muted-foreground mb-3">{t('characterAddBnetHint')}</p>
       )}
       <div className="grid gap-3">
-        {guilds.length > 1 ? (
-          <>
-            <label className="text-sm font-medium">{t('guild')} ({t('optional')})</label>
-            <select
-              value={guildId}
-              onChange={(e) => setGuildId(e.target.value)}
-              className="rounded border border-input bg-background px-3 py-2 w-full"
-            >
-              {guilds.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-              <option value="">{t('withoutGuild')}</option>
-            </select>
-          </>
-        ) : guilds.length === 1 && singleGuild ? (
-          <>
-            <div className="grid gap-1">
-              <p className="text-sm font-medium">{t('guild')} ({t('optional')})</p>
-              <p className="text-sm text-muted-foreground">{singleGuild.name}</p>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={saveWithoutGuild}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setSaveWithoutGuild(checked);
-                  setGuildId(checked ? '' : singleGuild.id);
-                }}
-              />
-              {t('saveWithoutGuild')}
-            </label>
-          </>
-        ) : null}
         <label className="text-sm font-medium" htmlFor="character-realm-combobox">
-          {t('server')} <span className="text-muted-foreground font-normal">({t('optional')})</span>
+          {t('server')}{' '}
+          {modalOpen === 'add' ? (
+            <span className="text-destructive">*</span>
+          ) : (
+            <span className="text-muted-foreground font-normal">({t('optional')})</span>
+          )}
         </label>
         {realmsLoadError && (
           <p className="text-destructive text-sm" role="alert">
@@ -664,7 +631,8 @@ export function ProfileCharacters({
             aria-expanded={realmMenuOpen}
             aria-controls="realm-suggestion-list"
             aria-autocomplete="list"
-            className="rounded border border-input bg-background px-3 py-2 w-full"
+            className="rounded border border-input bg-background px-3 py-2 w-full disabled:opacity-60"
+            disabled={modalOpen === 'add' && addBnetDone}
           />
           {realmMenuOpen && realmListBox && (
             <ul
@@ -736,63 +704,151 @@ export function ProfileCharacters({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={t('characterName')}
-            className="rounded border border-input bg-background px-3 py-2 w-full min-w-0 flex-1"
+            readOnly={lockNameClassFromBnet}
+            className="rounded border border-input bg-background px-3 py-2 w-full min-w-0 flex-1 read-only:opacity-80"
           />
           <button
             type="button"
             onClick={() => void handleBnetSync()}
-            disabled={loading || bnetSyncLoading || !autoRealmId || !name.trim()}
+            disabled={
+              loading ||
+              bnetSyncLoading ||
+              !autoRealmId ||
+              !name.trim() ||
+              (modalOpen === 'add' && addBnetDone)
+            }
             className="rounded border border-input bg-background px-3 py-2 text-sm font-medium whitespace-nowrap shrink-0 disabled:opacity-50"
           >
             {bnetSyncLoading ? t('bnetSyncLoading') : t('bnetSync')}
           </button>
         </div>
-        {pendingBattlenetProfile ? (
+        {modalOpen === 'add' && !addBnetDone ? (
+          <p className="text-xs text-muted-foreground">{t('bnetSyncRequiredBeforeSave')}</p>
+        ) : null}
+        {addBnetDone ? (
           <p className="text-xs text-muted-foreground">{t('bnetPendingSaveHint')}</p>
         ) : null}
-        <label className="text-sm font-medium">{t('class')} <span className="text-destructive">*</span></label>
-        <select
-          value={classId}
-          onChange={(e) => {
-            setClassId(e.target.value);
-            setMainSpecId('');
-            setOffSpecId('');
-          }}
-          className="rounded border border-input bg-background px-3 py-2 w-full"
-        >
-          <option value="">{t('class')} …</option>
-          {TBC_CLASSES.map((cls) => (
-            <option key={cls.id} value={cls.id}>
-              {cls.name}
-            </option>
-          ))}
-        </select>
-        <label className="text-sm font-medium">{t('mainSpec')} <span className="text-destructive">*</span></label>
-        <select
-          value={mainSpecId}
-          onChange={(e) => setMainSpecId(e.target.value)}
-          className="rounded border border-input bg-background px-3 py-2 w-full"
-        >
-          <option value="">{t('mainSpec')} …</option>
-          {mainSpecOptions.map((spec) => (
-            <option key={spec.id} value={spec.id}>
-              {spec.name} ({spec.role})
-            </option>
-          ))}
-        </select>
-        <label className="text-sm font-medium">{t('offSpec')}</label>
-        <select
-          value={offSpecId}
-          onChange={(e) => setOffSpecId(e.target.value)}
-          className="rounded border border-input bg-background px-3 py-2 w-full"
-        >
-          <option value="">–</option>
-          {mainSpecOptions.map((spec) => (
-            <option key={spec.id} value={spec.id} disabled={spec.id === mainSpecId}>
-              {spec.name}
-            </option>
-          ))}
-        </select>
+        {(modalOpen === 'edit' || addBnetDone) &&
+          (classId || selectedMainSpecDisplay || name.trim()) && (
+            <div
+              className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm"
+              style={{ gridTemplateColumns: '28px auto 1fr minmax(4rem, 1fr)' }}
+            >
+              <div className="flex shrink-0 items-center justify-center w-7 h-7">
+                {classId ? (
+                  <ClassIcon
+                    classId={classId}
+                    size={24}
+                    title={TBC_CLASSES.find((c) => c.id === classId)?.name}
+                  />
+                ) : null}
+              </div>
+              <div className="flex shrink-0 items-center gap-1 min-w-0">
+                {selectedMainSpecDisplay && <SpecIcon spec={selectedMainSpecDisplay} size={24} />}
+                {selectedOffSpecDisplay && (
+                  <>
+                    <span className="text-muted-foreground text-xs font-medium">/</span>
+                    <span className="grayscale contrast-90 inline-flex">
+                      <SpecIcon spec={selectedOffSpecDisplay} size={24} className="opacity-90" />
+                    </span>
+                  </>
+                )}
+              </div>
+              <span className="font-medium text-base truncate min-w-0 text-muted-foreground">
+                {name.trim() || '…'}
+              </span>
+              <span className="text-sm text-muted-foreground text-center truncate min-w-0">
+                {guildId ? (guilds.find((g) => g.id === guildId)?.name ?? '–') : '–'}
+              </span>
+            </div>
+          )}
+        {modalOpen === 'edit' || addBnetDone ? (
+          <>
+            {!userHasGuilds ? (
+              <p className="text-sm text-muted-foreground">{t('noRaidFlowGuildMembership')}</p>
+            ) : guilds.length > 1 ? (
+              <>
+                <label className="text-sm font-medium">
+                  {t('guild')} <span className="text-destructive">*</span>
+                </label>
+                <select
+                  value={guildId}
+                  onChange={(e) => setGuildId(e.target.value)}
+                  className="rounded border border-input bg-background px-3 py-2 w-full"
+                  required
+                >
+                  <option value="">{t('guildSelectPlaceholder')}</option>
+                  {guilds.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : singleGuild ? (
+              <div className="grid gap-1">
+                <p className="text-sm font-medium">{t('guild')}</p>
+                <p className="text-sm text-muted-foreground">{singleGuild.name}</p>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+        {(modalOpen === 'edit' || addBnetDone) && (
+          <>
+            {addBnetDone ? (
+              <p className="text-xs text-muted-foreground">{t('bnetClassSpecFromApi')}</p>
+            ) : null}
+            <label className="text-sm font-medium">
+              {t('class')} <span className="text-destructive">*</span>
+            </label>
+            <select
+              value={classId}
+              onChange={(e) => {
+                setClassId(e.target.value);
+                setMainSpecId('');
+                setOffSpecId('');
+              }}
+              disabled={lockNameClassFromBnet}
+              className="rounded border border-input bg-background px-3 py-2 w-full disabled:opacity-60"
+            >
+              <option value="">{t('class')} …</option>
+              {TBC_CLASSES.map((cls) => (
+                <option key={cls.id} value={cls.id}>
+                  {cls.name}
+                </option>
+              ))}
+            </select>
+            <label className="text-sm font-medium">
+              {t('mainSpec')} <span className="text-destructive">*</span>
+            </label>
+            <select
+              value={mainSpecId}
+              onChange={(e) => setMainSpecId(e.target.value)}
+              disabled={lockNameClassFromBnet}
+              className="rounded border border-input bg-background px-3 py-2 w-full disabled:opacity-60"
+            >
+              <option value="">{t('mainSpec')} …</option>
+              {mainSpecOptions.map((spec) => (
+                <option key={spec.id} value={spec.id}>
+                  {spec.name} ({spec.role})
+                </option>
+              ))}
+            </select>
+            <label className="text-sm font-medium">{t('offSpec')}</label>
+            <select
+              value={offSpecId}
+              onChange={(e) => setOffSpecId(e.target.value)}
+              className="rounded border border-input bg-background px-3 py-2 w-full"
+            >
+              <option value="">–</option>
+              {mainSpecOptions.map((spec) => (
+                <option key={spec.id} value={spec.id} disabled={spec.id === mainSpecId}>
+                  {spec.name}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
     </>
   );
@@ -965,7 +1021,15 @@ export function ProfileCharacters({
               <div className="flex flex-wrap gap-2 mt-4">
                 <button
                   type="submit"
-                  disabled={loading || !name.trim() || !classId || !mainSpecId}
+                  disabled={
+                    loading ||
+                    !name.trim() ||
+                    !classId ||
+                    !mainSpecId ||
+                    (modalOpen === 'add' && !pendingBattlenetProfile) ||
+                    (modalOpen === 'add' && !autoRealmId) ||
+                    (guilds.length > 0 && !guildId)
+                  }
                   className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm disabled:opacity-50"
                 >
                   {t('save')}

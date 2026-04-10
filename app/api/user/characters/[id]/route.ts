@@ -10,11 +10,7 @@ import {
   battlenetProfileJsonToUpsertData,
   isBattlenetProfileJson,
 } from '@/lib/battlenet-character-persist';
-
-const characterInclude = {
-  guild: { select: { id: true, name: true } as const },
-  battlenetProfile: { select: { battlenetCharacterId: true, realmSlug: true } as const },
-} as const;
+import { getGuildsForUserCached } from '@/lib/user-guilds';
 
 /** PATCH: Charakter aktualisieren */
 export async function PATCH(
@@ -26,6 +22,7 @@ export async function PATCH(
   if (!userId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  const discordId = (session as { discordId?: string } | null)?.discordId ?? null;
   const { id } = await params;
   let body: {
     name?: string;
@@ -54,6 +51,22 @@ export async function PATCH(
   if (!existing) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
+
+  if (body.guildId !== undefined) {
+    const requested = body.guildId || null;
+    const userGuilds = await getGuildsForUserCached(userId, discordId);
+    const allowed = new Set(userGuilds.map((g) => g.id));
+    if (userGuilds.length > 0 && requested === null) {
+      return NextResponse.json(
+        { error: 'Gilden-Zuordnung kann nicht entfernt werden, solange du mindestens einem RaidFlow-Server zugeordnet bist.' },
+        { status: 400 }
+      );
+    }
+    if (requested != null && !allowed.has(requested)) {
+      return NextResponse.json({ error: 'Ungültige oder nicht zugängliche Gilde.' }, { status: 400 });
+    }
+  }
+
   const nextGuildId =
     body.guildId !== undefined ? body.guildId || null : existing.guildId;
   const guildIdChanged = body.guildId !== undefined && nextGuildId !== existing.guildId;
