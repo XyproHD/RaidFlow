@@ -2,14 +2,7 @@
  * App Home / Dashboard-Light: Embeds für Signups + anstehende Raids (analog Web-Dashboard).
  * Fokus: viele Icons, wenig Text, Links zum Signup/Edit/Plan.
  */
-import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  StringSelectMenuBuilder,
-  StringSelectMenuOptionBuilder,
-} from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 
 function isEphemeralContext(interaction) {
   return interaction.guildId != null;
@@ -97,12 +90,6 @@ function classKeyFromSpecDisplayName(displayName) {
   return CLASS_KEY_BY_EN[last] ?? null;
 }
 
-function parseKey(value) {
-  const [guildId, raidId] = String(value || '').split(':');
-  if (!guildId || !raidId) return null;
-  return { guildId, raidId };
-}
-
 function raidKey(guildId, raidId) {
   return `${guildId}:${raidId}`;
 }
@@ -121,11 +108,11 @@ function raidStatusIcon(status) {
   return '⚪';
 }
 
-function placementIcon(p) {
+function placementPrefix(p) {
   if (p === 'confirmed') return '✅';
   if (p === 'substitute') return '🪑';
-  if (p === 'signup') return '✍️';
-  return '•';
+  if (p === 'signup') return '';
+  return '';
 }
 
 function typeIcon(t) {
@@ -168,33 +155,25 @@ function buildDashboardEmbeds(payload) {
   } else {
     const lines = rows.slice(0, 10).map((r) => {
       const when = fmtDateTime(locale, r.scheduledAtIso);
-      const place = placementIcon(r.leaderPlacement);
+      const place = placementPrefix(r.leaderPlacement);
       const typ = typeIcon(r.type);
       const confirm = r.setConfirmed ? '✅' : '';
-      const ch = r.signedCharacterName ? `👤 ${r.signedCharacterName}` : '👤 —';
       const specKey = r.signedSpec ? (SPEC_KEY_BY_DISPLAY[String(r.signedSpec).trim()] ?? null) : null;
       const roleKey = specKey ? (ROLE_KEY_BY_SPEC_KEY[specKey] ?? null) : null;
       const clsKey = r.signedSpec ? classKeyFromSpecDisplayName(r.signedSpec) : null;
-      const sp = r.signedSpec
-        ? `${roleKey ? e(emojis, roleKey, '') + ' ' : ''}${specKey ? e(emojis, specKey, '') + ' ' : ''}${clsKey ? e(emojis, clsKey, '') + ' ' : ''}${r.signedSpec}`
-        : '';
-      const view = r.links?.view ? `[👁️](${r.links.view})` : '';
-      const tools = r.raidId ? `|| --> Tools: [🚪 Abmelden] [⚡ One-Click] [✍️ Formular] ${view}`.trim() : view;
-      return `${place}${confirm}${typ} **${when}** · 🗺️ ${r.dungeonName} · ${ch}${sp ? ` · ${sp}` : ''} ${tools}`.trim();
+      const roleEm = roleKey ? e(emojis, roleKey, '') : '';
+      const classEm = clsKey ? e(emojis, clsKey, '') : '';
+      const specEm = specKey ? e(emojis, specKey, '') : '';
+      const iconGroup = `${roleEm}${classEm}${specEm}`.trim();
+      const ch =
+        r.signedCharacterName != null && String(r.signedCharacterName).trim()
+          ? iconGroup
+            ? `${iconGroup} ${r.signedCharacterName}`
+            : r.signedCharacterName
+          : '—';
+      return `${place}${confirm}${typ} **${when}** · 🗺️ ${r.dungeonName} · ${ch}`.trim();
     });
-    const legendLines = [
-      '-# Legende:',
-      `-# ${e(emojis, 'wow_tank', '🛡️')} Tank`,
-      `-# ${e(emojis, 'wow_melee', '⚔️')} Melee`,
-      `-# ${e(emojis, 'wow_range', '🏹')} Range`,
-      `-# ${e(emojis, 'wow_heal', '💚')} Heal`,
-      '-# 📅 normal',
-      '-# ❓ unsicher',
-      '-# 🪑 reserve',
-      '-# ✅ gesetzt',
-      '-# [🚪 Abmelden] / [⚡ One-Click] / [✍️ Formular] / [👁️] View',
-    ];
-    signups.setDescription([...lines, '', ...legendLines].join('\n').slice(0, 4000));
+    signups.setDescription(lines.join('\n').slice(0, 4000));
   }
 
   const raids = new EmbedBuilder().setColor(accent).setTitle('🗓️ Anstehende Raids');
@@ -207,21 +186,9 @@ function buildDashboardEmbeds(payload) {
       const st = raidStatusIcon(r.status);
       const counts = `👥 ${r.signupCount}/${r.maxPlayers}`;
       const view = r.links?.view ? `[👁️](${r.links.view})` : '';
-      const edit = r.links?.edit ? `[⚙️](${r.links.edit})` : '';
-      const plan = r.links?.plan ? `[🧩](${r.links.plan})` : '';
-      const signed = r.mySignup ? '[🚪 Abmelden]' : '[⚡ One-Click] [✍️ Formular]';
-      const tools = `|| --> Tools: ${signed} ${view} ${edit} ${plan}`.trim();
-      return `${st} **${when}** · 🗺️ ${r.dungeonName} · ${counts} ${tools}`.trim();
+      return `${st} **${when}** · 🗺️ ${r.dungeonName} · ${counts} ${view}`.trim();
     });
-    const legendLines = [
-      '-# Legende:',
-      '-# [⚡ One-Click] = Main-Char + Defaults',
-      '-# [✍️ Formular] = Anmeldung via Discord-Form (Char/Typ)',
-      '-# [🚪 Abmelden] = Abmeldung',
-      '-# [👁️] View = Raid ansehen (Browser)',
-      '-# [⚙️] Edit / [🧩] Plan = nur Raidleader',
-    ];
-    raids.setDescription([...lines, '', ...legendLines].join('\n').slice(0, 4000));
+    raids.setDescription(lines.join('\n').slice(0, 4000));
   }
 
   const links = new EmbedBuilder().setColor(accent).setTitle('🔗 Links');
@@ -252,87 +219,81 @@ function buildHeaderRow(payload) {
   return [row];
 }
 
-function buildSelectRows(payload) {
-  const rows = [];
-
-  if (payload?.linked && Array.isArray(payload.mySignups) && payload.mySignups.length > 0) {
-    const select = new StringSelectMenuBuilder()
-      .setCustomId('rf_home_select_my_signup')
-      .setPlaceholder('Meine Anmeldungen – Raid wählen')
-      .addOptions(
-        payload.mySignups.slice(0, 25).map((s) =>
-          new StringSelectMenuOptionBuilder()
-            .setLabel(`${s.dungeonName} · ${fmtDateTime('de', s.scheduledAtIso)}`.slice(0, 100))
-            .setValue(raidKey(s.guildId, s.raidId))
-        )
-      );
-    rows.push(
-      new ActionRowBuilder().addComponents(select)
-    );
+/** Bis zu 4 Raid-Zeilen (Discord max. 5 Action Rows, eine für Header). */
+function collectHomeRaidsSorted(payload) {
+  const byKey = new Map();
+  const upcoming = [...(payload?.upcomingRaids || [])].sort(
+    (a, b) => new Date(a.scheduledAtIso) - new Date(b.scheduledAtIso)
+  );
+  for (const r of upcoming) {
+    byKey.set(raidKey(r.guildId, r.id), r);
   }
-
-  if (payload?.linked && Array.isArray(payload.upcomingRaids) && payload.upcomingRaids.length > 0) {
-    const select = new StringSelectMenuBuilder()
-      .setCustomId('rf_home_select_upcoming')
-      .setPlaceholder('Anstehende Raids – Raid wählen')
-      .addOptions(
-        payload.upcomingRaids.slice(0, 25).map((r) =>
-          new StringSelectMenuOptionBuilder()
-            .setLabel(
-              `${r.dungeonName} · ${fmtDateTime('de', r.scheduledAtIso)} · ${r.signupCount}/${r.maxPlayers}`.slice(
-                0,
-                100
-              )
-            )
-            .setValue(raidKey(r.guildId, r.id))
-        )
-      );
-    rows.push(
-      new ActionRowBuilder().addComponents(select)
-    );
+  for (const s of payload?.mySignups || []) {
+    const k = raidKey(s.guildId, s.raidId);
+    if (!byKey.has(k)) {
+      const r = findRaidInPayload(payload, s.guildId, s.raidId);
+      if (r) byKey.set(k, r);
+    }
   }
-
-  return rows;
+  return [...byKey.values()].sort((a, b) => new Date(a.scheduledAtIso) - new Date(b.scheduledAtIso));
 }
 
-function buildRaidActionRows(raid, isSignedUp) {
+function shortRaidLabel(dungeonName, scheduledAtIso) {
+  const dun = String(dungeonName || '?').replace(/\s+/g, ' ').trim().slice(0, 14);
+  const day = fmtDateTime('de', scheduledAtIso);
+  return `${dun} ${day}`.slice(0, 78);
+}
+
+function buildRaidButtonRows(payload) {
   const rows = [];
-  const row = new ActionRowBuilder();
+  if (!payload?.linked) return rows;
 
-  if (isSignedUp) {
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`rf_home_unsub:${raid.guildId}:${raid.id}`)
-        .setLabel('🚪 Abmelden')
-        .setStyle(ButtonStyle.Danger)
+  const list = collectHomeRaidsSorted(payload).slice(0, 4);
+  for (const raid of list) {
+    const isSignedUp = !!(
+      raid.mySignup ||
+      (payload.mySignups || []).some((s) => s.guildId === raid.guildId && s.raidId === raid.id)
     );
-  } else {
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`rf_home_signup1:${raid.guildId}:${raid.id}`)
-        .setLabel('⚡ One-Click')
-        .setStyle(ButtonStyle.Primary),
-      new ButtonBuilder()
-        .setCustomId(`rf_home_signupwiz:${raid.guildId}:${raid.id}`)
-        .setLabel('✍️ Anmelden')
-        .setStyle(ButtonStyle.Secondary)
-    );
+    const labelBase = shortRaidLabel(raid.dungeonName, raid.scheduledAtIso);
+    const row = new ActionRowBuilder();
+
+    if (isSignedUp) {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`rf_home_unsub:${raid.guildId}:${raid.id}`)
+          .setLabel(`🚪 ${labelBase}`)
+          .setStyle(ButtonStyle.Danger)
+      );
+    } else {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`rf_home_signup1:${raid.guildId}:${raid.id}`)
+          .setLabel(`⚡ ${labelBase}`)
+          .setStyle(ButtonStyle.Primary)
+      );
+    }
+
+    if (raid.links?.view) {
+      row.addComponents(
+        new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(`👁️ ${labelBase}`).setURL(raid.links.view)
+      );
+    }
+    if (raid.canEdit && raid.links?.edit) {
+      row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('⚙️ Edit').setURL(raid.links.edit));
+    }
+    if (raid.canEdit && raid.links?.plan) {
+      row.addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('🧩 Plan').setURL(raid.links.plan));
+    }
+
+    rows.push(row);
   }
-
-  if (raid.links?.view) {
-    row.addComponents(
-      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('👁️ View').setURL(raid.links.view)
-    );
-  }
-
-  rows.push(row);
   return rows;
 }
 
 function findRaidInPayload(payload, guildId, raidId) {
   const upcoming = (payload?.upcomingRaids || []).find((r) => r.guildId === guildId && r.id === raidId);
-  if (upcoming) return upcoming;
   const my = (payload?.mySignups || []).find((s) => s.guildId === guildId && s.raidId === raidId);
+  if (upcoming) return upcoming;
   if (!my) return null;
   return {
     id: my.raidId,
@@ -342,7 +303,12 @@ function findRaidInPayload(payload, guildId, raidId) {
     signupCount: null,
     maxPlayers: null,
     status: my.raidStatus,
-    links: { view: my.links?.view ?? null, signup: my.links?.signup ?? null },
+    links: {
+      view: my.links?.view ?? null,
+      signup: my.links?.signup ?? null,
+      edit: null,
+      plan: null,
+    },
     canEdit: false,
     mySignup: null,
   };
@@ -363,7 +329,7 @@ export async function sendAppHome(interaction, api) {
     const payload = await fetchUserHome(api.getWebappJson, discordUserId);
     await interaction.editReply({
       embeds: buildDashboardEmbeds(payload),
-      components: [...buildHeaderRow(payload), ...buildSelectRows(payload)],
+      components: [...buildHeaderRow(payload), ...buildRaidButtonRows(payload)],
     });
   } catch (e) {
     const msg = `Home konnte nicht geladen werden: ${e.message}`;
@@ -391,7 +357,7 @@ export async function handleAppHomeInteraction(interaction, api) {
       const payload = await fetchUserHome(getWebappJson, uid);
       await interaction.editReply({
         embeds: buildDashboardEmbeds(payload),
-        components: [...buildHeaderRow(payload), ...buildSelectRows(payload)],
+        components: [...buildHeaderRow(payload), ...buildRaidButtonRows(payload)],
       });
     } catch (e) {
       await interaction.editReply({
@@ -403,39 +369,10 @@ export async function handleAppHomeInteraction(interaction, api) {
     return true;
   }
 
-  if (interaction.isStringSelectMenu()) {
-    const id = interaction.customId;
-    if (id !== 'rf_home_select_my_signup' && id !== 'rf_home_select_upcoming') return false;
-    const parsed = parseKey(interaction.values?.[0]);
-    if (!parsed) return false;
-    await interaction.deferUpdate().catch(() => {});
-    try {
-      const payload = await fetchUserHome(getWebappJson, uid);
-      const raid = findRaidInPayload(payload, parsed.guildId, parsed.raidId);
-      if (!raid) {
-        await interaction.editReply({
-          content: 'Raid nicht gefunden (Sitzung evtl. veraltet). Bitte Refresh.',
-          embeds: buildDashboardEmbeds(payload),
-          components: [...buildHeaderRow(payload), ...buildSelectRows(payload)],
-        });
-        return true;
-      }
-      const isSignedUp = !!(raid.mySignup || (payload.mySignups || []).some((s) => s.guildId === parsed.guildId && s.raidId === parsed.raidId));
-      await interaction.editReply({
-        embeds: buildDashboardEmbeds(payload),
-        components: [...buildHeaderRow(payload), ...buildSelectRows(payload), ...buildRaidActionRows(raid, isSignedUp)],
-      });
-    } catch (e) {
-      await interaction.editReply({ content: `Auswahl fehlgeschlagen: ${e.message}`, embeds: [], components: [] }).catch(() => {});
-    }
-    return true;
-  }
-
   if (interaction.isButton()) {
     const cid = interaction.customId || '';
     const m1 = cid.match(/^rf_home_unsub:([^:]+):([^:]+)$/);
     const m2 = cid.match(/^rf_home_signup1:([^:]+):([^:]+)$/);
-    const m3 = cid.match(/^rf_home_signupwiz:([^:]+):([^:]+)$/);
 
     if (m1) {
       await interaction.deferUpdate().catch(() => {});
@@ -450,7 +387,7 @@ export async function handleAppHomeInteraction(interaction, api) {
         await interaction.editReply({
           content: '✅ Abgemeldet.',
           embeds: buildDashboardEmbeds(payload),
-          components: [...buildHeaderRow(payload), ...buildSelectRows(payload)],
+          components: [...buildHeaderRow(payload), ...buildRaidButtonRows(payload)],
         });
       } catch (e) {
         await interaction.editReply({ content: `Abmelden fehlgeschlagen: ${e.message}`, embeds: [], components: [] }).catch(() => {});
@@ -472,95 +409,10 @@ export async function handleAppHomeInteraction(interaction, api) {
         await interaction.editReply({
           content: '✅ Angemeldet (One-Click).',
           embeds: buildDashboardEmbeds(payload),
-          components: [...buildHeaderRow(payload), ...buildSelectRows(payload)],
+          components: [...buildHeaderRow(payload), ...buildRaidButtonRows(payload)],
         });
       } catch (e) {
         await interaction.editReply({ content: `Anmelden fehlgeschlagen: ${e.message}`, embeds: [], components: [] }).catch(() => {});
-      }
-      return true;
-    }
-
-    if (m3) {
-      // Minimal Wizard: Character + type (normal/uncertain/reserve)
-      await interaction.deferUpdate().catch(() => {});
-      try {
-        const guildId = m3[1];
-        const raidId = m3[2];
-        const chars = await getWebappJson('/api/bot/user-characters', { discordUserId: uid, guildId });
-        const options = (chars?.characters || []).slice(0, 25).map((c) => ({
-          label: (c.isMain ? `★ ${c.name}` : c.name).slice(0, 100),
-          value: c.id,
-        }));
-        if (options.length === 0) {
-          await interaction.editReply({ content: 'Kein Charakter für diese Gilde gefunden.', embeds: [], components: [] }).catch(() => {});
-          return true;
-        }
-        const row1 = new ActionRowBuilder().addComponents({
-          type: 3,
-          custom_id: `rf_home_wiz_char:${guildId}:${raidId}`,
-          placeholder: 'Charakter wählen',
-          options,
-        });
-        const row2 = new ActionRowBuilder().addComponents({
-          type: 3,
-          custom_id: `rf_home_wiz_type:${guildId}:${raidId}`,
-          placeholder: 'Typ wählen',
-          options: [
-            { label: '📅 Normal', value: 'normal' },
-            { label: '❓ Unsicher', value: 'uncertain' },
-            { label: '🪑 Reserve', value: 'reserve' },
-          ],
-        });
-        await interaction.editReply({
-          content: '✍️ Anmeldung – wähle Charakter und Typ.',
-          embeds: [],
-          components: [row1, row2],
-        });
-      } catch (e) {
-        await interaction.editReply({ content: `Wizard konnte nicht gestartet werden: ${e.message}`, embeds: [], components: [] }).catch(() => {});
-      }
-      return true;
-    }
-  }
-
-  if (interaction.isStringSelectMenu()) {
-    const cid = interaction.customId || '';
-    const mChar = cid.match(/^rf_home_wiz_char:([^:]+):([^:]+)$/);
-    const mType = cid.match(/^rf_home_wiz_type:([^:]+):([^:]+)$/);
-    // We use message components state in message: store selections in memory by user
-    if (mChar || mType) {
-      await interaction.deferUpdate().catch(() => {});
-      const guildId = (mChar || mType)[1];
-      const raidId = (mChar || mType)[2];
-      const key = `rf_wiz:${uid}:${guildId}:${raidId}`;
-      globalThis.__rfHomeWiz = globalThis.__rfHomeWiz || new Map();
-      const map = globalThis.__rfHomeWiz;
-      const cur = map.get(key) || {};
-      if (mChar) cur.characterId = interaction.values[0];
-      if (mType) cur.type = interaction.values[0];
-      map.set(key, { ...cur, updatedAt: Date.now() });
-
-      if (cur.characterId && cur.type) {
-        try {
-          await callWebapp('/api/bot/raid-signup', {
-            action: 'create',
-            mode: 'custom',
-            discordUserId: uid,
-            guildId,
-            raidId,
-            characterId: cur.characterId,
-            type: cur.type,
-          });
-          map.delete(key);
-          const payload = await fetchUserHome(getWebappJson, uid);
-          await interaction.editReply({
-            content: '✅ Angemeldet.',
-            embeds: buildDashboardEmbeds(payload),
-            components: [...buildHeaderRow(payload), ...buildSelectRows(payload)],
-          });
-        } catch (e) {
-          await interaction.editReply({ content: `Anmelden fehlgeschlagen: ${e.message}`, embeds: [], components: [] }).catch(() => {});
-        }
       }
       return true;
     }
