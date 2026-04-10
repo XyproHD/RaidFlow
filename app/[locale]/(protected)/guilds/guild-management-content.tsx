@@ -1,13 +1,19 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { ClassIcon } from '@/components/class-icon';
 import { cn } from '@/lib/utils';
 import { GuildBattlenetSection } from '@/components/guild-battlenet-section';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
-import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
+import {
+  CharacterNameBadges,
+  CharacterNameWithDiscordInline,
+  CharacterSpecIconsInline,
+} from '@/components/character-display-parts';
+import { BattlenetLogo } from '@/components/battlenet-logo';
+import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 
 type RaidGroup = { id: string; name: string; discordRoleId: string | null; sortOrder: number };
 type GuildCharacter = {
@@ -42,6 +48,7 @@ function getClassIdForSpec(displayName: string): string | null {
 }
 
 const ICON_SIZE = 24;
+const ICON_SIZE_COMPACT = 18;
 
 export function GuildManagementContent({
   guildId,
@@ -54,8 +61,8 @@ export function GuildManagementContent({
   const [raidGroups, setRaidGroups] = useState<RaidGroup[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [allowedChannels, setAllowedChannels] = useState<AllowedChannel[]>([]);
-  const [discordChannels, setDiscordChannels] = useState<DiscordChannel[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'members' | 'raidGroups' | 'settings'>('members');
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [dirtyBySection, setDirtyBySection] = useState<Record<string, boolean>>({});
@@ -161,42 +168,103 @@ export function GuildManagementContent({
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-10">
+    <div className="max-w-5xl mx-auto space-y-6">
       {savedMessage && (
         <p className="text-sm text-green-600 dark:text-green-400" role="status">
           {savedMessage}
         </p>
       )}
 
-      <GuildBattlenetSection guildId={guildId} onSaved={showSaved} />
+      <div
+        role="tablist"
+        aria-label={t('title')}
+        className="flex flex-wrap gap-1 border-b border-border"
+      >
+        {(
+          [
+            ['members', t('tabMembers')] as const,
+            ['raidGroups', t('tabRaidGroups')] as const,
+            ['settings', t('tabSettings')] as const,
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === id}
+            id={`guild-tab-${id}`}
+            aria-controls={`guild-panel-${id}`}
+            onClick={() => setActiveTab(id)}
+            className={cn(
+              'px-4 py-2.5 text-sm font-medium rounded-t-md border-b-2 -mb-px transition-colors min-h-[44px]',
+              activeTab === id
+                ? 'border-primary text-foreground bg-muted/40'
+                : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30'
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-      <RaidGroupsSection
-        guildId={guildId}
-        raidGroups={raidGroups}
-        members={members}
-        onUpdate={() => { loadRaidGroups(); loadMembers(); }}
-        onSaved={showSaved}
-        onDirtyChange={(dirty) => setSectionDirty('raidGroupsAllowedChars', dirty)}
-      />
+      <div
+        role="tabpanel"
+        id="guild-panel-members"
+        aria-labelledby="guild-tab-members"
+        hidden={activeTab !== 'members'}
+        className="space-y-6"
+      >
+        <MembersSection
+          guildId={guildId}
+          members={members}
+          raidGroups={raidGroups}
+          onUpdate={loadMembers}
+          onSaved={showSaved}
+        />
+      </div>
 
-      <MembersSection
-        guildId={guildId}
-        members={members}
-        raidGroups={raidGroups}
-        onUpdate={loadMembers}
-        onSaved={showSaved}
-      />
+      <div
+        role="tabpanel"
+        id="guild-panel-raidGroups"
+        aria-labelledby="guild-tab-raidGroups"
+        hidden={activeTab !== 'raidGroups'}
+        className="space-y-6"
+      >
+        <RaidGroupsSection
+          guildId={guildId}
+          raidGroups={raidGroups}
+          members={members}
+          onUpdate={() => {
+            loadRaidGroups();
+            loadMembers();
+          }}
+          onSaved={showSaved}
+          onDirtyChange={(dirty) => setSectionDirty('raidGroupsAllowedChars', dirty)}
+        />
+      </div>
 
-      <ChannelsSection
-        guildId={guildId}
-        discordGuildId={discordGuildId}
-        allowedChannels={allowedChannels}
-        discordChannels={discordChannels}
-        setDiscordChannels={setDiscordChannels}
-        onUpdate={loadAllowedChannels}
-        onSaved={showSaved}
-        onDirtyChange={(dirty) => setSectionDirty('allowedChannels', dirty)}
-      />
+      <div
+        role="tabpanel"
+        id="guild-panel-settings"
+        aria-labelledby="guild-tab-settings"
+        hidden={activeTab !== 'settings'}
+        className="space-y-10"
+      >
+        <GuildBattlenetSection guildId={guildId} onSaved={showSaved} />
+        <section aria-labelledby="discord-settings-heading" className="space-y-4">
+          <h3 id="discord-settings-heading" className="text-base font-semibold text-foreground">
+            {t('settingsDiscordHeading')}
+          </h3>
+          <ChannelsSection
+            guildId={guildId}
+            discordGuildId={discordGuildId}
+            allowedChannels={allowedChannels}
+            onUpdate={loadAllowedChannels}
+            onSaved={showSaved}
+            onDirtyChange={(dirty) => setSectionDirty('allowedChannels', dirty)}
+          />
+        </section>
+      </div>
     </div>
   );
 }
@@ -538,7 +606,6 @@ function RaidGroupsSection({
                   groupMembers.map((m) => {
                     const sortedChars = sortCharsMainFirst(m.characters);
                     const visibleChars = charsFiltered(sortedChars);
-                    const hasTwinksInGuild = m.characters.length > 1;
                     return (
                       <li key={m.id} className="rounded-lg border border-border bg-muted/20 p-2 flex flex-wrap items-center gap-2">
                         <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
@@ -556,7 +623,6 @@ function RaidGroupsSection({
                                   key={ch.id}
                                   ch={ch}
                                   showMainTwink
-                                  hasTwinksInGuild={hasTwinksInGuild}
                                   trailingAction={
                                     <button
                                       type="button"
@@ -611,26 +677,68 @@ function RaidGroupsSection({
 function CharacterCard({
   ch,
   showMainTwink = false,
-  hasTwinksInGuild = false,
   highlightMain = false,
   trailingAction,
+  compact = false,
+  discordInline = false,
 }: {
   ch: GuildCharacter;
   showMainTwink?: boolean;
-  hasTwinksInGuild?: boolean;
   highlightMain?: boolean;
   trailingAction?: React.ReactNode;
+  compact?: boolean;
+  discordInline?: boolean;
 }) {
   const tProfile = useTranslations('profile');
   const classId = getClassIdForSpec(ch.mainSpec);
+  const iconSize = compact ? ICON_SIZE_COMPACT : ICON_SIZE;
   const mainOrAltTitle = showMainTwink ? (ch.isMain ? tProfile('mainLabel') : tProfile('altLabel')) : undefined;
   const gridCols = showMainTwink
-    ? (trailingAction ? `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr auto` : `${ICON_SIZE + 8}px ${ICON_SIZE + 4}px auto 1fr`)
-    : (trailingAction ? `${ICON_SIZE + 4}px auto 1fr auto` : `${ICON_SIZE + 4}px auto 1fr`);
+    ? trailingAction
+      ? `${iconSize + 6}px ${iconSize + 4}px auto 1fr auto`
+      : `${iconSize + 6}px ${iconSize + 4}px auto 1fr`
+    : trailingAction
+      ? `${iconSize + 4}px auto 1fr auto`
+      : `${iconSize + 4}px auto 1fr`;
+  const starBox = compact ? 'w-6 h-6' : 'w-8 h-8';
+  const starSize = compact ? 16 : 22;
+  const classBox = compact ? 'w-6 h-6' : 'w-7 h-7';
+
+  const nameBlock =
+    discordInline ? (
+      <div className="flex items-center gap-1 min-w-0 flex-wrap">
+        <CharacterNameWithDiscordInline
+          name={ch.name}
+          discordName={ch.guildDiscordDisplayName}
+          className={cn('font-medium min-w-0 truncate', compact ? 'text-xs' : 'text-sm')}
+          discordClassName={compact ? 'text-[11px]' : undefined}
+        />
+        {ch.hasBattlenet ? (
+          <BattlenetLogo size={compact ? 14 : 18} title={tProfile('bnetLinkedBadgeTitle')} />
+        ) : null}
+        <CharacterGearscoreBadge
+          characterId={ch.id}
+          hasBattlenet={ch.hasBattlenet}
+          gearScore={ch.gearScore}
+        />
+      </div>
+    ) : (
+      <CharacterNameBadges
+        name={ch.name}
+        discordName={ch.guildDiscordDisplayName}
+        hasBattlenet={ch.hasBattlenet}
+        characterId={ch.id}
+        gearScore={ch.gearScore}
+        nameClassName={cn('font-medium min-w-0', compact ? 'text-xs' : 'text-sm')}
+        bnetTitle={tProfile('bnetLinkedBadgeTitle')}
+      />
+    );
+
   return (
     <div
       className={cn(
-        'grid items-center gap-2 rounded-lg border px-3 py-2 shadow-sm min-w-[12rem]',
+        'grid items-center gap-x-1.5 gap-y-0.5 rounded-md border shadow-sm min-w-0',
+        compact ? 'px-2 py-1 min-w-[10rem]' : 'gap-2 rounded-lg px-3 py-2 min-w-[12rem]',
         highlightMain && ch.isMain
           ? 'border-amber-500/50 bg-amber-500/10 dark:bg-amber-500/15'
           : 'border-border bg-card'
@@ -638,39 +746,27 @@ function CharacterCard({
       style={{ gridTemplateColumns: gridCols }}
     >
       {showMainTwink && (
-        <div className="flex shrink-0 items-center justify-center w-8 h-8" title={mainOrAltTitle}>
-          {showMainTwink ? (
-            <CharacterMainStar
-              isMain={!!ch.isMain}
-              titleMain={tProfile('mainLabel')}
-              titleAlt={tProfile('altLabel')}
-              sizePx={22}
-            />
-          ) : (
-            <span className="w-8 h-8" aria-hidden />
-          )}
+        <div className={cn('flex shrink-0 items-center justify-center', starBox)} title={mainOrAltTitle}>
+          <CharacterMainStar
+            isMain={!!ch.isMain}
+            titleMain={tProfile('mainLabel')}
+            titleAlt={tProfile('altLabel')}
+            sizePx={starSize}
+          />
         </div>
       )}
-      <div className="flex shrink-0 items-center justify-center w-7 h-7">
-        {classId && <ClassIcon classId={classId} size={ICON_SIZE} title={ch.mainSpec} />}
+      <div className={cn('flex shrink-0 items-center justify-center', classBox)}>
+        {classId && <ClassIcon classId={classId} size={iconSize} title={ch.mainSpec} />}
       </div>
-      <div className="flex shrink-0 items-center gap-1 min-w-0">
+      <div className="flex shrink-0 items-center gap-0.5 min-w-0">
         <CharacterSpecIconsInline
           mainSpec={ch.mainSpec}
           offSpec={ch.offSpec}
-          size={ICON_SIZE}
+          size={iconSize}
           offSpecIconClassName="opacity-90"
         />
       </div>
-      <CharacterNameBadges
-        name={ch.name}
-        discordName={ch.guildDiscordDisplayName}
-        hasBattlenet={ch.hasBattlenet}
-        characterId={ch.id}
-        gearScore={ch.gearScore}
-        nameClassName="font-medium text-sm min-w-0"
-        bnetTitle={tProfile('bnetLinkedBadgeTitle')}
-      />
+      {nameBlock}
       {trailingAction != null && <div className="flex items-center shrink-0">{trailingAction}</div>}
     </div>
   );
@@ -695,6 +791,8 @@ function MembersSection({
 }) {
   const t = useTranslations('guildManagement');
   const [showTwinks, setShowTwinks] = useState(false);
+  const [filterQuery, setFilterQuery] = useState('');
+  const [filterRaidGroupId, setFilterRaidGroupId] = useState<string>('all');
   const [assigning, setAssigning] = useState<string | null>(null);
   const [popupMemberId, setPopupMemberId] = useState<string | null>(null);
   const [popupSelectedIds, setPopupSelectedIds] = useState<Set<string>>(new Set());
@@ -772,6 +870,25 @@ function MembersSection({
     return () => (typeof cancelAnimationFrame !== 'undefined' ? cancelAnimationFrame(raf as number) : clearTimeout(raf as ReturnType<typeof setTimeout>));
   }, [popupMemberId]);
 
+  const filteredMembers = useMemo(() => {
+    let list = members;
+    if (filterRaidGroupId !== 'all') {
+      list = list.filter((m) => m.raidGroupIds.includes(filterRaidGroupId));
+    }
+    const q = filterQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter((m) => {
+        if (m.discordId.toLowerCase().includes(q)) return true;
+        return m.characters.some((c) => {
+          if (c.name.toLowerCase().includes(q)) return true;
+          const dn = c.guildDiscordDisplayName?.trim().toLowerCase();
+          return !!dn && dn.includes(q);
+        });
+      });
+    }
+    return list;
+  }, [members, filterQuery, filterRaidGroupId]);
+
   if (members.length === 0) {
     return (
       <section aria-labelledby="members-heading">
@@ -793,49 +910,86 @@ function MembersSection({
         {t('members')}
       </h2>
       <p className="text-sm text-muted-foreground mb-4">{t('membersDescription')}</p>
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-sm font-medium">{t('showTwinks')}:</span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={showTwinks}
-          onClick={() => setShowTwinks((v) => !v)}
-          className={cn(
-            'relative inline-flex h-6 w-11 shrink-0 rounded-full border border-input transition-colors',
-            showTwinks ? 'bg-primary' : 'bg-muted'
-          )}
-        >
-          <span
-            className={cn(
-              'pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow ring-0 transition translate-x-0.5',
-              showTwinks && 'translate-x-5'
-            )}
+      <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="flex flex-col gap-1 min-w-0 flex-1 sm:max-w-xs">
+          <label htmlFor="members-filter-search" className="text-sm font-medium">
+            {t('membersFilterSearch')}
+          </label>
+          <input
+            id="members-filter-search"
+            type="search"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm w-full min-w-0"
+            autoComplete="off"
           />
-        </button>
-        <span className="text-sm text-muted-foreground">{showTwinks ? t('showTwinksOn') : t('showTwinksOff')}</span>
+        </div>
+        <div className="flex flex-col gap-1 min-w-0 sm:w-48">
+          <label htmlFor="members-filter-raid" className="text-sm font-medium">
+            {t('membersFilterRaidGroup')}
+          </label>
+          <select
+            id="members-filter-raid"
+            value={filterRaidGroupId}
+            onChange={(e) => setFilterRaidGroupId(e.target.value)}
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm w-full"
+          >
+            <option value="all">{t('membersFilterAllGroups')}</option>
+            {raidGroups.map((rg) => (
+              <option key={rg.id} value={rg.id}>
+                {rg.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium">{t('showTwinks')}:</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={showTwinks}
+            onClick={() => setShowTwinks((v) => !v)}
+            className={cn(
+              'relative inline-flex h-6 w-11 shrink-0 rounded-full border border-input transition-colors',
+              showTwinks ? 'bg-primary' : 'bg-muted'
+            )}
+          >
+            <span
+              className={cn(
+                'pointer-events-none inline-block h-5 w-5 rounded-full bg-background shadow ring-0 transition translate-x-0.5',
+                showTwinks && 'translate-x-5'
+              )}
+            />
+          </button>
+          <span className="text-sm text-muted-foreground">{showTwinks ? t('showTwinksOn') : t('showTwinksOff')}</span>
+        </div>
       </div>
-      <ul className="space-y-3">
-        {members.map((m) => {
+      {members.length > 0 && filteredMembers.length === 0 && (
+        <p className="text-sm text-muted-foreground mb-3">{t('membersFilterNoResults')}</p>
+      )}
+      <ul className="space-y-2">
+        {filteredMembers.map((m) => {
           const sortedChars = sortCharsMainFirst(m.characters);
           const visibleChars = charsFiltered(sortedChars);
           return (
             <li
               key={m.id}
-              className="rounded-lg border border-border bg-card p-3 shadow-sm"
+              className="rounded-lg border border-border bg-card p-2 sm:p-2.5 shadow-sm"
             >
               <div className="flex flex-col sm:flex-row sm:items-start gap-2">
-                <div className="flex-1 min-w-0 space-y-2">
+                <div className="flex-1 min-w-0 space-y-1.5">
                   {visibleChars.length === 0 ? (
-                    <span className="text-muted-foreground text-sm">{m.discordId}</span>
+                    <span className="text-muted-foreground text-xs sm:text-sm">{m.discordId}</span>
                   ) : (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-1.5">
                       {visibleChars.map((ch) => (
                         <CharacterCard
                           key={ch.id}
                           ch={ch}
                           showMainTwink
-                          hasTwinksInGuild={m.characters.length > 1}
                           highlightMain={ch.isMain}
+                          compact
+                          discordInline
                         />
                       ))}
                     </div>
@@ -921,8 +1075,6 @@ function ChannelsSection({
   guildId,
   discordGuildId,
   allowedChannels,
-  discordChannels,
-  setDiscordChannels,
   onUpdate,
   onSaved,
   onDirtyChange,
@@ -930,39 +1082,76 @@ function ChannelsSection({
   guildId: string;
   discordGuildId: string;
   allowedChannels: AllowedChannel[];
-  discordChannels: DiscordChannel[] | null;
-  setDiscordChannels: (ch: DiscordChannel[] | null) => void;
   onUpdate: () => void;
   onSaved: () => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const t = useTranslations('guildManagement');
+  const [modalOpen, setModalOpen] = useState(false);
   const [fetching, setFetching] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [initialSelectedIds, setInitialSelectedIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [modalChannels, setModalChannels] = useState<DiscordChannel[]>([]);
+  const [modalSelectedIds, setModalSelectedIds] = useState<Set<string>>(new Set());
 
-  const handleFetchChannels = async () => {
+  const savedIds = useMemo(
+    () => new Set(allowedChannels.map((c) => c.discordChannelId)),
+    [allowedChannels]
+  );
+
+  const modalDirty = modalOpen && !areSetsEqual(modalSelectedIds, savedIds);
+  useEffect(() => {
+    onDirtyChange(modalDirty);
+  }, [modalDirty, onDirtyChange]);
+
+  const loadChannelsIntoModal = useCallback(async () => {
     setFetching(true);
     setErr(null);
     try {
       const res = await fetch(`/api/discord/guilds/${discordGuildId}/channels`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.detail || res.statusText);
-      setDiscordChannels(data.channels ?? []);
-      const initial = new Set(allowedChannels.map((c) => c.discordChannelId));
-      setSelectedIds(initial);
-      setInitialSelectedIds(initial);
+      const list: DiscordChannel[] = data.channels ?? [];
+      setModalChannels(list);
+      setModalSelectedIds((prev) => {
+        const valid = new Set(list.map((c) => c.id));
+        const next = new Set<string>();
+        for (const id of prev) {
+          if (valid.has(id)) next.add(id);
+        }
+        return next;
+      });
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
+      setModalChannels([]);
     } finally {
       setFetching(false);
     }
+  }, [discordGuildId]);
+
+  const openModal = () => {
+    setErr(null);
+    setModalSelectedIds(new Set(allowedChannels.map((c) => c.discordChannelId)));
+    setModalOpen(true);
+    void loadChannelsIntoModal();
   };
 
+  const closeModal = useCallback(() => {
+    setModalOpen(false);
+    setErr(null);
+  }, []);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeModal();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [modalOpen, closeModal]);
+
   const toggleChannel = (id: string) => {
-    setSelectedIds((prev) => {
+    setModalSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -970,13 +1159,12 @@ function ChannelsSection({
     });
   };
 
-  const handleSaveChannels = async () => {
-    if (areSetsEqual(selectedIds, initialSelectedIds)) return;
+  const handleApply = async () => {
     setSaving(true);
     setErr(null);
     try {
-      const channels = Array.from(selectedIds).map((id) => {
-        const ch = discordChannels?.find((c) => c.id === id);
+      const channels = Array.from(modalSelectedIds).map((id) => {
+        const ch = modalChannels.find((c) => c.id === id);
         return { discordChannelId: id, name: ch?.name ?? null };
       });
       const res = await fetch(`/api/guilds/${guildId}/allowed-channels`, {
@@ -987,8 +1175,8 @@ function ChannelsSection({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
       await onUpdate();
-      setInitialSelectedIds(selectedIds);
       onSaved();
+      closeModal();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -996,82 +1184,132 @@ function ChannelsSection({
     }
   };
 
-  const hasUnsaved = !areSetsEqual(selectedIds, initialSelectedIds);
-  useEffect(() => {
-    onDirtyChange(hasUnsaved);
-  }, [hasUnsaved, onDirtyChange]);
-
   return (
-    <section aria-labelledby="channels-heading">
-      <h2 id="channels-heading" className="text-lg font-semibold text-foreground mb-1">
-        {t('readChannels')}
-      </h2>
-      <p className="text-sm text-muted-foreground mb-4">{t('readChannelsDescription')}</p>
-      {err && (
-        <p className="text-sm text-destructive mb-2" role="alert">
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">{t('readChannelsDescription')}</p>
+      {err && !modalOpen && (
+        <p className="text-sm text-destructive" role="alert">
           {err}
         </p>
       )}
-      <div className="mb-4">
-        <button
-          type="button"
-          onClick={handleFetchChannels}
-          disabled={fetching || saving}
-          className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium hover:opacity-90 disabled:opacity-50 min-w-[10rem]"
-        >
-          {fetching ? t('loading') : t('fetchChannels')}
-        </button>
-      </div>
-      <h3 className="text-sm font-medium text-foreground mb-2">{t('allowedChannels')}</h3>
-      <p className="text-sm text-muted-foreground mb-2">{t('allowedChannelsDescription')}</p>
-      {discordChannels === null ? (
-        <p className="text-muted-foreground text-sm">{t('noChannelsFetched')}</p>
-      ) : discordChannels.length === 0 ? (
-        <p className="text-muted-foreground text-sm">{t('noChannelsFetched')}</p>
-      ) : (
-        <>
-          <div className="relative">
-            {saving && (
-              <div className="absolute inset-0 z-10 rounded-md bg-background/70 backdrop-blur-sm flex items-center justify-center">
-                <p className="text-sm text-muted-foreground">{t('saving')}</p>
-              </div>
-            )}
-            <ul className={cn('space-y-1 mb-4 max-h-48 overflow-y-auto border border-border rounded-md p-2', saving && 'opacity-30 pointer-events-none')}>
-              {discordChannels.map((ch) => (
-                <li key={ch.id} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id={`ch-${ch.id}`}
-                    checked={selectedIds.has(ch.id)}
-                    onChange={() => toggleChannel(ch.id)}
-                    className="rounded border-input"
-                    disabled={saving || fetching}
-                  />
-                  <label htmlFor={`ch-${ch.id}`} className="text-sm cursor-pointer">
-                    #{ch.name}
-                  </label>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-medium text-foreground mb-2">{t('allowedChannels')}</h4>
+          <p className="text-xs text-muted-foreground mb-2">{t('allowedChannelsDescription')}</p>
+          {allowedChannels.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('noChannelsSelected')}</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {allowedChannels.map((c) => (
+                <li
+                  key={c.id}
+                  className="inline-flex max-w-full items-center rounded-full border border-border bg-muted/30 px-2.5 py-1 text-xs font-medium text-foreground"
+                >
+                  <span className="truncate">#{c.name ?? c.discordChannelId}</span>
                 </li>
               ))}
             </ul>
-          </div>
-          <button
-            type="button"
-            onClick={handleSaveChannels}
-            disabled={saving || fetching || !hasUnsaved}
-            className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-w-[10rem]"
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={openModal}
+          disabled={saving}
+          className="shrink-0 rounded-md border border-input bg-background px-4 py-2.5 text-sm font-medium hover:bg-muted/60 disabled:opacity-50 min-h-[44px]"
+        >
+          {t('discordChannelsEdit')}
+        </button>
+      </div>
+
+      {modalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeModal();
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="discord-channels-modal-title"
+            className="flex w-full max-w-md max-h-[min(90vh,560px)] flex-col rounded-lg border border-border bg-background shadow-lg"
+            onMouseDown={(e) => e.stopPropagation()}
           >
-            {saving ? t('saving') : t('saveChannels')}
-          </button>
-        </>
-      )}
-      {allowedChannels.length > 0 && (
-        <div className="mt-4">
-          <p className="text-sm text-muted-foreground mb-1">
-            {t('savedAllowedList')}: {allowedChannels.map((c) => c.name ?? c.discordChannelId).join(', ')}
-          </p>
+            <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+              <h2 id="discord-channels-modal-title" className="text-base font-semibold">
+                {t('discordChannelsModalTitle')}
+              </h2>
+              <button
+                type="button"
+                onClick={closeModal}
+                className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={t('cancel')}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex flex-1 flex-col gap-3 overflow-hidden px-4 py-3">
+              {err && (
+                <p className="text-sm text-destructive shrink-0" role="alert">
+                  {err}
+                </p>
+              )}
+              {fetching && modalChannels.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('loading')}</p>
+              ) : modalChannels.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('noChannelsFetched')}</p>
+              ) : (
+                <ul className="max-h-[min(50vh,320px)] space-y-1 overflow-y-auto rounded-md border border-border p-2">
+                  {modalChannels.map((ch) => (
+                    <li key={ch.id}>
+                      <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/50">
+                        <input
+                          type="checkbox"
+                          checked={modalSelectedIds.has(ch.id)}
+                          onChange={() => toggleChannel(ch.id)}
+                          className="rounded border-input"
+                          disabled={fetching || saving}
+                        />
+                        <span className="min-w-0 truncate">#{ch.name}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
+              <button
+                type="button"
+                onClick={closeModal}
+                disabled={saving}
+                className="rounded-md border border-input px-4 py-2.5 text-sm font-medium min-h-[44px]"
+              >
+                {t('cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void loadChannelsIntoModal()}
+                disabled={fetching || saving}
+                className="rounded-md border border-input px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-h-[44px]"
+              >
+                {fetching ? t('loading') : t('discordChannelsRefresh')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleApply()}
+                disabled={saving || fetching}
+                className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-h-[44px]"
+              >
+                {saving ? t('saving') : t('discordChannelsApply')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
