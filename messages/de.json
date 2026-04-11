@@ -230,7 +230,13 @@
     "punctualityFilterTight": "Knapp",
     "punctualityFilterLate": "später",
     "menuRaidView": "Zur Raid-Ansicht",
-    "forbiddenPlan": "Nur die Raidleitung kann den Planer nutzen."
+    "forbiddenPlan": "Nur die Raidleitung kann den Planer nutzen.",
+    "groupTitle": "Gruppe {n}",
+    "addGroup": "Weitere Gruppe anlegen",
+    "rosterTotalHint": "Gesamt gesetzt: {current} / {max}",
+    "roleInRoster": "Im Gesetzt-Feld",
+    "roleNotInRoster": "Nicht im Gesetzt-Feld",
+    "saveErrorDiscordMultiGroup": "Derselbe Discord-Account darf nur in einer Gruppe gesetzt sein."
   },
   "raidEdit": {
     "sectionBasics": "Grunddaten & Termin",

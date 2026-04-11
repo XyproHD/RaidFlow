@@ -230,7 +230,13 @@
     "punctualityFilterTight": "Tight",
     "punctualityFilterLate": "Late",
     "menuRaidView": "Back to raid view",
-    "forbiddenPlan": "Only raid leaders can use the planner."
+    "forbiddenPlan": "Only raid leaders can use the planner.",
+    "groupTitle": "Group {n}",
+    "addGroup": "Add another group",
+    "rosterTotalHint": "Total placed: {current} / {max}",
+    "roleInRoster": "In the roster column",
+    "roleNotInRoster": "Not in the roster column",
+    "saveErrorDiscordMultiGroup": "The same Discord account may only be placed in one group."
   },
   "raidEdit": {
     "sectionBasics": "Basics & schedule",

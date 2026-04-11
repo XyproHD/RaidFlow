@@ -113,6 +113,136 @@ type FlyBackState = {
   height: number;
 };
 
+type PlannerGroup = {
+  rosterOrder: string[];
+  raidLeaderUserId: string | null;
+  lootmasterUserId: string | null;
+};
+
+type DropTarget =
+  | { kind: 'roster'; groupIndex: number }
+  | { kind: 'reserve' }
+  | { kind: 'pool' };
+
+function findDropTarget(x: number, y: number): DropTarget | null {
+  const stack = document.elementsFromPoint(x, y);
+  for (const el of stack) {
+    if (!(el instanceof HTMLElement)) continue;
+    const z = el.dataset.dropZone;
+    if (z === 'pool') return { kind: 'pool' };
+    if (z === 'reserve') return { kind: 'reserve' };
+    if (z === 'roster') {
+      const raw = el.dataset.rosterGroup ?? '0';
+      const gi = Number.parseInt(raw, 10);
+      return { kind: 'roster', groupIndex: Number.isFinite(gi) && gi >= 0 ? gi : 0 };
+    }
+  }
+  return null;
+}
+
+function allRosterIds(groups: PlannerGroup[]): string[] {
+  return groups.flatMap((g) => g.rosterOrder);
+}
+
+function findUserRosterConflict(
+  groups: PlannerGroup[],
+  byId: Map<string, RosterPlannerSignup>,
+  draggingId: string,
+  userId: string
+): string | null {
+  for (const g of groups) {
+    for (const otherId of g.rosterOrder) {
+      if (otherId === draggingId) continue;
+      const other = byId.get(otherId);
+      if ((other?.userId ?? '').trim() === userId) return otherId;
+    }
+  }
+  return null;
+}
+
+function dedupeRosterIdsAcrossGroups(groups: PlannerGroup[]): PlannerGroup[] {
+  const seen = new Set<string>();
+  return groups.map((g) => {
+    const next: string[] = [];
+    for (const id of g.rosterOrder) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      next.push(id);
+    }
+    return { ...g, rosterOrder: next };
+  });
+}
+
+function roleCountsForRosterOrder(
+  rosterOrder: string[],
+  byId: Map<string, RosterPlannerSignup>
+): Record<(typeof ROLE_KEYS)[number], number> {
+  const out: Record<(typeof ROLE_KEYS)[number], number> = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
+  for (const id of rosterOrder) {
+    const s = byId.get(id);
+    if (!s) continue;
+    const r = s.role;
+    if (r === 'Tank' || r === 'Melee' || r === 'Range' || r === 'Healer') out[r] += 1;
+  }
+  return out;
+}
+
+function minSpecKeyCountsForRosterOrder(
+  rosterOrder: string[],
+  byId: Map<string, RosterPlannerSignup>,
+  minSpecsObj: Record<string, number> | null | undefined
+): Map<string, number> {
+  const out = new Map<string, number>();
+  const minSpecs = minSpecsObj
+    ? Object.entries(minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
+    : [];
+  for (const [key] of minSpecs) {
+    let n = 0;
+    for (const id of rosterOrder) {
+      const s = byId.get(id);
+      if (!s) continue;
+      const spec = (s.signedSpec?.trim() || s.mainSpec?.trim() || '').trim();
+      if (!spec) continue;
+      if (isMinSpecClassKey(key)) {
+        const cid = parseMinSpecClassKey(key);
+        if (cid && getSpecByDisplayName(spec)?.classId === cid) n++;
+      } else if (spec === key) {
+        n++;
+      }
+    }
+    out.set(key, n);
+  }
+  return out;
+}
+
+function rosterMinFulfillmentRatioForOrder(
+  rosterOrder: string[],
+  byId: Map<string, RosterPlannerSignup>,
+  overviewProps: RaidOverviewSummaryProps
+): number | null {
+  const rosterRoleCounts = roleCountsForRosterOrder(rosterOrder, byId);
+  const rosterMinSpecKeyCounts = minSpecKeyCountsForRosterOrder(
+    rosterOrder,
+    byId,
+    overviewProps.minSpecsObj
+  );
+  const roleMin = overviewProps.roleMinByKey;
+  const ratios: number[] = [];
+  for (const k of ROLE_KEYS) {
+    const need = roleMin[k] ?? 0;
+    if (need <= 0) continue;
+    ratios.push(Math.min(1, (rosterRoleCounts[k] ?? 0) / need));
+  }
+  const minSpecs = overviewProps.minSpecsObj
+    ? Object.entries(overviewProps.minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
+    : [];
+  for (const [spec, need] of minSpecs) {
+    ratios.push(Math.min(1, (rosterMinSpecKeyCounts.get(spec) ?? 0) / need));
+  }
+  if (ratios.length === 0) return null;
+  return ratios.reduce((a, b) => a + b, 0) / ratios.length;
+}
+
 function openMenuAtButton(btn: HTMLButtonElement) {
   const r = btn.getBoundingClientRect();
   const width = 200;
@@ -151,16 +281,6 @@ function setFromArray(ids: (string | null | undefined)[]) {
   return new Set(ids.filter((x): x is string => typeof x === 'string' && x.length > 0));
 }
 
-function findDropZone(x: number, y: number): 'roster' | 'reserve' | 'pool' | null {
-  const stack = document.elementsFromPoint(x, y);
-  for (const el of stack) {
-    if (!(el instanceof HTMLElement)) continue;
-    const z = el.dataset.dropZone;
-    if (z === 'roster' || z === 'reserve' || z === 'pool') return z;
-  }
-  return null;
-}
-
 function rosterInsertIndex(container: HTMLElement, clientY: number, draggingId: string): number {
   const rows = [...container.querySelectorAll<HTMLElement>('[data-planner-row]')];
   let idx = 0;
@@ -183,6 +303,8 @@ export function RaidRosterPlanner({
   guildCharacters,
   raidLeaderLabel,
   canEditRaid,
+  initialRaidLeaderUserId,
+  initialLootmasterUserId,
 }: {
   locale: string;
   guildId: string;
@@ -193,6 +315,8 @@ export function RaidRosterPlanner({
   guildCharacters: GuildCharacterOption[];
   raidLeaderLabel: string;
   canEditRaid: boolean;
+  initialRaidLeaderUserId: string | null;
+  initialLootmasterUserId: string | null;
 }) {
   const t = useTranslations('raidDetail');
   const tEdit = useTranslations('raidEdit');
@@ -208,7 +332,7 @@ export function RaidRosterPlanner({
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<{
     signups: RosterPlannerSignup[];
-    rosterOrder: string[];
+    plannerGroups: PlannerGroup[];
     reserveOrder: string[];
   } | null>(null);
 
@@ -231,7 +355,13 @@ export function RaidRosterPlanner({
 
   const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
 
-  const [rosterOrder, setRosterOrder] = useState<string[]>([]);
+  const [plannerGroups, setPlannerGroups] = useState<PlannerGroup[]>(() => [
+    {
+      rosterOrder: [],
+      raidLeaderUserId: initialRaidLeaderUserId,
+      lootmasterUserId: initialLootmasterUserId,
+    },
+  ]);
   const [reserveOrder, setReserveOrder] = useState<string[]>(() => reserveSignupIdsFrom(initialSignups));
 
   function safeJsonParse<T>(raw: string | null): T | null {
@@ -253,13 +383,24 @@ export function RaidRosterPlanner({
         return p === 'confirmed' || p === 'substitute' || p === 'signup' ? p : 'signup';
       };
 
-      const stored = typeof window !== 'undefined'
-        ? safeJsonParse<{ rosterOrder?: unknown; reserveOrder?: unknown }>(window.localStorage.getItem(orderStorageKey))
-        : null;
+      type StoredPlanner = {
+        rosterOrder?: unknown;
+        reserveOrder?: unknown;
+        groups?: unknown;
+      };
+
+      const stored =
+        typeof window !== 'undefined'
+          ? safeJsonParse<StoredPlanner>(window.localStorage.getItem(orderStorageKey))
+          : null;
       const storedRoster =
-        stored && Array.isArray(stored.rosterOrder) ? (stored.rosterOrder.filter((x) => typeof x === 'string') as string[]) : null;
+        stored && Array.isArray(stored.rosterOrder)
+          ? (stored.rosterOrder.filter((x) => typeof x === 'string') as string[])
+          : null;
       const storedReserve =
-        stored && Array.isArray(stored.reserveOrder) ? (stored.reserveOrder.filter((x) => typeof x === 'string') as string[]) : null;
+        stored && Array.isArray(stored.reserveOrder)
+          ? (stored.reserveOrder.filter((x) => typeof x === 'string') as string[])
+          : null;
 
       const normalize = (arr: string[] | null) => {
         if (!arr) return [];
@@ -271,38 +412,107 @@ export function RaidRosterPlanner({
         return out;
       };
 
-      let nextRoster = normalize(storedRoster);
       let nextReserve = normalize(storedReserve);
 
-      // If we have no stored order yet, derive from leaderPlacement.
-      if (nextRoster.length === 0 && nextReserve.length === 0) {
-        nextRoster = ids.filter((id) => placementOf(id) === 'confirmed');
-        nextReserve = ids.filter((id) => placementOf(id) === 'substitute');
+      const defaultGroup = (): PlannerGroup => ({
+        rosterOrder: [],
+        raidLeaderUserId: initialRaidLeaderUserId,
+        lootmasterUserId: initialLootmasterUserId,
+      });
+
+      let nextGroups: PlannerGroup[];
+
+      const rawGroups = stored && Array.isArray(stored.groups) ? stored.groups : null;
+      if (rawGroups && rawGroups.length > 0) {
+        nextGroups = rawGroups.map((g, idx) => {
+          const o = g as Record<string, unknown>;
+          const ordRaw = o.rosterOrder;
+          const ord = Array.isArray(ordRaw)
+            ? normalize(ordRaw.filter((x): x is string => typeof x === 'string'))
+            : [];
+          const rl =
+            typeof o.raidLeaderUserId === 'string' && o.raidLeaderUserId.trim()
+              ? o.raidLeaderUserId.trim()
+              : idx === 0
+                ? initialRaidLeaderUserId
+                : null;
+          const lm =
+            typeof o.lootmasterUserId === 'string' && o.lootmasterUserId.trim()
+              ? o.lootmasterUserId.trim()
+              : idx === 0
+                ? initialLootmasterUserId
+                : null;
+          return { rosterOrder: ord, raidLeaderUserId: rl, lootmasterUserId: lm };
+        });
+        if (nextReserve.length === 0) {
+          nextReserve = ids.filter((id) => placementOf(id) === 'substitute');
+        }
+      } else {
+        let nextRoster = normalize(storedRoster);
+        if (nextRoster.length === 0 && nextReserve.length === 0) {
+          nextRoster = ids.filter((id) => placementOf(id) === 'confirmed');
+          nextReserve = ids.filter((id) => placementOf(id) === 'substitute');
+        }
+        const placed = new Set([...nextRoster, ...nextReserve]);
+        const remaining = ids.filter((id) => !placed.has(id));
+        for (const id of remaining) {
+          const p = placementOf(id);
+          if (p === 'confirmed') nextRoster.push(id);
+          else if (p === 'substitute') nextReserve.push(id);
+        }
+        nextRoster = nextRoster.filter((id) => placementOf(id) === 'confirmed');
+        nextReserve = nextReserve.filter((id) => placementOf(id) === 'substitute');
+        nextGroups = [
+          {
+            rosterOrder: nextRoster,
+            raidLeaderUserId: initialRaidLeaderUserId,
+            lootmasterUserId: initialLootmasterUserId,
+          },
+        ];
       }
 
-      // Ensure ids are in the correct column according to leaderPlacement (if stored data drifted).
-      const placed = new Set([...nextRoster, ...nextReserve]);
-      const remaining = ids.filter((id) => !placed.has(id));
-      for (const id of remaining) {
-        const p = placementOf(id);
-        if (p === 'confirmed') nextRoster.push(id);
-        else if (p === 'substitute') nextReserve.push(id);
-      }
-
-      // Filter out wrong placements if underlying DB changed
-      nextRoster = nextRoster.filter((id) => placementOf(id) === 'confirmed');
       nextReserve = nextReserve.filter((id) => placementOf(id) === 'substitute');
 
-      setRosterOrder(nextRoster);
+      const placedRoster = new Set(allRosterIds(nextGroups));
+      for (const id of ids) {
+        if (placedRoster.has(id) || nextReserve.includes(id)) continue;
+        const p = placementOf(id);
+        if (p === 'substitute') nextReserve.push(id);
+      }
+      nextReserve = nextReserve.filter((id) => placementOf(id) === 'substitute');
+
+      nextGroups = dedupeRosterIdsAcrossGroups(
+        nextGroups.map((g) => ({
+          ...g,
+          rosterOrder: g.rosterOrder.filter((id) => placementOf(id) === 'confirmed'),
+        }))
+      );
+
+      if (nextGroups.length === 0) {
+        nextGroups = [defaultGroup()];
+      }
+
+      const rosterSet = new Set(allRosterIds(nextGroups));
+      const missingConfirmed = ids.filter(
+        (id) => placementOf(id) === 'confirmed' && !rosterSet.has(id) && !nextReserve.includes(id)
+      );
+      if (missingConfirmed.length > 0) {
+        nextGroups = nextGroups.map((g, i) =>
+          i === 0 ? { ...g, rosterOrder: [...g.rosterOrder, ...missingConfirmed] } : g
+        );
+        nextGroups = dedupeRosterIdsAcrossGroups(nextGroups);
+      }
+
+      setPlannerGroups(nextGroups);
       setReserveOrder(nextReserve);
 
       setSavedSnapshot({
         signups: rows,
-        rosterOrder: nextRoster,
+        plannerGroups: nextGroups,
         reserveOrder: nextReserve,
       });
     },
-    [orderStorageKey]
+    [orderStorageKey, initialRaidLeaderUserId, initialLootmasterUserId]
   );
 
   useEffect(() => {
@@ -359,7 +569,7 @@ export function RaidRosterPlanner({
   const [dragPoint, setDragPoint] = useState<{ clientX: number; clientY: number } | null>(null);
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
 
-  const rosterListRef = useRef<HTMLDivElement>(null);
+  const rosterListRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const scheduledAt = useMemo(() => new Date(raid.scheduledAt), [raid.scheduledAt]);
   const scheduledEndAt = raid.scheduledEndAt ? new Date(raid.scheduledEndAt) : null;
@@ -371,63 +581,32 @@ export function RaidRosterPlanner({
   }).format(scheduledAt);
   const raidTermin = formatRaidTerminLine(intlLocale, scheduledAt, scheduledEndAt);
 
-  const rosterRoleCounts = useMemo(() => {
-    const out: Record<(typeof ROLE_KEYS)[number], number> = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
-    for (const id of rosterOrder) {
-      const s = byId.get(id);
-      if (!s) continue;
-      const r = s.role;
-      if (r === 'Tank' || r === 'Melee' || r === 'Range' || r === 'Healer') out[r] += 1;
-    }
-    return out;
-  }, [rosterOrder, byId]);
+  const totalRosterCount = useMemo(
+    () => plannerGroups.reduce((n, g) => n + g.rosterOrder.length, 0),
+    [plannerGroups]
+  );
 
-  const rosterMinSpecKeyCounts = useMemo(() => {
-    const out = new Map<string, number>();
-    const minSpecs = overviewProps.minSpecsObj
-      ? Object.entries(overviewProps.minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
-      : [];
-    for (const [key] of minSpecs) {
-      let n = 0;
-      for (const id of rosterOrder) {
-        const s = byId.get(id);
-        if (!s) continue;
-        const spec = (s.signedSpec?.trim() || s.mainSpec?.trim() || '').trim();
-        if (!spec) continue;
-        if (isMinSpecClassKey(key)) {
-          const cid = parseMinSpecClassKey(key);
-          if (cid && getSpecByDisplayName(spec)?.classId === cid) n++;
-        } else if (spec === key) {
-          n++;
-        }
-      }
-      out.set(key, n);
+  const leaderLootUserOptions = useMemo(() => {
+    const labelByUser = new Map<string, string>();
+    for (const c of guildCharacters) {
+      const u = c.userId.trim();
+      if (!u) continue;
+      const prev = labelByUser.get(u);
+      if (!prev || c.isMain) labelByUser.set(u, c.name.trim() || u);
     }
-    return out;
-  }, [overviewProps.minSpecsObj, rosterOrder, byId]);
-
-  const rosterMinFulfillmentRatio = useMemo(() => {
-    const roleMin = overviewProps.roleMinByKey;
-    const ratios: number[] = [];
-    for (const k of ROLE_KEYS) {
-      const need = roleMin[k] ?? 0;
-      if (need <= 0) continue;
-      ratios.push(Math.min(1, (rosterRoleCounts[k] ?? 0) / need));
+    for (const s of signups) {
+      const u = (s.userId ?? '').trim();
+      if (u && !labelByUser.has(u)) labelByUser.set(u, s.name.trim() || u);
     }
-    const minSpecs = overviewProps.minSpecsObj
-      ? Object.entries(overviewProps.minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
-      : [];
-    for (const [spec, need] of minSpecs) {
-      ratios.push(Math.min(1, (rosterMinSpecKeyCounts.get(spec) ?? 0) / need));
-    }
-    if (ratios.length === 0) return null;
-    return ratios.reduce((a, b) => a + b, 0) / ratios.length;
-  }, [overviewProps, rosterRoleCounts, rosterMinSpecKeyCounts]);
+    return [...labelByUser.entries()]
+      .map(([userId, label]) => ({ userId, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, intlLocale));
+  }, [guildCharacters, signups, intlLocale]);
 
   const poolIds = useMemo(() => {
-    const placed = new Set([...rosterOrder, ...reserveOrder]);
+    const placed = new Set([...allRosterIds(plannerGroups), ...reserveOrder]);
     return signups.map((s) => s.id).filter((id) => !placed.has(id));
-  }, [signups, rosterOrder, reserveOrder]);
+  }, [signups, plannerGroups, reserveOrder]);
 
   const usedCharacterIds = useMemo(() => {
     const set = new Set<string>();
@@ -585,22 +764,24 @@ export function RaidRosterPlanner({
 
     const onUp = (e: PointerEvent) => {
       if (e.pointerId !== sess.pointerId) return;
-      const target = findDropZone(e.clientX, e.clientY);
+      const target = findDropTarget(e.clientX, e.clientY);
       const id = sess.signupId;
       const origin = sess.originRect;
 
       const applyPool = () => {
-        setRosterOrder((o) => o.filter((x) => x !== id));
+        setPlannerGroups((groups) =>
+          groups.map((g) => ({ ...g, rosterOrder: g.rosterOrder.filter((x) => x !== id) }))
+        );
         setReserveOrder((o) => o.filter((x) => x !== id));
       };
 
-      if (target === 'pool') {
+      if (target?.kind === 'pool') {
         applyPool();
         endDrag();
         return;
       }
 
-      if (target === 'reserve') {
+      if (target?.kind === 'reserve') {
         const dragged = byId.get(id);
         if (dragged?.forbidReserve) {
           setPulseForbidReserveId(id);
@@ -619,21 +800,38 @@ export function RaidRosterPlanner({
           endDrag();
           return;
         }
-        setRosterOrder((o) => o.filter((x) => x !== id));
+        setPlannerGroups((groups) =>
+          groups.map((g) => ({ ...g, rosterOrder: g.rosterOrder.filter((x) => x !== id) }))
+        );
         setReserveOrder((o) => (o.includes(id) ? o : [...o, id]));
         endDrag();
         return;
       }
 
-      if (target === 'roster') {
-        const dragged = byId.get(id);
-        const draggedUserId = dragged?.userId ?? null;
-        if (draggedUserId) {
-          const conflictId = rosterOrder.find((otherId) => {
-            if (otherId === id) return false;
-            const other = byId.get(otherId);
-            return (other?.userId ?? null) === draggedUserId;
+      if (target?.kind === 'roster') {
+        const destGi = target.groupIndex;
+        if (destGi < 0 || destGi >= plannerGroups.length) {
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
           });
+          endDrag();
+          return;
+        }
+
+        const dragged = byId.get(id);
+        const draggedUserId = (dragged?.userId ?? '').trim() || null;
+        if (draggedUserId) {
+          const groupsSans = plannerGroups.map((g) => ({
+            ...g,
+            rosterOrder: g.rosterOrder.filter((x) => x !== id),
+          }));
+          const conflictId = findUserRosterConflict(groupsSans, byId, id, draggedUserId);
           if (conflictId) {
             setBlinkDiscordForIds(setFromArray([id, conflictId]));
             window.setTimeout(() => setBlinkDiscordForIds(new Set()), 900);
@@ -650,14 +848,21 @@ export function RaidRosterPlanner({
             return;
           }
         }
-        const el = rosterListRef.current;
+
+        const el = rosterListRefs.current[destGi];
         const insertAt = el ? rosterInsertIndex(el, e.clientY, id) : 0;
         setReserveOrder((o) => o.filter((x) => x !== id));
-        setRosterOrder((o) => {
-          const without = o.filter((x) => x !== id);
-          const next = [...without];
-          next.splice(insertAt, 0, id);
-          return next;
+        setPlannerGroups((groups) => {
+          const sans = groups.map((g) => ({
+            ...g,
+            rosterOrder: g.rosterOrder.filter((x) => x !== id),
+          }));
+          return sans.map((g, gi) => {
+            if (gi !== destGi) return g;
+            const next = [...g.rosterOrder];
+            next.splice(insertAt, 0, id);
+            return { ...g, rosterOrder: next };
+          });
         });
         endDrag();
         return;
@@ -683,7 +888,7 @@ export function RaidRosterPlanner({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragSession, endDrag, byId, rosterOrder]);
+  }, [dragSession, endDrag, byId, plannerGroups]);
 
   const onRowPointerDown = (
     e: React.PointerEvent,
@@ -876,6 +1081,7 @@ export function RaidRosterPlanner({
         originalSignedSpec: addSelected.mainSpec,
         onlySignedSpec: false,
         signupType: 'normal',
+        leaderPlacement: 'signup',
         isLate: false,
         punctuality: 'on_time',
         forbidReserve: false,
@@ -909,8 +1115,20 @@ export function RaidRosterPlanner({
     setSaving(true);
     setSaveError(null);
     try {
+      const rosterFlat = allRosterIds(plannerGroups);
+      for (const rid of rosterFlat) {
+        const row = byId.get(rid);
+        const uid = (row?.userId ?? '').trim();
+        if (!uid) continue;
+        if (findUserRosterConflict(plannerGroups, byId, rid, uid)) {
+          setSaveError(tRoster('saveErrorDiscordMultiGroup'));
+          setSaving(false);
+          return;
+        }
+      }
+
       const placementForId = (id: string): 'signup' | 'substitute' | 'confirmed' => {
-        if (rosterOrder.includes(id)) return 'confirmed';
+        if (rosterFlat.includes(id)) return 'confirmed';
         if (reserveOrder.includes(id)) return 'substitute';
         return 'signup';
       };
@@ -976,31 +1194,39 @@ export function RaidRosterPlanner({
         if (m) mappings.push(m);
       }
 
+      let snapshotSignups = signups;
+      let snapshotGroups = plannerGroups;
+      let snapshotReserve = reserveOrder;
+
       if (mappings.length > 0) {
         const map = new Map(mappings.map((m) => [m.oldId, m.newId]));
-        setSignups((prev) =>
-          prev.map((row) => {
-            const nid = map.get(row.id);
-            if (!nid) return row;
-            return { ...row, id: nid, leaderPlacement: placementForId(row.id) };
-          })
-        );
-        setRosterOrder((prev) => prev.map((id) => map.get(id) ?? id));
-        setReserveOrder((prev) => prev.map((id) => map.get(id) ?? id));
+        snapshotSignups = signups.map((row) => {
+          const nid = map.get(row.id);
+          if (!nid) return row;
+          return { ...row, id: nid, leaderPlacement: placementForId(row.id) };
+        });
+        snapshotGroups = plannerGroups.map((g) => ({
+          ...g,
+          rosterOrder: g.rosterOrder.map((id) => map.get(id) ?? id),
+        }));
+        snapshotReserve = reserveOrder.map((id) => map.get(id) ?? id);
+        setSignups(snapshotSignups);
+        setPlannerGroups(snapshotGroups);
+        setReserveOrder(snapshotReserve);
       }
 
       // Persist order locally for next visit.
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(
           orderStorageKey,
-          JSON.stringify({ rosterOrder, reserveOrder })
+          JSON.stringify({ groups: snapshotGroups, reserveOrder: snapshotReserve })
         );
       }
 
       setSavedSnapshot({
-        signups,
-        rosterOrder,
-        reserveOrder,
+        signups: snapshotSignups,
+        plannerGroups: snapshotGroups,
+        reserveOrder: snapshotReserve,
       });
       setLastSavedAt(Date.now());
       router.refresh();
@@ -1015,7 +1241,7 @@ export function RaidRosterPlanner({
     if (!savedSnapshot) return;
     setSaveError(null);
     setSignups(savedSnapshot.signups);
-    setRosterOrder(savedSnapshot.rosterOrder);
+    setPlannerGroups(savedSnapshot.plannerGroups);
     setReserveOrder(savedSnapshot.reserveOrder);
   }
 
@@ -1205,71 +1431,205 @@ export function RaidRosterPlanner({
       <div className="flex flex-col xl:flex-row gap-4 items-start">
         <div className="flex-1 min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-4 w-full order-2 xl:order-1">
           <div className="space-y-4 min-w-0">
-            <div
-              data-drop-zone="roster"
-              className={cn(
-                'rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden min-h-[120px] transition-[box-shadow] duration-200',
-                dragActive && 'ring-2 ring-primary/45 ring-offset-2 ring-offset-background'
-              )}
-            >
-              <div className="border-b border-border bg-muted/20 px-4 py-3 space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-sm font-semibold text-foreground">{tRoster('rosterTitle')}</h2>
-                  <div className={cn('text-lg font-bold tabular-nums leading-none', toneForFulfillment(rosterMinFulfillmentRatio))}>
-                    {rosterOrder.length} / {raid.maxPlayers}
+            {plannerGroups.length > 1 ? (
+              <p className="text-xs text-muted-foreground px-1">
+                {tRoster('rosterTotalHint', { current: totalRosterCount, max: raid.maxPlayers })}
+              </p>
+            ) : null}
+
+            {plannerGroups.map((group, groupIndex) => {
+              const gRatio = rosterMinFulfillmentRatioForOrder(group.rosterOrder, byId, overviewProps);
+              const gRoleCounts = roleCountsForRosterOrder(group.rosterOrder, byId);
+              const gSpecCounts = minSpecKeyCountsForRosterOrder(
+                group.rosterOrder,
+                byId,
+                overviewProps.minSpecsObj
+              );
+              const rlUid = group.raidLeaderUserId;
+              const lmUid = group.lootmasterUserId;
+              const rlInRoster =
+                !!rlUid &&
+                group.rosterOrder.some((sid) => (byId.get(sid)?.userId ?? '').trim() === rlUid);
+              const lmInRoster =
+                !!lmUid &&
+                group.rosterOrder.some((sid) => (byId.get(sid)?.userId ?? '').trim() === lmUid);
+
+              return (
+                <div
+                  key={`roster-group-${groupIndex}`}
+                  data-drop-zone="roster"
+                  data-roster-group={String(groupIndex)}
+                  className={cn(
+                    'rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden min-h-[120px] transition-[box-shadow] duration-200',
+                    dragActive && 'ring-2 ring-primary/45 ring-offset-2 ring-offset-background'
+                  )}
+                >
+                  <div className="border-b border-border bg-muted/20 px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <h2 className="text-sm font-semibold text-foreground">
+                        {tRoster('groupTitle', { n: groupIndex + 1 })}
+                      </h2>
+                      <div className={cn('text-lg font-bold tabular-nums leading-none', toneForFulfillment(gRatio))}>
+                        {group.rosterOrder.length} / {raid.maxPlayers}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="flex flex-col gap-1 text-xs">
+                        <span className="text-muted-foreground">{tPlanner('raidLeader')}</span>
+                        <select
+                          className={cn(
+                            'rounded-md border bg-background px-2 py-1.5 text-sm',
+                            !rlUid
+                              ? 'border-input'
+                              : rlInRoster
+                                ? 'border-green-600/70 dark:border-green-500/60'
+                                : 'border-amber-600/60 dark:border-amber-500/50'
+                          )}
+                          value={rlUid ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value.trim();
+                            setPlannerGroups((prev) =>
+                              prev.map((g, i) =>
+                                i === groupIndex ? { ...g, raidLeaderUserId: v || null } : g
+                              )
+                            );
+                          }}
+                        >
+                          <option value="">{tPlanner('lootmasterNone')}</option>
+                          {leaderLootUserOptions.map((o) => (
+                            <option key={`${groupIndex}-rl-${o.userId}`} value={o.userId}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        {rlUid ? (
+                          <span
+                            className={cn(
+                              'text-[11px] leading-tight',
+                              rlInRoster ? 'text-green-700 dark:text-green-400' : 'text-amber-800 dark:text-amber-400'
+                            )}
+                          >
+                            {rlInRoster ? tRoster('roleInRoster') : tRoster('roleNotInRoster')}
+                          </span>
+                        ) : null}
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs">
+                        <span className="text-muted-foreground">{tPlanner('lootmaster')}</span>
+                        <select
+                          className={cn(
+                            'rounded-md border bg-background px-2 py-1.5 text-sm',
+                            !lmUid
+                              ? 'border-input'
+                              : lmInRoster
+                                ? 'border-green-600/70 dark:border-green-500/60'
+                                : 'border-amber-600/60 dark:border-amber-500/50'
+                          )}
+                          value={lmUid ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value.trim();
+                            setPlannerGroups((prev) =>
+                              prev.map((g, i) =>
+                                i === groupIndex ? { ...g, lootmasterUserId: v || null } : g
+                              )
+                            );
+                          }}
+                        >
+                          <option value="">{tPlanner('lootmasterNone')}</option>
+                          {leaderLootUserOptions.map((o) => (
+                            <option key={`${groupIndex}-lm-${o.userId}`} value={o.userId}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        {lmUid ? (
+                          <span
+                            className={cn(
+                              'text-[11px] leading-tight',
+                              lmInRoster ? 'text-green-700 dark:text-green-400' : 'text-amber-800 dark:text-amber-400'
+                            )}
+                          >
+                            {lmInRoster ? tRoster('roleInRoster') : tRoster('roleNotInRoster')}
+                          </span>
+                        ) : null}
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                      {ROLE_KEYS.map((roleKey) => {
+                        const need = overviewProps.roleMinByKey[roleKey] ?? 0;
+                        if (need <= 0) return null;
+                        const cur = gRoleCounts[roleKey] ?? 0;
+                        return (
+                          <span key={roleKey} className="inline-flex items-center gap-1.5">
+                            <RoleIcon role={roleKey} size={16} />
+                            <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
+                              {countToMinLabel(cur, need)}
+                            </span>
+                          </span>
+                        );
+                      })}
+
+                      {overviewProps.minSpecsObj
+                        ? Object.entries(overviewProps.minSpecsObj)
+                            .filter(([, need]) => typeof need === 'number' && need > 0)
+                            .map(([specKey, need]) => {
+                              const cur = gSpecCounts.get(specKey) ?? 0;
+                              const classId = parseMinSpecClassKey(specKey);
+                              const title = minSpecKeyTitle(specKey, tProfile);
+                              return (
+                                <span key={specKey} className="inline-flex items-center gap-1.5" title={title}>
+                                  {classId ? (
+                                    <ClassIcon classId={classId} size={16} title={title} />
+                                  ) : (
+                                    <SpecIcon spec={specKey} size={16} />
+                                  )}
+                                  <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
+                                    {countToMinLabel(cur, need)}
+                                  </span>
+                                </span>
+                              );
+                            })
+                        : null}
+                    </div>
+                  </div>
+                  <div
+                    ref={(el) => {
+                      rosterListRefs.current[groupIndex] = el;
+                    }}
+                    className="p-3 space-y-2"
+                    role="list"
+                  >
+                    {group.rosterOrder.length === 0 ? (
+                      <p className="text-sm text-muted-foreground px-1 py-4 text-center">{tRoster('rosterEmpty')}</p>
+                    ) : (
+                      group.rosterOrder.map((id, i) => {
+                        const s = byId.get(id);
+                        if (!s) return null;
+                        return renderRow(s, 'roster', i);
+                      })
+                    )}
                   </div>
                 </div>
+              );
+            })}
 
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
-                  {ROLE_KEYS.map((roleKey) => {
-                    const need = overviewProps.roleMinByKey[roleKey] ?? 0;
-                    if (need <= 0) return null;
-                    const cur = rosterRoleCounts[roleKey] ?? 0;
-                    return (
-                      <span key={roleKey} className="inline-flex items-center gap-1.5">
-                        <RoleIcon role={roleKey} size={16} />
-                        <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
-                          {countToMinLabel(cur, need)}
-                        </span>
-                      </span>
-                    );
-                  })}
-
-                  {overviewProps.minSpecsObj
-                    ? Object.entries(overviewProps.minSpecsObj)
-                        .filter(([, need]) => typeof need === 'number' && need > 0)
-                        .map(([specKey, need]) => {
-                          const cur = rosterMinSpecKeyCounts.get(specKey) ?? 0;
-                          const classId = parseMinSpecClassKey(specKey);
-                          const title = minSpecKeyTitle(specKey, tProfile);
-                          return (
-                            <span key={specKey} className="inline-flex items-center gap-1.5" title={title}>
-                              {classId ? (
-                                <ClassIcon classId={classId} size={16} title={title} />
-                              ) : (
-                                <SpecIcon spec={specKey} size={16} />
-                              )}
-                              <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
-                                {countToMinLabel(cur, need)}
-                              </span>
-                            </span>
-                          );
-                        })
-                    : null}
-                </div>
-              </div>
-              <div ref={rosterListRef} className="p-3 space-y-2" role="list">
-                {rosterOrder.length === 0 ? (
-                  <p className="text-sm text-muted-foreground px-1 py-4 text-center">{tRoster('rosterEmpty')}</p>
-                ) : (
-                  rosterOrder.map((id, i) => {
-                    const s = byId.get(id);
-                    if (!s) return null;
-                    return renderRow(s, 'roster', i);
-                  })
-                )}
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setPlannerGroups((prev) => [
+                  ...prev,
+                  {
+                    rosterOrder: [],
+                    raidLeaderUserId: initialRaidLeaderUserId,
+                    lootmasterUserId: initialLootmasterUserId,
+                  },
+                ])
+              }
+              className="w-full rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/30 transition-colors"
+            >
+              {tRoster('addGroup')}
+            </button>
 
             <div
               data-drop-zone="reserve"
