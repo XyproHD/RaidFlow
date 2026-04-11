@@ -4,11 +4,23 @@ import { useCallback, useLayoutEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 
-function stripTagsForPreview(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+/** Same typography as the editor: lists, paragraphs, inline format from contentEditable. */
+const RICH_HTML_VIEW =
+  'text-sm text-foreground [&_p]:mb-2 [&_p:last-child]:mb-0 [&_div]:mb-1 [&_div:last-child]:mb-0' +
+  ' [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-0.5' +
+  ' [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:space-y-0.5' +
+  ' [&_li]:pl-0.5' +
+  ' [&_b]:font-semibold [&_strong]:font-semibold [&_i]:italic [&_em]:italic [&_u]:underline' +
+  ' [&_a]:text-primary [&_a]:underline';
+
+function htmlHasVisibleText(html: string): boolean {
+  const safe = sanitizePlannerLeaderHtml(html || '');
+  if (typeof document === 'undefined') {
+    return safe.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().length > 0;
+  }
+  const tmp = document.createElement('div');
+  tmp.innerHTML = safe;
+  return (tmp.textContent || '').trim().length > 0;
 }
 
 export function PlannerLeaderNotesCollapsible({
@@ -82,8 +94,8 @@ export function PlannerLeaderNotesCollapsible({
     onHtmlChange(sanitizePlannerLeaderHtml(el.innerHTML));
   }, [onHtmlChange]);
 
-  const preview = stripTagsForPreview(bodyHtmlForPreview);
-  const previewShort = preview.length > 120 ? `${preview.slice(0, 120)}…` : preview;
+  const showCollapsedPreview = !expanded && htmlHasVisibleText(bodyHtmlForPreview);
+  const previewHtml = sanitizePlannerLeaderHtml(bodyHtmlForPreview);
 
   return (
     <section
@@ -104,8 +116,15 @@ export function PlannerLeaderNotesCollapsible({
           <span className="ml-1 tabular-nums">{expanded ? '▾' : '▸'}</span>
         </span>
       </button>
-      {!expanded && previewShort ? (
-        <p className="px-4 py-2 text-xs text-muted-foreground line-clamp-2">{previewShort}</p>
+      {showCollapsedPreview ? (
+        <div
+          className={cn(
+            'px-4 py-3 max-h-40 overflow-y-auto border-t border-border/60 bg-muted/10',
+            RICH_HTML_VIEW
+          )}
+          // eslint-disable-next-line react/no-danger -- sanitized guild-internal HTML
+          dangerouslySetInnerHTML={{ __html: previewHtml }}
+        />
       ) : null}
       {expanded ? (
         <div className="p-3 space-y-2">
@@ -147,8 +166,8 @@ export function PlannerLeaderNotesCollapsible({
           <div
             ref={editorRef}
             className={cn(
-              'min-h-[8rem] max-h-[min(40vh,320px)] overflow-y-auto rounded-md border border-input bg-background px-3 py-2 text-sm',
-              '[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_a]:text-primary [&_a]:underline',
+              'min-h-[8rem] max-h-[min(40vh,320px)] overflow-y-auto rounded-md border border-input bg-background px-3 py-2',
+              RICH_HTML_VIEW,
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
             )}
             contentEditable={!disabled}
