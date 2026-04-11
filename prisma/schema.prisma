@@ -228,6 +228,8 @@ model RfRaid {
   minSpecs                Json?     @map("min_specs")
   raidGroupRestrictionId  String?   @map("raid_group_restriction_id")
   note                    String?   @db.Text
+  /// Rich-HTML (Planer): Raidleiter-Notizen zum Raid (nur Planung)
+  plannerLeaderNotesHtml  String?   @map("planner_leader_notes_html") @db.Text
   maxPlayers              Int       @map("max_players")
   scheduledAt             DateTime  @map("scheduled_at")
   scheduledEndAt          DateTime? @map("scheduled_end_at")

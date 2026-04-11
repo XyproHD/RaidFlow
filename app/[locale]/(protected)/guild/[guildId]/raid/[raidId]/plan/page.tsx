@@ -228,6 +228,7 @@ export default async function RaidPlanPage(props: {
         raidLeaderLabel={raidLeaderLabel}
         initialRaidLeaderUserId={raid.raidLeaderId ?? null}
         initialLootmasterUserId={raid.lootmasterId ?? null}
+        initialPlannerLeaderNotesHtml={raid.plannerLeaderNotesHtml ?? null}
         raid={{
           name: raid.name,
           scheduledAt: raid.scheduledAt.toISOString(),

@@ -66,6 +66,12 @@ export async function PATCH(
   const name = typeof body.name === 'string' ? body.name.trim() : raid.name;
   const note =
     typeof body.note === 'string' ? body.note.trim() || null : raid.note;
+  const plannerLeaderNotesHtml =
+    body.plannerLeaderNotesHtml !== undefined
+      ? typeof body.plannerLeaderNotesHtml === 'string'
+        ? body.plannerLeaderNotesHtml.trim() || null
+        : raid.plannerLeaderNotesHtml
+      : raid.plannerLeaderNotesHtml;
   const maxPlayers =
     typeof body.maxPlayers === 'number' && Number.isFinite(body.maxPlayers)
       ? Math.floor(body.maxPlayers)
@@ -273,6 +279,7 @@ export async function PATCH(
         data: {
           name,
           note,
+          plannerLeaderNotesHtml,
           dungeonId,
           dungeonIds: nextDungeonIds,
           raidLeaderId,
@@ -299,6 +306,7 @@ export async function PATCH(
       data: {
         name,
         note,
+        plannerLeaderNotesHtml,
         dungeonId,
         dungeonIds: nextDungeonIds,
         raidLeaderId,
