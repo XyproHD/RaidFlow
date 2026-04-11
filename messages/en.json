@@ -253,6 +253,8 @@
     "forbiddenPlan": "Only raid leaders can use the planner.",
     "groupTitle": "Group {n}",
     "addGroup": "Add another group",
+    "removeGroup": "Remove group",
+    "removeGroupConfirm": "Remove this group? Players only on this roster return to signups or the reserve list (if they signed as reserve).",
     "saveErrorDiscordMultiGroup": "The same Discord account may only be placed in one group.",
     "leaderPlanNotes": "Raid leader notes",
     "leaderPlanNotesExpand": "Expand",

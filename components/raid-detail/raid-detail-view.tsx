@@ -14,6 +14,7 @@ import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge'
 import { BattlenetLogo } from '@/components/battlenet-logo';
 import { CharacterNameWithDiscordInline } from '@/components/character-display-parts';
 import { RaidAnmeldungen, type AnmeldungRow } from '@/components/raid-detail/raid-anmeldungen';
+import { RaidSignupPlayerRow } from '@/components/raid-detail/raid-signup-player-row';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
 import { RaidOverviewSummaryRows } from '@/components/raid-detail/raid-overview-summary';
@@ -112,11 +113,33 @@ function myStatusIcon(
   return '⚠️';
 }
 
-function signupIndicator(signupUntilIso: string): { icon: '🟢' | '🟡' | '🔴'; isClosed: boolean } {
+function signupIndicator(
+  signupUntilIso: string,
+  raidStatus: string
+): { icon: '🟢' | '🟡' | '🔴'; isClosed: boolean } {
+  if (raidStatus === 'announced' || raidStatus === 'locked') {
+    return { icon: '🔴', isClosed: true };
+  }
   const remainingMs = new Date(signupUntilIso).getTime() - Date.now();
   if (remainingMs <= 0) return { icon: '🔴', isClosed: true };
   if (remainingMs < 30 * 60 * 60 * 1000) return { icon: '🟡', isClosed: false };
   return { icon: '🟢', isClosed: false };
+}
+
+function raidSignupToAnmeldungRow(s: RaidDetailRaid['signups'][number]): AnmeldungRow {
+  return {
+    id: s.id,
+    userId: s.userId,
+    character: s.character,
+    signedSpec: s.signedSpec,
+    type: s.type,
+    isLate: s.isLate,
+    note: s.note,
+    leaderAllowsReserve: s.leaderAllowsReserve,
+    leaderMarkedTeilnehmer: s.leaderMarkedTeilnehmer,
+    onlySignedSpec: s.onlySignedSpec,
+    forbidReserve: s.forbidReserve,
+  };
 }
 
 function openMenuAtButton(btn: HTMLButtonElement) {
@@ -280,7 +303,7 @@ export function RaidDetailView({
     [raid.signups, minSpecsObj]
   );
 
-  const signupState = signupIndicator(raid.signupUntil);
+  const signupState = signupIndicator(raid.signupUntil, raid.status);
   const statusIcon = myStatusIcon(raid.status, mySignup);
   const myChar = mySignup?.characterId
     ? characters.find((c) => c.id === mySignup.characterId)
@@ -480,8 +503,7 @@ export function RaidDetailView({
                   <ul className="flex flex-col gap-2">
                     {meta.rosterOrder.map((sid) => {
                       const s = signupById.get(sid);
-                      const ch = s?.character;
-                      if (!ch) {
+                      if (!s) {
                         return (
                           <li key={sid} className="text-sm text-muted-foreground">
                             {t('signupAnonymous')}
@@ -489,14 +511,12 @@ export function RaidDetailView({
                         );
                       }
                       return (
-                        <li key={sid} className="flex flex-wrap items-center gap-2 text-sm">
-                          <CharacterNameWithDiscordInline
-                            name={ch.name}
-                            discordName={ch.guildDiscordDisplayName?.trim()}
-                            className="font-medium text-foreground"
+                        <li key={sid} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+                          <RaidSignupPlayerRow
+                            row={raidSignupToAnmeldungRow(s)}
+                            canEdit={false}
+                            showTypeLabel={false}
                           />
-                          <span className="text-muted-foreground">·</span>
-                          <span className="text-muted-foreground">{s?.signedSpec ?? ch.mainSpec}</span>
                         </li>
                       );
                     })}
@@ -512,8 +532,7 @@ export function RaidDetailView({
                 <ul className="flex flex-col gap-2">
                   {announcedLayout.reserveOrder.map((sid) => {
                     const s = signupById.get(sid);
-                    const ch = s?.character;
-                    if (!ch) {
+                    if (!s) {
                       return (
                         <li key={sid} className="text-sm text-muted-foreground">
                           {t('signupAnonymous')}
@@ -521,14 +540,12 @@ export function RaidDetailView({
                       );
                     }
                     return (
-                      <li key={sid} className="flex flex-wrap items-center gap-2 text-sm">
-                        <CharacterNameWithDiscordInline
-                          name={ch.name}
-                          discordName={ch.guildDiscordDisplayName?.trim()}
-                          className="font-medium text-foreground"
+                      <li key={sid} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+                        <RaidSignupPlayerRow
+                          row={raidSignupToAnmeldungRow(s)}
+                          canEdit={false}
+                          showTypeLabel
                         />
-                        <span className="text-muted-foreground">·</span>
-                        <span className="text-muted-foreground">{s?.signedSpec ?? ch.mainSpec}</span>
                       </li>
                     );
                   })}
@@ -541,27 +558,15 @@ export function RaidDetailView({
                 <ul className="flex flex-col gap-2">
                   {raid.signups
                     .filter((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined')
-                    .map((s) => {
-                      const ch = s.character;
-                      if (!ch) {
-                        return (
-                          <li key={s.id} className="text-sm text-muted-foreground">
-                            {t('signupAnonymous')}
-                          </li>
-                        );
-                      }
-                      return (
-                        <li key={s.id} className="flex flex-wrap items-center gap-2 text-sm">
-                          <CharacterNameWithDiscordInline
-                            name={ch.name}
-                            discordName={ch.guildDiscordDisplayName?.trim()}
-                            className="font-medium text-foreground"
-                          />
-                          <span className="text-muted-foreground">·</span>
-                          <span className="text-muted-foreground">{s.signedSpec ?? ch.mainSpec}</span>
-                        </li>
-                      );
-                    })}
+                    .map((s) => (
+                      <li key={s.id} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+                        <RaidSignupPlayerRow
+                          row={raidSignupToAnmeldungRow(s)}
+                          canEdit={false}
+                          showTypeLabel
+                        />
+                      </li>
+                    ))}
                 </ul>
               </div>
             ) : null}

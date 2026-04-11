@@ -253,6 +253,8 @@
     "forbiddenPlan": "Nur die Raidleitung kann den Planer nutzen.",
     "groupTitle": "Gruppe {n}",
     "addGroup": "Weitere Gruppe anlegen",
+    "removeGroup": "Gruppe entfernen",
+    "removeGroupConfirm": "Diese Gruppe entfernen? Gesetzte Spieler dieser Gruppe wandern zurück in die Anmeldungen bzw. Reserve (bei Reserve-Anmeldung).",
     "saveErrorDiscordMultiGroup": "Derselbe Discord-Account darf nur in einer Gruppe gesetzt sein.",
     "leaderPlanNotes": "Raidleiter-Notizen",
     "leaderPlanNotesExpand": "Ausklappen",

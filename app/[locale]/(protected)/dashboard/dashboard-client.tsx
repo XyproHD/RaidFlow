@@ -139,7 +139,13 @@ function roleForSpecDisplayName(specDisplayName: string | null): string | null {
   return spec?.role ?? null;
 }
 
-function signupIndicator(signupUntilIso: string): { icon: '🟢' | '🟡' | '🔴'; isClosed: boolean } {
+function signupIndicator(
+  signupUntilIso: string,
+  raidStatus: string
+): { icon: '🟢' | '🟡' | '🔴'; isClosed: boolean } {
+  if (raidStatus === 'announced' || raidStatus === 'locked') {
+    return { icon: '🔴', isClosed: true };
+  }
   const remainingMs = new Date(signupUntilIso).getTime() - Date.now();
   if (remainingMs <= 0) return { icon: '🔴', isClosed: true };
   if (remainingMs < 30 * 60 * 60 * 1000) return { icon: '🟡', isClosed: false };
@@ -732,7 +738,7 @@ export function DashboardClient({
                         const signupUntilDateTimeLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
                           new Date(r.signupUntilIso)
                         );
-                        const signupState = signupIndicator(r.signupUntilIso);
+                        const signupState = signupIndicator(r.signupUntilIso, r.status);
                         const signupUntilOpen = expandedSignupUntilRaidId === r.id;
                         return (
                           <div key={r.id} className="rounded-md border border-border bg-background px-2 py-2">
@@ -897,7 +903,7 @@ export function DashboardClient({
                   const signupUntilLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
                     new Date(r.signupUntilIso)
                   );
-                  const signupState = signupIndicator(r.signupUntilIso);
+                  const signupState = signupIndicator(r.signupUntilIso, r.status);
                   return (
                     <tr key={r.id} className="border-b border-border last:border-b-0 odd:bg-background even:bg-muted/10 hover:bg-muted/20">
                       <td className="px-3 py-2 text-muted-foreground">

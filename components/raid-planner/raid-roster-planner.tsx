@@ -1410,6 +1410,46 @@ export function RaidRosterPlanner({
     }
   }
 
+  function removePlannerGroupAt(groupIndex: number) {
+    if (plannerGroups.length <= 1) return;
+    if (!window.confirm(tRoster('removeGroupConfirm'))) return;
+    const removed = plannerGroups[groupIndex];
+    if (!removed) return;
+    const removedRoster = [...removed.rosterOrder];
+    const nextGroups = plannerGroups.filter((_, i) => i !== groupIndex);
+    const otherSet = new Set(allRosterIds(nextGroups));
+    const rowById = new Map(signups.map((s) => [s.id, s]));
+
+    setSignups((prev) =>
+      prev.map((s) => {
+        if (!removedRoster.includes(s.id) || otherSet.has(s.id)) return s;
+        const wantsReserve = s.signupType === 'reserve';
+        return {
+          ...s,
+          leaderPlacement: wantsReserve ? 'substitute' : 'signup',
+        };
+      })
+    );
+
+    setReserveOrder((prev) => {
+      const next = prev.filter((id) => {
+        if (!removedRoster.includes(id)) return true;
+        if (otherSet.has(id)) return true;
+        return false;
+      });
+      for (const id of removedRoster) {
+        if (otherSet.has(id)) continue;
+        const row = rowById.get(id);
+        if (row?.signupType === 'reserve' && !next.includes(id)) {
+          next.push(id);
+        }
+      }
+      return next;
+    });
+
+    setPlannerGroups(nextGroups);
+  }
+
   async function doAnnounceRaid() {
     if (raidStatus !== 'open' || saving) return;
     if (signups.some((s) => s.id.startsWith('manual:'))) {
@@ -1450,6 +1490,7 @@ export function RaidRosterPlanner({
         const txt = await res.text().catch(() => '');
         throw new Error(txt || tRoster('announceError'));
       }
+      router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
       router.refresh();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
@@ -1741,9 +1782,21 @@ export function RaidRosterPlanner({
                 >
                   <div className="border-b border-border bg-muted/20 px-4 py-3 space-y-2">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <h2 className="text-sm font-semibold text-foreground">
-                        {tRoster('groupTitle', { n: groupIndex + 1 })}
-                      </h2>
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
+                        <h2 className="text-sm font-semibold text-foreground">
+                          {tRoster('groupTitle', { n: groupIndex + 1 })}
+                        </h2>
+                        {plannerGroups.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() => removePlannerGroupAt(groupIndex)}
+                            className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors"
+                            title={tRoster('removeGroup')}
+                          >
+                            {tRoster('removeGroup')}
+                          </button>
+                        ) : null}
+                      </div>
                       <div className={cn('text-lg font-bold tabular-nums leading-none', toneForFulfillment(gRatio))}>
                         {group.rosterOrder.length} / {raid.maxPlayers}
                       </div>
