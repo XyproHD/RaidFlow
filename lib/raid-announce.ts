@@ -133,12 +133,10 @@ export async function executeRaidAnnounceTransaction(args: {
 }): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
   const { prisma, raidId, guildId, changedByUserId, payload } = args;
 
-  const signups = await prisma.rfRaidSignup.findMany({
-    where: { raidId },
-    select: { id: true, forbidReserve: true },
-  });
+  /** Einmal laden: Validierung + Audit-Vorher + keine findUnique-Schleife in der Transaktion (Vercel/5s-Timeout). */
+  const signupRows = await prisma.rfRaidSignup.findMany({ where: { raidId } });
 
-  const known = new Set(signups.map((s) => s.id));
+  const known = new Set(signupRows.map((s) => s.id));
   for (const g of payload.groups) {
     for (const id of g.rosterOrder) {
       if (!known.has(id)) {
@@ -152,39 +150,56 @@ export async function executeRaidAnnounceTransaction(args: {
     }
   }
 
-  await prisma.$transaction(async (tx) => {
-    for (const row of signups) {
-      const next = buildAnnounceSignupUpdate(row, payload);
-      const prev = await tx.rfRaidSignup.findUnique({ where: { id: row.id } });
-      if (!prev) continue;
-      const prevSnap = snapshotSignup(prev);
-      const updated = await tx.rfRaidSignup.update({
-        where: { id: row.id },
+  await prisma.$transaction(
+    async (tx) => {
+      for (const prev of signupRows) {
+        const next = buildAnnounceSignupUpdate(
+          { id: prev.id, forbidReserve: prev.forbidReserve },
+          payload
+        );
+        await tx.rfRaidSignup.update({
+          where: { id: prev.id },
+          data: {
+            type: next.type,
+            leaderPlacement: next.leaderPlacement,
+            setConfirmed: next.setConfirmed,
+          },
+        });
+      }
+
+      await tx.rfRaid.update({
+        where: { id: raidId },
         data: {
-          type: next.type,
-          leaderPlacement: next.leaderPlacement,
-          setConfirmed: next.setConfirmed,
+          status: 'announced',
+          announcedPlannerGroupsJson: announcedJsonValue(payload),
         },
       });
-      await logRaidSignupAudit({
-        signupId: row.id,
-        raidId,
-        guildId,
-        changedByUserId,
-        action: 'raid_announce_placement',
-        oldValue: prevSnap,
-        newValue: snapshotSignup(updated),
-      });
-    }
+    },
+    { maxWait: 15_000, timeout: 60_000 }
+  );
 
-    await tx.rfRaid.update({
-      where: { id: raidId },
-      data: {
-        status: 'announced',
-        announcedPlannerGroupsJson: announcedJsonValue(payload),
-      },
+  for (const prev of signupRows) {
+    const next = buildAnnounceSignupUpdate(
+      { id: prev.id, forbidReserve: prev.forbidReserve },
+      payload
+    );
+    const prevSnap = snapshotSignup(prev as unknown as Record<string, unknown>);
+    const merged = {
+      ...(prev as unknown as Record<string, unknown>),
+      type: next.type,
+      leaderPlacement: next.leaderPlacement,
+      setConfirmed: next.setConfirmed,
+    };
+    await logRaidSignupAudit({
+      signupId: prev.id,
+      raidId,
+      guildId,
+      changedByUserId,
+      action: 'raid_announce_placement',
+      oldValue: prevSnap,
+      newValue: snapshotSignup(merged),
     });
-  });
+  }
 
   void syncRaidThreadSummary(raidId);
   return { ok: true };
