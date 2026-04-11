@@ -1,10 +1,16 @@
+import { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
 import { syncRaidThreadSummary, postRaidLockedThreadNotice } from '@/lib/raid-thread-sync';
 import { parseMinSpecsPayload } from '@/lib/min-spec-keys';
-import { executeRaidAnnounceTransaction, parseAnnounceRaidPayload } from '@/lib/raid-announce';
+import {
+  announceLayoutToStoredJson,
+  executeRaidAnnounceTransaction,
+  parseAnnounceRaidPayload,
+  validateAnnouncePayloadAgainstKnownIds,
+} from '@/lib/raid-announce';
 
 /**
  * PATCH /api/guilds/[guildId]/raids/[raidId]
@@ -241,6 +247,41 @@ export async function PATCH(
     );
   }
 
+  const resetSignups = (timeChanged || dungeonChanged) && confirmResetSignups;
+
+  let announcedPlannerGroupsJsonUpdate:
+    | Prisma.InputJsonValue
+    | Prisma.NullableJsonNullValueInput
+    | undefined = undefined;
+  if (resetSignups && raid.status === 'announced') {
+    announcedPlannerGroupsJsonUpdate = Prisma.DbNull;
+  } else if (
+    !resetSignups &&
+    raid.status === 'announced' &&
+    body.announcedPlannerGroupsJson !== undefined
+  ) {
+    const raw = body.announcedPlannerGroupsJson;
+    if (raw !== null && (typeof raw !== 'object' || Array.isArray(raw))) {
+      return NextResponse.json({ error: 'Invalid announcedPlannerGroupsJson' }, { status: 400 });
+    }
+    if (raw !== null) {
+      const parsed = parseAnnounceRaidPayload(raw as Record<string, unknown>);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+      }
+      const knownRows = await prisma.rfRaidSignup.findMany({
+        where: { raidId },
+        select: { id: true },
+      });
+      const known = new Set(knownRows.map((r) => r.id));
+      const idCheck = validateAnnouncePayloadAgainstKnownIds(parsed.data, known);
+      if (!idCheck.ok) {
+        return NextResponse.json({ error: idCheck.error }, { status: idCheck.status });
+      }
+      announcedPlannerGroupsJsonUpdate = announceLayoutToStoredJson(parsed.data);
+    }
+  }
+
   if (!name || !Number.isFinite(maxPlayers) || maxPlayers < 1 || maxPlayers > 40) {
     return NextResponse.json({ error: 'Invalid name or maxPlayers' }, { status: 400 });
   }
@@ -296,67 +337,51 @@ export async function PATCH(
     }
   }
 
-  if ((timeChanged || dungeonChanged) && confirmResetSignups) {
+  const raidUpdateData = {
+    name,
+    note,
+    plannerLeaderNotesHtml,
+    dungeonId,
+    dungeonIds: nextDungeonIds,
+    raidLeaderId,
+    lootmasterId,
+    minTanks,
+    minMelee,
+    minRange,
+    minHealers,
+    minSpecs: nextMinSpecs,
+    raidGroupRestrictionId,
+    discordChannelId,
+    discordLeaderChannelId,
+    maxPlayers,
+    scheduledAt,
+    scheduledEndAt,
+    signupUntil,
+    signupVisibility,
+    ...(announcedPlannerGroupsJsonUpdate !== undefined
+      ? { announcedPlannerGroupsJson: announcedPlannerGroupsJsonUpdate }
+      : {}),
+  };
+
+  if (resetSignups) {
     await prisma.$transaction([
       prisma.rfRaidSignup.deleteMany({ where: { raidId } }),
       prisma.rfRaid.update({
         where: { id: raidId },
-        data: {
-          name,
-          note,
-          plannerLeaderNotesHtml,
-          dungeonId,
-          dungeonIds: nextDungeonIds,
-          raidLeaderId,
-          lootmasterId,
-          minTanks,
-          minMelee,
-          minRange,
-          minHealers,
-          minSpecs: nextMinSpecs,
-          raidGroupRestrictionId,
-          discordChannelId,
-          discordLeaderChannelId,
-          maxPlayers,
-          scheduledAt,
-          scheduledEndAt,
-          signupUntil,
-          signupVisibility,
-        },
+        data: raidUpdateData,
       }),
     ]);
   } else {
     await prisma.rfRaid.update({
       where: { id: raidId },
-      data: {
-        name,
-        note,
-        plannerLeaderNotesHtml,
-        dungeonId,
-        dungeonIds: nextDungeonIds,
-        raidLeaderId,
-        lootmasterId,
-        minTanks,
-        minMelee,
-        minRange,
-        minHealers,
-        minSpecs: nextMinSpecs,
-        raidGroupRestrictionId,
-        discordChannelId,
-        discordLeaderChannelId,
-        maxPlayers,
-        scheduledAt,
-        scheduledEndAt,
-        signupUntil,
-        signupVisibility,
-      },
+      data: raidUpdateData,
     });
   }
 
   void syncRaidThreadSummary(raidId);
   return NextResponse.json({
     ok: true,
-    resetSignups: (timeChanged || dungeonChanged) && confirmResetSignups,
+    resetSignups,
   });
 }
 

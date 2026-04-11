@@ -115,14 +115,36 @@ export function buildAnnounceSignupUpdate(
   return { type: 'reserve', leaderPlacement: 'substitute', setConfirmed: false };
 }
 
-const announcedJsonValue = (payload: AnnounceRaidPayload): Prisma.InputJsonValue => ({
-  groups: payload.groups.map((g) => ({
-    rosterOrder: g.rosterOrder,
-    raidLeaderUserId: g.raidLeaderUserId,
-    lootmasterUserId: g.lootmasterUserId,
-  })),
-  reserveOrder: payload.reserveOrder,
-});
+/** DB-Feld `rf_raid.announced_planner_groups_json` (gleiche Struktur wie Announce-Payload ohne `action`). */
+export function announceLayoutToStoredJson(payload: AnnounceRaidPayload): Prisma.InputJsonValue {
+  return {
+    groups: payload.groups.map((g) => ({
+      rosterOrder: g.rosterOrder,
+      raidLeaderUserId: g.raidLeaderUserId,
+      lootmasterUserId: g.lootmasterUserId,
+    })),
+    reserveOrder: payload.reserveOrder,
+  };
+}
+
+export function validateAnnouncePayloadAgainstKnownIds(
+  payload: AnnounceRaidPayload,
+  knownSignupIds: Set<string>
+): { ok: true } | { ok: false; error: string; status: number } {
+  for (const g of payload.groups) {
+    for (const id of g.rosterOrder) {
+      if (!knownSignupIds.has(id)) {
+        return { ok: false, error: 'Unknown signup id in roster', status: 400 };
+      }
+    }
+  }
+  for (const id of payload.reserveOrder) {
+    if (!knownSignupIds.has(id)) {
+      return { ok: false, error: 'Unknown signup id in reserveOrder', status: 400 };
+    }
+  }
+  return { ok: true };
+}
 
 export async function executeRaidAnnounceTransaction(args: {
   prisma: PrismaClient;
@@ -135,20 +157,9 @@ export async function executeRaidAnnounceTransaction(args: {
 
   /** Einmal laden: Validierung + Audit-Vorher + keine findUnique-Schleife in der Transaktion (Vercel/5s-Timeout). */
   const signupRows = await prisma.rfRaidSignup.findMany({ where: { raidId } });
-
   const known = new Set(signupRows.map((s) => s.id));
-  for (const g of payload.groups) {
-    for (const id of g.rosterOrder) {
-      if (!known.has(id)) {
-        return { ok: false, error: 'Unknown signup id in roster', status: 400 };
-      }
-    }
-  }
-  for (const id of payload.reserveOrder) {
-    if (!known.has(id)) {
-      return { ok: false, error: 'Unknown signup id in reserveOrder', status: 400 };
-    }
-  }
+  const idCheck = validateAnnouncePayloadAgainstKnownIds(payload, known);
+  if (!idCheck.ok) return idCheck;
 
   await prisma.$transaction(
     async (tx) => {
@@ -171,7 +182,7 @@ export async function executeRaidAnnounceTransaction(args: {
         where: { id: raidId },
         data: {
           status: 'announced',
-          announcedPlannerGroupsJson: announcedJsonValue(payload),
+          announcedPlannerGroupsJson: announceLayoutToStoredJson(payload),
         },
       });
     },
