@@ -62,8 +62,8 @@ export async function PATCH(
     where: { id: raidId, guildId },
     select: { status: true },
   });
-  if (!raid || raid.status !== 'open') {
-    return NextResponse.json({ error: 'Raid is not open' }, { status: 403 });
+  if (!raid || (raid.status !== 'open' && raid.status !== 'announced')) {
+    return NextResponse.json({ error: 'Raid is not open for planning' }, { status: 403 });
   }
 
   const prevSnap = snapshotSignup(signup);
@@ -139,6 +139,21 @@ export async function PATCH(
 
   const setConfirmed = setConfirmedForPlacement(leaderPlacement);
 
+  let nextType = signup.type;
+  if (raid.status === 'announced') {
+    if (leaderPlacement === 'confirmed') {
+      nextType = 'normal';
+    } else {
+      if (signup.forbidReserve) {
+        return NextResponse.json(
+          { error: 'Reserve is forbidden by signup condition' },
+          { status: 400 }
+        );
+      }
+      nextType = 'reserve';
+    }
+  }
+
   const updated = await prisma.rfRaidSignup.update({
     where: { id: signupId },
     data: {
@@ -146,6 +161,7 @@ export async function PATCH(
       leaderMarkedTeilnehmer,
       leaderPlacement,
       setConfirmed,
+      ...(raid.status === 'announced' ? { type: nextType } : {}),
       signedSpec: signedSpec || undefined,
     },
     select: {

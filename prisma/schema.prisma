@@ -230,6 +230,8 @@ model RfRaid {
   note                    String?   @db.Text
   /// Rich-HTML (Planer): Raidleiter-Notizen zum Raid (nur Planung)
   plannerLeaderNotesHtml  String?   @map("planner_leader_notes_html") @db.Text
+  /// Nach „Raid ankündigen“: Gruppen (Reihenfolge Gesetzt), Reserve-Reihenfolge, RL/LM userIds pro Gruppe (JSON)
+  announcedPlannerGroupsJson Json?   @map("announced_planner_groups_json")
   maxPlayers              Int       @map("max_players")
   scheduledAt             DateTime  @map("scheduled_at")
   scheduledEndAt          DateTime? @map("scheduled_end_at")
@@ -260,7 +262,7 @@ model RfRaidSignup {
   raidId        String    @map("raid_id")
   userId        String    @map("user_id")
   characterId   String?   @map("character_id")
-  /// normal | uncertain | reserve (ältere DB: main → normal)
+  /// normal | uncertain | reserve | declined (ältere DB: main → normal)
   type          String
   allowReserve  Boolean   @default(false) @map("allow_reserve")
   note          String?   @db.Text

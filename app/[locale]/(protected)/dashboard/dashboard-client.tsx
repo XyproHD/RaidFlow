@@ -72,6 +72,8 @@ export type DashboardCalendarRaid = {
   hasNote: boolean;
   note: string | null;
   canEdit: boolean;
+  /** Bei Status announced und >1 Gruppe: Anzahl für Kalender-Badge. */
+  announcedGroupCount: number | null;
   mySignup: null | {
     id: string;
     leaderPlacement: string;
@@ -122,7 +124,7 @@ function guildRoleBadges(
 
 function myStatusIcon(raidStatus: string, mySignup: DashboardCalendarRaid['mySignup']): '⌛' | '⚠️' | '✅' | '🪑' | null {
   if (!mySignup) return null;
-  if (raidStatus !== 'locked') return '⌛';
+  if (raidStatus !== 'locked' && raidStatus !== 'announced') return '⌛';
   if (mySignup.leaderPlacement === 'substitute') return '🪑';
   if (mySignup.setConfirmed) return '✅';
   return '⚠️';
@@ -159,6 +161,37 @@ export function DashboardClient({
 }) {
   const t = useTranslations('dashboard');
   const tRaidDetail = useTranslations('raidDetail');
+  const raidStatusLabel = (st: string) => {
+    if (st === 'open') return tRaidDetail('raidStatus_open');
+    if (st === 'announced') return tRaidDetail('raidStatus_announced');
+    if (st === 'locked') return tRaidDetail('raidStatus_locked');
+    if (st === 'cancelled') return tRaidDetail('raidStatus_cancelled');
+    return st;
+  };
+
+  const WITHDRAW_REASON_MIN = 10;
+  async function calendarWithdrawSignup(r: DashboardCalendarRaid) {
+    let opts: RequestInit = { method: 'DELETE' };
+    if (r.status === 'announced' && r.mySignup?.setConfirmed) {
+      const reason = window.prompt(tRaidDetail('withdrawReasonHint'), '');
+      if (reason === null) return;
+      if (reason.trim().length < WITHDRAW_REASON_MIN) {
+        window.alert(tRaidDetail('withdrawReasonMin', { n: WITHDRAW_REASON_MIN }));
+        return;
+      }
+      opts = {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ withdrawReason: reason.trim() }),
+      };
+    }
+    await fetch(
+      `/api/guilds/${encodeURIComponent(r.guildId)}/raids/${encodeURIComponent(r.id)}/signups`,
+      opts
+    );
+    router.refresh();
+  }
+
   const tProfile = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
@@ -719,7 +752,12 @@ export function DashboardClient({
                                   {r.dungeonName} • {r.guildName}
                                 </div>
                                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                                  <span className="capitalize">{r.status}</span>
+                                  <span>{raidStatusLabel(r.status)}</span>
+                                  {r.announcedGroupCount != null ? (
+                                    <span className="text-muted-foreground">
+                                      · {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}
+                                    </span>
+                                  ) : null}
                                 </div>
                                 <div className="mt-1 text-xs text-muted-foreground">
                                   <button
@@ -784,7 +822,7 @@ export function DashboardClient({
                               </div>
                               <div className="flex items-center gap-2">
                                 {!r.mySignup ? (
-                                  r.status === 'open' ? (
+                                  r.status === 'open' || r.status === 'announced' ? (
                                     <Link
                                       href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
                                       className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
@@ -798,7 +836,7 @@ export function DashboardClient({
                                   )
                                 ) : (
                                   <>
-                                    {r.status === 'open' ? (
+                                    {r.status === 'open' || r.status === 'announced' ? (
                                       <>
                                         <Link
                                           href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
@@ -813,13 +851,7 @@ export function DashboardClient({
                                           className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
                                           aria-label={t('signupWithdraw')}
                                           title={t('signupWithdraw')}
-                                          onClick={async () => {
-                                            await fetch(
-                                              `/api/guilds/${encodeURIComponent(r.guildId)}/raids/${encodeURIComponent(r.id)}/signups`,
-                                              { method: 'DELETE' }
-                                            );
-                                            router.refresh();
-                                          }}
+                                          onClick={() => void calendarWithdrawSignup(r)}
                                         >
                                           ➖
                                         </button>
@@ -882,11 +914,18 @@ export function DashboardClient({
                       <td className="px-3 py-2 text-muted-foreground">
                         <span title={signupUntilLabel}>Anmeldung: {signupState.icon}</span>
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground capitalize">{r.status}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        <span>{raidStatusLabel(r.status)}</span>
+                        {r.announcedGroupCount != null ? (
+                          <span className="block text-xs">
+                            {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2">{status ? status : <span className="text-muted-foreground">{t('notSignedUp')}</span>}</td>
                       <td className="px-3 py-2">
                         {!r.mySignup ? (
-                          r.status === 'open' ? (
+                          r.status === 'open' || r.status === 'announced' ? (
                             <Link
                               href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
                               className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1.5 hover:bg-muted"
@@ -899,19 +938,13 @@ export function DashboardClient({
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
                           )
-                        ) : r.status === 'open' ? (
+                        ) : r.status === 'open' || r.status === 'announced' ? (
                           <button
                             type="button"
                             className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1.5 hover:bg-muted"
                             title={t('signupWithdraw')}
                             aria-label={t('signupWithdraw')}
-                            onClick={async () => {
-                              await fetch(
-                                `/api/guilds/${encodeURIComponent(r.guildId)}/raids/${encodeURIComponent(r.id)}/signups`,
-                                { method: 'DELETE' }
-                              );
-                              router.refresh();
-                            }}
+                            onClick={() => void calendarWithdrawSignup(r)}
                           >
                             <span>➖</span>
                             <span>Abmelden</span>
@@ -961,7 +994,7 @@ export function DashboardClient({
                   if (!raid) return null;
                   return (
                     <div className="w-52 rounded-md border border-border bg-background shadow-lg overflow-hidden">
-                      {raid.status === 'open' ? (
+                      {raid.status === 'open' || raid.status === 'announced' ? (
                         <Link
                           href={`/${locale}/guild/${raid.guildId}/raid/${raid.id}?mode=signup`}
                           className="block px-3 py-2 text-sm hover:bg-muted"
@@ -991,7 +1024,7 @@ export function DashboardClient({
                           >
                             ✏️ {t('raidEdit')}
                           </Link>
-                          {raid.status === 'open' ? (
+                          {raid.status === 'open' || raid.status === 'announced' ? (
                             <button
                               type="button"
                               className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"

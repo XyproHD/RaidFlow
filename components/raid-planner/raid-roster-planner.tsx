@@ -26,6 +26,7 @@ import {
 } from '@/components/raid-detail/raid-overview-summary';
 import { PlannerLeaderNotesCollapsible } from '@/components/raid-planner/planner-leader-notes-collapsible';
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
+import type { AnnounceRaidPayload } from '@/lib/raid-announce';
 
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
 const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
@@ -308,6 +309,8 @@ export function RaidRosterPlanner({
   initialRaidLeaderUserId,
   initialLootmasterUserId,
   initialPlannerLeaderNotesHtml,
+  raidStatus,
+  persistedServerPlannerOrder = null,
 }: {
   locale: string;
   guildId: string;
@@ -321,6 +324,10 @@ export function RaidRosterPlanner({
   initialRaidLeaderUserId: string | null;
   initialLootmasterUserId: string | null;
   initialPlannerLeaderNotesHtml: string | null;
+  /** rf_raid.status — Ankündigen nur bei open */
+  raidStatus: string;
+  /** Bei status announced: Gruppen/Reserve vom Server (ohne localStorage). */
+  persistedServerPlannerOrder?: AnnounceRaidPayload | null;
 }) {
   const t = useTranslations('raidDetail');
   const tEdit = useTranslations('raidEdit');
@@ -394,10 +401,18 @@ export function RaidRosterPlanner({
         groups?: unknown;
       };
 
-      const stored =
-        typeof window !== 'undefined'
-          ? safeJsonParse<StoredPlanner>(window.localStorage.getItem(orderStorageKey))
+      const storedFromServer: StoredPlanner | null =
+        persistedServerPlannerOrder != null
+          ? {
+              groups: persistedServerPlannerOrder.groups as unknown,
+              reserveOrder: persistedServerPlannerOrder.reserveOrder as unknown,
+            }
           : null;
+      const stored: StoredPlanner | null =
+        storedFromServer ??
+        (typeof window !== 'undefined'
+          ? safeJsonParse<StoredPlanner>(window.localStorage.getItem(orderStorageKey))
+          : null);
       const storedRoster =
         stored && Array.isArray(stored.rosterOrder)
           ? (stored.rosterOrder.filter((x) => typeof x === 'string') as string[])
@@ -523,6 +538,7 @@ export function RaidRosterPlanner({
       initialRaidLeaderUserId,
       initialLootmasterUserId,
       initialPlannerLeaderNotesHtml,
+      persistedServerPlannerOrder,
     ]
   );
 
@@ -1394,6 +1410,54 @@ export function RaidRosterPlanner({
     }
   }
 
+  async function doAnnounceRaid() {
+    if (raidStatus !== 'open' || saving) return;
+    if (signups.some((s) => s.id.startsWith('manual:'))) {
+      setSaveError(tRoster('announceSaveManualFirst'));
+      return;
+    }
+    const rosterFlat = allRosterIds(plannerGroups);
+    for (const rid of rosterFlat) {
+      const row = byId.get(rid);
+      const uid = (row?.userId ?? '').trim();
+      if (!uid) continue;
+      if (findUserRosterConflict(plannerGroups, byId, rid, uid)) {
+        setSaveError(tRoster('saveErrorDiscordMultiGroup'));
+        return;
+      }
+    }
+    if (!window.confirm(tRoster('announceConfirm'))) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch(
+        `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'announce',
+            groups: plannerGroups.map((g) => ({
+              rosterOrder: g.rosterOrder,
+              raidLeaderUserId: g.raidLeaderUserId,
+              lootmasterUserId: g.lootmasterUserId,
+            })),
+            reserveOrder,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(txt || tRoster('announceError'));
+      }
+      router.refresh();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function doUndoToLastSave() {
     if (!savedSnapshot) return;
     setSaveError(null);
@@ -1584,14 +1648,13 @@ export function RaidRosterPlanner({
           <div className="flex flex-wrap items-center gap-2 sm:justify-self-end justify-end">
             <button
               type="button"
-              onClick={() => {
-                // Dummy for now; logic will be delivered later.
-                window.alert(tRoster('announceSoon'));
-              }}
+              onClick={() => void doAnnounceRaid()}
+              disabled={saving || raidStatus !== 'open'}
               className={cn(
                 'rounded-md px-3 py-2 text-sm font-semibold transition-colors',
                 'bg-emerald-600 text-white hover:bg-emerald-700',
-                'dark:bg-emerald-500 dark:hover:bg-emerald-600'
+                'dark:bg-emerald-500 dark:hover:bg-emerald-600',
+                (saving || raidStatus !== 'open') && 'opacity-60 cursor-not-allowed'
               )}
               title={tRoster('announce')}
             >

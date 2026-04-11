@@ -1,5 +1,5 @@
-/** Anmeldungstypen (DB, API). Legacy: main → normal. */
-export const RAID_SIGNUP_TYPES = ['normal', 'uncertain', 'reserve'] as const;
+/** Anmeldungstypen (DB, API). Legacy: main → normal. declined = abgesagt (z. B. nach Raid-Ankündigung). */
+export const RAID_SIGNUP_TYPES = ['normal', 'uncertain', 'reserve', 'declined'] as const;
 export type RaidSignupType = (typeof RAID_SIGNUP_TYPES)[number];
 
 const TYPE_SET = new Set<string>(RAID_SIGNUP_TYPES);

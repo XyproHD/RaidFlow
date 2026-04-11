@@ -66,6 +66,7 @@ export function RaidAnmeldungen({
     if (n === 'normal') return t('signupType_verfugbar');
     if (n === 'uncertain') return t('signupType_uncertain');
     if (n === 'reserve') return t('signupType_reserve');
+    if (n === 'declined') return t('signupType_declined');
     return t('signupType_verfugbar');
   }
 

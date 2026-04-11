@@ -12,6 +12,7 @@ export function computeRaidSignupPhase(raid: {
   status: string;
   signupUntil: Date;
 }): RaidSignupPhase {
+  if (raid.status === 'announced') return 'reserve_only';
   if (raid.status !== 'open') return 'closed';
   if (Date.now() <= raid.signupUntil.getTime()) return 'full';
   return 'reserve_only';
@@ -43,7 +44,7 @@ export function filterSignupsVisibleToViewer<T extends { userId: string }>(
   if (signupVisibility === 'public' || canEdit) {
     return signups;
   }
-  if (raidStatus === 'locked') {
+  if (raidStatus === 'locked' || raidStatus === 'announced') {
     return signups;
   }
   return signups.filter((s) => s.userId === viewerUserId);

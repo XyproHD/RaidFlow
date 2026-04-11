@@ -15,6 +15,7 @@ import {
 import { getRaidDetailContext } from '@/lib/raid-detail-access';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 import { buildSpecStatsByMinKeys } from '@/lib/min-spec-keys';
+import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 
 export default async function RaidPlanPage(props: {
   params: Promise<{ locale: string; guildId: string; raidId: string }>;
@@ -70,7 +71,13 @@ export default async function RaidPlanPage(props: {
   }
 
   const { raid } = ctx;
-  const canEditRaid = raid.status === 'open';
+  const canEditRaid = raid.status === 'open' || raid.status === 'announced';
+  const persistedServerPlannerOrder =
+    raid.status === 'announced'
+      ? parseStoredAnnouncedPlannerJson(
+          (raid as unknown as { announcedPlannerGroupsJson?: unknown }).announcedPlannerGroupsJson
+        )
+      : null;
 
   const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
   type RoleStat = { normal: number; uncertain: number; reserve: number };
@@ -223,6 +230,8 @@ export default async function RaidPlanPage(props: {
         locale={locale}
         guildId={guildId}
         raidId={raidId}
+        raidStatus={raid.status}
+        persistedServerPlannerOrder={persistedServerPlannerOrder}
         canEditRaid={canEditRaid}
         guildCharacters={guildCharacters}
         raidLeaderLabel={raidLeaderLabel}

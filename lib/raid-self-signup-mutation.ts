@@ -35,6 +35,9 @@ export function validateRaidSignupBusinessRules(args: {
     args;
   const isLate = punctuality === 'late';
 
+  if (typeNorm === 'declined') {
+    return { ok: false, status: 400, error: 'Invalid signup type' };
+  }
   if (phase === 'reserve_only' && typeNorm !== 'reserve') {
     return {
       ok: false,

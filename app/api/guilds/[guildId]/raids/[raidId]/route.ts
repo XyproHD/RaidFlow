@@ -4,6 +4,7 @@ import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
 import { syncRaidThreadSummary, postRaidLockedThreadNotice } from '@/lib/raid-thread-sync';
 import { parseMinSpecsPayload } from '@/lib/min-spec-keys';
+import { executeRaidAnnounceTransaction, parseAnnounceRaidPayload } from '@/lib/raid-announce';
 
 /**
  * PATCH /api/guilds/[guildId]/raids/[raidId]
@@ -35,7 +36,7 @@ export async function PATCH(
     typeof body.action === 'string' ? body.action.trim().toLowerCase() : '';
 
   if (action === 'cancel') {
-    if (raid.status !== 'open') {
+    if (raid.status !== 'open' && raid.status !== 'announced') {
       return NextResponse.json({ error: 'Raid cannot be cancelled' }, { status: 400 });
     }
     await prisma.rfRaid.update({
@@ -59,8 +60,32 @@ export async function PATCH(
     return NextResponse.json({ ok: true, status: 'locked' });
   }
 
-  if (raid.status !== 'open') {
-    return NextResponse.json({ error: 'Raid can only be edited while open' }, { status: 400 });
+  if (action === 'announce') {
+    if (raid.status !== 'open') {
+      return NextResponse.json({ error: 'Only open raids can be announced' }, { status: 400 });
+    }
+    const parsed = parseAnnounceRaidPayload(body);
+    if (!parsed.ok) {
+      return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+    }
+    const exec = await executeRaidAnnounceTransaction({
+      prisma,
+      raidId,
+      guildId,
+      changedByUserId: auth.userId,
+      payload: parsed.data,
+    });
+    if (!exec.ok) {
+      return NextResponse.json({ error: exec.error }, { status: exec.status });
+    }
+    return NextResponse.json({ ok: true, status: 'announced' });
+  }
+
+  if (raid.status !== 'open' && raid.status !== 'announced') {
+    return NextResponse.json(
+      { error: 'Raid can only be edited while open or announced' },
+      { status: 400 }
+    );
   }
 
   const name = typeof body.name === 'string' ? body.name.trim() : raid.name;

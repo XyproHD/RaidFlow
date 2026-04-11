@@ -20,6 +20,15 @@ import { RaidOverviewSummaryRows } from '@/components/raid-detail/raid-overview-
 import type { RaidSignupPhase } from '@/lib/raid-detail-shared';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 
+export type AnnouncedLayoutProps = {
+  groupMeta: {
+    rosterOrder: string[];
+    raidLeaderLabel: string | null;
+    lootmasterLabel: string | null;
+  }[];
+  reserveOrder: string[];
+};
+
 type RoleStat = { normal: number; uncertain: number; reserve: number };
 
 export type RaidDetailRaid = {
@@ -54,6 +63,8 @@ export type RaidDetailRaid = {
     leaderMarkedTeilnehmer: boolean;
     onlySignedSpec: boolean;
     forbidReserve: boolean;
+    leaderPlacement: string;
+    setConfirmed: boolean;
     character: {
       name: string;
       mainSpec: string;
@@ -95,7 +106,7 @@ function myStatusIcon(
   mySignup: MySignupSerialized | null
 ): '⌛' | '⚠️' | '✅' | '🪑' | null {
   if (!mySignup) return null;
-  if (raidStatus !== 'locked') return '⌛';
+  if (raidStatus !== 'locked' && raidStatus !== 'announced') return '⌛';
   if (mySignup.leaderPlacement === 'substitute') return '🪑';
   if (mySignup.setConfirmed) return '✅';
   return '⚠️';
@@ -126,7 +137,16 @@ function signupTypeOpenLabel(
   if (n === 'normal') return t('signupType_verfugbar');
   if (n === 'uncertain') return t('signupType_uncertain');
   if (n === 'reserve') return t('signupType_reserve');
+  if (n === 'declined') return t('signupType_declined');
   return t('signupType_verfugbar');
+}
+
+function raidStatusLabel(t: ReturnType<typeof useTranslations>, status: string): string {
+  if (status === 'open') return t('raidStatus_open');
+  if (status === 'announced') return t('raidStatus_announced');
+  if (status === 'locked') return t('raidStatus_locked');
+  if (status === 'cancelled') return t('raidStatus_cancelled');
+  return status;
 }
 
 export function RaidDetailView({
@@ -143,6 +163,7 @@ export function RaidDetailView({
   characters,
   mySignup,
   initialSignupOpen,
+  announcedLayout,
 }: {
   locale: string;
   guildId: string;
@@ -157,6 +178,7 @@ export function RaidDetailView({
   characters: RaidDetailCharacter[];
   mySignup: MySignupSerialized | null;
   initialSignupOpen: boolean;
+  announcedLayout: AnnouncedLayoutProps | null;
 }) {
   const t = useTranslations('raidDetail');
   const tDash = useTranslations('dashboard');
@@ -172,6 +194,8 @@ export function RaidDetailView({
   const [showSignup, setShowSignup] = useState(initialSignupOpen);
   const [expandedNote, setExpandedNote] = useState(false);
   const [withdrawBusy, setWithdrawBusy] = useState(false);
+  const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
+  const [withdrawReason, setWithdrawReason] = useState('');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -180,6 +204,7 @@ export function RaidDetailView({
         setLeaderMenuPos(null);
         setMyMenuOpen(false);
         setMyMenuPos(null);
+        setWithdrawDialogOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -215,6 +240,8 @@ export function RaidDetailView({
     canEdit,
     raid.status
   );
+
+  const signupById = useMemo(() => new Map(raid.signups.map((s) => [s.id, s])), [raid.signups]);
 
   const rows: AnmeldungRow[] = visibleSignups.map((s) => ({
     id: s.id,
@@ -284,13 +311,19 @@ export function RaidDetailView({
     router.refresh();
   }
 
-  async function doWithdraw() {
-    if (!window.confirm(t('withdrawConfirm'))) return;
+  const WITHDRAW_REASON_MIN = 10;
+
+  async function runWithdrawDelete(withdrawReasonPayload?: string) {
     setWithdrawBusy(true);
     try {
+      const opts: RequestInit = { method: 'DELETE' };
+      if (withdrawReasonPayload && withdrawReasonPayload.trim().length >= WITHDRAW_REASON_MIN) {
+        opts.headers = { 'Content-Type': 'application/json' };
+        opts.body = JSON.stringify({ withdrawReason: withdrawReasonPayload.trim() });
+      }
       const res = await fetch(
         `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups`,
-        { method: 'DELETE' }
+        opts
       );
       if (!res.ok) return;
       setMyMenuOpen(false);
@@ -298,6 +331,25 @@ export function RaidDetailView({
     } finally {
       setWithdrawBusy(false);
     }
+  }
+
+  async function doWithdraw() {
+    if (raid.status === 'announced' && mySignup?.setConfirmed) {
+      setWithdrawReason('');
+      setWithdrawDialogOpen(true);
+      setMyMenuOpen(false);
+      return;
+    }
+    if (!window.confirm(t('withdrawConfirm'))) return;
+    await runWithdrawDelete();
+  }
+
+  async function submitWithdrawWithReason() {
+    const r = withdrawReason.trim();
+    if (r.length < WITHDRAW_REASON_MIN) return;
+    setWithdrawDialogOpen(false);
+    await runWithdrawDelete(r);
+    setWithdrawReason('');
   }
 
   const noteForDisplay = mySignup?.note?.trim() ?? '';
@@ -374,7 +426,7 @@ export function RaidDetailView({
             </div>
             <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
               <dt className="text-muted-foreground">{t('status')}</dt>
-              <dd className="capitalize">{raid.status}</dd>
+              <dd>{raidStatusLabel(t, raid.status)}</dd>
             </div>
             <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
               <dt className="text-muted-foreground">{t('visibility')}</dt>
@@ -399,10 +451,129 @@ export function RaidDetailView({
         </div>
       </section>
 
+      {raid.status === 'announced' && announcedLayout ? (
+        <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
+          <div className="border-b border-border bg-muted/20 px-4 py-3">
+            <h2 className="text-sm font-semibold text-foreground">{t('sectionPublishedRoster')}</h2>
+          </div>
+          <div className="p-4 space-y-6">
+            {announcedLayout.groupMeta.map((meta, gi) => (
+              <div key={`g-${gi}`} className="space-y-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {t('publishedGroupTitle', { n: gi + 1 })}
+                </h3>
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  {meta.raidLeaderLabel ? (
+                    <p>
+                      {t('raidLeaderShort')}: <span className="text-foreground">{meta.raidLeaderLabel}</span>
+                    </p>
+                  ) : null}
+                  {meta.lootmasterLabel ? (
+                    <p>
+                      {t('lootmasterShort')}: <span className="text-foreground">{meta.lootmasterLabel}</span>
+                    </p>
+                  ) : null}
+                </div>
+                {meta.rosterOrder.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">—</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {meta.rosterOrder.map((sid) => {
+                      const s = signupById.get(sid);
+                      const ch = s?.character;
+                      if (!ch) {
+                        return (
+                          <li key={sid} className="text-sm text-muted-foreground">
+                            {t('signupAnonymous')}
+                          </li>
+                        );
+                      }
+                      return (
+                        <li key={sid} className="flex flex-wrap items-center gap-2 text-sm">
+                          <CharacterNameWithDiscordInline
+                            name={ch.name}
+                            discordName={ch.guildDiscordDisplayName?.trim()}
+                            className="font-medium text-foreground"
+                          />
+                          <span className="text-muted-foreground">·</span>
+                          <span className="text-muted-foreground">{s?.signedSpec ?? ch.mainSpec}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            ))}
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold text-foreground">{t('publishedReserveHeading')}</h3>
+              {announcedLayout.reserveOrder.length === 0 ? (
+                <p className="text-sm text-muted-foreground">—</p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {announcedLayout.reserveOrder.map((sid) => {
+                    const s = signupById.get(sid);
+                    const ch = s?.character;
+                    if (!ch) {
+                      return (
+                        <li key={sid} className="text-sm text-muted-foreground">
+                          {t('signupAnonymous')}
+                        </li>
+                      );
+                    }
+                    return (
+                      <li key={sid} className="flex flex-wrap items-center gap-2 text-sm">
+                        <CharacterNameWithDiscordInline
+                          name={ch.name}
+                          discordName={ch.guildDiscordDisplayName?.trim()}
+                          className="font-medium text-foreground"
+                        />
+                        <span className="text-muted-foreground">·</span>
+                        <span className="text-muted-foreground">{s?.signedSpec ?? ch.mainSpec}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            {raid.signups.some((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined') ? (
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-foreground">{t('publishedDeclinedHeading')}</h3>
+                <ul className="flex flex-col gap-2">
+                  {raid.signups
+                    .filter((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined')
+                    .map((s) => {
+                      const ch = s.character;
+                      if (!ch) {
+                        return (
+                          <li key={s.id} className="text-sm text-muted-foreground">
+                            {t('signupAnonymous')}
+                          </li>
+                        );
+                      }
+                      return (
+                        <li key={s.id} className="flex flex-wrap items-center gap-2 text-sm">
+                          <CharacterNameWithDiscordInline
+                            name={ch.name}
+                            discordName={ch.guildDiscordDisplayName?.trim()}
+                            className="font-medium text-foreground"
+                          />
+                          <span className="text-muted-foreground">·</span>
+                          <span className="text-muted-foreground">{s.signedSpec ?? ch.mainSpec}</span>
+                        </li>
+                      );
+                    })}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/20 px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">{t('mySignupSection')}</h2>
-          {(mySignup && raid.status === 'open') || (!mySignup && canSignup && raid.status === 'open') ? (
+          {(mySignup && (raid.status === 'open' || raid.status === 'announced')) ||
+          (!mySignup && canSignup && (raid.status === 'open' || raid.status === 'announced')) ? (
             <button
               type="button"
               className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0"
@@ -473,7 +644,7 @@ export function RaidDetailView({
                         </span>
                       ) : null}
                       <span className="text-sm font-medium text-foreground">
-                        {raid.status === 'locked' ? (
+                        {raid.status === 'locked' || raid.status === 'announced' ? (
                           mySignup.leaderPlacement === 'substitute' ? (
                             t('mySignupLockedSubstitute')
                           ) : mySignup.setConfirmed ? (
@@ -510,7 +681,7 @@ export function RaidDetailView({
             <p className="text-sm text-muted-foreground">{tDash('notSignedUp')}</p>
           )}
 
-          {canSignup && raid.status === 'open' && !mySignup ? (
+          {canSignup && (raid.status === 'open' || raid.status === 'announced') && !mySignup ? (
             <button
               type="button"
               onClick={() => setShowSignup(true)}
@@ -567,7 +738,7 @@ export function RaidDetailView({
                 >
                   ✏️ {t('modeEdit')}
                 </button>
-                {raid.status === 'open' ? (
+                {raid.status === 'open' || raid.status === 'announced' ? (
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
@@ -607,7 +778,7 @@ export function RaidDetailView({
                 style={{ top: myMenuPos.top, left: myMenuPos.left }}
                 onMouseDown={(e) => e.stopPropagation()}
               >
-                {mySignup && raid.status === 'open' ? (
+                {mySignup && (raid.status === 'open' || raid.status === 'announced') ? (
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
@@ -619,7 +790,7 @@ export function RaidDetailView({
                     ⚙️ {t('signupEditMenu')}
                   </button>
                 ) : null}
-                {mySignup && raid.status === 'open' ? (
+                {mySignup && (raid.status === 'open' || raid.status === 'announced') ? (
                   <button
                     type="button"
                     disabled={withdrawBusy}
@@ -629,7 +800,7 @@ export function RaidDetailView({
                     ➖ {t('withdraw')}
                   </button>
                 ) : null}
-                {!mySignup && canSignup && raid.status === 'open' ? (
+                {!mySignup && canSignup && (raid.status === 'open' || raid.status === 'announced') ? (
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
@@ -687,6 +858,56 @@ export function RaidDetailView({
                     hasExistingSignup={!!mySignup}
                     onSaved={() => setShowSignup(false)}
                   />
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {withdrawDialogOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[1005] flex items-start justify-center overflow-y-auto bg-black/50 p-4"
+              role="presentation"
+              onClick={() => setWithdrawDialogOpen(false)}
+            >
+              <div
+                className="relative my-4 w-full max-w-lg rounded-xl border border-border bg-background shadow-xl"
+                role="dialog"
+                aria-modal="true"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="border-b border-border bg-background px-4 py-3">
+                  <h2 className="text-lg font-semibold">{t('withdrawReasonTitle')}</h2>
+                  <p className="text-sm text-muted-foreground mt-1">{t('withdrawReasonHint')}</p>
+                </div>
+                <div className="p-4 space-y-3">
+                  <textarea
+                    value={withdrawReason}
+                    onChange={(e) => setWithdrawReason(e.target.value)}
+                    rows={4}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                    placeholder={t('withdrawReasonPlaceholder')}
+                  />
+                  <p className="text-xs text-muted-foreground">{t('withdrawReasonMin', { n: WITHDRAW_REASON_MIN })}</p>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      className="rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+                      onClick={() => setWithdrawDialogOpen(false)}
+                    >
+                      {t('withdrawReasonCancel')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={withdrawBusy || withdrawReason.trim().length < WITHDRAW_REASON_MIN}
+                      className="rounded-md bg-destructive px-3 py-2 text-sm font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+                      onClick={() => void submitWithdrawWithReason()}
+                    >
+                      {t('withdrawReasonSubmit')}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>,

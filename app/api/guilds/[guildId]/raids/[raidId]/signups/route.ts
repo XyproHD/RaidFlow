@@ -133,12 +133,14 @@ export async function POST(
   return NextResponse.json({ signup }, { status: isCreate ? 201 : 200 });
 }
 
+const WITHDRAW_REASON_MIN = 10;
+
 /**
  * DELETE /api/guilds/[guildId]/raids/[raidId]/signups
- * Eigene Anmeldung löschen (nur bei offenem Raid).
+ * Eigene Anmeldung löschen (offener Raid oder angekündigter Raid; bei Gesetzt + angekündigt Begründungspflicht).
  */
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ guildId: string; raidId: string }> }
 ) {
   const { guildId, raidId } = await params;
@@ -168,8 +170,8 @@ export async function DELETE(
     where: { id: raidId, guildId },
     select: { status: true },
   });
-  if (!raid || raid.status !== 'open') {
-    return NextResponse.json({ error: 'Raid is not open' }, { status: 403 });
+  if (!raid || (raid.status !== 'open' && raid.status !== 'announced')) {
+    return NextResponse.json({ error: 'Withdrawal is not allowed for this raid' }, { status: 403 });
   }
 
   const existing = await prisma.rfRaidSignup.findFirst({
@@ -179,8 +181,34 @@ export async function DELETE(
     return NextResponse.json({ error: 'No signup' }, { status: 404 });
   }
 
+  let withdrawReason = '';
+  const rawBody = await request.text().catch(() => '');
+  if (rawBody.trim()) {
+    try {
+      const j = JSON.parse(rawBody) as { withdrawReason?: unknown };
+      withdrawReason = typeof j.withdrawReason === 'string' ? j.withdrawReason.trim() : '';
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+  }
+
+  if (raid.status === 'announced' && existing.setConfirmed) {
+    if (withdrawReason.length < WITHDRAW_REASON_MIN) {
+      return NextResponse.json(
+        {
+          error: `withdrawReason required (min ${WITHDRAW_REASON_MIN} characters) when leaving a confirmed slot on an announced raid`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const prevSnap = snapshotSignup(existing);
   await prisma.rfRaidSignup.delete({ where: { id: existing.id } });
+  const auditNewValue =
+    raid.status === 'announced' && existing.setConfirmed && withdrawReason.length >= WITHDRAW_REASON_MIN
+      ? JSON.stringify({ withdrawReason })
+      : null;
   await logRaidSignupAudit({
     signupId: existing.id,
     raidId,
@@ -188,6 +216,7 @@ export async function DELETE(
     changedByUserId: userId,
     action: 'signup_delete',
     oldValue: prevSnap,
+    newValue: auditNewValue,
   });
   fireSync(raidId);
   return NextResponse.json({ ok: true });
