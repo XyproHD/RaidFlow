@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
@@ -110,6 +111,31 @@ function parseDatetimeLocal(s: string): Date {
   return Number.isNaN(d.getTime()) ? new Date() : d;
 }
 
+/** Anmeldung „offen bis“: Standard 4 Tage vor Raidbeginn, immer strikt vor dem Raidtermin. */
+function suggestedSignupBeforeRaid(raidStart: Date): Date {
+  const fourDaysMs = 4 * 24 * 60 * 60 * 1000;
+  const oneHourMs = 60 * 60 * 1000;
+  let candidate = new Date(raidStart.getTime() - fourDaysMs);
+  const latest = new Date(raidStart.getTime() - oneHourMs);
+  const now = new Date();
+  if (candidate.getTime() > latest.getTime()) candidate = latest;
+  if (candidate.getTime() < now.getTime()) {
+    candidate = new Date(Math.min(now.getTime() + 5 * 60 * 1000, latest.getTime()));
+  }
+  if (candidate.getTime() >= raidStart.getTime()) {
+    candidate = latest;
+  }
+  return candidate;
+}
+
+function defaultCreateScheduledYmd(): string {
+  const t0 = new Date();
+  const y = t0.getFullYear();
+  const m = String(t0.getMonth() + 1).padStart(2, '0');
+  const d = String(t0.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function charAllowedInRestrictedGroup(
   charId: string,
   member: PoolMember,
@@ -185,9 +211,9 @@ export function NewRaidWizard({
   const locale = useLocale();
   const router = useRouter();
 
-  const [step, setStep] = useState<1 | 2>(1);
-  /** Schritt 2 über „🔎 Verfügbarkeit“: Übernehmen/Abbrechen statt Speichern; Abbrechen stellt Snapshot wieder her. */
-  const [step2Entry, setStep2Entry] = useState<'normal' | 'fromTermin'>('normal');
+  /** Verfügbarkeits-Ansicht nur über Button; Abbrechen stellt Snapshot wieder her. */
+  const [availabilityOpen, setAvailabilityOpen] = useState(false);
+  const [portalMounted, setPortalMounted] = useState(false);
   const [scheduleSnapshot, setScheduleSnapshot] = useState<null | {
     scheduledDate: string;
     rangeStartIdx: number;
@@ -248,17 +274,15 @@ export function NewRaidWizard({
       const day = String(d.getDate()).padStart(2, '0');
       return `${y}-${m}-${day}`;
     }
-    const t0 = new Date();
-    const y = t0.getFullYear();
-    const m = String(t0.getMonth() + 1).padStart(2, '0');
-    const d = String(t0.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return defaultCreateScheduledYmd();
   });
   const [signupDatetimeLocal, setSignupDatetimeLocal] = useState(() => {
     if (mode === 'edit' && initialRaid) return toDatetimeLocalValue(parseDatetimeLocal(initialRaid.signupUntil));
-    const t0 = new Date();
-    t0.setHours(12, 0, 0, 0);
-    return toDatetimeLocalValue(t0);
+    const raidStart = raidSlotToLocalDate(
+      defaultCreateScheduledYmd(),
+      SLOTS[DEFAULT_SLOT_IDX] ?? '19:00'
+    );
+    return toDatetimeLocalValue(suggestedSignupBeforeRaid(raidStart));
   });
   const [signupVisibility, setSignupVisibility] = useState<'public' | 'raid_leader_only'>(() => {
     if (mode === 'edit' && initialRaid) return initialRaid.signupVisibility === 'raid_leader_only' ? 'raid_leader_only' : 'public';
@@ -400,6 +424,10 @@ export function NewRaidWizard({
   useEffect(() => {
     loadBootstrap();
   }, [loadBootstrap]);
+
+  useEffect(() => {
+    setPortalMounted(true);
+  }, []);
 
   const restriction = raidGroupRestrictionId.trim();
   const anyRoleSelected = ROLE_ORDER.some((r) => roleFilter[r]);
@@ -677,6 +705,7 @@ export function NewRaidWizard({
     setRangeStartIdx(slotIndex);
     setRangeEndIdx(endIdx);
     setPickingEnd(false);
+    setSignupDatetimeLocal(toDatetimeLocalValue(suggestedSignupBeforeRaid(d)));
   };
 
   const openAvailabilityPlanner = () => {
@@ -687,12 +716,11 @@ export function NewRaidWizard({
       pickingEnd,
       signupDatetimeLocal,
     });
-    setStep2Entry('fromTermin');
     setPickingEnd(false);
-    setStep(2);
+    setAvailabilityOpen(true);
   };
 
-  const cancelAvailabilityPlanner = () => {
+  const cancelAvailabilityPlanner = useCallback(() => {
     if (scheduleSnapshot) {
       setScheduledDate(scheduleSnapshot.scheduledDate);
       setRangeStartIdx(scheduleSnapshot.rangeStartIdx);
@@ -701,14 +729,26 @@ export function NewRaidWizard({
       setSignupDatetimeLocal(scheduleSnapshot.signupDatetimeLocal);
     }
     setScheduleSnapshot(null);
-    setStep2Entry('normal');
-    setStep(1);
-  };
+    setAvailabilityOpen(false);
+  }, [scheduleSnapshot]);
+
+  useEffect(() => {
+    if (!availabilityOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') cancelAvailabilityPlanner();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [availabilityOpen, cancelAvailabilityPlanner]);
 
   const applyAvailabilityPlanner = () => {
     setScheduleSnapshot(null);
-    setStep2Entry('normal');
-    setStep(1);
+    setAvailabilityOpen(false);
+    setSignupDatetimeLocal((prev) => {
+      const signupD = parseDatetimeLocal(prev);
+      if (signupD.getTime() < scheduledAt.getTime()) return prev;
+      return toDatetimeLocalValue(suggestedSignupBeforeRaid(scheduledAt));
+    });
   };
 
   const submit = async () => {
@@ -717,6 +757,22 @@ export function NewRaidWizard({
     try {
       if (requiresReset && !resetAck) {
         setSaveError(tEdit('resetSignupsWarning'));
+        setSaving(false);
+        return;
+      }
+      if (!name.trim() || dungeonIds.length === 0) {
+        setSaveError(t('validationBasics'));
+        setSaving(false);
+        return;
+      }
+      if (!signupDatetimeLocal.trim()) {
+        setSaveError(t('validationSignupRequired'));
+        setSaving(false);
+        return;
+      }
+      const signupD = parseDatetimeLocal(signupDatetimeLocal);
+      if (!(signupD.getTime() < scheduledAt.getTime())) {
+        setSaveError(t('validationSignupBeforeRaid'));
         setSaving(false);
         return;
       }
@@ -875,21 +931,16 @@ export function NewRaidWizard({
         </section>
       ) : null}
 
-      <div className="flex items-center gap-3 text-sm text-muted-foreground">
-        <span className={cn(step === 1 && 'text-foreground font-medium')}>{t('step1')}</span>
-        <span aria-hidden>→</span>
-        <span className={cn(step === 2 && 'text-foreground font-medium')}>{t('step2')}</span>
-      </div>
-
-      {step === 1 && (
-        <div className="space-y-6">
+      <div className="space-y-6">
           <section className="rounded-xl border border-border bg-card p-4 md:p-6 space-y-4">
             <h2 className="text-lg font-semibold text-foreground border-b border-border pb-2">
               {t('sectionBasics')}
             </h2>
             <fieldset disabled={!editable} className="grid gap-4 sm:grid-cols-2 disabled:opacity-70">
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className="text-muted-foreground">{t('dungeon')}</span>
+                <span className="text-muted-foreground">
+                  {t('dungeon')} <span className="text-destructive">*</span>
+                </span>
                 <div className="relative">
                   <button
                     type="button"
@@ -955,7 +1006,9 @@ export function NewRaidWizard({
                 </div>
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className="text-muted-foreground">{t('raidName')}</span>
+                <span className="text-muted-foreground">
+                  {t('raidName')} <span className="text-destructive">*</span>
+                </span>
                 <input
                   className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
                   value={name}
@@ -1052,7 +1105,9 @@ export function NewRaidWizard({
             <fieldset disabled={!editable} className="space-y-4 disabled:opacity-70">
               <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
                 <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-md">
-                  <span className="text-muted-foreground">{t('scheduledDate')}</span>
+                  <span className="text-muted-foreground">
+                    {t('scheduledDate')} <span className="text-destructive">*</span>
+                  </span>
                   <input
                     type="datetime-local"
                     className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
@@ -1061,7 +1116,9 @@ export function NewRaidWizard({
                   />
                 </label>
                 <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-md">
-                  <span className="text-muted-foreground">{t('signupUntilCombined')}</span>
+                  <span className="text-muted-foreground">
+                    {t('signupUntilCombined')} <span className="text-destructive">*</span>
+                  </span>
                   <input
                     type="datetime-local"
                     className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
@@ -1215,19 +1272,11 @@ export function NewRaidWizard({
             )}
             <button
               type="button"
-              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-              onClick={() => {
-                if (!name.trim() || !effectiveDungeonId) {
-                  setSaveError(t('validationBasics'));
-                  return;
-                }
-                setSaveError(null);
-                setPickingEnd(false);
-                setStep2Entry('normal');
-                setStep(2);
-              }}
+              disabled={saving || (requiresReset && !resetAck) || !editable}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              onClick={() => void submit()}
             >
-              {t('next')}
+              {saving ? t('saving') : t('saveRaid')}
             </button>
             {isEdit ? (
               <>
@@ -1250,21 +1299,35 @@ export function NewRaidWizard({
               </>
             ) : null}
           </div>
-          {saveError && step === 1 && (
+          {saveError ? (
             <p className="text-destructive text-sm" role="alert">
               {saveError}
             </p>
-          )}
+          ) : null}
         </div>
-      )}
 
-      {step === 2 && (
-        <div className="space-y-4">
-          {step2Entry === 'normal' ? (
-            <p className="text-sm text-muted-foreground max-w-2xl">{t('step2ScheduleHint')}</p>
-          ) : (
-            <p className="text-sm text-muted-foreground max-w-2xl">{t('step2FromTerminHint')}</p>
-          )}
+      {portalMounted && availabilityOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/50 p-4 md:p-6"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="availability-dialog-title"
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget) cancelAvailabilityPlanner();
+              }}
+            >
+              <div
+                className="my-4 w-full max-w-6xl space-y-4 rounded-xl border border-border bg-background shadow-xl"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="border-b border-border px-4 py-3 md:px-5">
+                  <h2 id="availability-dialog-title" className="text-base font-semibold text-foreground">
+                    {t('openAvailabilityPlanner')}
+                  </h2>
+                  <p className="text-sm text-muted-foreground max-w-2xl mt-1">{t('step2FromTerminHint')}</p>
+                </div>
+                <div className="space-y-4 px-4 pb-5 md:px-5">
 
           <div
             className={cn(
@@ -1597,86 +1660,28 @@ export function NewRaidWizard({
             <p>{t('heatmapLegendRed')}</p>
           </div>
 
-          {saveError && (
-            <p className="text-destructive text-sm" role="alert">
-              {saveError}
-            </p>
-          )}
-
-          {isEdit && requiresReset ? (
-            <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 space-y-2">
-              <p className="text-sm">⚠️ {tEdit('resetSignupsWarning')}</p>
-              <label className="inline-flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={resetAck}
-                  onChange={(e) => setResetAck(e.target.checked)}
-                />
-                <span>{tEdit('confirmReset')}</span>
-              </label>
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap gap-3 pt-2">
-            {step2Entry === 'fromTermin' ? (
-              <>
-                <button
-                  type="button"
-                  className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
-                  onClick={cancelAvailabilityPlanner}
-                >
-                  {t('cancelFromAvailability')}
-                </button>
-                <button
-                  type="button"
-                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
-                  onClick={applyAvailabilityPlanner}
-                >
-                  {t('applyFromAvailability')}
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
-                  onClick={() => setStep(1)}
-                >
-                  {t('back')}
-                </button>
-                <button
-                  type="button"
-                  disabled={saving || (requiresReset && !resetAck) || !editable}
-                  className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                  onClick={submit}
-                >
-                  {saving ? t('saving') : t('saveRaid')}
-                </button>
-                {isEdit ? (
-                  <>
+                  <div className="flex flex-wrap gap-3 border-t border-border pt-4">
                     <button
                       type="button"
-                      disabled={saving || !editable}
-                      className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
-                      onClick={() => void doCancelRaid()}
+                      className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+                      onClick={cancelAvailabilityPlanner}
                     >
-                      🚫 {tEdit('cancelRaid')}
+                      {t('cancelFromAvailability')}
                     </button>
                     <button
                       type="button"
-                      disabled={saving}
-                      className="rounded-md border border-destructive bg-destructive/10 text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
-                      onClick={() => void doDeleteRaid()}
+                      className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                      onClick={applyAvailabilityPlanner}
                     >
-                      🗑️ {tDetail('menuDeleteRaid')}
+                      {t('applyFromAvailability')}
                     </button>
-                  </>
-                ) : null}
-              </>
-            )}
-          </div>
-        </div>
-      )}
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }
