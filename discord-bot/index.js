@@ -1,6 +1,6 @@
 /**
  * RaidFlow Discord-Bot
- * Slash-Commands: /raidflow help, /raidflow home, /raidflow setup, /raidflow group <groupname>
+ * Slash-Commands: /raidflow help, /raidflow home, /raidflow setup (Rollen + Battle.net), /raidflow group <groupname>
  * App Home: Primary-Entry-Command „start“ (DM-Dashboard, analog Web-Profil).
  * Rechte: Nur Server-Owner oder ADMINISTRATOR oder MANAGE_GUILD.
  * Gateway: optional GuildMembers (privileged). Nur nutzen, wenn im Discord Developer Portal
@@ -125,6 +125,12 @@ async function callWebapp(path, body) {
     throw new Error(`Webapp ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+function truncateDiscordLabel(s, maxLen = 100) {
+  const t = String(s ?? '').trim();
+  if (t.length <= maxLen) return t;
+  return `${t.slice(0, Math.max(0, maxLen - 1))}…`;
 }
 
 /** GET mit Query + Bot-Secret (Diagnose). */
@@ -413,7 +419,8 @@ function buildHelpContent() {
     '• **Standardrollen anlegen** – Der Bot erstellt die Rollen Gildenmeister, Raidleader und Raider.',
     '• **Bestehende Rollen zuordnen** – Du wählst für jede RaidFlow-Rolle eine bestehende Discord-Rolle oder lässt eine neue anlegen.',
     '• **Eigene Rollen anlegen** – Du gibst für jede RaidFlow-Rolle einen Namen ein; der Bot legt die Rollen auf dem Server an.',
-    'Ist der Server bereits eingerichtet, kannst du Rollen löschen und neu einrichten oder einzelne Rollen ändern.',
+    '• **Battle.net-Gilde verknüpfen** – Wie in der Webapp-Gildenverwaltung: Realm suchen, Gildennamen bei Blizzard suchen, Verknüpfung speichern (nach vollständigem Rollen-Setup).',
+    'Ist der Server bereits eingerichtet, kannst du Rollen löschen und neu einrichten, einzelne Rollen ändern oder Battle.net bearbeiten.',
     '',
     '**`/raidflow group <Groupname>`** – Raidgruppe anlegen. Erstellt eine Discord-Rolle `Raidflowgroup-<Name>` und verknüpft sie in der Webapp.',
     '',
@@ -439,6 +446,10 @@ function buildReconfigureSelect() {
           .setDescription('Eine RaidFlow-Rolle umbenennen, zuweisen oder neu anlegen')
           .setValue('change'),
         new StringSelectMenuOptionBuilder()
+          .setLabel('Battle.net-Gilde verknüpfen')
+          .setDescription('Realm + Blizzard-Gilde suchen und in RaidFlow speichern')
+          .setValue('bnet'),
+        new StringSelectMenuOptionBuilder()
           .setLabel('Abbrechen')
           .setDescription('Setup beenden ohne Änderungen')
           .setValue('abort')
@@ -463,7 +474,11 @@ function buildSetupModeSelect() {
         new StringSelectMenuOptionBuilder()
           .setLabel('Eigene Rollen anlegen')
           .setDescription('Namen eingeben; der Bot legt die Rollen auf dem Server an')
-          .setValue('custom')
+          .setValue('custom'),
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Battle.net-Gilde verknüpfen')
+          .setDescription('Gleiche Verknüpfung wie in der Webapp (Realm + Gildensuche)')
+          .setValue('bnet')
       )
   );
 }
@@ -523,6 +538,149 @@ function buildChangeWhatSelect() {
   );
 }
 
+function buildBnetRealmSearchModal() {
+  return new ModalBuilder()
+    .setCustomId('rf_modal_bnet_realm_q')
+    .setTitle('Realm suchen')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('q')
+          .setLabel('Teil des Realm-Slugs (z. B. everlook)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMinLength(2)
+          .setMaxLength(40)
+      )
+    );
+}
+
+function buildBnetGuildNameModal() {
+  return new ModalBuilder()
+    .setCustomId('rf_modal_bnet_guild_q')
+    .setTitle('Gilde bei Blizzard suchen')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('guildName')
+          .setLabel('Gildenname (Suchbegriff)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMinLength(2)
+          .setMaxLength(60)
+      )
+    );
+}
+
+function buildBnetManageSelect() {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('rf_bnet_manage')
+      .setPlaceholder('Battle.net-Verknüpfung')
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Neu verknüpfen / ändern')
+          .setDescription('Realm + Gildensuche erneut durchlaufen')
+          .setValue('new'),
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Verknüpfung entfernen')
+          .setDescription('Battle.net-Zuordnung in RaidFlow löschen')
+          .setValue('clear'),
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Fertig')
+          .setDescription('Menü schließen')
+          .setValue('done')
+      )
+  );
+}
+
+function buildBnetRealmSelectRows(realms) {
+  const options = realms.slice(0, 25).map((r, i) =>
+    new StringSelectMenuOptionBuilder()
+      .setLabel(truncateDiscordLabel(r.label || r.slug))
+      .setValue(String(i))
+  );
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('rf_bnet_realm_ix')
+      .setPlaceholder('Realm wählen')
+      .addOptions(options)
+  );
+}
+
+function buildBnetGuildSelectRows(hits) {
+  const options = hits.slice(0, 25).map((h, i) =>
+    new StringSelectMenuOptionBuilder()
+      .setLabel(truncateDiscordLabel(`${h.name} (${h.realmSlug})`))
+      .setDescription(truncateDiscordLabel(`ID ${h.id}`, 95))
+      .setValue(String(i))
+  );
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('rf_bnet_guild_ix')
+      .setPlaceholder('Treffer wählen')
+      .addOptions(options)
+  );
+}
+
+async function beginBnetSetup(interaction) {
+  const discordGuildId = interaction.guild.id;
+  let data;
+  try {
+    data = await getWebappJson('/api/bot/guild-battlenet-link', { discordGuildId });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const notFound = /404/.test(msg);
+    await interaction.update({
+      content: notFound
+        ? 'Dieser Discord-Server ist noch nicht in RaidFlow angelegt. Bitte zuerst die **RaidFlow-Rollen** einrichten (Standard, bestehend oder eigene).'
+        : `Battle.net-Setup: Webapp-Fehler: ${msg}`,
+      components: [],
+    });
+    return;
+  }
+
+  if (!data.rolesConfigured) {
+    await interaction.update({
+      content:
+        'Die RaidFlow-Discord-Rollen fehlen noch. Bitte zuerst **Standardrollen**, **bestehende Rollen** oder **eigene Rollen** einrichten. Danach kannst du Battle.net verknüpfen.',
+      components: [],
+    });
+    return;
+  }
+
+  setState(interaction, {
+    phase: 'bnet',
+    rfGuildId: data.guildId,
+    battlenetGuildId: data.battlenetGuildId ?? null,
+    battlenetGuildName: data.battlenetGuildName ?? null,
+  });
+
+  if (data.battlenetGuildId) {
+    await interaction.update({
+      content:
+        `**Battle.net-Verknüpfung**\nAktuell: **${data.battlenetGuildName ?? '?'}** (Gilden-ID ${data.battlenetGuildId}).\n\nWas möchtest du tun?`,
+      components: [buildBnetManageSelect()],
+    });
+    return;
+  }
+
+  await interaction.showModal(buildBnetRealmSearchModal());
+}
+
+async function saveBnetGuildLink(interaction, realmRow, hit) {
+  const discordGuildId = interaction.guild.id;
+  await callWebapp('/api/bot/guild-battlenet-link', {
+    discordGuildId,
+    action: 'save',
+    battlenetRealmId: realmRow.id,
+    battlenetGuildId: hit.id,
+    battlenetGuildName: hit.name,
+    profileRealmSlug: hit.realmSlug || undefined,
+    profileRealmId: hit.realmNumericId || undefined,
+  });
+}
+
 async function runSetup(interaction) {
   await interaction.deferReply({ ephemeral: true });
   const guild = interaction.guild;
@@ -564,6 +722,11 @@ async function handleReconfigure(interaction, value) {
       content: 'Setup abgebrochen. Es wurden keine Änderungen vorgenommen.',
       components: [],
     });
+    return;
+  }
+
+  if (value === 'bnet') {
+    await beginBnetSetup(interaction);
     return;
   }
 
@@ -725,6 +888,11 @@ async function applyGuildConfigAndFinish(interaction, roleIds, message) {
 
 async function handleSetupMode(interaction, value) {
   const guild = interaction.guild;
+
+  if (value === 'bnet') {
+    await beginBnetSetup(interaction);
+    return;
+  }
 
   if (value === 'standard') {
     await interaction.update({ content: 'Standardrollen werden erstellt…', components: [] }).catch(() => {});
@@ -1060,6 +1228,82 @@ client.on('interactionCreate', async (interaction) => {
       await handleSetupMode(interaction, value);
       return;
     }
+    if (customId === 'rf_bnet_manage') {
+      if (value === 'done') {
+        clearState(interaction);
+        await interaction.update({ content: 'Battle.net-Menü geschlossen.', components: [] }).catch(() => {});
+        return;
+      }
+      if (value === 'clear') {
+        await interaction.deferUpdate().catch(() => {});
+        try {
+          await callWebapp('/api/bot/guild-battlenet-link', {
+            discordGuildId: interaction.guild.id,
+            action: 'clear',
+          });
+          clearState(interaction);
+          await interaction.editReply({ content: 'Battle.net-Verknüpfung wurde entfernt.', components: [] }).catch(() => {});
+        } catch (e) {
+          await interaction
+            .editReply({ content: `Verknüpfung konnte nicht entfernt werden: ${e.message}`, components: [] })
+            .catch(() => {});
+        }
+        return;
+      }
+      if (value === 'new') {
+        await interaction.showModal(buildBnetRealmSearchModal()).catch(() => {});
+        return;
+      }
+      return;
+    }
+    if (customId === 'rf_bnet_realm_ix') {
+      const state = getState(interaction);
+      const rows = state?.realmRows;
+      if (!rows?.length) {
+        await interaction.reply({ content: 'Sitzung abgelaufen. Bitte `/raidflow setup` erneut starten.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      const ix = parseInt(value, 10);
+      const realm = rows[ix];
+      if (!realm) {
+        await interaction.reply({ content: 'Ungültige Auswahl.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      setState(interaction, { ...state, phase: 'bnet', selectedRealm: realm });
+      await interaction.showModal(buildBnetGuildNameModal()).catch(() => {});
+      return;
+    }
+    if (customId === 'rf_bnet_guild_ix') {
+      const state = getState(interaction);
+      const hits = state?.guildHits;
+      const realm = state?.selectedRealm;
+      if (!hits?.length || !realm) {
+        await interaction
+          .reply({ content: 'Sitzung abgelaufen. Bitte `/raidflow setup` erneut starten.', ephemeral: true })
+          .catch(() => {});
+        return;
+      }
+      const ix = parseInt(value, 10);
+      const hit = hits[ix];
+      if (!hit) {
+        await interaction.reply({ content: 'Ungültige Auswahl.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      await interaction.deferUpdate().catch(() => {});
+      try {
+        await saveBnetGuildLink(interaction, realm, hit);
+        clearState(interaction);
+        await interaction
+          .editReply({
+            content: `Battle.net-Verknüpfung gespeichert: **${hit.name}** (ID ${hit.id}, Realm-Slug ${hit.realmSlug}).`,
+            components: [],
+          })
+          .catch(() => {});
+      } catch (e) {
+        await interaction.editReply({ content: `Speichern fehlgeschlagen: ${e.message}`, components: [] }).catch(() => {});
+      }
+      return;
+    }
     if (customId === 'rf_change_which') {
       await handleChangeWhich(interaction, value);
       return;
@@ -1110,6 +1354,104 @@ client.on('interactionCreate', async (interaction) => {
       const roleKey = customId.replace('rf_modal_new_', '');
       const name = interaction.fields.getTextInputValue('name');
       await handleModalNewForChange(interaction, roleKey, name);
+      return;
+    }
+    if (customId === 'rf_modal_bnet_realm_q') {
+      const q = interaction.fields.getTextInputValue('q').trim();
+      if (q.length < 2) {
+        await interaction.reply({ content: 'Bitte mindestens 2 Zeichen eingeben.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      let realms;
+      try {
+        const data = await getWebappJson('/api/bot/battlenet/realms', { q, locale: 'de' });
+        realms = Array.isArray(data.realms) ? data.realms : [];
+      } catch (e) {
+        await interaction
+          .reply({ content: `Realm-Suche fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`, ephemeral: true })
+          .catch(() => {});
+        return;
+      }
+      if (realms.length === 0) {
+        await interaction
+          .reply({
+            content:
+              'Kein Realm gefunden. Nutze einen Teil des **englischen Realm-Slugs** (z. B. `everlook`, `firemaw`).',
+            ephemeral: true,
+          })
+          .catch(() => {});
+        return;
+      }
+      const prev = getState(interaction) || {};
+      setState(interaction, { ...prev, phase: 'bnet', realmRows: realms });
+      await interaction
+        .reply({
+          ephemeral: true,
+          content: `**Realm wählen** (${realms.length} Treffer für „${q}“):`,
+          components: [buildBnetRealmSelectRows(realms)],
+        })
+        .catch(() => {});
+      return;
+    }
+    if (customId === 'rf_modal_bnet_guild_q') {
+      const state = getState(interaction);
+      const realm = state?.selectedRealm;
+      if (!realm?.id) {
+        await interaction.reply({ content: 'Sitzung abgelaufen. Bitte von vorn beginnen.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      const gq = interaction.fields.getTextInputValue('guildName').trim();
+      if (gq.length < 2) {
+        await interaction.reply({ content: 'Bitte mindestens 2 Zeichen für die Gildensuche.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      let hits;
+      try {
+        const res = await callWebapp('/api/bot/battlenet/resolve-guild', {
+          realmId: realm.id,
+          query: gq,
+          mode: 'search',
+        });
+        hits = Array.isArray(res.results) ? res.results : [];
+      } catch (e) {
+        await interaction
+          .reply({ content: `Gildensuche fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`, ephemeral: true })
+          .catch(() => {});
+        return;
+      }
+      if (hits.length === 0) {
+        await interaction
+          .reply({
+            content: 'Keine Gilde gefunden. Anderen Suchbegriff oder exakteren Gildennamen versuchen.',
+            ephemeral: true,
+          })
+          .catch(() => {});
+        return;
+      }
+      if (hits.length === 1) {
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        try {
+          await saveBnetGuildLink(interaction, realm, hits[0]);
+          clearState(interaction);
+          await interaction
+            .editReply({
+              content: `Battle.net-Verknüpfung gespeichert: **${hits[0].name}** (ID ${hits[0].id}).`,
+            })
+            .catch(() => {});
+        } catch (e) {
+          await interaction.editReply({ content: `Speichern fehlgeschlagen: ${e.message}` }).catch(() => {});
+        }
+        return;
+      }
+      const shown = hits.slice(0, 25);
+      setState(interaction, { ...state, phase: 'bnet', guildHits: shown });
+      await interaction
+        .reply({
+          ephemeral: true,
+          content: `**Gilde wählen** (${hits.length} Treffer${hits.length > 25 ? ', es werden die ersten 25 angezeigt' : ''}):`,
+          components: [buildBnetGuildSelectRows(shown)],
+        })
+        .catch(() => {});
       return;
     }
   }
