@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyBotSecret } from '@/lib/bot-auth';
 import {
   autoResolveWowGuild,
+  normalizeUserGuildSearchInput,
   searchWowGuildsOnRealm,
   type WowGuildSearchHit,
 } from '@/lib/battlenet-guild';
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
       : typeof body.guildName === 'string'
         ? body.guildName
         : '';
-  const query = qRaw.trim();
+  const query = normalizeUserGuildSearchInput(qRaw);
   const mode = typeof body.mode === 'string' ? body.mode.trim().toLowerCase() : 'search';
 
   if (!realmId || !query) {

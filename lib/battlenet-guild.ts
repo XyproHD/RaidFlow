@@ -50,9 +50,22 @@ export function guildSlugCandidates(displayName: string): string[] {
   return Array.from(seen);
 }
 
+/**
+ * Nutzereingabe für Gildensuche: Unicode, NBSP, überzählige Leerzeichen.
+ * (Battle.net / URL-Slugs sind weiterhin case-insensitive; Suchindex braucht oft exakte Schreibweise.)
+ */
+export function normalizeUserGuildSearchInput(raw: string): string {
+  return raw
+    .normalize('NFKC')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Suchbegriffe für den Suchindex (nicht 1:1 mit URL-Slug). */
 function guildSearchNameCandidates(displayName: string): string[] {
-  const raw = displayName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const raw = normalizeUserGuildSearchInput(displayName).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   if (!raw) return [];
   const lower = raw.toLowerCase();
   const seen = new Set<string>();
@@ -64,6 +77,10 @@ function guildSearchNameCandidates(displayName: string): string[] {
   add(lower);
   add(lower.replace(/\s+/g, ''));
   add(lower.replace(/\s+/g, ' ').trim());
+  const hyphenAsSpace = lower.replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+  add(hyphenAsSpace);
+  add(hyphenAsSpace.replace(/\s/g, ''));
+  add(lower.replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''));
   return Array.from(seen);
 }
 
@@ -178,7 +195,7 @@ export async function searchWowGuildsOnRealm(
   realm: { region: WowRegion; slug: string; namespace: string },
   nameQuery: string
 ): Promise<WowGuildSearchHit[]> {
-  const q = nameQuery.trim();
+  const q = normalizeUserGuildSearchInput(nameQuery);
   if (!q) return [];
 
   const { config, accessToken, apiBaseUrl } = await getGameDataClient(realm.region);
@@ -269,7 +286,7 @@ export async function autoResolveWowGuild(
 } | {
   status: 'not_found';
 }> {
-  const rawName = discordOrIngameGuildName.trim();
+  const rawName = normalizeUserGuildSearchInput(discordOrIngameGuildName);
   if (!rawName) return { status: 'not_found' };
 
   for (const slug of guildSlugCandidates(rawName)) {
