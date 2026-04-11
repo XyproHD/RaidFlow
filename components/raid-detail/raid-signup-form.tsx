@@ -25,6 +25,7 @@ type PunctualityType = 'on_time' | 'tight' | 'late';
 function normalizeInitialType(raw: string | undefined): SignupType {
   if (raw === 'reserve') return 'reserve';
   if (raw === 'uncertain') return 'uncertain';
+  if (raw === 'declined') return 'reserve';
   if (raw === 'main' || raw === 'normal') return 'normal';
   return 'normal';
 }

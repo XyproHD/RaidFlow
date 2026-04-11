@@ -5,24 +5,15 @@ import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { prisma } from '@/lib/prisma';
 import { computeRaidSignupPhase, resolveRaidAccess } from '@/lib/raid-detail-access';
 import { normalizeSignupPunctuality, normalizeSignupType } from '@/lib/raid-signup-constants';
+import {
+  commitRaidSelfSignupMutation,
+  validateRaidSignupBusinessRules,
+} from '@/lib/raid-self-signup-mutation';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 
-const NOTE_MIN = 3;
-
 function fireSync(raidId: string) {
   void syncRaidThreadSummary(raidId);
-}
-
-function validateSignedSpec(
-  signedSpec: string,
-  mainSpec: string,
-  offSpec: string | null
-): boolean {
-  const s = signedSpec.trim();
-  if (s === mainSpec.trim()) return true;
-  if (offSpec && s === offSpec.trim()) return true;
-  return false;
 }
 
 /**
@@ -83,7 +74,6 @@ export async function POST(
   const typeRaw = typeof body.type === 'string' ? body.type.trim() : '';
   const typeNorm = normalizeSignupType(typeRaw);
   const punctuality = normalizeSignupPunctuality(body.punctuality, body.isLate === true);
-  const isLate = punctuality === 'late';
   const note =
     typeof body.note === 'string' ? body.note.trim() : body.note === null ? '' : '';
   const signedSpecRaw =
@@ -102,32 +92,6 @@ export async function POST(
     return NextResponse.json({ error: 'Missing signedSpec (main or off spec)' }, { status: 400 });
   }
 
-  if (phase === 'reserve_only' && typeNorm !== 'reserve') {
-    return NextResponse.json(
-      { error: 'After signup deadline only reserve is allowed' },
-      { status: 400 }
-    );
-  }
-
-  if (forbidReserve && typeNorm === 'reserve') {
-    return NextResponse.json(
-      { error: 'Reserve is forbidden by signup condition' },
-      { status: 400 }
-    );
-  }
-
-  if (isLate) {
-    if (note.length < NOTE_MIN) {
-      return NextResponse.json(
-        {
-          error:
-            'Late attendance requires a note (e.g. approximate delay)',
-        },
-        { status: 400 }
-      );
-    }
-  }
-
   const character = await prisma.rfCharacter.findFirst({
     where: { id: characterId, userId, guildId },
     select: { id: true, mainSpec: true, offSpec: true },
@@ -139,111 +103,44 @@ export async function POST(
     );
   }
 
-  if (!validateSignedSpec(signedSpecRaw, character.mainSpec, character.offSpec)) {
-    return NextResponse.json(
-      { error: 'signedSpec must match main or off spec of the character' },
-      { status: 400 }
-    );
-  }
-
-  const data = {
-    characterId,
-    type: typeNorm,
-    signedSpec: signedSpecRaw,
-    onlySignedSpec,
+  const rules = validateRaidSignupBusinessRules({
+    phase,
+    typeNorm,
     forbidReserve,
-    isLate,
     punctuality,
-    note: note.length > 0 ? note : null,
-  };
-
-  const existing = await prisma.rfRaidSignup.findFirst({
-    where: { raidId, userId },
+    note,
+    signedSpecRaw,
+    characterMainSpec: character.mainSpec,
+    characterOffSpec: character.offSpec,
   });
-
-  if (existing) {
-    const prevSnap = snapshotSignup({
-      ...existing,
-    });
-    const updated = await prisma.rfRaidSignup.update({
-      where: { id: existing.id },
-      data: {
-        ...data,
-        allowReserve: false,
-        leaderAllowsReserve: forbidReserve ? false : existing.leaderAllowsReserve,
-      },
-      select: {
-        id: true,
-        type: true,
-        characterId: true,
-        signedSpec: true,
-        onlySignedSpec: true,
-        forbidReserve: true,
-        isLate: true,
-        punctuality: true,
-        note: true,
-        allowReserve: true,
-        leaderAllowsReserve: true,
-        leaderMarkedTeilnehmer: true,
-        signedAt: true,
-      },
-    });
-    await logRaidSignupAudit({
-      signupId: updated.id,
-      raidId,
-      guildId,
-      changedByUserId: userId,
-      action: 'signup_update',
-      oldValue: prevSnap,
-      newValue: snapshotSignup(updated),
-    });
-    fireSync(raidId);
-    return NextResponse.json({ signup: updated });
+  if (!rules.ok) {
+    return NextResponse.json({ error: rules.error }, { status: rules.status });
   }
 
-  const created = await prisma.rfRaidSignup.create({
-    data: {
-      raidId,
-      userId,
-      ...data,
-      allowReserve: false,
-      leaderAllowsReserve: !forbidReserve,
-      leaderMarkedTeilnehmer: false,
-    },
-    select: {
-      id: true,
-      type: true,
-      characterId: true,
-      signedSpec: true,
-      onlySignedSpec: true,
-      forbidReserve: true,
-      isLate: true,
-      punctuality: true,
-      note: true,
-      allowReserve: true,
-      leaderAllowsReserve: true,
-      leaderMarkedTeilnehmer: true,
-      signedAt: true,
-    },
-  });
-  await logRaidSignupAudit({
-    signupId: created.id,
+  const { signup, isCreate } = await commitRaidSelfSignupMutation({
     raidId,
     guildId,
+    userId,
     changedByUserId: userId,
-    action: 'signup_create',
-    newValue: snapshotSignup(created),
+    characterId: character.id,
+    typeNorm,
+    signedSpecRaw,
+    onlySignedSpec,
+    forbidReserve,
+    punctuality,
+    note,
   });
-  fireSync(raidId);
-  return NextResponse.json({ signup: created }, { status: 201 });
+  return NextResponse.json({ signup }, { status: isCreate ? 201 : 200 });
 }
+
+const WITHDRAW_REASON_MIN = 10;
 
 /**
  * DELETE /api/guilds/[guildId]/raids/[raidId]/signups
- * Eigene Anmeldung löschen (nur bei offenem Raid).
+ * Eigene Anmeldung löschen (offener Raid oder angekündigter Raid; bei Gesetzt + angekündigt Begründungspflicht).
  */
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ guildId: string; raidId: string }> }
 ) {
   const { guildId, raidId } = await params;
@@ -273,8 +170,8 @@ export async function DELETE(
     where: { id: raidId, guildId },
     select: { status: true },
   });
-  if (!raid || raid.status !== 'open') {
-    return NextResponse.json({ error: 'Raid is not open' }, { status: 403 });
+  if (!raid || (raid.status !== 'open' && raid.status !== 'announced')) {
+    return NextResponse.json({ error: 'Withdrawal is not allowed for this raid' }, { status: 403 });
   }
 
   const existing = await prisma.rfRaidSignup.findFirst({
@@ -284,8 +181,34 @@ export async function DELETE(
     return NextResponse.json({ error: 'No signup' }, { status: 404 });
   }
 
+  let withdrawReason = '';
+  const rawBody = await request.text().catch(() => '');
+  if (rawBody.trim()) {
+    try {
+      const j = JSON.parse(rawBody) as { withdrawReason?: unknown };
+      withdrawReason = typeof j.withdrawReason === 'string' ? j.withdrawReason.trim() : '';
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+  }
+
+  if (raid.status === 'announced' && existing.setConfirmed) {
+    if (withdrawReason.length < WITHDRAW_REASON_MIN) {
+      return NextResponse.json(
+        {
+          error: `withdrawReason required (min ${WITHDRAW_REASON_MIN} characters) when leaving a confirmed slot on an announced raid`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const prevSnap = snapshotSignup(existing);
   await prisma.rfRaidSignup.delete({ where: { id: existing.id } });
+  const auditNewValue =
+    raid.status === 'announced' && existing.setConfirmed && withdrawReason.length >= WITHDRAW_REASON_MIN
+      ? JSON.stringify({ withdrawReason })
+      : null;
   await logRaidSignupAudit({
     signupId: existing.id,
     raidId,
@@ -293,6 +216,7 @@ export async function DELETE(
     changedByUserId: userId,
     action: 'signup_delete',
     oldValue: prevSnap,
+    newValue: auditNewValue,
   });
   fireSync(raidId);
   return NextResponse.json({ ok: true });

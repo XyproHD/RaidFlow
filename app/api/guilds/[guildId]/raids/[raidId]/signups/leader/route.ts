@@ -71,8 +71,8 @@ export async function POST(
   if (!raid) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
-  if (raid.status !== 'open') {
-    return NextResponse.json({ error: 'Raid is not open' }, { status: 403 });
+  if (raid.status !== 'open' && raid.status !== 'announced') {
+    return NextResponse.json({ error: 'Raid is not open for planning' }, { status: 403 });
   }
 
   const character = await prisma.rfCharacter.findFirst({
@@ -99,6 +99,21 @@ export async function POST(
     where: { raidId, userId: targetUserId, characterId },
   });
 
+  let typeForDb = typeNorm;
+  if (raid.status === 'announced') {
+    if (leaderPlacement === 'confirmed') {
+      typeForDb = 'normal';
+    } else {
+      if (existing?.forbidReserve) {
+        return NextResponse.json(
+          { error: 'Reserve is forbidden by signup condition' },
+          { status: 400 }
+        );
+      }
+      typeForDb = 'reserve';
+    }
+  }
+
   if (existing) {
     if (existing.forbidReserve && typeNorm === 'reserve') {
       return NextResponse.json(
@@ -121,7 +136,7 @@ export async function POST(
       where: { id: existing.id },
       data: {
         characterId,
-        type: typeNorm,
+        type: typeForDb,
         signedSpec: signedSpecRaw,
         note,
         leaderAllowsReserve: existing.forbidReserve ? false : existing.leaderAllowsReserve,
@@ -147,7 +162,7 @@ export async function POST(
       raidId,
       userId: targetUserId,
       characterId,
-      type: typeNorm,
+      type: typeForDb,
       signedSpec: signedSpecRaw,
       allowReserve: false,
       isLate: false,

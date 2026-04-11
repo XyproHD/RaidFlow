@@ -24,6 +24,9 @@ import {
   RaidOverviewSummaryRows,
   type RaidOverviewSummaryProps,
 } from '@/components/raid-detail/raid-overview-summary';
+import { PlannerLeaderNotesCollapsible } from '@/components/raid-planner/planner-leader-notes-collapsible';
+import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
+import type { AnnounceRaidPayload } from '@/lib/raid-announce';
 
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
 const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
@@ -113,6 +116,136 @@ type FlyBackState = {
   height: number;
 };
 
+type PlannerGroup = {
+  rosterOrder: string[];
+  raidLeaderUserId: string | null;
+  lootmasterUserId: string | null;
+};
+
+type DropTarget =
+  | { kind: 'roster'; groupIndex: number }
+  | { kind: 'reserve' }
+  | { kind: 'pool' };
+
+function findDropTarget(x: number, y: number): DropTarget | null {
+  const stack = document.elementsFromPoint(x, y);
+  for (const el of stack) {
+    if (!(el instanceof HTMLElement)) continue;
+    const z = el.dataset.dropZone;
+    if (z === 'pool') return { kind: 'pool' };
+    if (z === 'reserve') return { kind: 'reserve' };
+    if (z === 'roster') {
+      const raw = el.dataset.rosterGroup ?? '0';
+      const gi = Number.parseInt(raw, 10);
+      return { kind: 'roster', groupIndex: Number.isFinite(gi) && gi >= 0 ? gi : 0 };
+    }
+  }
+  return null;
+}
+
+function allRosterIds(groups: PlannerGroup[]): string[] {
+  return groups.flatMap((g) => g.rosterOrder);
+}
+
+function findUserRosterConflict(
+  groups: PlannerGroup[],
+  byId: Map<string, RosterPlannerSignup>,
+  draggingId: string,
+  userId: string
+): string | null {
+  for (const g of groups) {
+    for (const otherId of g.rosterOrder) {
+      if (otherId === draggingId) continue;
+      const other = byId.get(otherId);
+      if ((other?.userId ?? '').trim() === userId) return otherId;
+    }
+  }
+  return null;
+}
+
+function dedupeRosterIdsAcrossGroups(groups: PlannerGroup[]): PlannerGroup[] {
+  const seen = new Set<string>();
+  return groups.map((g) => {
+    const next: string[] = [];
+    for (const id of g.rosterOrder) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      next.push(id);
+    }
+    return { ...g, rosterOrder: next };
+  });
+}
+
+function roleCountsForRosterOrder(
+  rosterOrder: string[],
+  byId: Map<string, RosterPlannerSignup>
+): Record<(typeof ROLE_KEYS)[number], number> {
+  const out: Record<(typeof ROLE_KEYS)[number], number> = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
+  for (const id of rosterOrder) {
+    const s = byId.get(id);
+    if (!s) continue;
+    const r = s.role;
+    if (r === 'Tank' || r === 'Melee' || r === 'Range' || r === 'Healer') out[r] += 1;
+  }
+  return out;
+}
+
+function minSpecKeyCountsForRosterOrder(
+  rosterOrder: string[],
+  byId: Map<string, RosterPlannerSignup>,
+  minSpecsObj: Record<string, number> | null | undefined
+): Map<string, number> {
+  const out = new Map<string, number>();
+  const minSpecs = minSpecsObj
+    ? Object.entries(minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
+    : [];
+  for (const [key] of minSpecs) {
+    let n = 0;
+    for (const id of rosterOrder) {
+      const s = byId.get(id);
+      if (!s) continue;
+      const spec = (s.signedSpec?.trim() || s.mainSpec?.trim() || '').trim();
+      if (!spec) continue;
+      if (isMinSpecClassKey(key)) {
+        const cid = parseMinSpecClassKey(key);
+        if (cid && getSpecByDisplayName(spec)?.classId === cid) n++;
+      } else if (spec === key) {
+        n++;
+      }
+    }
+    out.set(key, n);
+  }
+  return out;
+}
+
+function rosterMinFulfillmentRatioForOrder(
+  rosterOrder: string[],
+  byId: Map<string, RosterPlannerSignup>,
+  overviewProps: RaidOverviewSummaryProps
+): number | null {
+  const rosterRoleCounts = roleCountsForRosterOrder(rosterOrder, byId);
+  const rosterMinSpecKeyCounts = minSpecKeyCountsForRosterOrder(
+    rosterOrder,
+    byId,
+    overviewProps.minSpecsObj
+  );
+  const roleMin = overviewProps.roleMinByKey;
+  const ratios: number[] = [];
+  for (const k of ROLE_KEYS) {
+    const need = roleMin[k] ?? 0;
+    if (need <= 0) continue;
+    ratios.push(Math.min(1, (rosterRoleCounts[k] ?? 0) / need));
+  }
+  const minSpecs = overviewProps.minSpecsObj
+    ? Object.entries(overviewProps.minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
+    : [];
+  for (const [spec, need] of minSpecs) {
+    ratios.push(Math.min(1, (rosterMinSpecKeyCounts.get(spec) ?? 0) / need));
+  }
+  if (ratios.length === 0) return null;
+  return ratios.reduce((a, b) => a + b, 0) / ratios.length;
+}
+
 function openMenuAtButton(btn: HTMLButtonElement) {
   const r = btn.getBoundingClientRect();
   const width = 200;
@@ -151,16 +284,6 @@ function setFromArray(ids: (string | null | undefined)[]) {
   return new Set(ids.filter((x): x is string => typeof x === 'string' && x.length > 0));
 }
 
-function findDropZone(x: number, y: number): 'roster' | 'reserve' | 'pool' | null {
-  const stack = document.elementsFromPoint(x, y);
-  for (const el of stack) {
-    if (!(el instanceof HTMLElement)) continue;
-    const z = el.dataset.dropZone;
-    if (z === 'roster' || z === 'reserve' || z === 'pool') return z;
-  }
-  return null;
-}
-
 function rosterInsertIndex(container: HTMLElement, clientY: number, draggingId: string): number {
   const rows = [...container.querySelectorAll<HTMLElement>('[data-planner-row]')];
   let idx = 0;
@@ -183,6 +306,11 @@ export function RaidRosterPlanner({
   guildCharacters,
   raidLeaderLabel,
   canEditRaid,
+  initialRaidLeaderUserId,
+  initialLootmasterUserId,
+  initialPlannerLeaderNotesHtml,
+  raidStatus,
+  persistedServerPlannerOrder = null,
 }: {
   locale: string;
   guildId: string;
@@ -193,6 +321,13 @@ export function RaidRosterPlanner({
   guildCharacters: GuildCharacterOption[];
   raidLeaderLabel: string;
   canEditRaid: boolean;
+  initialRaidLeaderUserId: string | null;
+  initialLootmasterUserId: string | null;
+  initialPlannerLeaderNotesHtml: string | null;
+  /** rf_raid.status — Ankündigen nur bei open */
+  raidStatus: string;
+  /** Bei status announced: Gruppen/Reserve vom Server (ohne localStorage). */
+  persistedServerPlannerOrder?: AnnounceRaidPayload | null;
 }) {
   const t = useTranslations('raidDetail');
   const tEdit = useTranslations('raidEdit');
@@ -208,8 +343,9 @@ export function RaidRosterPlanner({
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<{
     signups: RosterPlannerSignup[];
-    rosterOrder: string[];
+    plannerGroups: PlannerGroup[];
     reserveOrder: string[];
+    leaderNotesHtml: string;
   } | null>(null);
 
   const orderStorageKey = useMemo(() => `rf:raidPlannerOrder:${raidId}`, [raidId]);
@@ -231,7 +367,13 @@ export function RaidRosterPlanner({
 
   const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
 
-  const [rosterOrder, setRosterOrder] = useState<string[]>([]);
+  const [plannerGroups, setPlannerGroups] = useState<PlannerGroup[]>(() => [
+    {
+      rosterOrder: [],
+      raidLeaderUserId: initialRaidLeaderUserId,
+      lootmasterUserId: initialLootmasterUserId,
+    },
+  ]);
   const [reserveOrder, setReserveOrder] = useState<string[]>(() => reserveSignupIdsFrom(initialSignups));
 
   function safeJsonParse<T>(raw: string | null): T | null {
@@ -253,13 +395,32 @@ export function RaidRosterPlanner({
         return p === 'confirmed' || p === 'substitute' || p === 'signup' ? p : 'signup';
       };
 
-      const stored = typeof window !== 'undefined'
-        ? safeJsonParse<{ rosterOrder?: unknown; reserveOrder?: unknown }>(window.localStorage.getItem(orderStorageKey))
-        : null;
+      type StoredPlanner = {
+        rosterOrder?: unknown;
+        reserveOrder?: unknown;
+        groups?: unknown;
+      };
+
+      const storedFromServer: StoredPlanner | null =
+        persistedServerPlannerOrder != null
+          ? {
+              groups: persistedServerPlannerOrder.groups as unknown,
+              reserveOrder: persistedServerPlannerOrder.reserveOrder as unknown,
+            }
+          : null;
+      const stored: StoredPlanner | null =
+        storedFromServer ??
+        (typeof window !== 'undefined'
+          ? safeJsonParse<StoredPlanner>(window.localStorage.getItem(orderStorageKey))
+          : null);
       const storedRoster =
-        stored && Array.isArray(stored.rosterOrder) ? (stored.rosterOrder.filter((x) => typeof x === 'string') as string[]) : null;
+        stored && Array.isArray(stored.rosterOrder)
+          ? (stored.rosterOrder.filter((x) => typeof x === 'string') as string[])
+          : null;
       const storedReserve =
-        stored && Array.isArray(stored.reserveOrder) ? (stored.reserveOrder.filter((x) => typeof x === 'string') as string[]) : null;
+        stored && Array.isArray(stored.reserveOrder)
+          ? (stored.reserveOrder.filter((x) => typeof x === 'string') as string[])
+          : null;
 
       const normalize = (arr: string[] | null) => {
         if (!arr) return [];
@@ -271,38 +432,114 @@ export function RaidRosterPlanner({
         return out;
       };
 
-      let nextRoster = normalize(storedRoster);
       let nextReserve = normalize(storedReserve);
 
-      // If we have no stored order yet, derive from leaderPlacement.
-      if (nextRoster.length === 0 && nextReserve.length === 0) {
-        nextRoster = ids.filter((id) => placementOf(id) === 'confirmed');
-        nextReserve = ids.filter((id) => placementOf(id) === 'substitute');
+      const defaultGroup = (): PlannerGroup => ({
+        rosterOrder: [],
+        raidLeaderUserId: initialRaidLeaderUserId,
+        lootmasterUserId: initialLootmasterUserId,
+      });
+
+      let nextGroups: PlannerGroup[];
+
+      const rawGroups = stored && Array.isArray(stored.groups) ? stored.groups : null;
+      if (rawGroups && rawGroups.length > 0) {
+        nextGroups = rawGroups.map((g, idx) => {
+          const o = g as Record<string, unknown>;
+          const ordRaw = o.rosterOrder;
+          const ord = Array.isArray(ordRaw)
+            ? normalize(ordRaw.filter((x): x is string => typeof x === 'string'))
+            : [];
+          const rl =
+            typeof o.raidLeaderUserId === 'string' && o.raidLeaderUserId.trim()
+              ? o.raidLeaderUserId.trim()
+              : idx === 0
+                ? initialRaidLeaderUserId
+                : null;
+          const lm =
+            typeof o.lootmasterUserId === 'string' && o.lootmasterUserId.trim()
+              ? o.lootmasterUserId.trim()
+              : idx === 0
+                ? initialLootmasterUserId
+                : null;
+          return { rosterOrder: ord, raidLeaderUserId: rl, lootmasterUserId: lm };
+        });
+        if (nextReserve.length === 0) {
+          nextReserve = ids.filter((id) => placementOf(id) === 'substitute');
+        }
+      } else {
+        let nextRoster = normalize(storedRoster);
+        if (nextRoster.length === 0 && nextReserve.length === 0) {
+          nextRoster = ids.filter((id) => placementOf(id) === 'confirmed');
+          nextReserve = ids.filter((id) => placementOf(id) === 'substitute');
+        }
+        const placed = new Set([...nextRoster, ...nextReserve]);
+        const remaining = ids.filter((id) => !placed.has(id));
+        for (const id of remaining) {
+          const p = placementOf(id);
+          if (p === 'confirmed') nextRoster.push(id);
+          else if (p === 'substitute') nextReserve.push(id);
+        }
+        nextRoster = nextRoster.filter((id) => placementOf(id) === 'confirmed');
+        nextReserve = nextReserve.filter((id) => placementOf(id) === 'substitute');
+        nextGroups = [
+          {
+            rosterOrder: nextRoster,
+            raidLeaderUserId: initialRaidLeaderUserId,
+            lootmasterUserId: initialLootmasterUserId,
+          },
+        ];
       }
 
-      // Ensure ids are in the correct column according to leaderPlacement (if stored data drifted).
-      const placed = new Set([...nextRoster, ...nextReserve]);
-      const remaining = ids.filter((id) => !placed.has(id));
-      for (const id of remaining) {
-        const p = placementOf(id);
-        if (p === 'confirmed') nextRoster.push(id);
-        else if (p === 'substitute') nextReserve.push(id);
-      }
-
-      // Filter out wrong placements if underlying DB changed
-      nextRoster = nextRoster.filter((id) => placementOf(id) === 'confirmed');
       nextReserve = nextReserve.filter((id) => placementOf(id) === 'substitute');
 
-      setRosterOrder(nextRoster);
+      const placedRoster = new Set(allRosterIds(nextGroups));
+      for (const id of ids) {
+        if (placedRoster.has(id) || nextReserve.includes(id)) continue;
+        const p = placementOf(id);
+        if (p === 'substitute') nextReserve.push(id);
+      }
+      nextReserve = nextReserve.filter((id) => placementOf(id) === 'substitute');
+
+      nextGroups = dedupeRosterIdsAcrossGroups(
+        nextGroups.map((g) => ({
+          ...g,
+          rosterOrder: g.rosterOrder.filter((id) => placementOf(id) === 'confirmed'),
+        }))
+      );
+
+      if (nextGroups.length === 0) {
+        nextGroups = [defaultGroup()];
+      }
+
+      const rosterSet = new Set(allRosterIds(nextGroups));
+      const missingConfirmed = ids.filter(
+        (id) => placementOf(id) === 'confirmed' && !rosterSet.has(id) && !nextReserve.includes(id)
+      );
+      if (missingConfirmed.length > 0) {
+        nextGroups = nextGroups.map((g, i) =>
+          i === 0 ? { ...g, rosterOrder: [...g.rosterOrder, ...missingConfirmed] } : g
+        );
+        nextGroups = dedupeRosterIdsAcrossGroups(nextGroups);
+      }
+
+      setPlannerGroups(nextGroups);
       setReserveOrder(nextReserve);
 
       setSavedSnapshot({
         signups: rows,
-        rosterOrder: nextRoster,
+        plannerGroups: nextGroups,
         reserveOrder: nextReserve,
+        leaderNotesHtml: initialPlannerLeaderNotesHtml ?? '',
       });
     },
-    [orderStorageKey]
+    [
+      orderStorageKey,
+      initialRaidLeaderUserId,
+      initialLootmasterUserId,
+      initialPlannerLeaderNotesHtml,
+      persistedServerPlannerOrder,
+    ]
   );
 
   useEffect(() => {
@@ -334,7 +571,26 @@ export function RaidRosterPlanner({
   const [leaderMenuOpen, setLeaderMenuOpen] = useState(false);
   const [leaderMenuPos, setLeaderMenuPos] = useState<{ top: number; left: number } | null>(null);
 
-  const [openNote, setOpenNote] = useState<{ name: string; note: string } | null>(null);
+  type FloatingSignupNoteState = {
+    playerLabel: string;
+    charName: string;
+    punctualityLabel: string;
+    note: string;
+    left: number;
+    top: number;
+  };
+  const [floatingSignupNote, setFloatingSignupNote] = useState<FloatingSignupNoteState | null>(null);
+  const [allSignupNotesOpen, setAllSignupNotesOpen] = useState(false);
+  const floatingNotePanelRef = useRef<HTMLDivElement | null>(null);
+  const [leaderNotesExpanded, setLeaderNotesExpanded] = useState(false);
+  const [leaderNotesHtml, setLeaderNotesHtml] = useState(() => initialPlannerLeaderNotesHtml ?? '');
+  const [notesBootstrapKey, setNotesBootstrapKey] = useState(0);
+
+  useEffect(() => {
+    setLeaderNotesHtml(initialPlannerLeaderNotesHtml ?? '');
+    setNotesBootstrapKey((k) => k + 1);
+  }, [raidId, initialPlannerLeaderNotesHtml]);
+
   const [blinkDiscordForIds, setBlinkDiscordForIds] = useState<Set<string>>(() => new Set());
 
   const [filtersOpen, setFiltersOpen] = useState(true);
@@ -359,7 +615,7 @@ export function RaidRosterPlanner({
   const [dragPoint, setDragPoint] = useState<{ clientX: number; clientY: number } | null>(null);
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
 
-  const rosterListRef = useRef<HTMLDivElement>(null);
+  const rosterListRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const scheduledAt = useMemo(() => new Date(raid.scheduledAt), [raid.scheduledAt]);
   const scheduledEndAt = raid.scheduledEndAt ? new Date(raid.scheduledEndAt) : null;
@@ -371,63 +627,106 @@ export function RaidRosterPlanner({
   }).format(scheduledAt);
   const raidTermin = formatRaidTerminLine(intlLocale, scheduledAt, scheduledEndAt);
 
-  const rosterRoleCounts = useMemo(() => {
-    const out: Record<(typeof ROLE_KEYS)[number], number> = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
-    for (const id of rosterOrder) {
-      const s = byId.get(id);
-      if (!s) continue;
-      const r = s.role;
-      if (r === 'Tank' || r === 'Melee' || r === 'Range' || r === 'Healer') out[r] += 1;
+  const leaderLootUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of guildCharacters) {
+      const u = c.userId.trim();
+      if (u) ids.add(u);
     }
-    return out;
-  }, [rosterOrder, byId]);
+    for (const s of signups) {
+      const u = (s.userId ?? '').trim();
+      if (u) ids.add(u);
+    }
+    const discordForSort = (uid: string) => {
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid || !c.isMain) continue;
+        const d = c.guildDiscordDisplayName?.trim();
+        if (d) return d.toLowerCase();
+      }
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid) continue;
+        const d = c.guildDiscordDisplayName?.trim();
+        if (d) return d.toLowerCase();
+      }
+      for (const s of signups) {
+        if ((s.userId ?? '').trim() !== uid) continue;
+        const d = s.discordName?.trim();
+        if (d) return d.toLowerCase();
+      }
+      return uid.toLowerCase();
+    };
+    return [...ids].sort((a, b) => discordForSort(a).localeCompare(discordForSort(b), intlLocale));
+  }, [guildCharacters, signups, intlLocale]);
 
-  const rosterMinSpecKeyCounts = useMemo(() => {
-    const out = new Map<string, number>();
-    const minSpecs = overviewProps.minSpecsObj
-      ? Object.entries(overviewProps.minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
-      : [];
-    for (const [key] of minSpecs) {
-      let n = 0;
-      for (const id of rosterOrder) {
-        const s = byId.get(id);
-        if (!s) continue;
-        const spec = (s.signedSpec?.trim() || s.mainSpec?.trim() || '').trim();
-        if (!spec) continue;
-        if (isMinSpecClassKey(key)) {
-          const cid = parseMinSpecClassKey(key);
-          if (cid && getSpecByDisplayName(spec)?.classId === cid) n++;
-        } else if (spec === key) {
-          n++;
+  const formatLeaderLootOptionLabel = useCallback(
+    (userId: string, rosterOrder: string[]) => {
+      const uid = userId.trim();
+      let discord = '';
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid || !c.isMain) continue;
+        const d = c.guildDiscordDisplayName?.trim();
+        if (d) {
+          discord = d;
+          break;
         }
       }
-      out.set(key, n);
-    }
-    return out;
-  }, [overviewProps.minSpecsObj, rosterOrder, byId]);
+      if (!discord) {
+        for (const c of guildCharacters) {
+          if (c.userId.trim() !== uid) continue;
+          const d = c.guildDiscordDisplayName?.trim();
+          if (d) {
+            discord = d;
+            break;
+          }
+        }
+      }
+      if (!discord) {
+        for (const s of signups) {
+          if ((s.userId ?? '').trim() !== uid) continue;
+          const d = s.discordName?.trim();
+          if (d) {
+            discord = d;
+            break;
+          }
+        }
+      }
+      if (!discord) discord = t('signupAnonymous');
 
-  const rosterMinFulfillmentRatio = useMemo(() => {
-    const roleMin = overviewProps.roleMinByKey;
-    const ratios: number[] = [];
-    for (const k of ROLE_KEYS) {
-      const need = roleMin[k] ?? 0;
-      if (need <= 0) continue;
-      ratios.push(Math.min(1, (rosterRoleCounts[k] ?? 0) / need));
-    }
-    const minSpecs = overviewProps.minSpecsObj
-      ? Object.entries(overviewProps.minSpecsObj).filter(([, n]) => typeof n === 'number' && n > 0)
-      : [];
-    for (const [spec, need] of minSpecs) {
-      ratios.push(Math.min(1, (rosterMinSpecKeyCounts.get(spec) ?? 0) / need));
-    }
-    if (ratios.length === 0) return null;
-    return ratios.reduce((a, b) => a + b, 0) / ratios.length;
-  }, [overviewProps, rosterRoleCounts, rosterMinSpecKeyCounts]);
+      let charName = '';
+      for (const sid of rosterOrder) {
+        const s = byId.get(sid);
+        if (!s || (s.userId ?? '').trim() !== uid) continue;
+        charName = s.name.trim();
+        break;
+      }
+      if (!charName) charName = tRoster('leaderOptionCharMissing');
+
+      return `${discord} @ ${charName}`;
+    },
+    [byId, guildCharacters, signups, t, tRoster]
+  );
 
   const poolIds = useMemo(() => {
-    const placed = new Set([...rosterOrder, ...reserveOrder]);
+    const placed = new Set([...allRosterIds(plannerGroups), ...reserveOrder]);
     return signups.map((s) => s.id).filter((id) => !placed.has(id));
-  }, [signups, rosterOrder, reserveOrder]);
+  }, [signups, plannerGroups, reserveOrder]);
+
+  const signupsWithNotesList = useMemo(() => {
+    return signups
+      .filter((s) => (s.note?.trim() ?? '').length > 0)
+      .map((s) => {
+        const p = punctualityOf(s);
+        const punctLabel =
+          p === 'on_time' ? t('punctualityOnTime') : p === 'tight' ? t('punctualityTight') : t('punctualityLate');
+        return {
+          id: s.id,
+          playerLabel: s.discordName?.trim() || t('signupAnonymous'),
+          charName: s.name,
+          punctualityLabel: punctLabel,
+          note: (s.note ?? '').trim(),
+        };
+      });
+  }, [signups, t]);
 
   const usedCharacterIds = useMemo(() => {
     const set = new Set<string>();
@@ -534,13 +833,31 @@ export function RaidRosterPlanner({
       if (e.key === 'Escape') {
         setLeaderMenuOpen(false);
         setLeaderMenuPos(null);
-        setOpenNote(null);
+        setFloatingSignupNote(null);
+        setAllSignupNotesOpen(false);
         setAddOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  useEffect(() => {
+    if (!floatingSignupNote) return;
+    let handler: ((e: MouseEvent) => void) | null = null;
+    const id = window.setTimeout(() => {
+      handler = (e: MouseEvent) => {
+        const el = floatingNotePanelRef.current;
+        if (el && e.target instanceof Node && el.contains(e.target)) return;
+        setFloatingSignupNote(null);
+      };
+      document.addEventListener('mousedown', handler);
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+      if (handler) document.removeEventListener('mousedown', handler);
+    };
+  }, [floatingSignupNote]);
 
   const toggleRole = (r: TbcRole) => {
     setRoleFilter((prev) => {
@@ -585,22 +902,24 @@ export function RaidRosterPlanner({
 
     const onUp = (e: PointerEvent) => {
       if (e.pointerId !== sess.pointerId) return;
-      const target = findDropZone(e.clientX, e.clientY);
+      const target = findDropTarget(e.clientX, e.clientY);
       const id = sess.signupId;
       const origin = sess.originRect;
 
       const applyPool = () => {
-        setRosterOrder((o) => o.filter((x) => x !== id));
+        setPlannerGroups((groups) =>
+          groups.map((g) => ({ ...g, rosterOrder: g.rosterOrder.filter((x) => x !== id) }))
+        );
         setReserveOrder((o) => o.filter((x) => x !== id));
       };
 
-      if (target === 'pool') {
+      if (target?.kind === 'pool') {
         applyPool();
         endDrag();
         return;
       }
 
-      if (target === 'reserve') {
+      if (target?.kind === 'reserve') {
         const dragged = byId.get(id);
         if (dragged?.forbidReserve) {
           setPulseForbidReserveId(id);
@@ -619,21 +938,38 @@ export function RaidRosterPlanner({
           endDrag();
           return;
         }
-        setRosterOrder((o) => o.filter((x) => x !== id));
+        setPlannerGroups((groups) =>
+          groups.map((g) => ({ ...g, rosterOrder: g.rosterOrder.filter((x) => x !== id) }))
+        );
         setReserveOrder((o) => (o.includes(id) ? o : [...o, id]));
         endDrag();
         return;
       }
 
-      if (target === 'roster') {
-        const dragged = byId.get(id);
-        const draggedUserId = dragged?.userId ?? null;
-        if (draggedUserId) {
-          const conflictId = rosterOrder.find((otherId) => {
-            if (otherId === id) return false;
-            const other = byId.get(otherId);
-            return (other?.userId ?? null) === draggedUserId;
+      if (target?.kind === 'roster') {
+        const destGi = target.groupIndex;
+        if (destGi < 0 || destGi >= plannerGroups.length) {
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
           });
+          endDrag();
+          return;
+        }
+
+        const dragged = byId.get(id);
+        const draggedUserId = (dragged?.userId ?? '').trim() || null;
+        if (draggedUserId) {
+          const groupsSans = plannerGroups.map((g) => ({
+            ...g,
+            rosterOrder: g.rosterOrder.filter((x) => x !== id),
+          }));
+          const conflictId = findUserRosterConflict(groupsSans, byId, id, draggedUserId);
           if (conflictId) {
             setBlinkDiscordForIds(setFromArray([id, conflictId]));
             window.setTimeout(() => setBlinkDiscordForIds(new Set()), 900);
@@ -650,14 +986,21 @@ export function RaidRosterPlanner({
             return;
           }
         }
-        const el = rosterListRef.current;
+
+        const el = rosterListRefs.current[destGi];
         const insertAt = el ? rosterInsertIndex(el, e.clientY, id) : 0;
         setReserveOrder((o) => o.filter((x) => x !== id));
-        setRosterOrder((o) => {
-          const without = o.filter((x) => x !== id);
-          const next = [...without];
-          next.splice(insertAt, 0, id);
-          return next;
+        setPlannerGroups((groups) => {
+          const sans = groups.map((g) => ({
+            ...g,
+            rosterOrder: g.rosterOrder.filter((x) => x !== id),
+          }));
+          return sans.map((g, gi) => {
+            if (gi !== destGi) return g;
+            const next = [...g.rosterOrder];
+            next.splice(insertAt, 0, id);
+            return { ...g, rosterOrder: next };
+          });
         });
         endDrag();
         return;
@@ -683,7 +1026,7 @@ export function RaidRosterPlanner({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragSession, endDrag, byId, rosterOrder]);
+  }, [dragSession, endDrag, byId, plannerGroups]);
 
   const onRowPointerDown = (
     e: React.PointerEvent,
@@ -841,7 +1184,25 @@ export function RaidRosterPlanner({
               aria-label={t('participantNotiz')}
               onClick={(e) => {
                 e.stopPropagation();
-                setOpenNote({ name: s.name, note });
+                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+                const panelW = 300;
+                const left = Math.max(8, Math.min(rect.left, window.innerWidth - panelW - 8));
+                const top = Math.min(rect.bottom + 6, window.innerHeight - 8);
+                const punct = punctualityOf(s);
+                const punctLbl =
+                  punct === 'on_time'
+                    ? t('punctualityOnTime')
+                    : punct === 'tight'
+                      ? t('punctualityTight')
+                      : t('punctualityLate');
+                setFloatingSignupNote({
+                  playerLabel: s.discordName?.trim() || t('signupAnonymous'),
+                  charName: s.name,
+                  punctualityLabel: punctLbl,
+                  note,
+                  left,
+                  top,
+                });
               }}
             >
               📒
@@ -876,6 +1237,7 @@ export function RaidRosterPlanner({
         originalSignedSpec: addSelected.mainSpec,
         onlySignedSpec: false,
         signupType: 'normal',
+        leaderPlacement: 'signup',
         isLate: false,
         punctuality: 'on_time',
         forbidReserve: false,
@@ -909,8 +1271,20 @@ export function RaidRosterPlanner({
     setSaving(true);
     setSaveError(null);
     try {
+      const rosterFlat = allRosterIds(plannerGroups);
+      for (const rid of rosterFlat) {
+        const row = byId.get(rid);
+        const uid = (row?.userId ?? '').trim();
+        if (!uid) continue;
+        if (findUserRosterConflict(plannerGroups, byId, rid, uid)) {
+          setSaveError(tRoster('saveErrorDiscordMultiGroup'));
+          setSaving(false);
+          return;
+        }
+      }
+
       const placementForId = (id: string): 'signup' | 'substitute' | 'confirmed' => {
-        if (rosterOrder.includes(id)) return 'confirmed';
+        if (rosterFlat.includes(id)) return 'confirmed';
         if (reserveOrder.includes(id)) return 'substitute';
         return 'signup';
       };
@@ -976,33 +1350,147 @@ export function RaidRosterPlanner({
         if (m) mappings.push(m);
       }
 
+      let snapshotSignups = signups;
+      let snapshotGroups = plannerGroups;
+      let snapshotReserve = reserveOrder;
+
       if (mappings.length > 0) {
         const map = new Map(mappings.map((m) => [m.oldId, m.newId]));
-        setSignups((prev) =>
-          prev.map((row) => {
-            const nid = map.get(row.id);
-            if (!nid) return row;
-            return { ...row, id: nid, leaderPlacement: placementForId(row.id) };
-          })
+        snapshotSignups = signups.map((row) => {
+          const nid = map.get(row.id);
+          if (!nid) return row;
+          return { ...row, id: nid, leaderPlacement: placementForId(row.id) };
+        });
+        snapshotGroups = plannerGroups.map((g) => ({
+          ...g,
+          rosterOrder: g.rosterOrder.map((id) => map.get(id) ?? id),
+        }));
+        snapshotReserve = reserveOrder.map((id) => map.get(id) ?? id);
+        setSignups(snapshotSignups);
+        setPlannerGroups(snapshotGroups);
+        setReserveOrder(snapshotReserve);
+      }
+
+      const notesToSave = sanitizePlannerLeaderHtml(leaderNotesHtml);
+      if (canEditRaid) {
+        const resRaid = await fetch(
+          `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plannerLeaderNotesHtml: notesToSave || null }),
+          }
         );
-        setRosterOrder((prev) => prev.map((id) => map.get(id) ?? id));
-        setReserveOrder((prev) => prev.map((id) => map.get(id) ?? id));
+        if (!resRaid.ok) {
+          const txt = await resRaid.text().catch(() => '');
+          throw new Error(txt || 'Failed to save raid planner notes');
+        }
       }
 
       // Persist order locally for next visit.
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(
           orderStorageKey,
-          JSON.stringify({ rosterOrder, reserveOrder })
+          JSON.stringify({ groups: snapshotGroups, reserveOrder: snapshotReserve })
         );
       }
 
       setSavedSnapshot({
-        signups,
-        rosterOrder,
-        reserveOrder,
+        signups: snapshotSignups,
+        plannerGroups: snapshotGroups,
+        reserveOrder: snapshotReserve,
+        leaderNotesHtml: notesToSave,
       });
       setLastSavedAt(Date.now());
+      router.refresh();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function removePlannerGroupAt(groupIndex: number) {
+    if (plannerGroups.length <= 1) return;
+    if (!window.confirm(tRoster('removeGroupConfirm'))) return;
+    const removed = plannerGroups[groupIndex];
+    if (!removed) return;
+    const removedRoster = [...removed.rosterOrder];
+    const nextGroups = plannerGroups.filter((_, i) => i !== groupIndex);
+    const otherSet = new Set(allRosterIds(nextGroups));
+    const rowById = new Map(signups.map((s) => [s.id, s]));
+
+    setSignups((prev) =>
+      prev.map((s) => {
+        if (!removedRoster.includes(s.id) || otherSet.has(s.id)) return s;
+        const wantsReserve = s.signupType === 'reserve';
+        return {
+          ...s,
+          leaderPlacement: wantsReserve ? 'substitute' : 'signup',
+        };
+      })
+    );
+
+    setReserveOrder((prev) => {
+      const next = prev.filter((id) => {
+        if (!removedRoster.includes(id)) return true;
+        if (otherSet.has(id)) return true;
+        return false;
+      });
+      for (const id of removedRoster) {
+        if (otherSet.has(id)) continue;
+        const row = rowById.get(id);
+        if (row?.signupType === 'reserve' && !next.includes(id)) {
+          next.push(id);
+        }
+      }
+      return next;
+    });
+
+    setPlannerGroups(nextGroups);
+  }
+
+  async function doAnnounceRaid() {
+    if (raidStatus !== 'open' || saving) return;
+    if (signups.some((s) => s.id.startsWith('manual:'))) {
+      setSaveError(tRoster('announceSaveManualFirst'));
+      return;
+    }
+    const rosterFlat = allRosterIds(plannerGroups);
+    for (const rid of rosterFlat) {
+      const row = byId.get(rid);
+      const uid = (row?.userId ?? '').trim();
+      if (!uid) continue;
+      if (findUserRosterConflict(plannerGroups, byId, rid, uid)) {
+        setSaveError(tRoster('saveErrorDiscordMultiGroup'));
+        return;
+      }
+    }
+    if (!window.confirm(tRoster('announceConfirm'))) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch(
+        `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'announce',
+            groups: plannerGroups.map((g) => ({
+              rosterOrder: g.rosterOrder,
+              raidLeaderUserId: g.raidLeaderUserId,
+              lootmasterUserId: g.lootmasterUserId,
+            })),
+            reserveOrder,
+          }),
+        }
+      );
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '');
+        throw new Error(txt || tRoster('announceError'));
+      }
+      router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
       router.refresh();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
@@ -1015,8 +1503,10 @@ export function RaidRosterPlanner({
     if (!savedSnapshot) return;
     setSaveError(null);
     setSignups(savedSnapshot.signups);
-    setRosterOrder(savedSnapshot.rosterOrder);
+    setPlannerGroups(savedSnapshot.plannerGroups);
     setReserveOrder(savedSnapshot.reserveOrder);
+    setLeaderNotesHtml(savedSnapshot.leaderNotesHtml);
+    setNotesBootstrapKey((k) => k + 1);
   }
 
   function doCancelToDashboard() {
@@ -1105,6 +1595,33 @@ export function RaidRosterPlanner({
         </div>
       </section>
 
+      <div
+        className={cn(
+          'transition-opacity duration-200',
+          dragActive && 'opacity-35 pointer-events-none'
+        )}
+      >
+        <PlannerLeaderNotesCollapsible
+          bootstrapKey={notesBootstrapKey}
+          bootstrapHtml={leaderNotesHtml}
+          bodyHtmlForPreview={leaderNotesHtml}
+          expanded={leaderNotesExpanded}
+          onExpandedChange={setLeaderNotesExpanded}
+          onHtmlChange={setLeaderNotesHtml}
+          disabled={!canEditRaid}
+          labels={{
+            title: tRoster('leaderPlanNotes'),
+            expand: tRoster('leaderPlanNotesExpand'),
+            collapse: tRoster('leaderPlanNotesCollapse'),
+            bold: tRoster('richBold'),
+            italic: tRoster('richItalic'),
+            underline: tRoster('richUnderline'),
+            bullets: tRoster('richBullets'),
+            hint: tRoster('leaderPlanNotesHint'),
+          }}
+        />
+      </div>
+
       <section
         aria-label={tRoster('actions')}
         className={cn(
@@ -1112,8 +1629,8 @@ export function RaidRosterPlanner({
           dragActive && 'opacity-35 pointer-events-none'
         )}
       >
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] gap-3 items-center">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-self-start">
             <button
               type="button"
               onClick={() => void doSaveDraft()}
@@ -1154,17 +1671,31 @@ export function RaidRosterPlanner({
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <div className="flex justify-center order-first sm:order-none">
             <button
               type="button"
-              onClick={() => {
-                // Dummy for now; logic will be delivered later.
-                window.alert(tRoster('announceSoon'));
-              }}
+              onClick={() => setAllSignupNotesOpen(true)}
+              disabled={signupsWithNotesList.length === 0}
+              className={cn(
+                'rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors',
+                signupsWithNotesList.length === 0 && 'opacity-50 cursor-not-allowed'
+              )}
+              title={tRoster('allSignupNotes')}
+            >
+              {tRoster('allSignupNotes')}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 sm:justify-self-end justify-end">
+            <button
+              type="button"
+              onClick={() => void doAnnounceRaid()}
+              disabled={saving || raidStatus !== 'open'}
               className={cn(
                 'rounded-md px-3 py-2 text-sm font-semibold transition-colors',
                 'bg-emerald-600 text-white hover:bg-emerald-700',
-                'dark:bg-emerald-500 dark:hover:bg-emerald-600'
+                'dark:bg-emerald-500 dark:hover:bg-emerald-600',
+                (saving || raidStatus !== 'open') && 'opacity-60 cursor-not-allowed'
               )}
               title={tRoster('announce')}
             >
@@ -1205,71 +1736,191 @@ export function RaidRosterPlanner({
       <div className="flex flex-col xl:flex-row gap-4 items-start">
         <div className="flex-1 min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-4 w-full order-2 xl:order-1">
           <div className="space-y-4 min-w-0">
-            <div
-              data-drop-zone="roster"
-              className={cn(
-                'rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden min-h-[120px] transition-[box-shadow] duration-200',
-                dragActive && 'ring-2 ring-primary/45 ring-offset-2 ring-offset-background'
-              )}
+            <button
+              type="button"
+              onClick={() =>
+                setPlannerGroups((prev) => [
+                  ...prev,
+                  {
+                    rosterOrder: [],
+                    raidLeaderUserId: initialRaidLeaderUserId,
+                    lootmasterUserId: initialLootmasterUserId,
+                  },
+                ])
+              }
+              className="w-full rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/30 transition-colors"
             >
-              <div className="border-b border-border bg-muted/20 px-4 py-3 space-y-2">
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-sm font-semibold text-foreground">{tRoster('rosterTitle')}</h2>
-                  <div className={cn('text-lg font-bold tabular-nums leading-none', toneForFulfillment(rosterMinFulfillmentRatio))}>
-                    {rosterOrder.length} / {raid.maxPlayers}
+              {tRoster('addGroup')}
+            </button>
+
+            {plannerGroups.map((group, groupIndex) => {
+              const gRatio = rosterMinFulfillmentRatioForOrder(group.rosterOrder, byId, overviewProps);
+              const gRoleCounts = roleCountsForRosterOrder(group.rosterOrder, byId);
+              const gSpecCounts = minSpecKeyCountsForRosterOrder(
+                group.rosterOrder,
+                byId,
+                overviewProps.minSpecsObj
+              );
+              const rlUid = group.raidLeaderUserId;
+              const lmUid = group.lootmasterUserId;
+              const rlInRoster =
+                !!rlUid &&
+                group.rosterOrder.some((sid) => (byId.get(sid)?.userId ?? '').trim() === rlUid);
+              const lmInRoster =
+                !!lmUid &&
+                group.rosterOrder.some((sid) => (byId.get(sid)?.userId ?? '').trim() === lmUid);
+
+              return (
+                <div
+                  key={`roster-group-${groupIndex}`}
+                  data-drop-zone="roster"
+                  data-roster-group={String(groupIndex)}
+                  className={cn(
+                    'rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden min-h-[120px] transition-[box-shadow] duration-200',
+                    dragActive && 'ring-2 ring-primary/45 ring-offset-2 ring-offset-background'
+                  )}
+                >
+                  <div className="border-b border-border bg-muted/20 px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
+                        <h2 className="text-sm font-semibold text-foreground">
+                          {tRoster('groupTitle', { n: groupIndex + 1 })}
+                        </h2>
+                        {plannerGroups.length > 1 ? (
+                          <button
+                            type="button"
+                            onClick={() => removePlannerGroupAt(groupIndex)}
+                            className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors"
+                            title={tRoster('removeGroup')}
+                          >
+                            {tRoster('removeGroup')}
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className={cn('text-lg font-bold tabular-nums leading-none', toneForFulfillment(gRatio))}>
+                        {group.rosterOrder.length} / {raid.maxPlayers}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <label className="flex flex-col gap-1 text-xs">
+                        <span className="text-muted-foreground">{tPlanner('raidLeader')}</span>
+                        <select
+                          className={cn(
+                            'rounded-md border bg-background px-2 py-1.5 text-sm',
+                            !rlUid
+                              ? 'border-input'
+                              : rlInRoster
+                                ? 'border-green-600/70 dark:border-green-500/60'
+                                : 'border-amber-600/60 dark:border-amber-500/50'
+                          )}
+                          value={rlUid ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value.trim();
+                            setPlannerGroups((prev) =>
+                              prev.map((g, i) =>
+                                i === groupIndex ? { ...g, raidLeaderUserId: v || null } : g
+                              )
+                            );
+                          }}
+                        >
+                          <option value="">{tPlanner('lootmasterNone')}</option>
+                          {leaderLootUserIds.map((uid) => (
+                            <option key={`${groupIndex}-rl-${uid}`} value={uid}>
+                              {formatLeaderLootOptionLabel(uid, group.rosterOrder)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs">
+                        <span className="text-muted-foreground">{tPlanner('lootmaster')}</span>
+                        <select
+                          className={cn(
+                            'rounded-md border bg-background px-2 py-1.5 text-sm',
+                            !lmUid
+                              ? 'border-input'
+                              : lmInRoster
+                                ? 'border-green-600/70 dark:border-green-500/60'
+                                : 'border-amber-600/60 dark:border-amber-500/50'
+                          )}
+                          value={lmUid ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value.trim();
+                            setPlannerGroups((prev) =>
+                              prev.map((g, i) =>
+                                i === groupIndex ? { ...g, lootmasterUserId: v || null } : g
+                              )
+                            );
+                          }}
+                        >
+                          <option value="">{tPlanner('lootmasterNone')}</option>
+                          {leaderLootUserIds.map((uid) => (
+                            <option key={`${groupIndex}-lm-${uid}`} value={uid}>
+                              {formatLeaderLootOptionLabel(uid, group.rosterOrder)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                      {ROLE_KEYS.map((roleKey) => {
+                        const need = overviewProps.roleMinByKey[roleKey] ?? 0;
+                        if (need <= 0) return null;
+                        const cur = gRoleCounts[roleKey] ?? 0;
+                        return (
+                          <span key={roleKey} className="inline-flex items-center gap-1.5">
+                            <RoleIcon role={roleKey} size={16} />
+                            <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
+                              {countToMinLabel(cur, need)}
+                            </span>
+                          </span>
+                        );
+                      })}
+
+                      {overviewProps.minSpecsObj
+                        ? Object.entries(overviewProps.minSpecsObj)
+                            .filter(([, need]) => typeof need === 'number' && need > 0)
+                            .map(([specKey, need]) => {
+                              const cur = gSpecCounts.get(specKey) ?? 0;
+                              const classId = parseMinSpecClassKey(specKey);
+                              const title = minSpecKeyTitle(specKey, tProfile);
+                              return (
+                                <span key={specKey} className="inline-flex items-center gap-1.5" title={title}>
+                                  {classId ? (
+                                    <ClassIcon classId={classId} size={16} title={title} />
+                                  ) : (
+                                    <SpecIcon spec={specKey} size={16} />
+                                  )}
+                                  <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
+                                    {countToMinLabel(cur, need)}
+                                  </span>
+                                </span>
+                              );
+                            })
+                        : null}
+                    </div>
+                  </div>
+                  <div
+                    ref={(el) => {
+                      rosterListRefs.current[groupIndex] = el;
+                    }}
+                    className="p-3 space-y-2"
+                    role="list"
+                  >
+                    {group.rosterOrder.length === 0 ? (
+                      <p className="text-sm text-muted-foreground px-1 py-4 text-center">{tRoster('rosterEmpty')}</p>
+                    ) : (
+                      group.rosterOrder.map((id, i) => {
+                        const s = byId.get(id);
+                        if (!s) return null;
+                        return renderRow(s, 'roster', i);
+                      })
+                    )}
                   </div>
                 </div>
-
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
-                  {ROLE_KEYS.map((roleKey) => {
-                    const need = overviewProps.roleMinByKey[roleKey] ?? 0;
-                    if (need <= 0) return null;
-                    const cur = rosterRoleCounts[roleKey] ?? 0;
-                    return (
-                      <span key={roleKey} className="inline-flex items-center gap-1.5">
-                        <RoleIcon role={roleKey} size={16} />
-                        <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
-                          {countToMinLabel(cur, need)}
-                        </span>
-                      </span>
-                    );
-                  })}
-
-                  {overviewProps.minSpecsObj
-                    ? Object.entries(overviewProps.minSpecsObj)
-                        .filter(([, need]) => typeof need === 'number' && need > 0)
-                        .map(([specKey, need]) => {
-                          const cur = rosterMinSpecKeyCounts.get(specKey) ?? 0;
-                          const classId = parseMinSpecClassKey(specKey);
-                          const title = minSpecKeyTitle(specKey, tProfile);
-                          return (
-                            <span key={specKey} className="inline-flex items-center gap-1.5" title={title}>
-                              {classId ? (
-                                <ClassIcon classId={classId} size={16} title={title} />
-                              ) : (
-                                <SpecIcon spec={specKey} size={16} />
-                              )}
-                              <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
-                                {countToMinLabel(cur, need)}
-                              </span>
-                            </span>
-                          );
-                        })
-                    : null}
-                </div>
-              </div>
-              <div ref={rosterListRef} className="p-3 space-y-2" role="list">
-                {rosterOrder.length === 0 ? (
-                  <p className="text-sm text-muted-foreground px-1 py-4 text-center">{tRoster('rosterEmpty')}</p>
-                ) : (
-                  rosterOrder.map((id, i) => {
-                    const s = byId.get(id);
-                    if (!s) return null;
-                    return renderRow(s, 'roster', i);
-                  })
-                )}
-              </div>
-            </div>
+              );
+            })}
 
             <div
               data-drop-zone="reserve"
@@ -1734,41 +2385,90 @@ export function RaidRosterPlanner({
           )
         : null}
 
-      {openNote
+      {floatingSignupNote
         ? createPortal(
-            <div className="fixed inset-0 z-[1210]">
-              <div
-                className="absolute inset-0 bg-black/50"
-                onMouseDown={() => setOpenNote(null)}
-                role="button"
-                tabIndex={0}
-                aria-label="Close"
-              />
-              <div className="absolute inset-0 flex items-start justify-center p-4 sm:p-6">
-                <div
-                  className="w-full max-w-lg rounded-xl border border-border bg-background shadow-xl overflow-hidden"
-                  onMouseDown={(e) => e.stopPropagation()}
+            <div
+              ref={floatingNotePanelRef}
+              className="fixed z-[1220] w-[min(100vw-16px,300px)] max-h-[min(70vh,420px)] overflow-y-auto rounded-lg border border-border bg-background shadow-2xl text-sm pointer-events-auto"
+              style={{ left: floatingSignupNote.left, top: floatingSignupNote.top }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 flex items-center justify-between gap-2 border-b border-border bg-muted/30 px-3 py-2">
+                <span className="text-xs font-semibold text-foreground">{t('participantNotiz')}</span>
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0 text-xs"
+                  onClick={() => setFloatingSignupNote(null)}
+                  aria-label={tPlanner('cancel')}
+                  title={tPlanner('cancel')}
                 >
-                  <div className="border-b border-border bg-muted/20 px-4 py-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-foreground">{openNote.name}</p>
-                      <p className="text-xs text-muted-foreground">{t('participantNotiz')}</p>
-                    </div>
-                    <button
-                      type="button"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0"
-                      onClick={() => setOpenNote(null)}
-                      aria-label={tPlanner('cancel')}
-                      title={tPlanner('cancel')}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div className="p-4">
-                    <div className="rounded-lg border border-border bg-muted/15 p-3 text-sm whitespace-pre-wrap">
-                      {openNote.note}
-                    </div>
-                  </div>
+                  ✕
+                </button>
+              </div>
+              <div className="p-3 space-y-2">
+                <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs">
+                  <span className="text-muted-foreground">{tRoster('columnPlayer')}</span>
+                  <span className="font-medium text-foreground break-words">{floatingSignupNote.playerLabel}</span>
+                  <span className="text-muted-foreground">{tRoster('columnChar')}</span>
+                  <span className="font-medium text-foreground break-words">{floatingSignupNote.charName}</span>
+                  <span className="text-muted-foreground">{tRoster('columnPunctuality')}</span>
+                  <span className="text-foreground">{floatingSignupNote.punctualityLabel}</span>
+                </div>
+                <div className="rounded-md border border-border bg-muted/15 p-2 text-sm whitespace-pre-wrap break-words">
+                  {floatingSignupNote.note}
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {allSignupNotesOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-[1215] flex items-start justify-center p-4 sm:p-8 pt-14 sm:pt-20">
+              <button
+                type="button"
+                className="absolute inset-0 bg-black/45 cursor-default border-0 p-0"
+                aria-label={tRoster('closeOverlay')}
+                onClick={() => setAllSignupNotesOpen(false)}
+              />
+              <div
+                className="relative w-full max-w-3xl max-h-[min(85vh,640px)] flex flex-col rounded-xl border border-border bg-background shadow-2xl overflow-hidden"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 shrink-0">
+                  <h2 className="text-sm font-semibold text-foreground">{tRoster('allSignupNotesTitle')}</h2>
+                  <button
+                    type="button"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0"
+                    onClick={() => setAllSignupNotesOpen(false)}
+                    aria-label={tRoster('closeOverlay')}
+                    title={tRoster('closeOverlay')}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="overflow-auto flex-1 p-3">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                        <th className="py-2 pr-3 font-medium">{tRoster('columnPlayer')}</th>
+                        <th className="py-2 pr-3 font-medium">{tRoster('columnChar')}</th>
+                        <th className="py-2 pr-3 font-medium whitespace-nowrap">{tRoster('columnPunctuality')}</th>
+                        <th className="py-2 font-medium">{tRoster('columnNote')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {signupsWithNotesList.map((row) => (
+                        <tr key={row.id} className="border-b border-border/70 align-top">
+                          <td className="py-2 pr-3 break-words max-w-[140px]">{row.playerLabel}</td>
+                          <td className="py-2 pr-3 break-words max-w-[140px]">{row.charName}</td>
+                          <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">{row.punctualityLabel}</td>
+                          <td className="py-2 whitespace-pre-wrap break-words">{row.note}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>,

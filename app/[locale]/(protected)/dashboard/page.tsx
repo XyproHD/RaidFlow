@@ -9,6 +9,7 @@ import {
   findManyRfCharactersForDashboard,
   findManyRaidSignupsForDashboard,
 } from '@/lib/rf-character-gear-score-compat';
+import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { DashboardClient, type DashboardCalendarRaid, type DashboardCharacter, type DashboardGuild, type DashboardSignupRow } from './dashboard-client';
 
@@ -145,6 +146,12 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       .filter((r) => r.scheduledAt >= rangeStart && r.scheduledAt <= rangeEnd)
       .map((r) => r.id);
 
+    function announcedGroupCountForDashboard(json: unknown): number | null {
+      const p = parseStoredAnnouncedPlannerJson(json);
+      if (!p || p.groups.length <= 1) return null;
+      return p.groups.length;
+    }
+
     const raidRows = raidIdsInCalendar.length
       ? await prisma.rfRaid.findMany({
           where: { id: { in: raidIdsInCalendar } },
@@ -159,6 +166,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
             maxPlayers: true,
             note: true,
             dungeonIds: true,
+            announcedPlannerGroupsJson: true,
             guild: { select: { name: true } },
             dungeon: { select: { name: true } },
             _count: { select: { signups: true } },
@@ -232,6 +240,12 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       hasNote: !!(r.note && r.note.trim()),
       note: (r.note && r.note.trim()) ? r.note : null,
       canEdit: canEditGuildIds.has(r.guildId),
+      announcedGroupCount:
+        r.status === 'announced'
+          ? announcedGroupCountForDashboard(
+              (r as unknown as { announcedPlannerGroupsJson?: unknown }).announcedPlannerGroupsJson
+            )
+          : null,
       mySignup: (r as unknown as { signups?: { id: string; leaderPlacement: string; setConfirmed: boolean }[] }).signups?.[0] ?? null,
     }));
 

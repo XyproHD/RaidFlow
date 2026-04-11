@@ -6,13 +6,15 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
-import { RaidDetailView } from '@/components/raid-detail/raid-detail-view';
+import { RaidDetailView, type AnnouncedLayoutProps } from '@/components/raid-detail/raid-detail-view';
+import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 import {
   getRaidDetailContext,
   parseRaidPageMode,
   type RaidPageMode,
 } from '@/lib/raid-detail-access';
 import { findManyRfCharactersForDashboard } from '@/lib/rf-character-gear-score-compat';
+import { prisma } from '@/lib/prisma';
 import { normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
 
 type SearchParams = Promise<{ mode?: string; modus?: string }>;
@@ -121,6 +123,48 @@ export default async function RaidDetailPage(props: {
       }
     : null;
 
+  let announcedLayout: AnnouncedLayoutProps | null = null;
+  if (raid.status === 'announced') {
+    const raw = (raid as unknown as { announcedPlannerGroupsJson?: unknown }).announcedPlannerGroupsJson;
+    const parsed = parseStoredAnnouncedPlannerJson(raw);
+    if (parsed) {
+      const uids = new Set<string>();
+      for (const g of parsed.groups) {
+        if (g.raidLeaderUserId) uids.add(g.raidLeaderUserId);
+        if (g.lootmasterUserId) uids.add(g.lootmasterUserId);
+      }
+      const chars =
+        uids.size > 0
+          ? await prisma.rfCharacter.findMany({
+              where: { guildId, userId: { in: Array.from(uids) } },
+              select: {
+                userId: true,
+                name: true,
+                guildDiscordDisplayName: true,
+                isMain: true,
+              },
+            })
+          : [];
+      const labelForUser = (uid: string): string => {
+        const list = chars.filter((c) => c.userId === uid);
+        list.sort((a, b) => Number(b.isMain) - Number(a.isMain));
+        const c = list[0];
+        const d = c?.guildDiscordDisplayName?.trim();
+        if (d) return d;
+        if (c?.name?.trim()) return c.name.trim();
+        return `…${uid.slice(-6)}`;
+      };
+      announcedLayout = {
+        groupMeta: parsed.groups.map((g) => ({
+          rosterOrder: g.rosterOrder,
+          raidLeaderLabel: g.raidLeaderUserId ? labelForUser(g.raidLeaderUserId) : null,
+          lootmasterLabel: g.lootmasterUserId ? labelForUser(g.lootmasterUserId) : null,
+        })),
+        reserveOrder: parsed.reserveOrder,
+      };
+    }
+  }
+
   const typeNorm = (v: string) => (v === 'main' ? 'normal' : v);
   const roleStats = {
     Tank: { normal: 0, uncertain: 0, reserve: 0 },
@@ -170,6 +214,7 @@ export default async function RaidDetailPage(props: {
         characters={characters}
         mySignup={mySignupSerialized}
         initialSignupOpen={mode === 'signup' && canSignup}
+        announcedLayout={announcedLayout}
       />
     </div>
   );

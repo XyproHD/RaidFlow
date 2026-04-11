@@ -1,6 +1,6 @@
 /**
  * RaidFlow Discord-Bot
- * Slash-Commands: /raidflow help, /raidflow home, /raidflow setup, /raidflow group <groupname>
+ * Slash-Commands: /raidflow help, /raidflow home, /raidflow setup (Rollen + Battle.net), /raidflow group <groupname>
  * App Home: Primary-Entry-Command „start“ (DM-Dashboard, analog Web-Profil).
  * Rechte: Nur Server-Owner oder ADMINISTRATOR oder MANAGE_GUILD.
  * Gateway: optional GuildMembers (privileged). Nur nutzen, wenn im Discord Developer Portal
@@ -27,6 +27,8 @@ import {
   ActionRowBuilder,
   StringSelectMenuBuilder,
   StringSelectMenuOptionBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -125,6 +127,12 @@ async function callWebapp(path, body) {
     throw new Error(`Webapp ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+function truncateDiscordLabel(s, maxLen = 100) {
+  const t = String(s ?? '').trim();
+  if (t.length <= maxLen) return t;
+  return `${t.slice(0, Math.max(0, maxLen - 1))}…`;
 }
 
 /** GET mit Query + Bot-Secret (Diagnose). */
@@ -413,7 +421,8 @@ function buildHelpContent() {
     '• **Standardrollen anlegen** – Der Bot erstellt die Rollen Gildenmeister, Raidleader und Raider.',
     '• **Bestehende Rollen zuordnen** – Du wählst für jede RaidFlow-Rolle eine bestehende Discord-Rolle oder lässt eine neue anlegen.',
     '• **Eigene Rollen anlegen** – Du gibst für jede RaidFlow-Rolle einen Namen ein; der Bot legt die Rollen auf dem Server an.',
-    'Ist der Server bereits eingerichtet, kannst du Rollen löschen und neu einrichten oder einzelne Rollen ändern.',
+    '• **Battle.net-Gilde verknüpfen** – WoW-Version und **WoW-Server** wählen, dann Gildennamen (exakt wie im Spiel) – Verknüpfung speichern (nach vollständigem Rollen-Setup).',
+    'Ist der Server bereits eingerichtet, kannst du Rollen löschen und neu einrichten, einzelne Rollen ändern oder Battle.net bearbeiten.',
     '',
     '**`/raidflow group <Groupname>`** – Raidgruppe anlegen. Erstellt eine Discord-Rolle `Raidflowgroup-<Name>` und verknüpft sie in der Webapp.',
     '',
@@ -439,6 +448,10 @@ function buildReconfigureSelect() {
           .setDescription('Eine RaidFlow-Rolle umbenennen, zuweisen oder neu anlegen')
           .setValue('change'),
         new StringSelectMenuOptionBuilder()
+          .setLabel('Battle.net-Gilde verknüpfen')
+          .setDescription('Realm + Blizzard-Gilde suchen und in RaidFlow speichern')
+          .setValue('bnet'),
+        new StringSelectMenuOptionBuilder()
           .setLabel('Abbrechen')
           .setDescription('Setup beenden ohne Änderungen')
           .setValue('abort')
@@ -463,7 +476,11 @@ function buildSetupModeSelect() {
         new StringSelectMenuOptionBuilder()
           .setLabel('Eigene Rollen anlegen')
           .setDescription('Namen eingeben; der Bot legt die Rollen auf dem Server an')
-          .setValue('custom')
+          .setValue('custom'),
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Battle.net-Gilde verknüpfen')
+          .setDescription('Gleiche Verknüpfung wie in der Webapp (Realm + Gildensuche)')
+          .setValue('bnet')
       )
   );
 }
@@ -523,6 +540,275 @@ function buildChangeWhatSelect() {
   );
 }
 
+function buildBnetVersionSelect(versions) {
+  const list = Array.isArray(versions) ? versions : [];
+  const options = list.slice(0, 25).map((v, i) =>
+    new StringSelectMenuOptionBuilder()
+      .setLabel(truncateDiscordLabel(v))
+      .setValue(String(i))
+  );
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('rf_bnet_version_ix')
+      .setPlaceholder('WoW-Version wählen (z. B. TBC Anniversary)')
+      .addOptions(options)
+  );
+}
+
+/** Wenn es in einer Version sehr viele Server gibt: vor dem Dropdown eingrenzen. */
+function buildBnetServerFilterModal() {
+  return new ModalBuilder()
+    .setCustomId('rf_modal_bnet_server_filter')
+    .setTitle('WoW-Server eingrenzen')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('q')
+          .setLabel('Teil des Servernamens (z. B. Everlook)')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('Mindestens 2 Zeichen')
+          .setRequired(true)
+          .setMinLength(2)
+          .setMaxLength(40)
+      )
+    );
+}
+
+function buildBnetGuildNameModal() {
+  return new ModalBuilder()
+    .setCustomId('rf_modal_bnet_guild_q')
+    .setTitle('Gilde bei Blizzard suchen')
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('guildName')
+          .setLabel('Gildenname exakt wie im Spiel')
+          .setStyle(TextInputStyle.Short)
+          .setPlaceholder('Leerzeichen, Bindestriche und Schreibweise beachten')
+          .setRequired(true)
+          .setMinLength(2)
+          .setMaxLength(60)
+      )
+    );
+}
+
+function buildBnetManageSelect() {
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('rf_bnet_manage')
+      .setPlaceholder('Battle.net-Verknüpfung')
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Neu verknüpfen / ändern')
+          .setDescription('Realm + Gildensuche erneut durchlaufen')
+          .setValue('new'),
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Verknüpfung entfernen')
+          .setDescription('Battle.net-Zuordnung in RaidFlow löschen')
+          .setValue('clear'),
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Fertig')
+          .setDescription('Menü schließen')
+          .setValue('done')
+      )
+  );
+}
+
+function buildBnetRealmSelectRows(realms) {
+  const options = realms.slice(0, 25).map((r, i) => {
+    const serverLabel = truncateDiscordLabel(r.name || r.label || r.slug);
+    const opt = new StringSelectMenuOptionBuilder()
+      .setLabel(serverLabel)
+      .setValue(String(i));
+    const desc = truncateDiscordLabel(`${r.region} · ${r.slug}`, 95);
+    if (desc) opt.setDescription(desc);
+    return opt;
+  });
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('rf_bnet_realm_ix')
+      .setPlaceholder('WoW-Server wählen')
+      .addOptions(options)
+  );
+}
+
+function buildBnetGuildSelectRows(hits) {
+  const options = hits.slice(0, 25).map((h, i) =>
+    new StringSelectMenuOptionBuilder()
+      .setLabel(truncateDiscordLabel(`${h.name} (${h.realmSlug})`))
+      .setDescription(truncateDiscordLabel(`ID ${h.id}`, 95))
+      .setValue(String(i))
+  );
+  return new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('rf_bnet_guild_ix')
+      .setPlaceholder('Treffer wählen')
+      .addOptions(options)
+  );
+}
+
+async function beginBnetSetup(interaction) {
+  const discordGuildId = interaction.guild.id;
+  let data;
+  try {
+    data = await getWebappJson('/api/bot/guild-battlenet-link', { discordGuildId });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const notFound = /404/.test(msg);
+    await interaction.update({
+      content: notFound
+        ? 'Dieser Discord-Server ist noch nicht in RaidFlow angelegt. Bitte zuerst die **RaidFlow-Rollen** einrichten (Standard, bestehend oder eigene).'
+        : `Battle.net-Setup: Webapp-Fehler: ${msg}`,
+      components: [],
+    });
+    return;
+  }
+
+  if (!data.rolesConfigured) {
+    await interaction.update({
+      content:
+        'Die RaidFlow-Discord-Rollen fehlen noch. Bitte zuerst **Standardrollen**, **bestehende Rollen** oder **eigene Rollen** einrichten. Danach kannst du Battle.net verknüpfen.',
+      components: [],
+    });
+    return;
+  }
+
+  setState(interaction, {
+    phase: 'bnet',
+    rfGuildId: data.guildId,
+    battlenetGuildId: data.battlenetGuildId ?? null,
+    battlenetGuildName: data.battlenetGuildName ?? null,
+  });
+
+  if (data.battlenetGuildId) {
+    await interaction.update({
+      content:
+        `**Battle.net-Verknüpfung**\nAktuell: **${data.battlenetGuildName ?? '?'}** (Gilden-ID ${data.battlenetGuildId}).\n\nWas möchtest du tun?`,
+      components: [buildBnetManageSelect()],
+    });
+    return;
+  }
+
+  await startBnetRealmFlow(interaction);
+}
+
+const BNET_GUILD_SPELLING_HINT =
+  '**Hinweis:** Der Gildenname muss **exakt** zum Eintrag bei Blizzard passen (inkl. Leerzeichen, Bindestriche und Groß-/Kleinschreibung).';
+
+async function startBnetRealmFlow(interaction) {
+  let dataVers;
+  try {
+    dataVers = await getWebappJson('/api/bot/battlenet/realm-versions', {});
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await interaction
+      .update({
+        content: `WoW-Versionen konnten nicht geladen werden: ${msg}`,
+        components: [],
+      })
+      .catch(() => {});
+    return;
+  }
+  const versions = Array.isArray(dataVers.versions) ? dataVers.versions.filter(Boolean) : [];
+  if (versions.length === 0) {
+    await interaction
+      .update({ content: 'Es sind keine WoW-Versionen in der Datenbank hinterlegt.', components: [] })
+      .catch(() => {});
+    return;
+  }
+
+  const prev = getState(interaction) || {};
+  setState(interaction, { ...prev, phase: 'bnet', bnetVersions: versions });
+
+  if (versions.length === 1) {
+    await proceedBnetAfterVersion(interaction, versions[0]);
+    return;
+  }
+
+  await interaction
+    .update({
+      content:
+        '**Schritt 1 von 2:** Wähle die **WoW-Version** (z. B. Classic Era, TBC Anniversary, Mists …). Im nächsten Schritt wählst du den **WoW-Server**.',
+      components: [buildBnetVersionSelect(versions)],
+    })
+    .catch(() => {});
+}
+
+async function proceedBnetAfterVersion(interaction, version) {
+  const v = String(version ?? '').trim();
+  if (!v) {
+    await interaction.update({ content: 'Ungültige WoW-Version.', components: [] }).catch(() => {});
+    return;
+  }
+
+  let data;
+  try {
+    data = await getWebappJson('/api/bot/battlenet/realms', { version: v, locale: 'de' });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await interaction.update({ content: `Serverliste konnte nicht geladen werden: ${msg}`, components: [] }).catch(() => {});
+    return;
+  }
+
+  const total = typeof data.total === 'number' ? data.total : 0;
+  const truncated = data.truncated === true;
+  const realms = Array.isArray(data.realms) ? data.realms : [];
+
+  const prev = getState(interaction) || {};
+  setState(interaction, { ...prev, phase: 'bnet', bnetPendingVersion: v, bnetSelectedVersion: v });
+
+  if (truncated && realms.length === 0) {
+    await interaction
+      .update({
+        content:
+          `In der WoW-Version **„${v}"** gibt es **${total} WoW-Server** — zu viele für ein einzelnes Auswahlmenü.\n\n` +
+          `Klicke auf **„WoW-Server eingrenzen“** und gib **mindestens 2 Zeichen** des **WoW-Servernamens** ein (z. B. „Everlook").`,
+        components: [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId('rf_bnet_server_filter_btn')
+              .setLabel('WoW-Server eingrenzen')
+              .setStyle(ButtonStyle.Primary)
+          ),
+        ],
+      })
+      .catch(() => {});
+    return;
+  }
+
+  if (!realms.length) {
+    await interaction
+      .update({
+        content: `Für die Version „${v}" wurden keine WoW-Server gefunden (oder die Eingrenzung lieferte nichts).`,
+        components: [],
+      })
+      .catch(() => {});
+    return;
+  }
+
+  const st = getState(interaction) || {};
+  setState(interaction, { ...st, phase: 'bnet', realmRows: realms, bnetSelectedVersion: v, bnetPendingVersion: null });
+  await interaction
+    .update({
+      content: `**Schritt 2 von 2:** Wähle den **WoW-Server** (${realms.length} von ${total} Servern in dieser Version).`,
+      components: [buildBnetRealmSelectRows(realms)],
+    })
+    .catch(() => {});
+}
+
+async function saveBnetGuildLink(interaction, realmRow, hit) {
+  const discordGuildId = interaction.guild.id;
+  await callWebapp('/api/bot/guild-battlenet-link', {
+    discordGuildId,
+    action: 'save',
+    battlenetRealmId: realmRow.id,
+    battlenetGuildId: hit.id,
+    battlenetGuildName: hit.name,
+    profileRealmSlug: hit.realmSlug || undefined,
+    profileRealmId: hit.realmNumericId || undefined,
+  });
+}
+
 async function runSetup(interaction) {
   await interaction.deferReply({ ephemeral: true });
   const guild = interaction.guild;
@@ -564,6 +850,11 @@ async function handleReconfigure(interaction, value) {
       content: 'Setup abgebrochen. Es wurden keine Änderungen vorgenommen.',
       components: [],
     });
+    return;
+  }
+
+  if (value === 'bnet') {
+    await beginBnetSetup(interaction);
     return;
   }
 
@@ -725,6 +1016,11 @@ async function applyGuildConfigAndFinish(interaction, roleIds, message) {
 
 async function handleSetupMode(interaction, value) {
   const guild = interaction.guild;
+
+  if (value === 'bnet') {
+    await beginBnetSetup(interaction);
+    return;
+  }
 
   if (value === 'standard') {
     await interaction.update({ content: 'Standardrollen werden erstellt…', components: [] }).catch(() => {});
@@ -1015,6 +1311,21 @@ client.on('interactionCreate', async (interaction) => {
   const homeHandled = await handleAppHomeInteraction(interaction, homeApiDeps());
   if (homeHandled) return;
 
+  if (interaction.isButton()) {
+    const bid = interaction.customId;
+    if (bid === 'rf_bnet_server_filter_btn') {
+      if (!hasSetupPermission(interaction.member)) {
+        return interaction.reply({ content: 'Keine Berechtigung.', ephemeral: true }).catch(() => {});
+      }
+      const st = getState(interaction);
+      if (!st?.bnetPendingVersion) {
+        return interaction.reply({ content: 'Sitzung abgelaufen. Bitte `/raidflow setup` erneut starten.', ephemeral: true }).catch(() => {});
+      }
+      await interaction.showModal(buildBnetServerFilterModal()).catch(() => {});
+      return;
+    }
+  }
+
   // Help (nur Slash)
   if (interaction.isChatInputCommand() && interaction.commandName === 'raidflow') {
     const sub = interaction.options.getSubcommand();
@@ -1058,6 +1369,98 @@ client.on('interactionCreate', async (interaction) => {
     }
     if (customId === 'rf_setup_mode') {
       await handleSetupMode(interaction, value);
+      return;
+    }
+    if (customId === 'rf_bnet_manage') {
+      if (value === 'done') {
+        clearState(interaction);
+        await interaction.update({ content: 'Battle.net-Menü geschlossen.', components: [] }).catch(() => {});
+        return;
+      }
+      if (value === 'clear') {
+        await interaction.deferUpdate().catch(() => {});
+        try {
+          await callWebapp('/api/bot/guild-battlenet-link', {
+            discordGuildId: interaction.guild.id,
+            action: 'clear',
+          });
+          clearState(interaction);
+          await interaction.editReply({ content: 'Battle.net-Verknüpfung wurde entfernt.', components: [] }).catch(() => {});
+        } catch (e) {
+          await interaction
+            .editReply({ content: `Verknüpfung konnte nicht entfernt werden: ${e.message}`, components: [] })
+            .catch(() => {});
+        }
+        return;
+      }
+      if (value === 'new') {
+        await startBnetRealmFlow(interaction).catch(() => {});
+        return;
+      }
+      return;
+    }
+    if (customId === 'rf_bnet_version_ix') {
+      const state = getState(interaction);
+      const versions = state?.bnetVersions;
+      if (!versions?.length) {
+        await interaction.reply({ content: 'Sitzung abgelaufen. Bitte `/raidflow setup` erneut starten.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      const ix = parseInt(value, 10);
+      const version = versions[ix];
+      if (version == null || version === '') {
+        await interaction.reply({ content: 'Ungültige Auswahl.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      await proceedBnetAfterVersion(interaction, version);
+      return;
+    }
+    if (customId === 'rf_bnet_realm_ix') {
+      const state = getState(interaction);
+      const rows = state?.realmRows;
+      if (!rows?.length) {
+        await interaction.reply({ content: 'Sitzung abgelaufen. Bitte `/raidflow setup` erneut starten.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      const ix = parseInt(value, 10);
+      const realm = rows[ix];
+      if (!realm) {
+        await interaction.reply({ content: 'Ungültige Auswahl.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      setState(interaction, { ...state, phase: 'bnet', selectedRealm: realm });
+      await interaction.showModal(buildBnetGuildNameModal()).catch(() => {});
+      return;
+    }
+    if (customId === 'rf_bnet_guild_ix') {
+      const state = getState(interaction);
+      const hits = state?.guildHits;
+      const realm = state?.selectedRealm;
+      if (!hits?.length || !realm) {
+        await interaction
+          .reply({ content: 'Sitzung abgelaufen. Bitte `/raidflow setup` erneut starten.', ephemeral: true })
+          .catch(() => {});
+        return;
+      }
+      const ix = parseInt(value, 10);
+      const hit = hits[ix];
+      if (!hit) {
+        await interaction.reply({ content: 'Ungültige Auswahl.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      await interaction.deferUpdate().catch(() => {});
+      try {
+        await saveBnetGuildLink(interaction, realm, hit);
+        clearState(interaction);
+        await interaction
+          .editReply({
+            content: `Battle.net-Verknüpfung gespeichert: **${hit.name}** (ID ${hit.id}) auf **${realm.name ?? realm.label ?? 'Server'}**.`,
+            components: [],
+          })
+          .catch(() => {});
+      } catch (e) {
+        await interaction.editReply({ content: `Speichern fehlgeschlagen: ${e.message}`, components: [] }).catch(() => {});
+      }
       return;
     }
     if (customId === 'rf_change_which') {
@@ -1110,6 +1513,122 @@ client.on('interactionCreate', async (interaction) => {
       const roleKey = customId.replace('rf_modal_new_', '');
       const name = interaction.fields.getTextInputValue('name');
       await handleModalNewForChange(interaction, roleKey, name);
+      return;
+    }
+    if (customId === 'rf_modal_bnet_server_filter') {
+      const q = interaction.fields.getTextInputValue('q').trim();
+      if (q.length < 2) {
+        await interaction.reply({ content: 'Bitte mindestens 2 Zeichen eingeben.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      const state = getState(interaction);
+      const version = state?.bnetPendingVersion;
+      if (!version) {
+        await interaction.reply({ content: 'Sitzung abgelaufen. Bitte `/raidflow setup` erneut starten.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      let data;
+      try {
+        data = await getWebappJson('/api/bot/battlenet/realms', { version, q, locale: 'de' });
+      } catch (e) {
+        await interaction
+          .reply({
+            content: `WoW-Server konnten nicht geladen werden: ${e instanceof Error ? e.message : String(e)}`,
+            ephemeral: true,
+          })
+          .catch(() => {});
+        return;
+      }
+      const realms = Array.isArray(data.realms) ? data.realms : [];
+      if (realms.length === 0) {
+        await interaction
+          .reply({
+            ephemeral: true,
+            content: `Keinen **WoW-Server** gefunden für „${q}" in der Version „${version}". Probiere einen anderen Teil des Servernamens.`,
+          })
+          .catch(() => {});
+        return;
+      }
+      const prev = getState(interaction) || {};
+      setState(interaction, {
+        ...prev,
+        phase: 'bnet',
+        realmRows: realms,
+        bnetPendingVersion: null,
+        bnetSelectedVersion: version,
+      });
+      await interaction
+        .reply({
+          ephemeral: true,
+          content: `**WoW-Server wählen** (${realms.length} Treffer nach „${q}“ in „${version}"):`,
+          components: [buildBnetRealmSelectRows(realms)],
+        })
+        .catch(() => {});
+      return;
+    }
+    if (customId === 'rf_modal_bnet_guild_q') {
+      const state = getState(interaction);
+      const realm = state?.selectedRealm;
+      if (!realm?.id) {
+        await interaction.reply({ content: 'Sitzung abgelaufen. Bitte von vorn beginnen.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      const gq = interaction.fields.getTextInputValue('guildName').trim();
+      if (gq.length < 2) {
+        await interaction.reply({ content: 'Bitte mindestens 2 Zeichen für die Gildensuche.', ephemeral: true }).catch(() => {});
+        return;
+      }
+      let hits;
+      try {
+        const res = await callWebapp('/api/bot/battlenet/resolve-guild', {
+          realmId: realm.id,
+          query: gq,
+          mode: 'search',
+        });
+        hits = Array.isArray(res.results) ? res.results : [];
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        await interaction
+          .reply({
+            ephemeral: true,
+            content: `Gildensuche fehlgeschlagen:\n${detail}\n\n${BNET_GUILD_SPELLING_HINT}`,
+          })
+          .catch(() => {});
+        return;
+      }
+      if (hits.length === 0) {
+        await interaction
+          .reply({
+            ephemeral: true,
+            content: `Keine Gilde gefunden.\n\n${BNET_GUILD_SPELLING_HINT}\n\nTipp: Name **genau** wie im Spiel eingeben (inkl. Leerzeichen und Bindestriche).`,
+          })
+          .catch(() => {});
+        return;
+      }
+      if (hits.length === 1) {
+        await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        try {
+          await saveBnetGuildLink(interaction, realm, hits[0]);
+          clearState(interaction);
+          await interaction
+            .editReply({
+              content: `Battle.net-Verknüpfung gespeichert: **${hits[0].name}** (ID ${hits[0].id}) auf **${realm.name ?? realm.label ?? 'WoW-Server'}**.`,
+            })
+            .catch(() => {});
+        } catch (e) {
+          await interaction.editReply({ content: `Speichern fehlgeschlagen: ${e.message}` }).catch(() => {});
+        }
+        return;
+      }
+      const shown = hits.slice(0, 25);
+      setState(interaction, { ...state, phase: 'bnet', guildHits: shown });
+      await interaction
+        .reply({
+          ephemeral: true,
+          content: `**Gilde wählen** (${hits.length} Treffer${hits.length > 25 ? ', es werden die ersten 25 angezeigt' : ''}):`,
+          components: [buildBnetGuildSelectRows(shown)],
+        })
+        .catch(() => {});
       return;
     }
   }
