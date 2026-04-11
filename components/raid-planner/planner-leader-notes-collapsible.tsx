@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 
@@ -40,13 +40,26 @@ export function PlannerLeaderNotesCollapsible({
   };
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const wasExpandedRef = useRef(false);
+  const lastAppliedBootstrapKeyRef = useRef<number | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!expanded) {
+      wasExpandedRef.current = false;
+      return;
+    }
     const el = editorRef.current;
     if (!el) return;
-    const next = sanitizePlannerLeaderHtml(bootstrapHtml || '');
-    if (el.innerHTML !== next) el.innerHTML = next;
-  }, [bootstrapKey, bootstrapHtml]);
+
+    const openedNow = !wasExpandedRef.current;
+    wasExpandedRef.current = true;
+    const keyBumped = lastAppliedBootstrapKeyRef.current !== bootstrapKey;
+
+    if (openedNow || keyBumped) {
+      el.innerHTML = sanitizePlannerLeaderHtml(bootstrapHtml || '');
+      lastAppliedBootstrapKeyRef.current = bootstrapKey;
+    }
+  }, [expanded, bootstrapKey, bootstrapHtml]);
 
   const exec = useCallback(
     (command: string, value?: string) => {

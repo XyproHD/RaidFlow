@@ -683,15 +683,6 @@ export function RaidRosterPlanner({
         charName = s.name.trim();
         break;
       }
-      if (!charName) {
-        const main = guildCharacters.find((c) => c.userId.trim() === uid && c.isMain);
-        const any = main ?? guildCharacters.find((c) => c.userId.trim() === uid);
-        charName = (any?.name ?? '').trim();
-      }
-      if (!charName) {
-        const su = signups.find((s) => (s.userId ?? '').trim() === uid);
-        charName = (su?.name ?? '').trim();
-      }
       if (!charName) charName = tRoster('leaderOptionCharMissing');
 
       return `${discord} @ ${charName}`;
@@ -1695,7 +1686,7 @@ export function RaidRosterPlanner({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-2">
                       <label className="flex flex-col gap-1 text-xs">
                         <span className="text-muted-foreground">{tPlanner('raidLeader')}</span>
                         <select
