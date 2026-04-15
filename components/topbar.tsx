@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { ThemeSwitch } from '@/components/theme-switch';
 import type { UserGuildInfo } from '@/lib/user-guilds';
@@ -20,7 +20,6 @@ export type TopbarProps = {
   isAdmin?: boolean;
   showGuildManagement?: boolean;
   botInviteUrl?: string;
-  userGuilds?: UserGuildInfo[];
   /** Wenn false, ist „Discord Bot einladen“ ausgegraut und nicht klickbar. */
   discordBotInviteEnabled?: boolean;
 };
@@ -32,7 +31,6 @@ export function Topbar({
   isAdmin = false,
   showGuildManagement = false,
   botInviteUrl = '#',
-  userGuilds = [],
   discordBotInviteEnabled = true,
 }: TopbarProps) {
   const t = useTranslations('shell');
@@ -45,6 +43,7 @@ export function Topbar({
   const [burgerOpen, setBurgerOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [guildMenuOpen, setGuildMenuOpen] = useState(false);
+  const [userGuilds, setUserGuilds] = useState<UserGuildInfo[]>([]);
 
   const isDashboard = pathname?.includes('/dashboard') ?? false;
   const isGuildsPage = pathname?.includes('/guilds') ?? false;
@@ -64,6 +63,30 @@ export function Topbar({
   };
 
   const closeBurger = useCallback(() => setBurgerOpen(false), []);
+
+  const needsGuildList = isLoggedIn && (isDashboard || isGuildsPage);
+  useEffect(() => {
+    if (!needsGuildList) {
+      setUserGuilds([]);
+      return;
+    }
+    const ac = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch('/api/user/guilds', {
+          credentials: 'include',
+          signal: ac.signal,
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { guilds?: UserGuildInfo[] };
+        if (Array.isArray(data.guilds)) setUserGuilds(data.guilds);
+      } catch (e) {
+        if (e instanceof Error && e.name === 'AbortError') return;
+        console.error('[Topbar] guilds fetch', e);
+      }
+    })();
+    return () => ac.abort();
+  }, [needsGuildList, pathname]);
 
   return (
     <>

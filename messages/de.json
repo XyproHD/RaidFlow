@@ -310,6 +310,9 @@
   },
   "profile": {
     "title": "Mein Profil",
+    "tabMyCharacters": "Meine Charaktere",
+    "tabMyRaidTimes": "Meine Raidzeiten",
+    "tabMyStatistics": "Meine Statistiken",
     "theme": "Anzeige-Modus",
     "themeLight": "Hell",
     "themeDark": "Dunkel",

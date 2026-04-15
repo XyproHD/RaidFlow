@@ -6,8 +6,7 @@ import { getGuildsForUserCached } from '@/lib/user-guilds';
 
 /**
  * GET /api/user/guilds
- * Gilden, in denen der eingeloggte User Mitglied ist (hat mind. eine RaidFlow-Rolle).
- * Synchronisiert UserGuild/GuildMember (Sync mit Discord/Bot).
+ * Gilden, in denen der eingeloggte User Mitglied ist (aus DB; Discord aktualisiert der Bot).
  */
 export async function GET() {
   const session = await getServerSession(authOptions);

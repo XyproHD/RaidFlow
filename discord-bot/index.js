@@ -7,7 +7,7 @@
  * unter Bot → „Privileged Gateway Intents“ → **Server Members Intent** aktiviert ist **und**
  * die Umgebungsvariable DISCORD_GUILD_MEMBERS_INTENT=1 (oder true) gesetzt ist. Sonst Login-Fehler
  * „Used disallowed intents“. Ohne diesen Intent startet der Bot; Rollen-Sync läuft dann nur
- * über Webapp-Bootstrap (getGuildsForUser), nicht live per Event.
+ * über Bot-Events (`sync-member` o. ä.), nicht mehr über Webapp-Seitenaufrufe.
  *
  * Umgebung: .env oder .env.local im discord-bot/ Ordner, oder .env.local im Projektroot.
  */

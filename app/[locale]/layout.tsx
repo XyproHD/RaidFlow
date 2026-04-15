@@ -11,8 +11,6 @@ import { prisma } from '@/lib/prisma';
 import { getAppConfig, OWNER_DISCORD_ID } from '@/lib/app-config';
 import { getBotInviteUrl } from '@/lib/bot-invite';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import type { UserGuildInfo } from '@/lib/user-guilds';
-import { getGuildsForUserCached } from '@/lib/user-guilds';
 import '../globals.css';
 
 export const metadata: Metadata = {
@@ -38,7 +36,6 @@ export default async function LocaleLayout({
   let isAdmin = false;
   let showGuildManagement = false;
   let botInviteUrl = '#';
-  let userGuilds: UserGuildInfo[] = [];
   let appConfig: Awaited<ReturnType<typeof getAppConfig>> | null = null;
   try {
     session = await getServerSession(authOptions);
@@ -59,11 +56,6 @@ export default async function LocaleLayout({
         showGuildManagement = !!guildmaster;
       } catch (e) {
         console.error('[Layout] rfUserGuild.findFirst (guildmaster):', e);
-      }
-      try {
-        userGuilds = await getGuildsForUserCached(userId, discordId ?? null);
-      } catch (e) {
-        console.error('[Layout] getGuildsForUser:', e);
       }
     }
     botInviteUrl = getBotInviteUrl();
@@ -91,7 +83,6 @@ export default async function LocaleLayout({
                   isAdmin={isAdmin}
                   showGuildManagement={showGuildManagement}
                   botInviteUrl={botInviteUrl}
-                  userGuilds={userGuilds}
                   discordBotInviteEnabled={discordBotInviteEnabled}
                 />
                 {showStatusBanner && <StatusBanner message={statusMessage} />}

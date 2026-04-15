@@ -1,19 +1,13 @@
 /**
- * User-Gilden-Zuordnung: Gilden aus der DB (Spiegelung der Discord-Rollen).
+ * User-Gilden-Zuordnung: Lesen aus der DB (`rf_user_guild` / `rf_guild_member`).
  *
- * **Aktualisierung:** `resolveDiscordGuildMembership` (Bot GET member, sonst User-OAuth
- * `guilds.members.read`) → `syncMemberPermissionsFromDiscordState`. Zusätzlich Bot-Events
- * (`POST /api/bot/sync-member`).
+ * **Aktualisierung (Discord → DB):** Bot-Events (`POST /api/bot/sync-member`) und verwandte
+ * Bot-Pfade — nicht mehr pro Seitenaufruf über die Web-App.
  */
 
 import { cache } from 'react';
 import { prisma } from '@/lib/prisma';
-import { getAppConfig, filterGuildIdsByConfig } from '@/lib/app-config';
-import { resolveDiscordGuildMembership } from '@/lib/resolve-discord-guild-membership';
-import {
-  guildRowToPermissionSyncShape,
-  syncMemberPermissionsFromDiscordState,
-} from './member-permission-sync';
+import { getAppConfig, isGuildAllowed } from '@/lib/app-config';
 
 /** RaidFlow-Rolle oder nur Discord-Mitglied ohne RaidFlow-Rolle. */
 export type UserGuildRole = 'guildmaster' | 'raidleader' | 'raider' | 'member';
@@ -71,177 +65,84 @@ export function userGuildCanEditRaids(guildInfo: UserGuildInfo): boolean {
 }
 
 /**
- * Verwaiste `rf_guild_member`-Zeile ohne `rf_user_guild`: Dashboard wäre leer.
- * Läuft nach dem Sync auch dann, wenn Sync/Prune geworfen hat — sonst bleibt die Inkonsistenz dauerhaft.
+ * Gilden des Users **nur aus der Datenbank** (kein Discord-Roundtrip).
+ * Filtert nach App-Config (Whitelist/Blacklist). Sortiert nach Gildenname.
  */
-async function ensureUserGuildRowWhenMemberExists(userId: string, guildId: string): Promise<void> {
-  const [gm, ug] = await Promise.all([
-    prisma.rfGuildMember.findUnique({
-      where: { userId_guildId: { userId, guildId } },
-      select: { id: true },
-    }),
-    prisma.rfUserGuild.findUnique({
-      where: { userId_guildId: { userId, guildId } },
-      select: { role: true },
-    }),
-  ]);
-  if (!gm || ug) return;
-
-  try {
-    await prisma.rfUserGuild.upsert({
-      where: { userId_guildId: { userId, guildId } },
-      create: { userId, guildId, role: 'member' },
-      update: {},
-    });
-    console.warn(
-      JSON.stringify({
-        scope: 'getGuildsForUser',
-        step: 'ensure_orphan_rf_user_guild',
-        guildId,
-        hint: 'rf_user_guild ergänzt (member); nächster erfolgreicher Discord-Sync setzt die RaidFlow-Rolle.',
-      })
-    );
-  } catch (e) {
-    console.error('[getGuildsForUser] ensure orphan rf_user_guild', guildId, e);
-  }
-}
-
-/**
- * Lädt RaidFlow-Gilden des Users. Mit `DISCORD_BOT_TOKEN` wird die DB pro Gilde zuvor mit Discord abgeglichen.
- *
- * `discordId` optional: fehlt sie in der Session, wird `rf_user.discord_id` für dieses `userId` gelesen.
- * Mitgliedschaft/Rollen: zuerst Bot-API, sonst OAuth `guilds.members.read` (User-Token im JWT).
- */
-export async function getGuildsForUser(
-  userId: string,
-  discordId?: string | null
-): Promise<UserGuildInfo[]> {
-  const userRow = await prisma.rfUser.findUnique({
-    where: { id: userId },
-    select: { discordId: true },
-  });
-  const sessionDiscord =
-    typeof discordId === 'string' && discordId.trim() ? discordId.trim() : '';
-  const dbDiscord = userRow?.discordId?.trim() ?? '';
-  const effectiveDiscordId = dbDiscord || sessionDiscord || null;
-  if (!effectiveDiscordId) return [];
-
-  const [config, allGuilds] = await Promise.all([
+export async function getGuildsForUserFromDb(userId: string): Promise<UserGuildInfo[]> {
+  const [config, userGuildRows] = await Promise.all([
     getAppConfig(),
-    prisma.rfGuild.findMany({
+    prisma.rfUserGuild.findMany({
+      where: { userId },
       include: {
-        raidGroups: { select: { id: true, discordRoleId: true } },
-        battlenetRealm: { select: { slug: true, region: true, version: true } },
+        guild: {
+          include: {
+            raidGroups: { select: { id: true, discordRoleId: true } },
+            battlenetRealm: { select: { slug: true, region: true, version: true } },
+          },
+        },
       },
-      orderBy: { name: 'asc' },
     }),
   ]);
-  const allowedDiscordIds = new Set(
-    filterGuildIdsByConfig(
-      allGuilds.map((g) => g.discordGuildId),
-      config
-    )
+
+  const allowedRows = userGuildRows.filter((ug) =>
+    isGuildAllowed(ug.guild.discordGuildId, config)
   );
-  const guilds = allGuilds.filter((g) => allowedDiscordIds.has(g.discordGuildId));
+  allowedRows.sort((a, b) => a.guild.name.localeCompare(b.guild.name, undefined, { sensitivity: 'base' }));
+
+  const guildIds = allowedRows.map((r) => r.guildId);
+  if (guildIds.length === 0) return [];
+
+  const members = await prisma.rfGuildMember.findMany({
+    where: { userId, guildId: { in: guildIds } },
+    include: {
+      memberRaidGroups: { select: { raidGroupId: true } },
+    },
+  });
+  const memberByGuildId = new Map(members.map((m) => [m.guildId, m]));
 
   const result: UserGuildInfo[] = [];
+  for (const ug of allowedRows) {
+    const guild = ug.guild;
+    const member = memberByGuildId.get(guild.id);
+    const raidGroupIds = member?.memberRaidGroups.map((rg) => rg.raidGroupId) ?? [];
 
-  for (const guild of guilds) {
-    try {
-      const resolved = await resolveDiscordGuildMembership(guild.discordGuildId, effectiveDiscordId);
-      await syncMemberPermissionsFromDiscordState({
-        userId,
-        guild: guildRowToPermissionSyncShape(guild),
-        membershipKnown: resolved.membershipKnown,
-        inGuild: resolved.inGuild,
-        roleIds: resolved.roleIds,
-        displayNameInGuild: resolved.displayNameInGuild,
-      });
-
-      {
-        const [gmOrphan, ugOrphan] = await Promise.all([
-          prisma.rfGuildMember.findUnique({
-            where: { userId_guildId: { userId, guildId: guild.id } },
-            select: { id: true },
-          }),
-          prisma.rfUserGuild.findUnique({
-            where: { userId_guildId: { userId, guildId: guild.id } },
-            select: { role: true },
-          }),
-        ]);
-        if (gmOrphan && !ugOrphan) {
-          const again = await resolveDiscordGuildMembership(guild.discordGuildId, effectiveDiscordId);
-          await syncMemberPermissionsFromDiscordState({
-            userId,
-            guild: guildRowToPermissionSyncShape(guild),
-            membershipKnown: again.membershipKnown,
-            inGuild: again.inGuild,
-            roleIds: again.roleIds,
-            displayNameInGuild: again.displayNameInGuild,
-          });
-          if (!again.membershipKnown) {
-            console.warn(
-              JSON.stringify({
-                scope: 'getGuildsForUser',
-                step: 'orphan_discord_unknown',
-                guildId: guild.id,
-                guildName: guild.name,
-                hint: 'Weder Bot-Member-API noch OAuth-Member (guilds.members.read + gültiger Login) — rf_user_guild ggf. nur über ensure_orphan ergänzt.',
-              })
-            );
+    result.push({
+      id: guild.id,
+      name: guild.name,
+      discordGuildId: guild.discordGuildId,
+      role: ug.role as UserGuildRole,
+      raidGroupIds,
+      battlenetRealmId: guild.battlenetRealmId,
+      battlenetGuildId: guild.battlenetGuildId?.toString() ?? null,
+      battlenetProfileRealmSlug: guild.battlenetProfileRealmSlug,
+      battlenetGuildName: guild.battlenetGuildName,
+      battlenetRealm: guild.battlenetRealm
+        ? {
+            slug: guild.battlenetRealm.slug,
+            region: guild.battlenetRealm.region,
+            version: guild.battlenetRealm.version,
           }
-        }
-      }
-    } catch (e) {
-      console.error('[getGuildsForUser] sync', guild.id, guild.name, e);
-    }
-
-    try {
-      await ensureUserGuildRowWhenMemberExists(userId, guild.id);
-
-      const ug = await prisma.rfUserGuild.findUnique({
-        where: { userId_guildId: { userId, guildId: guild.id } },
-        select: { role: true },
-      });
-      if (!ug) continue;
-
-      const member = await prisma.rfGuildMember.findUnique({
-        where: { userId_guildId: { userId, guildId: guild.id } },
-        include: {
-          memberRaidGroups: { select: { raidGroupId: true } },
-        },
-      });
-      const raidGroupIds = member?.memberRaidGroups.map((rg) => rg.raidGroupId) ?? [];
-
-      result.push({
-        id: guild.id,
-        name: guild.name,
-        discordGuildId: guild.discordGuildId,
-        role: ug.role as UserGuildRole,
-        raidGroupIds,
-        battlenetRealmId: guild.battlenetRealmId,
-        battlenetGuildId: guild.battlenetGuildId?.toString() ?? null,
-        battlenetProfileRealmSlug: guild.battlenetProfileRealmSlug,
-        battlenetGuildName: guild.battlenetGuildName,
-        battlenetRealm: guild.battlenetRealm
-          ? {
-              slug: guild.battlenetRealm.slug,
-              region: guild.battlenetRealm.region,
-              version: guild.battlenetRealm.version,
-            }
-          : null,
-      });
-    } catch (e) {
-      console.error('[getGuildsForUser] result row', guild.id, guild.name, e);
-    }
+        : null,
+    });
   }
 
   return result;
 }
 
 /**
- * Request-lokale Deduplizierung (Next/React cache): Layout + Page rufen getGuildsForUser oft mehrfach auf.
- * Diese Hülle verhindert doppelte Discord/DB-Arbeit innerhalb desselben Requests.
+ * Lädt RaidFlow-Gilden des Users aus der DB.
+ *
+ * `discordId` wird aus Kompatibilität zu älteren Aufrufern akzeptiert, ist aber entbehrlich.
+ */
+export async function getGuildsForUser(
+  userId: string,
+  _discordId?: string | null
+): Promise<UserGuildInfo[]> {
+  return getGuildsForUserFromDb(userId);
+}
+
+/**
+ * Request-lokale Deduplizierung (Next/React cache): mehrere Server-Komponenten im selben Request.
  */
 export const getGuildsForUserCached = cache(getGuildsForUser);
 

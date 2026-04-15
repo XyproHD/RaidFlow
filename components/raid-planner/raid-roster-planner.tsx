@@ -1373,12 +1373,28 @@ export function RaidRosterPlanner({
 
       const notesToSave = sanitizePlannerLeaderHtml(leaderNotesHtml);
       if (canEditRaid) {
+        const announcedPlannerGroupsJson =
+          raidStatus === 'announced'
+            ? {
+                groups: snapshotGroups.map((g) => ({
+                  rosterOrder: g.rosterOrder,
+                  raidLeaderUserId: g.raidLeaderUserId,
+                  lootmasterUserId: g.lootmasterUserId,
+                })),
+                reserveOrder: snapshotReserve,
+              }
+            : undefined;
         const resRaid = await fetch(
           `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
           {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ plannerLeaderNotesHtml: notesToSave || null }),
+            body: JSON.stringify({
+              plannerLeaderNotesHtml: notesToSave || null,
+              ...(announcedPlannerGroupsJson !== undefined
+                ? { announcedPlannerGroupsJson }
+                : {}),
+            }),
           }
         );
         if (!resRaid.ok) {

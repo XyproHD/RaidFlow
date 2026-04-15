@@ -2,8 +2,8 @@
  * Zentrale Schreibpfad-Synchronisation: Discord-Rollen → rf_user_guild, rf_guild_member,
  * rf_guild_member_raid_group (und Anzeigenamen auf Charakteren der Gilde).
  *
- * Wird von POST /api/bot/sync-member (Bot-Events) und getGuildsForUser (Discord-Abgleich) aufgerufen.
- * Verwaiste rf_user_guild ergänzt getGuildsForUser separat (ensure_orphan), falls der Sync scheitert.
+ * Wird von POST /api/bot/sync-member (Bot-Events) und verwandten Bot-Pfaden aufgerufen.
+ * Die Web-App liest Gilden nur noch aus der DB (`getGuildsForUserFromDb`).
  */
 
 import { prisma } from '@/lib/prisma';
