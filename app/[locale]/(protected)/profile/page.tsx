@@ -7,15 +7,13 @@ import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { expandRaidTimeSlot } from '@/lib/profile-constants';
 import { characterToClientDto } from '@/lib/character-api-dto';
 import { findManyRfCharactersForProfile } from '@/lib/rf-character-gear-score-compat';
-import { ProfileRaidTimes } from './profile-raid-times';
-import { ProfileCharacters } from './profile-characters';
-import { ProfileLoot } from './profile-loot';
+import { ProfilePageTabs } from './profile-page-tabs';
 
 export const revalidate = 60;
 const LOOT_PAGE_SIZE = 20;
 
 /**
- * Mein Profil (UI 4.1): Raidzeiten (AvailabilityGrid), Charakterliste, Raidstatistik, Loottabelle.
+ * Mein Profil: Tabs Charaktere, Raidzeiten, Statistik (Teilnahmen + Loot).
  * Theme wird in der Topbar umgestellt und dort gespeichert.
  */
 export default async function ProfilePage() {
@@ -156,57 +154,16 @@ export default async function ProfilePage() {
       <div className="p-6 md:p-8 max-w-5xl mx-auto">
         <h1 className="text-2xl font-bold text-foreground mb-6">{t('title')}</h1>
 
-        {/* 4.1 Raidzeiten-Block: Outlook-artiges Grid, Breite begrenzt */}
-        <ProfileRaidTimes initialData={raidTimeRows} />
-
-        {/* 4.1 Charakterliste: Modal Anlegen, Karten mit Bearbeiten inline, Main/Twink je Gilde */}
-        <ProfileCharacters initialData={characterRows} guilds={guildOptions} />
-
-        {/* 4.1 Raidstatistik: Teilnahmen je Dungeon und Gilde */}
-        <section className="mb-8" aria-labelledby="raid-stats-heading">
-          <h2 id="raid-stats-heading" className="text-lg font-semibold text-foreground mb-2">
-            {t('raidStats')}
-          </h2>
-          <p className="text-muted-foreground text-sm mb-4">{t('raidStatsDescription')}</p>
-          {stats.length === 0 ? (
-            <p className="text-muted-foreground text-sm">{t('noStats')}</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse border border-border min-w-[280px]">
-                <thead>
-                  <tr className="bg-muted/50">
-                    <th className="border border-border p-2 text-left">{t('guild')}</th>
-                    <th className="border border-border p-2 text-left">{t('dungeon')}</th>
-                    <th className="border border-border p-2 text-right">{t('participationCount')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.map((s) => (
-                    <tr key={`${s.guildId}-${s.dungeonId}`}>
-                      <td className="border border-border p-2">{s.guildName}</td>
-                      <td className="border border-border p-2">{s.dungeonName}</td>
-                      <td className="border border-border p-2 text-right">{s.participationCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        {/* 4.1 Loottabelle: Erhaltener Loot je Gilde je Dungeon (Pagination + Locale) */}
-        <section aria-labelledby="loot-heading">
-          <h2 id="loot-heading" className="text-lg font-semibold text-foreground mb-2">
-            {t('lootTable')}
-          </h2>
-          <p className="text-muted-foreground text-sm mb-4">{t('lootTableDescription')}</p>
-          <ProfileLoot
-            initialLoot={initialLoot}
-            totalCount={lootTotalCount}
-            locale={locale}
-            pageSize={LOOT_PAGE_SIZE}
-          />
-        </section>
+        <ProfilePageTabs
+          raidTimeRows={raidTimeRows}
+          characterRows={characterRows}
+          guildOptions={guildOptions}
+          stats={stats}
+          initialLoot={initialLoot}
+          lootTotalCount={lootTotalCount}
+          locale={locale}
+          lootPageSize={LOOT_PAGE_SIZE}
+        />
       </div>
     );
   } catch (err) {
