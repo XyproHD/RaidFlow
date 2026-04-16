@@ -6,6 +6,7 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { SessionProvider } from '@/components/session-provider';
 import { Topbar } from '@/components/topbar';
 import { StatusBanner } from '@/components/status-banner';
+import { FeedbackFab } from '@/components/feedback-fab';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getAppConfig, OWNER_DISCORD_ID } from '@/lib/app-config';
@@ -72,6 +73,9 @@ export default async function LocaleLayout({
 
   return (
     <html lang={locale} suppressHydrationWarning>
+      <head>
+        <script async src="https://tally.so/widgets/embed.js"></script>
+      </head>
       <body>
         <SessionProvider>
           <ThemeProvider>
@@ -88,6 +92,7 @@ export default async function LocaleLayout({
                 />
                 {showStatusBanner && <StatusBanner message={statusMessage} />}
                 <main className="flex-1">{children}</main>
+                <FeedbackFab />
               </div>
             </NextIntlClientProvider>
           </ThemeProvider>
