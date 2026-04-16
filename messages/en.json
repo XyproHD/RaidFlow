@@ -346,7 +346,7 @@
     "addCharacter": "Add character",
     "autoAddCharacter": "Auto Add",
     "autoAddDescription": "Enter server and character name. RaidFlow validates the character via the Battle.net API and creates the entry automatically.",
-    "characterAddBnetHint": "Pick your realm from the list, enter the character name, then run “BNet Sync”. After that, choose class (prefilled from Battle.net when recognized) and main spec manually, then off-spec and save.",
+    "characterAddBnetHint": "Pick the realm you play on and find your character via BNet Sync. Make sure the spelling is exact. Only valid Battle.net characters can be added.",
     "bnetSync": "BNet Sync",
     "bnetSyncLoading": "Syncing…",
     "bnetExactSpellingHint": "Use the exact spelling as in WoW—including special characters and capitalization.",

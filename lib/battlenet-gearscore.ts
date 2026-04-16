@@ -4,6 +4,9 @@ import { calculateGearscoreFromItems, type GearscoreItem } from '@/lib/gearscore
 import type { WowRegion } from '@/lib/wow-classic-realms';
 import { isMissingGearScoreColumnError } from '@/lib/rf-character-gear-score-compat';
 
+const ITEM_FALLBACK_CONCURRENCY = 4;
+const LOGIN_REFRESH_CONCURRENCY = 2;
+
 function toWowRegion(region: string): WowRegion {
   const r = region.trim().toLowerCase();
   if (r === 'eu' || r === 'us' || r === 'kr' || r === 'tw') return r;
@@ -175,11 +178,15 @@ async function toGearscoreItemsWithItemFallback(
   locale: string,
   apiBaseUrl: string
 ): Promise<GearscoreItem[]> {
-  const out: GearscoreItem[] = [];
-  for (const item of payload.equipped_items ?? []) {
+  const equipped = payload.equipped_items ?? [];
+  const workers = Math.max(1, Math.min(ITEM_FALLBACK_CONCURRENCY, equipped.length || 1));
+  const out = await runWithConcurrency<BnetEquipmentItem, GearscoreItem | null>(
+    workers,
+    equipped,
+    async (item) => {
     const qualityType = item.quality?.type ?? '';
     const inventoryType = item.inventory_type?.type ?? '';
-    if (!qualityType || !inventoryType) continue;
+    if (!qualityType || !inventoryType) return null;
 
     let itemLevel = Number(item.item_level ?? item.level?.value ?? 0);
     if (!Number.isFinite(itemLevel) || itemLevel <= 0) {
@@ -189,15 +196,37 @@ async function toGearscoreItemsWithItemFallback(
         if (resolved != null) itemLevel = resolved;
       }
     }
-    if (!Number.isFinite(itemLevel) || itemLevel <= 0) continue;
-    out.push({
+    if (!Number.isFinite(itemLevel) || itemLevel <= 0) return null;
+    return {
       itemLevel,
       qualityType,
       inventoryType,
       slotType: item.slot?.type ?? null,
-    });
-  }
-  return out;
+    };
+    }
+  );
+  return out.filter((v): v is GearscoreItem => v != null);
+}
+
+async function runWithConcurrency<TIn, TOut>(
+  limit: number,
+  items: TIn[],
+  worker: (item: TIn, index: number) => Promise<TOut>
+): Promise<TOut[]> {
+  const results: TOut[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length || 1)) }).map(
+    async () => {
+      while (true) {
+        const idx = cursor;
+        cursor += 1;
+        if (idx >= items.length) return;
+        results[idx] = await worker(items[idx] as TIn, idx);
+      }
+    }
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 async function loadCharacterWithBattlenetProfile(characterId: string) {
@@ -313,11 +342,15 @@ export async function refreshAllBattlenetCharactersForUser(userId: string): Prom
     },
     select: { id: true },
   });
-  for (const c of characters) {
-    try {
-      await refreshCharacterGearscore(c.id);
-    } catch (error) {
-      console.error('[Gearscore login refresh] failed for character', c.id, error);
+  await runWithConcurrency(
+    Math.max(1, Math.min(LOGIN_REFRESH_CONCURRENCY, characters.length || 1)),
+    characters,
+    async (c) => {
+      try {
+        await refreshCharacterGearscore(c.id);
+      } catch (error) {
+        console.error('[Gearscore login refresh] failed for character', c.id, error);
+      }
     }
-  }
+  );
 }

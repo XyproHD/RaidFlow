@@ -6,11 +6,13 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { SessionProvider } from '@/components/session-provider';
 import { Topbar } from '@/components/topbar';
 import { StatusBanner } from '@/components/status-banner';
+import { FeedbackFab } from '@/components/feedback-fab';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getAppConfig, OWNER_DISCORD_ID } from '@/lib/app-config';
 import { getBotInviteUrl } from '@/lib/bot-invite';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
+import { getGuildsForUserCached, type UserGuildInfo } from '@/lib/user-guilds';
 import '../globals.css';
 
 export const metadata: Metadata = {
@@ -37,6 +39,7 @@ export default async function LocaleLayout({
   let showGuildManagement = false;
   let botInviteUrl = '#';
   let appConfig: Awaited<ReturnType<typeof getAppConfig>> | null = null;
+  let userGuilds: UserGuildInfo[] = [];
   try {
     session = await getServerSession(authOptions);
     const discordId = (session as { discordId?: string } | null)?.discordId;
@@ -50,12 +53,10 @@ export default async function LocaleLayout({
     }
     if (userId) {
       try {
-        const guildmaster = await prisma.rfUserGuild.findFirst({
-          where: { userId, role: 'guildmaster' },
-        });
-        showGuildManagement = !!guildmaster;
+        userGuilds = await getGuildsForUserCached(userId, discordId ?? null);
+        showGuildManagement = userGuilds.some((g) => g.role === 'guildmaster');
       } catch (e) {
-        console.error('[Layout] rfUserGuild.findFirst (guildmaster):', e);
+        console.error('[Layout] getGuildsForUserCached:', e);
       }
     }
     botInviteUrl = getBotInviteUrl();
@@ -72,6 +73,9 @@ export default async function LocaleLayout({
 
   return (
     <html lang={locale} suppressHydrationWarning>
+      <head>
+        <script async src="https://tally.so/widgets/embed.js"></script>
+      </head>
       <body>
         <SessionProvider>
           <ThemeProvider>
@@ -84,9 +88,11 @@ export default async function LocaleLayout({
                   showGuildManagement={showGuildManagement}
                   botInviteUrl={botInviteUrl}
                   discordBotInviteEnabled={discordBotInviteEnabled}
+                  initialUserGuilds={userGuilds}
                 />
                 {showStatusBanner && <StatusBanner message={statusMessage} />}
                 <main className="flex-1">{children}</main>
+                <FeedbackFab />
               </div>
             </NextIntlClientProvider>
           </ThemeProvider>

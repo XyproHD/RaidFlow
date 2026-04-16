@@ -79,6 +79,7 @@ model RfUserGuild {
   guild  RfGuild @relation(fields: [guildId], references: [id], onDelete: Cascade)
 
   @@id([userId, guildId])
+  @@index([guildId])
   @@map("rf_user_guild")
 }
 
@@ -133,6 +134,7 @@ model RfGuildMember {
   memberRaidGroups RfGuildMemberRaidGroup[]
 
   @@unique([userId, guildId])
+  @@index([guildId])
   @@map("rf_guild_member")
 }
 
@@ -163,6 +165,8 @@ model RfCharacter {
   raidGroupCharacters  RfRaidGroupCharacter[]
   battlenetProfile     RfBattlenetCharacterProfile?
 
+  @@index([userId])
+  @@index([guildId])
   @@map("rf_character")
 }
 
@@ -254,6 +258,9 @@ model RfRaid {
   completions   RfRaidCompletion[]
   auditLogs     RfAuditLog[]
 
+  @@index([guildId, scheduledAt])
+  @@index([scheduledAt])
+  @@index([raidGroupRestrictionId])
   @@map("rf_raid")
 }
 
@@ -290,6 +297,9 @@ model RfRaidSignup {
   user      RfUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
   character RfCharacter? @relation(fields: [characterId], references: [id], onDelete: SetNull)
 
+  @@index([raidId])
+  @@index([userId])
+  @@index([characterId])
   @@map("rf_raid_signup")
 }
 
@@ -305,6 +315,9 @@ model RfRaidCompletion {
   user      RfUser      @relation(fields: [userId], references: [id], onDelete: Cascade)
   character RfCharacter? @relation(fields: [characterId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
+  @@index([raidId])
+  @@index([characterId])
   @@map("rf_raid_completion")
 }
 
@@ -322,6 +335,9 @@ model RfLoot {
   dungeon   RfDungeon  @relation(fields: [dungeonId], references: [id], onDelete: Restrict)
   character RfCharacter? @relation(fields: [characterId], references: [id], onDelete: SetNull)
 
+  @@index([userId, receivedAt(sort: Desc)])
+  @@index([guildId])
+  @@index([characterId])
   @@map("rf_loot")
 }
 

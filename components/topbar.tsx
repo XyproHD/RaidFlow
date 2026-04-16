@@ -22,6 +22,8 @@ export type TopbarProps = {
   botInviteUrl?: string;
   /** Wenn false, ist „Discord Bot einladen“ ausgegraut und nicht klickbar. */
   discordBotInviteEnabled?: boolean;
+  /** Serverseitig vorgeladene Gilden, um zusätzlichen Client-Fetch zu vermeiden. */
+  initialUserGuilds?: UserGuildInfo[];
 };
 
 /** Globale Topbar: Landing + geschützte Bereiche. Links RaidFlow, rechts Burger (eingeloggt), Sprach-Dropdown, Theme-Switch, Logout (eingeloggt). */
@@ -32,6 +34,7 @@ export function Topbar({
   showGuildManagement = false,
   botInviteUrl = '#',
   discordBotInviteEnabled = true,
+  initialUserGuilds = [],
 }: TopbarProps) {
   const t = useTranslations('shell');
   const tCommon = useTranslations('common');
@@ -43,7 +46,11 @@ export function Topbar({
   const [burgerOpen, setBurgerOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const [guildMenuOpen, setGuildMenuOpen] = useState(false);
-  const [userGuilds, setUserGuilds] = useState<UserGuildInfo[]>([]);
+  const [userGuilds, setUserGuilds] = useState<UserGuildInfo[]>(initialUserGuilds);
+
+  useEffect(() => {
+    setUserGuilds(initialUserGuilds);
+  }, [initialUserGuilds]);
 
   const isDashboard = pathname?.includes('/dashboard') ?? false;
   const isGuildsPage = pathname?.includes('/guilds') ?? false;
@@ -66,8 +73,7 @@ export function Topbar({
 
   const needsGuildList = isLoggedIn && (isDashboard || isGuildsPage);
   useEffect(() => {
-    if (!needsGuildList) {
-      setUserGuilds([]);
+    if (!needsGuildList || userGuilds.length > 0) {
       return;
     }
     const ac = new AbortController();
@@ -86,7 +92,7 @@ export function Topbar({
       }
     })();
     return () => ac.abort();
-  }, [needsGuildList, pathname]);
+  }, [needsGuildList, pathname, userGuilds.length]);
 
   return (
     <>

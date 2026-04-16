@@ -1,5 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { getServerSession } from 'next-auth';
+import dynamic from 'next/dynamic';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getGuildsForUserCached, getRaidsForUser } from '@/lib/user-guilds';
@@ -11,24 +12,46 @@ import {
 } from '@/lib/rf-character-gear-score-compat';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
-import { DashboardClient, type DashboardCalendarRaid, type DashboardCharacter, type DashboardGuild, type DashboardSignupRow } from './dashboard-client';
+import type { DashboardCalendarRaid, DashboardCharacter, DashboardGuild, DashboardSignupRow } from './dashboard-client';
+
+const DashboardClient = dynamic(
+  () => import('./dashboard-client').then((m) => m.DashboardClient),
+  {
+    loading: () => (
+      <div className="p-6 md:p-8 text-sm text-muted-foreground">
+        Dashboard wird geladen...
+      </div>
+    ),
+  }
+);
 
 type SearchParams = Promise<{ guild?: string }>;
 
 /** Dashboard: Raid-Übersicht gefiltert nach aktiver Gilde (in Topbar). Empty-States bei keiner Gildenmitgliedschaft bzw. ohne Raider-Rechte. */
 export default async function DashboardPage(props: { searchParams?: SearchParams }) {
   try {
-    const t = await getTranslations('dashboard');
-    const locale = await getLocale();
-    const session = await getServerSession(authOptions);
+    const [t, locale, session] = await Promise.all([
+      getTranslations('dashboard'),
+      getLocale(),
+      getServerSession(authOptions),
+    ]);
     const userId = await getEffectiveUserId(session as { userId?: string; discordId?: string } | null);
     const discordId = (session as { discordId?: string } | null)?.discordId;
+
+    const now = new Date();
+    // Load a wider window so the dashboard calendar can paginate +/-7 days.
+    const rangeStart = new Date(now);
+    rangeStart.setDate(rangeStart.getDate() - 28);
+    rangeStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(now);
+    rangeEnd.setDate(rangeEnd.getDate() + 28);
+    rangeEnd.setHours(23, 59, 59, 999);
 
     let guilds: Awaited<ReturnType<typeof getGuildsForUserCached>> = [];
     let raids: Awaited<ReturnType<typeof getRaidsForUser>> = [];
     try {
       guilds = userId ? await getGuildsForUserCached(userId, discordId ?? null) : [];
-      raids = await getRaidsForUser(guilds);
+      raids = await getRaidsForUser(guilds, { from: rangeStart, to: rangeEnd });
     } catch (e) {
       console.error('[Dashboard]', e);
     }
@@ -133,18 +156,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       lootCount: lootCountByChar.get(c.id) ?? 0,
     }));
 
-    const now = new Date();
-    // Load a wider window so the dashboard calendar can paginate +/-7 days.
-    const rangeStart = new Date(now);
-    rangeStart.setDate(rangeStart.getDate() - 28);
-    rangeStart.setHours(0, 0, 0, 0);
-    const rangeEnd = new Date(now);
-    rangeEnd.setDate(rangeEnd.getDate() + 28);
-    rangeEnd.setHours(23, 59, 59, 999);
-
-    const raidIdsInCalendar = raids
-      .filter((r) => r.scheduledAt >= rangeStart && r.scheduledAt <= rangeEnd)
-      .map((r) => r.id);
+    const raidIdsInCalendar = raids.map((r) => r.id);
 
     function announcedGroupCountForDashboard(json: unknown): number | null {
       const p = parseStoredAnnouncedPlannerJson(json);

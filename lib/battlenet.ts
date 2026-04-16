@@ -16,6 +16,14 @@ export function profileQueryString(namespace: string, locale: string): string {
   return new URLSearchParams({ namespace, locale }).toString();
 }
 
+const TOKEN_EXPIRY_SAFETY_MS = 30_000;
+type BattlenetTokenCacheEntry = {
+  token: string;
+  expiresAt: number;
+  inflight?: Promise<string>;
+};
+const battlenetTokenCache = new Map<string, BattlenetTokenCacheEntry>();
+
 /** URL for logs/client debug: real query params; auth is Bearer (not in URL). */
 function battleNetCharacterRequestUrlForLog(
   apiBaseUrl: string,
@@ -247,20 +255,51 @@ export async function getBattlenetAccessToken(config: {
   clientSecret: string;
   oauthTokenUrl: string;
 }) {
-  const auth = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
-  const tokenRes = await fetch(config.oauthTokenUrl, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${auth}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: 'grant_type=client_credentials',
-    cache: 'no-store',
+  const cacheKey = `${config.oauthTokenUrl}::${config.clientId}`;
+  const cached = battlenetTokenCache.get(cacheKey);
+  const now = Date.now();
+  if (cached?.token && cached.expiresAt > now + TOKEN_EXPIRY_SAFETY_MS) {
+    return cached.token;
+  }
+  if (cached?.inflight) return cached.inflight;
+
+  const inflight = (async () => {
+    const auth = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
+    const tokenRes = await fetch(config.oauthTokenUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'grant_type=client_credentials',
+      cache: 'no-store',
+    });
+    if (!tokenRes.ok) throw new Error('Battle.net Auth fehlgeschlagen.');
+    const tokenData = (await tokenRes.json()) as { access_token?: string; expires_in?: number };
+    if (!tokenData.access_token) throw new Error('Battle.net Access Token fehlt.');
+    const expiresInSec = Number.isFinite(tokenData.expires_in) ? Number(tokenData.expires_in) : 0;
+    const expiresAt = Date.now() + Math.max(0, expiresInSec * 1000);
+    battlenetTokenCache.set(cacheKey, {
+      token: tokenData.access_token,
+      expiresAt,
+    });
+    return tokenData.access_token;
+  })();
+
+  battlenetTokenCache.set(cacheKey, {
+    token: '',
+    expiresAt: 0,
+    inflight,
   });
-  if (!tokenRes.ok) throw new Error('Battle.net Auth fehlgeschlagen.');
-  const tokenData = (await tokenRes.json()) as { access_token?: string };
-  if (!tokenData.access_token) throw new Error('Battle.net Access Token fehlt.');
-  return tokenData.access_token;
+
+  try {
+    return await inflight;
+  } finally {
+    const latest = battlenetTokenCache.get(cacheKey);
+    if (latest?.inflight === inflight) {
+      battlenetTokenCache.delete(cacheKey);
+    }
+  }
 }
 
 function wowVersionToInternal(version: string): string {

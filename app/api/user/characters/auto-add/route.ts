@@ -77,6 +77,12 @@ export async function POST(request: NextRequest) {
     }
 
     const created = await prisma.$transaction(async (tx) => {
+      const shouldBeMain = nextGuildId
+        ? !(await tx.rfCharacter.findFirst({
+            where: { userId, guildId: nextGuildId },
+            select: { id: true },
+          }))
+        : false;
       const character = await tx.rfCharacter.create({
         data: {
           userId,
@@ -84,7 +90,7 @@ export async function POST(request: NextRequest) {
           guildId: nextGuildId,
           mainSpec,
           offSpec: null,
-          isMain: false,
+          isMain: shouldBeMain,
         },
         include: { guild: { select: { id: true, name: true } } },
       });

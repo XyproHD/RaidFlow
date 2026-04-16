@@ -92,6 +92,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const createdId = await prisma.$transaction(async (tx) => {
+      const shouldBeMain = nextGuildId
+        ? !(await tx.rfCharacter.findFirst({
+            where: { userId, guildId: nextGuildId },
+            select: { id: true },
+          }))
+        : false;
       const created = await tx.rfCharacter.create({
         data: {
           userId,
@@ -99,7 +105,7 @@ export async function POST(request: NextRequest) {
           guildId: nextGuildId,
           mainSpec: mainSpec.trim(),
           offSpec: offSpec?.trim() || null,
-          isMain: false,
+          isMain: shouldBeMain,
         },
       });
       const data = battlenetProfileJsonToUpsertData(bnet);

@@ -346,7 +346,7 @@
     "addCharacter": "Charakter anlegen",
     "autoAddCharacter": "Auto Add",
     "autoAddDescription": "Gib Server und Charaktername an. RaidFlow prüft den Charakter über die Battle.net API und legt den Eintrag automatisch an.",
-    "characterAddBnetHint": "Wähle zuerst den Server aus der Liste, gib den Charakternamen ein und klicke auf „BNet Sync“. Danach wählst du Klasse (aus Battle.net vorausgefüllt, falls erkannt) und Haupt-Spec manuell; danach Off-Spec und Speichern.",
+    "characterAddBnetHint": "Wähle den Server, auf dem du spielst, und suche deinen Charakter per BNet Sync. Achte auf die exakte Schreibweise. Nur gültige Battle.net-Charaktere können angelegt werden.",
     "bnetSync": "BNet Sync",
     "bnetSyncLoading": "Synchronisiere …",
     "bnetExactSpellingHint": "Achte auf die exakte Schreibweise wie in WoW – inklusive Sonderzeichen und Groß-/Kleinschreibung.",

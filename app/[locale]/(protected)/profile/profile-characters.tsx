@@ -648,7 +648,9 @@ export function ProfileCharacters({
         </p>
       )}
       {modalOpen === 'add' && (
-        <p className="text-sm text-muted-foreground mb-3">{t('characterAddBnetHint')}</p>
+        <div className="mb-3 rounded-md border border-border bg-muted/30 px-3 py-2">
+          <p className="text-sm text-muted-foreground">{t('characterAddBnetHint')}</p>
+        </div>
       )}
       <div className="grid gap-3">
         <label className="text-sm font-medium" htmlFor="character-realm-combobox">
@@ -769,12 +771,6 @@ export function ProfileCharacters({
             {bnetSyncLoading ? t('bnetSyncLoading') : t('bnetSync')}
           </button>
         </div>
-        {modalOpen === 'add' && !addBnetAligned ? (
-          <p className="text-xs text-muted-foreground">{t('bnetSyncRequiredBeforeSave')}</p>
-        ) : null}
-        {addBnetAligned ? (
-          <p className="text-xs text-muted-foreground">{t('bnetPendingSaveHint')}</p>
-        ) : null}
         {(modalOpen === 'edit' || addBnetAligned) &&
           (classId || selectedMainSpecDisplay || name.trim()) && (
             <div
@@ -842,9 +838,6 @@ export function ProfileCharacters({
         ) : null}
         {(modalOpen === 'edit' || addBnetAligned) && (
           <>
-            {addBnetAligned ? (
-              <p className="text-xs text-muted-foreground">{t('bnetMainSpecManualHint')}</p>
-            ) : null}
             <label className="text-sm font-medium">
               {t('class')} <span className="text-destructive">*</span>
             </label>

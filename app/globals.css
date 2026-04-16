@@ -59,3 +59,17 @@
   }
 }
 
+@keyframes rf-feedback-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(251, 191, 36, 0);
+  }
+}
+
+.rf-feedback-fab {
+  animation: rf-feedback-pulse 4.5s ease-in-out infinite;
+}
+
