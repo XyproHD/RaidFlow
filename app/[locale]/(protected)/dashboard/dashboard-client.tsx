@@ -299,18 +299,19 @@ export function DashboardClient({
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('title')}</h1>
 
-      <section aria-labelledby="guild-memberships-heading" className="space-y-4">
-        <div className="flex items-center justify-between gap-3 pb-3 border-b border-border">
-          <h2 id="guild-memberships-heading" className="text-base font-semibold text-foreground tracking-tight">
+      <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+          <h2 id="guild-memberships-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('guildMemberships')}
           </h2>
         </div>
+        <div className="p-4 space-y-2">
         {guilds.length === 0 ? (
           <p className="text-muted-foreground text-sm">{t('noGuildMembership')}</p>
         ) : (
           <ul className="grid gap-2">
             {guilds.map((g) => (
-              <li key={g.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-4 py-3 shadow-sm">
+              <li key={g.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-4 py-3">
                 <div className="min-w-0 flex items-center gap-2">
                   <div className="min-w-0">
                     {g.armoryUrl ? (
@@ -382,74 +383,54 @@ export function DashboardClient({
             ))}
           </ul>
         )}
+        </div>
       </section>
 
-      <section aria-labelledby="my-stats-heading" className="space-y-4">
-        <div className="pb-3 border-b border-border">
-          <h2 id="my-stats-heading" className="text-base font-semibold text-foreground tracking-tight">
+      <section aria-labelledby="my-stats-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+          <h2 id="my-stats-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('myStats')}
           </h2>
         </div>
         {characters.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t('noCharacters')}</p>
+          <p className="px-5 py-4 text-muted-foreground text-sm">{t('noCharacters')}</p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="divide-y divide-border">
             {characters.map((c) => (
-              <div key={c.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="flex shrink-0 items-center justify-center w-6 h-10">
-                    <CharacterMainStar
-                      isMain={!!c.isMain}
-                      titleMain={tProfile('mainLabel')}
-                      titleAlt={tProfile('altLabel')}
-                      sizePx={18}
-                    />
-                  </div>
-                  <div className="flex shrink-0 items-center justify-center w-9 h-9 rounded-lg bg-muted/50">
-                    {c.classId ? <ClassIcon classId={c.classId} size={24} title={c.mainSpec} /> : null}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start gap-2 min-w-0">
-                      <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                        <CharacterSpecIconsInline
-                          mainSpec={c.mainSpec}
-                          offSpec={c.offSpec}
-                          size={24}
-                          slashClassName="hidden"
-                          offSpecIconClassName="opacity-90"
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <div className="font-semibold text-foreground truncate" title={c.name}>
-                            {c.name}
-                          </div>
-                          {c.hasBattlenet ? <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} /> : null}
-                          <CharacterGearscoreBadge
-                            characterId={c.id}
-                            hasBattlenet={c.hasBattlenet}
-                            gearScore={c.gearScore}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+              <div key={c.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors">
+                <div className="flex shrink-0 items-center justify-center w-5 h-5">
+                  <CharacterMainStar
+                    isMain={!!c.isMain}
+                    titleMain={tProfile('mainLabel')}
+                    titleAlt={tProfile('altLabel')}
+                    sizePx={14}
+                  />
                 </div>
-                <p
-                  className="mt-2 text-sm text-muted-foreground truncate"
-                  title={c.guildName ? `${t('guild')}: ${c.guildName}` : undefined}
-                >
-                  {t('guild')}: {c.guildName ?? '–'}
-                </p>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                  <div className="rounded-lg bg-muted/40 border border-border/50 px-3 py-2">
-                    <div className="text-xs text-muted-foreground">{t('participatedRaids')}</div>
-                    <div className="font-bold text-foreground tabular-nums">{c.participatedRaids}</div>
-                  </div>
-                  <div className="rounded-lg bg-muted/40 border border-border/50 px-3 py-2">
-                    <div className="text-xs text-muted-foreground">{t('lootReceived')}</div>
-                    <div className="font-bold text-foreground tabular-nums">{c.lootCount}</div>
-                  </div>
+                <div className="flex shrink-0 items-center justify-center">
+                  {c.classId ? <ClassIcon classId={c.classId} size={20} title={c.mainSpec} /> : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <CharacterSpecIconsInline
+                    mainSpec={c.mainSpec}
+                    offSpec={c.offSpec}
+                    size={18}
+                    slashClassName="hidden"
+                    offSpecIconClassName="opacity-70"
+                  />
+                </div>
+                <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                  <span className="font-medium text-sm text-foreground truncate" title={c.name}>{c.name}</span>
+                  {c.hasBattlenet ? <BattlenetLogo size={14} title={tProfile('bnetLinkedBadgeTitle')} /> : null}
+                  <CharacterGearscoreBadge
+                    characterId={c.id}
+                    hasBattlenet={c.hasBattlenet}
+                    gearScore={c.gearScore}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground hidden sm:block shrink-0 truncate max-w-[110px]" title={c.guildName ?? undefined}>{c.guildName ?? '–'}</span>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums shrink-0">
+                  <span title={t('participatedRaids')}>{c.participatedRaids}×</span>
+                  <span title={t('lootReceived')} className="hidden xs:block">{c.lootCount} Loot</span>
                 </div>
               </div>
             ))}
@@ -457,16 +438,16 @@ export function DashboardClient({
         )}
       </section>
 
-      <section aria-labelledby="my-signups-heading" className="space-y-4">
-        <div className="pb-3 border-b border-border">
-          <h2 id="my-signups-heading" className="text-base font-semibold text-foreground tracking-tight">
+      <section aria-labelledby="my-signups-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+          <h2 id="my-signups-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('mySignups')}
           </h2>
         </div>
         {signups.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t('mySignupsEmpty')}</p>
+          <p className="px-5 py-4 text-muted-foreground text-sm">{t('mySignupsEmpty')}</p>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+          <div className="overflow-x-auto">
             <table className="min-w-[980px] w-full text-sm">
               <thead className="border-b border-border bg-muted/30">
                 <tr className="text-left">
@@ -630,9 +611,9 @@ export function DashboardClient({
           )
         : null}
 
-      <section aria-labelledby="calendar-heading" className="space-y-4">
-        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 pb-3 border-b border-border">
-          <h2 id="calendar-heading" className="text-base font-semibold text-foreground tracking-tight">
+      <section aria-labelledby="calendar-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 border-b border-border bg-muted/20">
+          <h2 id="calendar-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('calendar')}
           </h2>
 
@@ -719,6 +700,7 @@ export function DashboardClient({
           </div>
         </div>
 
+        <div className="p-4 sm:p-5">
         {calendarView === 'tiles' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 items-start">
             {days.map((day) => {
@@ -997,6 +979,7 @@ export function DashboardClient({
             </table>
           </div>
         )}
+        </div>
       </section>
 
       {openCalendarActionRaidId && openCalendarActionPos

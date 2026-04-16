@@ -27,27 +27,27 @@
     --radius: 0.625rem;
   }
 
-  /* Dark Mode — tiefes Marineblau-Schwarz, Amber-Gold als Primary */
+  /* Dark Mode — tiefes Marineblau, gedämpftes Stahlblau als Primary */
   .dark {
     --background: 224 22% 8%;
-    --foreground: 210 16% 91%;
-    --card: 224 20% 11%;
-    --card-foreground: 210 16% 91%;
-    --popover: 224 20% 12%;
-    --popover-foreground: 210 16% 91%;
-    --primary: 43 88% 56%;
-    --primary-foreground: 224 28% 8%;
-    --secondary: 224 16% 16%;
-    --secondary-foreground: 210 15% 80%;
-    --muted: 224 16% 14%;
-    --muted-foreground: 210 10% 54%;
-    --accent: 224 16% 19%;
-    --accent-foreground: 210 16% 90%;
-    --destructive: 0 65% 50%;
+    --foreground: 210 14% 86%;
+    --card: 224 18% 12%;
+    --card-foreground: 210 14% 86%;
+    --popover: 224 18% 13%;
+    --popover-foreground: 210 14% 86%;
+    --primary: 214 36% 62%;
+    --primary-foreground: 224 40% 9%;
+    --secondary: 224 14% 17%;
+    --secondary-foreground: 210 12% 74%;
+    --muted: 224 14% 15%;
+    --muted-foreground: 210 8% 50%;
+    --accent: 224 14% 19%;
+    --accent-foreground: 210 14% 86%;
+    --destructive: 0 60% 48%;
     --destructive-foreground: 0 0% 100%;
-    --border: 224 16% 20%;
-    --input: 224 16% 20%;
-    --ring: 43 88% 56%;
+    --border: 224 14% 22%;
+    --input: 224 14% 22%;
+    --ring: 214 36% 62%;
     --radius: 0.625rem;
   }
 }
@@ -70,13 +70,13 @@
 @keyframes rf-feedback-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.25);
+    box-shadow: 0 0 0 0 hsl(214 36% 62% / 0.18);
   }
   50% {
-    box-shadow: 0 0 0 12px rgba(251, 191, 36, 0);
+    box-shadow: 0 0 0 10px hsl(214 36% 62% / 0);
   }
 }
 
 .rf-feedback-fab {
-  animation: rf-feedback-pulse 4.5s ease-in-out infinite;
+  animation: rf-feedback-pulse 5s ease-in-out infinite;
 }
