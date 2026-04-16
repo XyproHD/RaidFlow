@@ -170,15 +170,15 @@ export function GuildManagementContent({
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       {savedMessage && (
-        <p className="text-sm text-green-600 dark:text-green-400" role="status">
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-medium text-emerald-700 dark:text-emerald-400" role="status">
           {savedMessage}
-        </p>
+        </div>
       )}
 
       <div
         role="tablist"
         aria-label={t('title')}
-        className="flex flex-wrap gap-1 border-b border-border"
+        className="flex flex-wrap gap-1 rounded-xl bg-muted/50 p-1 w-fit border border-border/50"
       >
         {(
           [
@@ -196,10 +196,10 @@ export function GuildManagementContent({
             aria-controls={`guild-panel-${id}`}
             onClick={() => setActiveTab(id)}
             className={cn(
-              'px-4 py-2.5 text-sm font-medium rounded-t-md border-b-2 -mb-px transition-colors min-h-[44px]',
+              'px-4 py-2 text-sm font-medium rounded-lg transition-all min-h-[38px]',
               activeTab === id
-                ? 'border-primary text-foreground bg-muted/40'
-                : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30'
+                ? 'bg-background text-foreground shadow-sm border border-border/60'
+                : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
             )}
           >
             {label}
@@ -252,7 +252,7 @@ export function GuildManagementContent({
       >
         <GuildBattlenetSection guildId={guildId} onSaved={showSaved} />
         <section aria-labelledby="discord-settings-heading" className="space-y-4">
-          <h3 id="discord-settings-heading" className="text-base font-semibold text-foreground">
+          <h3 id="discord-settings-heading" className="text-base font-semibold text-foreground tracking-tight">
             {t('settingsDiscordHeading')}
           </h3>
           <ChannelsSection
@@ -461,10 +461,12 @@ function RaidGroupsSection({
 
   return (
     <section aria-labelledby="raid-groups-heading">
-      <h2 id="raid-groups-heading" className="text-lg font-semibold text-foreground mb-1">
-        {t('raidGroups')}
-      </h2>
-      <p className="text-sm text-muted-foreground mb-4">{t('raidGroupsDescription')}</p>
+      <div className="pb-3 border-b border-border mb-4">
+        <h2 id="raid-groups-heading" className="text-base font-semibold text-foreground tracking-tight">
+          {t('raidGroups')}
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">{t('raidGroupsDescription')}</p>
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">{t('showTwinks')}:</span>
@@ -492,21 +494,21 @@ function RaidGroupsSection({
           type="button"
           onClick={handleSaveAllowedChanges}
           disabled={!hasUnsavedAllowedChanges || savingAllowed}
-          className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-w-[10rem]"
+          className="rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 min-w-[10rem]"
         >
           {savingAllowed ? t('saving') : t('save')}
         </button>
       </div>
       {err && (
-        <p className="text-sm text-destructive mb-2" role="alert">
+        <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
           {err}
-        </p>
+        </div>
       )}
       {!addOpen ? (
         <button
           type="button"
           onClick={() => setAddOpen(true)}
-          className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium hover:opacity-90 mb-4 min-w-[10rem]"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors mb-4"
         >
           {t('addRaidGroup')}
         </button>
@@ -550,7 +552,7 @@ function RaidGroupsSection({
         {raidGroups.map((g) => {
           const groupMembers = membersByGroup.get(g.id) ?? [];
           return (
-            <li key={g.id} className="rounded-lg border border-border bg-card p-4">
+            <li key={g.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
               <div className="flex flex-wrap items-center gap-2 mb-3">
                 {editId === g.id ? (
                   <>
@@ -607,7 +609,7 @@ function RaidGroupsSection({
                     const sortedChars = sortCharsMainFirst(m.characters);
                     const visibleChars = charsFiltered(sortedChars);
                     return (
-                      <li key={m.id} className="rounded-lg border border-border bg-muted/20 p-2 flex flex-wrap items-center gap-2">
+                      <li key={m.id} className="rounded-lg border border-border bg-muted/30 p-3 flex flex-wrap items-center gap-2">
                         <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
                           {visibleChars.length === 0 ? (
                             m.characters.length === 0 ? (
@@ -654,11 +656,11 @@ function RaidGroupsSection({
                           type="button"
                           onClick={() => handleRemoveFromGroup(m, g.id)}
                           disabled={submitting || savingAllowed}
-                          className="shrink-0 p-1.5 rounded text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                          className="shrink-0 p-1.5 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
                           title={t('removeFromGroup')}
                           aria-label={t('removeFromGroup')}
                         >
-                          <span aria-hidden>⛔</span>
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
                       </li>
                     );
@@ -737,10 +739,10 @@ function CharacterCard({
   return (
     <div
       className={cn(
-        'grid items-center gap-x-1.5 gap-y-0.5 rounded-md border shadow-sm min-w-0',
-        compact ? 'px-2 py-1 min-w-[10rem]' : 'gap-2 rounded-lg px-3 py-2 min-w-[12rem]',
+        'grid items-center gap-x-1.5 gap-y-0.5 min-w-0',
+        compact ? 'rounded-lg border px-2 py-1.5 min-w-[10rem]' : 'gap-2 rounded-xl border px-3 py-2.5 min-w-[12rem] shadow-sm',
         highlightMain && ch.isMain
-          ? 'border-amber-500/50 bg-amber-500/10 dark:bg-amber-500/15'
+          ? 'border-amber-500/40 bg-amber-500/10 dark:bg-amber-500/10'
           : 'border-border bg-card'
       )}
       style={{ gridTemplateColumns: gridCols }}
@@ -892,10 +894,12 @@ function MembersSection({
   if (members.length === 0) {
     return (
       <section aria-labelledby="members-heading">
-        <h2 id="members-heading" className="text-lg font-semibold text-foreground mb-1">
-          {t('members')}
-        </h2>
-        <p className="text-sm text-muted-foreground mb-4">{t('membersDescription')}</p>
+        <div className="pb-3 border-b border-border mb-4">
+          <h2 id="members-heading" className="text-base font-semibold text-foreground tracking-tight">
+            {t('members')}
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1">{t('membersDescription')}</p>
+        </div>
         <p className="text-muted-foreground text-sm">{t('noMembers')}</p>
       </section>
     );
@@ -906,10 +910,12 @@ function MembersSection({
 
   return (
     <section aria-labelledby="members-heading">
-      <h2 id="members-heading" className="text-lg font-semibold text-foreground mb-1">
-        {t('members')}
-      </h2>
-      <p className="text-sm text-muted-foreground mb-4">{t('membersDescription')}</p>
+      <div className="pb-3 border-b border-border mb-4">
+        <h2 id="members-heading" className="text-base font-semibold text-foreground tracking-tight">
+          {t('members')}
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">{t('membersDescription')}</p>
+      </div>
       <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="flex flex-col gap-1 min-w-0 flex-1 sm:max-w-xs">
           <label htmlFor="members-filter-search" className="text-sm font-medium">
@@ -974,7 +980,7 @@ function MembersSection({
           return (
             <li
               key={m.id}
-              className="rounded-lg border border-border bg-card p-2 sm:p-2.5 shadow-sm"
+              className="rounded-xl border border-border bg-card p-3 sm:p-4 shadow-sm"
             >
               <div className="flex flex-col sm:flex-row sm:items-start gap-2">
                 <div className="flex-1 min-w-0 space-y-1.5">
@@ -1019,22 +1025,23 @@ function MembersSection({
                       type="button"
                       onClick={() => openPopup(m)}
                       disabled={assigning === m.id}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50 text-foreground hover:bg-muted disabled:opacity-50 min-w-[2.25rem]"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
                       title={t('assignGroups')}
                       aria-label={t('assignGroups')}
                       aria-expanded={popupMemberId === m.id}
                     >
-                      <span aria-hidden>➕</span>
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                     </button>
                     {popupMemberId === m.id && (
-                      <div className="absolute right-0 top-full z-20 mt-1 min-w-[180px] rounded-md border border-border bg-background py-2 shadow-lg">
-                        <p className="px-3 py-1 text-xs text-muted-foreground border-b border-border mb-2">
+                      <div className="absolute right-0 top-full z-20 mt-1.5 min-w-[200px] rounded-xl border border-border bg-popover shadow-xl overflow-hidden">
+                        <div className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border">
                           {t('assignGroups')}
-                        </p>
+                        </div>
+                        <div className="px-1 py-1">
                         {raidGroups.map((rg) => (
                           <label
                             key={rg.id}
-                            className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 cursor-pointer"
+                            className="flex items-center gap-2.5 rounded-lg px-3 py-2 hover:bg-muted cursor-pointer transition-colors"
                           >
                             <input
                               type="checkbox"
@@ -1048,12 +1055,13 @@ function MembersSection({
                         {raidGroups.length === 0 && (
                           <p className="px-3 py-2 text-sm text-muted-foreground">{t('noRaidGroups')}</p>
                         )}
-                        <div className="mt-2 pt-2 border-t border-border px-3">
+                        </div>
+                        <div className="px-3 pb-3 pt-1 border-t border-border">
                           <button
                             type="button"
                             onClick={() => handleSaveAssignment(m.id, Array.from(popupSelectedIds))}
                             disabled={assigning === m.id}
-                            className="w-full rounded bg-primary text-primary-foreground px-3 py-2 text-sm font-medium disabled:opacity-50 min-w-[6rem]"
+                            className="w-full rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
                           >
                             {assigning === m.id ? t('loading') : t('save')}
                           </button>
@@ -1215,7 +1223,7 @@ function ChannelsSection({
           type="button"
           onClick={openModal}
           disabled={saving}
-          className="shrink-0 rounded-md border border-input bg-background px-4 py-2.5 text-sm font-medium hover:bg-muted/60 disabled:opacity-50 min-h-[44px]"
+          className="shrink-0 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50 min-h-[44px]"
         >
           {t('discordChannelsEdit')}
         </button>
@@ -1223,7 +1231,7 @@ function ChannelsSection({
 
       {modalOpen && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px]"
           role="presentation"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeModal();
@@ -1233,20 +1241,20 @@ function ChannelsSection({
             role="dialog"
             aria-modal="true"
             aria-labelledby="discord-channels-modal-title"
-            className="flex w-full max-w-md max-h-[min(90vh,560px)] flex-col rounded-lg border border-border bg-background shadow-lg"
+            className="flex w-full max-w-md max-h-[min(90vh,560px)] flex-col rounded-2xl border border-border bg-card shadow-2xl"
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-              <h2 id="discord-channels-modal-title" className="text-base font-semibold">
+            <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-4">
+              <h2 id="discord-channels-modal-title" className="text-base font-semibold text-foreground tracking-tight">
                 {t('discordChannelsModalTitle')}
               </h2>
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                 aria-label={t('cancel')}
               >
-                ×
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
 
@@ -1280,12 +1288,12 @@ function ChannelsSection({
               )}
             </div>
 
-            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-4">
               <button
                 type="button"
                 onClick={closeModal}
                 disabled={saving}
-                className="rounded-md border border-input px-4 py-2.5 text-sm font-medium min-h-[44px]"
+                className="rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors min-h-[44px]"
               >
                 {t('cancel')}
               </button>
@@ -1293,7 +1301,7 @@ function ChannelsSection({
                 type="button"
                 onClick={() => void loadChannelsIntoModal()}
                 disabled={fetching || saving}
-                className="rounded-md border border-input px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-h-[44px]"
+                className="rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50 min-h-[44px]"
               >
                 {fetching ? t('loading') : t('discordChannelsRefresh')}
               </button>
@@ -1301,7 +1309,7 @@ function ChannelsSection({
                 type="button"
                 onClick={() => void handleApply()}
                 disabled={saving || fetching}
-                className="rounded-md bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium disabled:opacity-50 min-h-[44px]"
+                className="rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 min-h-[44px]"
               >
                 {saving ? t('saving') : t('discordChannelsApply')}
               </button>

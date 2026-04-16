@@ -40,7 +40,7 @@ export function CharacterDiscordPill({
   return (
     <span
       className={cn(
-        'rounded border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground max-w-[9rem] truncate',
+        'rounded-md border border-border bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground max-w-[9rem] truncate',
         blink && 'rf-blink-discord-conflict',
         className
       )}

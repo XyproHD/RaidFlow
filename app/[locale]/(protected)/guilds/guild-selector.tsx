@@ -25,13 +25,13 @@ export function GuildSelector({
     <div className="mb-6">
       <label
         htmlFor="guild-select"
-        className="block text-sm font-medium text-foreground mb-1"
+        className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2"
       >
         {t('selectGuild')}
       </label>
       <select
         id="guild-select"
-        className="w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm"
+        className="w-full max-w-xs rounded-xl border border-border bg-card px-3 py-2.5 text-sm font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
         value={selectedId}
         onChange={(e) => handleChange(e.target.value)}
       >

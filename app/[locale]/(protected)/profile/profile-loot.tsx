@@ -60,35 +60,35 @@ export function ProfileLoot({
 
   return (
     <>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm border-collapse border border-border min-w-[280px]">
+      <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+        <table className="w-full text-sm min-w-[320px]">
           <thead>
-            <tr className="bg-muted/50">
-              <th className="border border-border p-2 text-left">{t('itemRef')}</th>
-              <th className="border border-border p-2 text-left">{t('guild')}</th>
-              <th className="border border-border p-2 text-left">{t('dungeon')}</th>
-              <th className="border border-border p-2 text-left">{t('receivedAt')}</th>
+            <tr className="border-b border-border bg-muted/30">
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('itemRef')}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('guild')}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('dungeon')}</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('receivedAt')}</th>
             </tr>
           </thead>
           <tbody>
             {loot.map((l) => (
-              <tr key={l.id}>
-                <td className="border border-border p-2">{l.itemRef}</td>
-                <td className="border border-border p-2">{l.guildName}</td>
-                <td className="border border-border p-2">{l.dungeonName}</td>
-                <td className="border border-border p-2">{formatDate(l.receivedAt)}</td>
+              <tr key={l.id} className="border-b border-border last:border-b-0 hover:bg-muted/20 transition-colors">
+                <td className="px-4 py-3 text-sm font-medium text-foreground">{l.itemRef}</td>
+                <td className="px-4 py-3 text-sm text-muted-foreground">{l.guildName}</td>
+                <td className="px-4 py-3 text-sm text-muted-foreground">{l.dungeonName}</td>
+                <td className="px-4 py-3 text-sm text-muted-foreground tabular-nums">{formatDate(l.receivedAt)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {hasMore && (
-        <div className="mt-3">
+        <div className="mt-4">
           <button
             type="button"
             onClick={loadMore}
             disabled={loading}
-            className="rounded border border-input bg-background px-4 py-2 text-sm hover:bg-muted disabled:opacity-50"
+            className="rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
           >
             {loading ? t('loading') : t('loadMoreLoot')}
           </button>
