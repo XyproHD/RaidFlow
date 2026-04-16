@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
-import { channelExists, createPublicThreadInChannel } from '@/lib/discord-guild-api';
+import { channelExists } from '@/lib/discord-guild-api';
 import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 import { parseMinSpecsPayload } from '@/lib/min-spec-keys';
 
@@ -234,38 +234,37 @@ export async function POST(
     },
   });
 
-  let discordThreadId: string | null = null;
-  let storedChannelId: string | null = null;
-  let threadWarning: string | undefined;
+  let discordThreadWarning: string | undefined;
 
   if (createDiscordThread && discordChannelId) {
-    const threadTitle = `${primaryDungeon.name} – ${name}`.slice(0, 100);
+    // discordChannelId auf dem Raid speichern, damit syncRaidThreadSummary den Channel kennt
+    await prisma.rfRaid.update({
+      where: { id: raid.id },
+      data:  { discordChannelId },
+    });
     try {
-      const { threadId } = await createPublicThreadInChannel(discordChannelId, threadTitle);
-      discordThreadId = threadId;
-      storedChannelId = discordChannelId;
-      await prisma.rfRaid.update({
-        where: { id: raid.id },
-        data: {
-          discordThreadId,
-          discordChannelId: storedChannelId,
-        },
-      });
-      void syncRaidThreadSummary(raid.id);
+      // syncRaidThreadSummary postet Embed in Channel + erstellt Thread + speichert IDs
+      await syncRaidThreadSummary(raid.id);
     } catch (e) {
-      console.error('[POST raids] Discord thread failed:', e);
-      threadWarning = 'thread_failed';
+      console.error('[POST raids] Discord post failed:', e);
+      discordThreadWarning = 'discord_post_failed';
     }
   }
 
+  const updatedRaid = await prisma.rfRaid.findUnique({
+    where:  { id: raid.id },
+    select: { id: true, guildId: true, status: true, discordChannelId: true, discordThreadId: true, discordChannelMessageId: true },
+  });
+
   return NextResponse.json({
     raid: {
-      id: raid.id,
-      guildId: raid.guildId,
-      status: raid.status,
-      discordThreadId,
-      discordChannelId: storedChannelId,
+      id:                    updatedRaid?.id ?? raid.id,
+      guildId:               updatedRaid?.guildId ?? raid.guildId,
+      status:                updatedRaid?.status ?? raid.status,
+      discordChannelId:      updatedRaid?.discordChannelId ?? null,
+      discordThreadId:       updatedRaid?.discordThreadId ?? null,
+      discordChannelMessageId: updatedRaid?.discordChannelMessageId ?? null,
     },
-    ...(threadWarning ? { warning: threadWarning } : {}),
+    ...(discordThreadWarning ? { warning: discordThreadWarning } : {}),
   });
 }
