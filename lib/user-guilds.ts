@@ -45,6 +45,11 @@ export interface UserRaidInfo {
   canEdit: boolean; // Raidleader/Gildenmeister
 }
 
+export interface RaidQueryWindow {
+  from?: Date;
+  to?: Date;
+}
+
 /** Gleiche Sichtbarkeit wie in getRaidsForUser: Raider-Rolle, ggf. Raidgruppe oder Leitung. */
 export function userGuildCanSeeRaid(
   guildInfo: UserGuildInfo,
@@ -151,14 +156,25 @@ export const getGuildsForUserCached = cache(getGuildsForUser);
  * Gilden mit role 'member' (kein Raider-Recht) werden ausgeschlossen.
  */
 export async function getRaidsForUser(
-  userGuilds: UserGuildInfo[]
+  userGuilds: UserGuildInfo[],
+  window: RaidQueryWindow = {}
 ): Promise<UserRaidInfo[]> {
   const guildsWithAccess = userGuilds.filter((g) => g.role !== 'member');
   const guildIds = guildsWithAccess.map((g) => g.id);
   const guildMap = new Map(guildsWithAccess.map((g) => [g.id, g]));
+  const { from, to } = window;
+  const scheduledAtFilter =
+    from || to
+      ? {
+          scheduledAt: {
+            ...(from ? { gte: from } : {}),
+            ...(to ? { lte: to } : {}),
+          },
+        }
+      : {};
 
   const raids = await prisma.rfRaid.findMany({
-    where: { guildId: { in: guildIds } },
+    where: { guildId: { in: guildIds }, ...scheduledAtFilter },
     include: {
       guild: { select: { name: true } },
       dungeon: { select: { name: true } },

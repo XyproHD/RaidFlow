@@ -3,6 +3,7 @@
  * Nur eine von Whitelist/Blacklist ist aktiv.
  */
 
+import { cache } from 'react';
 import { prisma } from '@/lib/prisma';
 
 /** Feste Discord-ID des Application-Owners (immer Admin, nicht entfernbar). */
@@ -44,11 +45,6 @@ export const DEFAULT_APP_CONFIG_STATE: AppConfigState = {
   discordEmojis: {},
 };
 
-async function getConfigValue(key: string): Promise<string | null> {
-  const row = await prisma.rfAppConfig.findUnique({ where: { key } });
-  return row?.value ?? null;
-}
-
 function parseJsonArray(value: string | null): string[] {
   if (!value || value.trim() === '') return [];
   try {
@@ -75,28 +71,31 @@ function parseJsonStringRecord(value: string | null): Record<string, string> {
 }
 
 /** Lädt die komplette App-Config (Owner, Whitelist/Blacklist, Bot-Einladung, Wartungsmodus). */
-export async function getAppConfig(): Promise<AppConfigState> {
-  const [
-    owner,
-    useWhitelist,
-    useBlacklist,
-    whitelistRaw,
-    blacklistRaw,
-    discordBotInviteEnabled,
-    maintenanceMode,
-    statusMessage,
-    discordEmojisRaw,
-  ] = await Promise.all([
-    getConfigValue(KEY_OWNER),
-    getConfigValue(KEY_USE_WHITELIST),
-    getConfigValue(KEY_USE_BLACKLIST),
-    getConfigValue(KEY_SERVER_WHITELIST),
-    getConfigValue(KEY_SERVER_BLACKLIST),
-    getConfigValue(KEY_DISCORD_BOT_INVITE_ENABLED),
-    getConfigValue(KEY_MAINTENANCE_MODE),
-    getConfigValue(KEY_STATUS_MESSAGE),
-    getConfigValue(KEY_DISCORD_EMOJIS),
-  ]);
+export const getAppConfig = cache(async (): Promise<AppConfigState> => {
+  const keys = [
+    KEY_OWNER,
+    KEY_USE_WHITELIST,
+    KEY_USE_BLACKLIST,
+    KEY_SERVER_WHITELIST,
+    KEY_SERVER_BLACKLIST,
+    KEY_DISCORD_BOT_INVITE_ENABLED,
+    KEY_MAINTENANCE_MODE,
+    KEY_STATUS_MESSAGE,
+    KEY_DISCORD_EMOJIS,
+  ] as const;
+  const rows = await prisma.rfAppConfig.findMany({
+    where: { key: { in: [...keys] } },
+    select: { key: true, value: true },
+  });
+  const byKey = new Map(rows.map((r) => [r.key, r.value]));
+  const useWhitelist = byKey.get(KEY_USE_WHITELIST) ?? null;
+  const useBlacklist = byKey.get(KEY_USE_BLACKLIST) ?? null;
+  const whitelistRaw = byKey.get(KEY_SERVER_WHITELIST) ?? null;
+  const blacklistRaw = byKey.get(KEY_SERVER_BLACKLIST) ?? null;
+  const discordBotInviteEnabled = byKey.get(KEY_DISCORD_BOT_INVITE_ENABLED) ?? null;
+  const maintenanceMode = byKey.get(KEY_MAINTENANCE_MODE) ?? null;
+  const statusMessage = byKey.get(KEY_STATUS_MESSAGE) ?? null;
+  const discordEmojisRaw = byKey.get(KEY_DISCORD_EMOJIS) ?? null;
   return {
     ownerDiscordId: OWNER_DISCORD_ID,
     useWhitelist: useWhitelist === 'true',
@@ -108,7 +107,7 @@ export async function getAppConfig(): Promise<AppConfigState> {
     statusMessage: statusMessage ?? '',
     discordEmojis: parseJsonStringRecord(discordEmojisRaw),
   };
-}
+});
 
 /**
  * Filtert eine Liste von discord_guild_id nach Whitelist/Blacklist.

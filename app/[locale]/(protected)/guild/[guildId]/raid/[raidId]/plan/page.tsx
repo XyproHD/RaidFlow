@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { getServerSession } from 'next-auth';
 import { getTranslations } from 'next-intl/server';
 import { authOptions } from '@/lib/auth';
@@ -8,7 +9,6 @@ import { getSpecByDisplayName, type TbcRole } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { prisma } from '@/lib/prisma';
 import {
-  RaidRosterPlanner,
   type GuildCharacterOption,
   type RosterPlannerSignup,
 } from '@/components/raid-planner/raid-roster-planner';
@@ -16,6 +16,17 @@ import { getRaidDetailContext } from '@/lib/raid-detail-access';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 import { buildSpecStatsByMinKeys } from '@/lib/min-spec-keys';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
+
+const RaidRosterPlanner = dynamic(
+  () => import('@/components/raid-planner/raid-roster-planner').then((m) => m.RaidRosterPlanner),
+  {
+    loading: () => (
+      <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
+        Planer wird geladen...
+      </div>
+    ),
+  }
+);
 
 export default async function RaidPlanPage(props: {
   params: Promise<{ locale: string; guildId: string; raidId: string }>;
