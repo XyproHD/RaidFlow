@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyBotSecret } from '@/lib/bot-auth';
 import { resolveRaidAccess, computeRaidSignupPhase } from '@/lib/raid-detail-access';
 import { normalizeSignupType } from '@/lib/raid-signup-constants';
+import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 
 /**
  * POST /api/bot/raid-signup
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
     const deleted = await prisma.rfRaidSignup.deleteMany({
       where: { raidId, userId: user.id },
     });
+    await syncRaidThreadSummary(raidId);
     return NextResponse.json({ ok: true, deletedCount: deleted.count });
   }
 
@@ -122,6 +124,7 @@ export async function POST(request: NextRequest) {
         setConfirmed: false,
       },
     });
+    await syncRaidThreadSummary(raidId);
     return NextResponse.json({ ok: true });
   }
 
@@ -163,6 +166,7 @@ export async function POST(request: NextRequest) {
         setConfirmed: false,
       },
     });
+    await syncRaidThreadSummary(raidId);
     return NextResponse.json({ ok: true });
   }
 

@@ -2,13 +2,8 @@ import { prisma } from '@/lib/prisma';
 import type { RaidSignupPhase } from '@/lib/raid-detail-shared';
 import type { RaidSignupPunctuality, RaidSignupType } from '@/lib/raid-signup-constants';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
-import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 
 const NOTE_MIN = 3;
-
-function fireSync(raidId: string) {
-  void syncRaidThreadSummary(raidId);
-}
 
 export function validateSignedSpecForCharacter(
   signedSpec: string,
@@ -150,7 +145,6 @@ export async function commitRaidSelfSignupMutation(
       oldValue: prevSnap,
       newValue: snapshotSignup(updated),
     });
-    fireSync(raidId);
     return { signup: updated as unknown as Record<string, unknown>, isCreate: false };
   }
 
@@ -187,6 +181,5 @@ export async function commitRaidSelfSignupMutation(
     action: 'signup_create',
     newValue: snapshotSignup(created),
   });
-  fireSync(raidId);
   return { signup: created as unknown as Record<string, unknown>, isCreate: true };
 }

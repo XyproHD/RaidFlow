@@ -211,7 +211,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    void syncRaidThreadSummary(raidId);
+    await syncRaidThreadSummary(raidId);
     return NextResponse.json({ ok: true, message: 'Quickjoin erfolgreich!' });
   }
 
@@ -282,6 +282,7 @@ export async function POST(request: NextRequest) {
       note:           noteRaw,
     });
 
+    await syncRaidThreadSummary(raidId);
     return NextResponse.json({
       ok: true,
       isCreate,
@@ -325,7 +326,7 @@ export async function POST(request: NextRequest) {
       }).catch(() => { /* Audit-Fehler sind nicht kritisch */ });
     }
 
-    void syncRaidThreadSummary(raidId);
+    await syncRaidThreadSummary(raidId);
     return NextResponse.json({ ok: true, message: 'Abmeldung erfolgreich.' });
   }
 

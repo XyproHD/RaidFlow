@@ -12,10 +12,6 @@ import {
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 
-function fireSync(raidId: string) {
-  void syncRaidThreadSummary(raidId);
-}
-
 /**
  * POST /api/guilds/[guildId]/raids/[raidId]/signups
  * Anmeldung anlegen/aktualisieren (ein Eintrag pro User pro Raid).
@@ -130,6 +126,7 @@ export async function POST(
     punctuality,
     note,
   });
+  await syncRaidThreadSummary(raidId);
   return NextResponse.json({ signup }, { status: isCreate ? 201 : 200 });
 }
 
@@ -218,6 +215,6 @@ export async function DELETE(
     oldValue: prevSnap,
     newValue: auditNewValue,
   });
-  fireSync(raidId);
+  await syncRaidThreadSummary(raidId);
   return NextResponse.json({ ok: true });
 }
