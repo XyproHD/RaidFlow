@@ -1,135 +1,176 @@
+/**
+ * Synchronisiert den Discord-Post eines Raids.
+ *
+ * Neuer Ansatz (Option C):
+ *  1. Beim ersten Aufruf: Embed-Nachricht direkt im Channel posten + Thread daraus erstellen.
+ *  2. Bei Updates: Embed-Nachricht PATCH (editMessageFull).
+ *
+ * Gespeicherte IDs auf rf_raid:
+ *  - discordChannelMessageId : ID der Embed-Nachricht im Channel
+ *  - discordThreadId         : ID des Diskussions-Threads (aus der Nachricht erstellt)
+ *  - discordChannelId        : Parent-Channel
+ */
 import { prisma } from '@/lib/prisma';
 import {
-  createChannelMessage,
-  editChannelMessage,
+  createChannelMessageFull,
+  createThreadFromMessage,
+  editChannelMessageFull,
 } from '@/lib/discord-guild-api';
-import { formatCompositionGaps } from '@/lib/raid-composition-summary';
+import { buildRaidEmbed, buildRaidActionButtons } from '@/lib/raid-embed-builder';
 
-/**
- * Discord-Thread: ohne öffentliche URLs (Links nur intern / später).
- */
-export function buildRaidThreadSummaryContent(args: {
-  dungeonName: string;
-  raidName: string;
-  signupCount: number;
-  maxPlayers: number;
-  gapsLine: string;
-  raidStatus?: string;
-}): string {
-  const statusExtra =
-    args.raidStatus === 'locked'
-      ? '\n**Status:** Gesetzt (locked)'
-      : args.raidStatus === 'cancelled'
-        ? '\n**Status:** Abgesagt'
-        : '';
-  const lines = [
-    `**${args.dungeonName}** — ${args.raidName}`,
-    `Anmeldungen: **${args.signupCount}** / ${args.maxPlayers}`,
-    `Offen (Mindestbesetzung): ${args.gapsLine}`,
-    statusExtra,
-    '',
-    'Status und Anmeldung: RaidFlow-Webapp (intern).',
-  ];
-  return lines.join('\n').slice(0, 2000);
+// ---------------------------------------------------------------------------
+// Hilfsfunktionen
+// ---------------------------------------------------------------------------
+
+function getAppUrl(): string {
+  return (
+    process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
+    process.env.WEBAPP_URL?.replace(/\/$/, '') ||
+    'http://localhost:3000'
+  );
 }
 
-function placementPrefix(placement: string): string {
-  if (placement === 'confirmed') return '[G] ';
-  if (placement === 'substitute') return '[E] ';
-  return '';
+async function loadRaidForSync(raidId: string) {
+  return prisma.rfRaid.findUnique({
+    where: { id: raidId },
+    include: {
+      dungeon: { select: { name: true } },
+      signups: {
+        include: {
+          character: {
+            select: { name: true, mainSpec: true, isMain: true },
+          },
+        },
+        orderBy: { signedAt: 'asc' },
+      },
+    },
+  });
 }
 
+// ---------------------------------------------------------------------------
+// Kern-Sync
+// ---------------------------------------------------------------------------
+
 /**
- * Lädt Raid, aktualisiert oder erstellt die Zusammenfassungsnachricht im Discord-Thread.
+ * Erstellt oder aktualisiert den Embed-Post im Discord-Channel.
+ *
+ * - Kein discordChannelId gesetzt → nichts tun
+ * - Kein discordChannelMessageId → neue Nachricht + Thread erstellen
+ * - Vorhandenes discordChannelMessageId → Nachricht patchen
  */
 export async function syncRaidThreadSummary(raidId: string): Promise<void> {
   try {
-    const raid = await prisma.rfRaid.findUnique({
-      where: { id: raidId },
-      include: {
-        dungeon: { select: { name: true } },
-        signups: {
-          include: {
-            character: { select: { name: true, mainSpec: true } },
-          },
-          orderBy: { signedAt: 'asc' },
-        },
-        _count: { select: { signups: true } },
-      },
-    });
+    const raid = await loadRaidForSync(raidId);
+    if (!raid?.discordChannelId) return;
 
-    if (!raid?.discordThreadId) return;
-
-    const gapsLine = formatCompositionGaps({
-      minTanks: raid.minTanks,
-      minMelee: raid.minMelee,
-      minRange: raid.minRange,
-      minHealers: raid.minHealers,
-      minSpecs: raid.minSpecs as Record<string, number> | null,
-      signups: raid.signups.map((s) => ({
-        type: s.type,
-        signedSpec: s.signedSpec,
-        character: s.character ? { mainSpec: s.character.mainSpec } : null,
-      })),
-    });
-
-    const baseContent = buildRaidThreadSummaryContent({
-      dungeonName: raid.dungeon.name,
-      raidName: raid.name,
-      signupCount: raid._count.signups,
-      maxPlayers: raid.maxPlayers,
-      gapsLine,
-      raidStatus: raid.status,
-    });
-
-    const listLines = raid.signups.map((s) => {
-      const late = s.isLate ? '⏱ ' : '';
-      const nm = s.character?.name ?? '?';
-      const spec = s.signedSpec?.trim() || s.character?.mainSpec || '?';
-      const pl = placementPrefix(s.leaderPlacement ?? 'signup');
-      return `${pl}${late}${nm} (${spec}) — ${s.type}`;
-    });
-
-    const content = (
-      listLines.length > 0
-        ? `${baseContent}\n\n**Angemeldet:**\n${listLines.join('\n')}`
-        : baseContent
-    ).slice(0, 2000);
-
-    const threadId = raid.discordThreadId;
-    const msgId = raid.discordThreadSummaryMessageId;
-
-    if (msgId) {
-      try {
-        await editChannelMessage(threadId, msgId, content);
-        return;
-      } catch (e) {
-        console.warn('[syncRaidThreadSummary] edit failed, will try new message:', e);
+    const dungeonNames: string[] = [];
+    // Primärer Dungeon immer an erster Stelle
+    dungeonNames.push(raid.dungeon.name);
+    // Weitere Dungeons aus dungeonIds (falls multi-dungeon)
+    if (Array.isArray(raid.dungeonIds) && raid.dungeonIds.length > 1) {
+      const extraIds = (raid.dungeonIds as string[]).filter(id => id !== raid.dungeonId);
+      if (extraIds.length > 0) {
+        const extras = await prisma.rfDungeon.findMany({
+          where: { id: { in: extraIds } },
+          select: { name: true },
+        });
+        dungeonNames.push(...extras.map(d => d.name));
       }
     }
 
-    const { messageId } = await createChannelMessage(threadId, content);
+    const embedInput = {
+      raidId:             raid.id,
+      guildId:            raid.guildId,
+      raidName:           raid.name,
+      dungeonNames,
+      scheduledAt:        raid.scheduledAt,
+      signupUntil:        raid.signupUntil,
+      status:             raid.status,
+      maxPlayers:         raid.maxPlayers,
+      signupVisibility:   raid.signupVisibility,
+      announcedGroupsJson: raid.announcedPlannerGroupsJson,
+      signups: raid.signups.map(s => ({
+        userId:          s.userId,
+        characterName:   s.character?.name ?? null,
+        mainSpec:        s.character?.mainSpec ?? null,
+        signedSpec:      s.signedSpec,
+        isMain:          s.character?.isMain ?? null,
+        leaderPlacement: s.leaderPlacement,
+        isLate:          s.isLate,
+        type:            s.type,
+      })),
+      appUrl: getAppUrl(),
+      locale: 'de',
+    };
+
+    const embed      = buildRaidEmbed(embedInput);
+    const components = [buildRaidActionButtons(raid.id, raid.guildId)];
+
+    // --- Nachricht bearbeiten ---
+    if (raid.discordChannelMessageId) {
+      try {
+        await editChannelMessageFull(raid.discordChannelId, raid.discordChannelMessageId, {
+          embeds:     [embed],
+          components,
+        });
+        return;
+      } catch (e) {
+        console.warn('[syncRaidThreadSummary] edit failed, re-posting:', e);
+        // Nachricht existiert nicht mehr → neue erstellen
+        await prisma.rfRaid.update({
+          where: { id: raidId },
+          data:  { discordChannelMessageId: null, discordThreadId: null },
+        });
+      }
+    }
+
+    // --- Neue Nachricht + Thread erstellen ---
+    const { messageId } = await createChannelMessageFull(raid.discordChannelId, {
+      embeds:     [embed],
+      components,
+    });
+
+    const threadTitle = `${dungeonNames[0]} – ${raid.name}`.slice(0, 100);
+    let threadId: string | null = null;
+    try {
+      const result = await createThreadFromMessage(raid.discordChannelId, messageId, threadTitle);
+      threadId = result.threadId;
+    } catch (e) {
+      console.warn('[syncRaidThreadSummary] thread creation failed:', e);
+    }
+
     await prisma.rfRaid.update({
       where: { id: raidId },
-      data: { discordThreadSummaryMessageId: messageId },
+      data: {
+        discordChannelMessageId: messageId,
+        discordThreadId:         threadId,
+      },
     });
   } catch (e) {
     console.error('[syncRaidThreadSummary]', raidId, e);
   }
 }
 
-/** Zusätzliche Thread-Nachricht nach „Raid setzen“ (Benachrichtigung). */
+// ---------------------------------------------------------------------------
+// Benachrichtigungen (werden als neue Thread-Nachrichten gepostet)
+// ---------------------------------------------------------------------------
+
+/** Zusätzliche Thread-Nachricht nach „Raid setzen" (Benachrichtigung). */
 export async function postRaidLockedThreadNotice(raidId: string): Promise<void> {
   try {
     const raid = await prisma.rfRaid.findUnique({
       where: { id: raidId },
       include: { dungeon: { select: { name: true } } },
     });
-    if (!raid?.discordThreadId) return;
+    // Nachricht in den Diskussions-Thread oder – falls keiner vorhanden – in den Channel
+    const targetId = raid?.discordThreadId ?? raid?.discordChannelId ?? null;
+    if (!targetId) return;
+
+    const { createChannelMessage } = await import('@/lib/discord-guild-api');
     const content =
-      `🔒 **Raid gesetzt** — ${raid.dungeon.name} / ${raid.name}\n` +
-      `Die Teilnehmerliste wurde festgelegt. Details in der RaidFlow-Webapp.`.slice(0, 2000);
-    await createChannelMessage(raid.discordThreadId, content);
+      `🔒 **Raid gesetzt** — ${raid!.dungeon.name} / ${raid!.name}\n` +
+      `Die Teilnehmerliste wurde festgelegt. Details in der RaidFlow-Webapp.`;
+    await createChannelMessage(targetId, content.slice(0, 2000));
   } catch (e) {
     console.error('[postRaidLockedThreadNotice]', raidId, e);
   }
