@@ -40,62 +40,69 @@ export async function LandingPage({
 
   return (
     <main className="min-h-screen flex flex-col bg-background">
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
-        <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-4 text-center">
-          {tCommon('appName')}
-        </h1>
-        <p className="text-muted-foreground mb-4 text-center">{t('welcome')}</p>
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-16 relative overflow-hidden">
+        {/* Subtiler radialer Hintergrundgradient */}
+        <div className="pointer-events-none absolute inset-0 bg-hero-gradient" aria-hidden />
 
-        {maintenanceMode && hasStatusText && (
-          <div className="mb-6 max-w-lg rounded-lg border border-border bg-muted/50 px-4 py-4 text-center">
-            <p className="font-semibold text-foreground mb-2">{tMaintenance('title')}</p>
-            <p className="text-muted-foreground whitespace-pre-wrap text-sm">{statusMessage.trim()}</p>
-          </div>
-        )}
-        {!maintenanceMode && hasStatusText && (
-          <p className="mb-6 max-w-lg text-center text-sm text-muted-foreground whitespace-pre-wrap">
-            {statusMessage.trim()}
+        <div className="relative z-10 flex flex-col items-center max-w-md text-center space-y-5">
+          <h1 className="text-5xl md:text-6xl font-bold tracking-tight text-foreground">
+            {tCommon('appName')}
+          </h1>
+          <p className="text-base text-muted-foreground leading-relaxed max-w-xs">
+            {t('welcome')}
           </p>
-        )}
 
-        {isAuthCallbackError(error) && (
-          <div className="mb-6 max-w-md rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            <p className="font-medium">{t('loginErrorTitle')}</p>
-            <p className="mt-1 text-muted-foreground">{t('loginErrorHint')}</p>
-            {error ? (
-              <p className="mt-2 text-xs text-muted-foreground font-mono break-all">{t('loginErrorParam', { code: error })}</p>
-            ) : null}
-            <p className="mt-2 font-mono text-xs break-all text-foreground">
-              {process.env.NEXTAUTH_URL
-                ? `${process.env.NEXTAUTH_URL.replace(/\/$/, '')}/api/auth/callback/discord`
-                : 'http://localhost:3000/api/auth/callback/discord'}
-            </p>
-          </div>
-        )}
-
-        <div className="flex flex-col sm:flex-row gap-4 items-center">
-          <LoginButton text={t('loginWithDiscord')} callbackUrl={`/${locale}/dashboard`} />
-          {discordBotInviteEnabled ? (
-            <Link
-              href={botInviteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-6 py-3 text-base font-medium text-foreground hover:bg-accent hover:text-accent-foreground min-h-[44px] transition-colors"
-            >
-              {t('discordBotInvite')}
-            </Link>
-          ) : (
-            <span
-              className="inline-flex items-center justify-center rounded-md border border-input bg-muted/50 px-6 py-3 text-base font-medium text-muted-foreground min-h-[44px] cursor-not-allowed opacity-60"
-              aria-disabled="true"
-            >
-              {t('discordBotInvite')}
-            </span>
+          {maintenanceMode && hasStatusText && (
+            <div className="w-full rounded-lg border border-border bg-muted/50 px-5 py-4 text-center">
+              <p className="font-semibold text-foreground mb-2">{tMaintenance('title')}</p>
+              <p className="text-muted-foreground whitespace-pre-wrap text-sm">{statusMessage.trim()}</p>
+            </div>
           )}
+          {!maintenanceMode && hasStatusText && (
+            <p className="max-w-sm text-center text-sm text-muted-foreground whitespace-pre-wrap">
+              {statusMessage.trim()}
+            </p>
+          )}
+
+          {isAuthCallbackError(error) && (
+            <div className="w-full rounded-lg border border-destructive/40 bg-destructive/10 px-5 py-4 text-left text-sm text-destructive">
+              <p className="font-semibold">{t('loginErrorTitle')}</p>
+              <p className="mt-1 text-muted-foreground">{t('loginErrorHint')}</p>
+              {error ? (
+                <p className="mt-2 text-xs text-muted-foreground font-mono break-all">{t('loginErrorParam', { code: error })}</p>
+              ) : null}
+              <p className="mt-2 font-mono text-xs break-all text-foreground">
+                {process.env.NEXTAUTH_URL
+                  ? `${process.env.NEXTAUTH_URL.replace(/\/$/, '')}/api/auth/callback/discord`
+                  : 'http://localhost:3000/api/auth/callback/discord'}
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row gap-3 items-center pt-2 w-full sm:w-auto">
+            <LoginButton text={t('loginWithDiscord')} callbackUrl={`/${locale}/dashboard`} />
+            {discordBotInviteEnabled ? (
+              <Link
+                href={botInviteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-lg border border-border bg-background px-6 py-3 text-sm font-medium text-foreground hover:bg-accent hover:text-accent-foreground min-h-[44px] transition-colors w-full sm:w-auto"
+              >
+                {t('discordBotInvite')}
+              </Link>
+            ) : (
+              <span
+                className="inline-flex items-center justify-center rounded-lg border border-border bg-muted/40 px-6 py-3 text-sm font-medium text-muted-foreground min-h-[44px] cursor-not-allowed opacity-50"
+                aria-disabled="true"
+              >
+                {t('discordBotInvite')}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
-      <footer className="h-10 flex items-center justify-center gap-6 border-t border-border text-sm text-muted-foreground">
+      <footer className="h-12 flex items-center justify-center gap-6 border-t border-border text-xs text-muted-foreground">
         <Link href={`/${locale}/impressum`} className="hover:text-foreground transition-colors">
           {tFooter('imprint')}
         </Link>

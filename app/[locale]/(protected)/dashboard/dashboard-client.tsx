@@ -13,6 +13,7 @@ import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
 import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
+import { cn } from '@/lib/utils';
 
 export type DashboardGuild = {
   id: string;
@@ -295,21 +296,22 @@ export function DashboardClient({
   }, [visibleCalendarRaids]);
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-8">
-      <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
+    <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('title')}</h1>
 
-      <section aria-labelledby="guild-memberships-heading" className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="guild-memberships-heading" className="text-lg font-semibold text-foreground">
+      <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+          <h2 id="guild-memberships-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('guildMemberships')}
           </h2>
         </div>
+        <div className="p-4 space-y-2">
         {guilds.length === 0 ? (
           <p className="text-muted-foreground text-sm">{t('noGuildMembership')}</p>
         ) : (
           <ul className="grid gap-2">
             {guilds.map((g) => (
-              <li key={g.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border bg-card px-3 py-2">
+              <li key={g.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-4 py-3">
                 <div className="min-w-0 flex items-center gap-2">
                   <div className="min-w-0">
                     {g.armoryUrl ? (
@@ -349,7 +351,14 @@ export function DashboardClient({
                     {guildRoleBadges(t, g.role).map((b) => (
                       <span
                         key={`${g.id}:${b.key}`}
-                        className="text-xs rounded border border-border px-1.5 py-0.5 text-muted-foreground"
+                        className={cn(
+                          'text-xs rounded-full px-2 py-0.5 font-medium border',
+                          b.key === 'guildmaster'
+                            ? 'bg-amber-500/15 border-amber-500/30 text-amber-700 dark:text-amber-400'
+                            : b.key === 'raidleader'
+                              ? 'bg-primary/10 border-primary/30 text-primary'
+                              : 'bg-muted/50 border-border text-muted-foreground'
+                        )}
                       >
                         {b.label}
                       </span>
@@ -360,11 +369,13 @@ export function DashboardClient({
                   {g.canManage ? (
                     <Link
                       href={`/${locale}/guilds?guild=${encodeURIComponent(g.id)}`}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors"
                       aria-label={t('openGuildManagement')}
                       title={t('openGuildManagement')}
                     >
-                      ⚙️
+                      <svg className="h-4 w-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
                     </Link>
                   ) : null}
                 </div>
@@ -372,72 +383,54 @@ export function DashboardClient({
             ))}
           </ul>
         )}
+        </div>
       </section>
 
-      <section aria-labelledby="my-stats-heading" className="space-y-3">
-        <h2 id="my-stats-heading" className="text-lg font-semibold text-foreground">
-          {t('myStats')}
-        </h2>
+      <section aria-labelledby="my-stats-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+          <h2 id="my-stats-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+            {t('myStats')}
+          </h2>
+        </div>
         {characters.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t('noCharacters')}</p>
+          <p className="px-5 py-4 text-muted-foreground text-sm">{t('noCharacters')}</p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="divide-y divide-border">
             {characters.map((c) => (
-              <div key={c.id} className="rounded-lg border border-border bg-card p-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="flex shrink-0 items-center justify-center w-6 h-10">
-                    <CharacterMainStar
-                      isMain={!!c.isMain}
-                      titleMain={tProfile('mainLabel')}
-                      titleAlt={tProfile('altLabel')}
-                      sizePx={18}
-                    />
-                  </div>
-                  <div className="flex shrink-0 items-center justify-center w-9 h-9 rounded-md bg-muted/40">
-                    {c.classId ? <ClassIcon classId={c.classId} size={24} title={c.mainSpec} /> : null}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start gap-2 min-w-0">
-                      <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                        <CharacterSpecIconsInline
-                          mainSpec={c.mainSpec}
-                          offSpec={c.offSpec}
-                          size={24}
-                          slashClassName="hidden"
-                          offSpecIconClassName="opacity-90"
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <div className="font-semibold text-foreground truncate" title={c.name}>
-                            {c.name}
-                          </div>
-                          {c.hasBattlenet ? <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} /> : null}
-                          <CharacterGearscoreBadge
-                            characterId={c.id}
-                            hasBattlenet={c.hasBattlenet}
-                            gearScore={c.gearScore}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+              <div key={c.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors">
+                <div className="flex shrink-0 items-center justify-center w-5 h-5">
+                  <CharacterMainStar
+                    isMain={!!c.isMain}
+                    titleMain={tProfile('mainLabel')}
+                    titleAlt={tProfile('altLabel')}
+                    sizePx={14}
+                  />
                 </div>
-                <p
-                  className="mt-2 text-sm text-muted-foreground truncate"
-                  title={c.guildName ? `${t('guild')}: ${c.guildName}` : undefined}
-                >
-                  {t('guild')}: {c.guildName ?? '–'}
-                </p>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-                  <div className="rounded-md bg-muted/30 px-2 py-1.5">
-                    <div className="text-xs text-muted-foreground">{t('participatedRaids')}</div>
-                    <div className="font-semibold text-foreground">{c.participatedRaids}</div>
-                  </div>
-                  <div className="rounded-md bg-muted/30 px-2 py-1.5">
-                    <div className="text-xs text-muted-foreground">{t('lootReceived')}</div>
-                    <div className="font-semibold text-foreground">{c.lootCount}</div>
-                  </div>
+                <div className="flex shrink-0 items-center justify-center">
+                  {c.classId ? <ClassIcon classId={c.classId} size={20} title={c.mainSpec} /> : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-0.5">
+                  <CharacterSpecIconsInline
+                    mainSpec={c.mainSpec}
+                    offSpec={c.offSpec}
+                    size={18}
+                    slashClassName="hidden"
+                    offSpecIconClassName="opacity-70"
+                  />
+                </div>
+                <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                  <span className="font-medium text-sm text-foreground truncate" title={c.name}>{c.name}</span>
+                  {c.hasBattlenet ? <BattlenetLogo size={14} title={tProfile('bnetLinkedBadgeTitle')} /> : null}
+                  <CharacterGearscoreBadge
+                    characterId={c.id}
+                    hasBattlenet={c.hasBattlenet}
+                    gearScore={c.gearScore}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground hidden sm:block shrink-0 truncate max-w-[110px]" title={c.guildName ?? undefined}>{c.guildName ?? '–'}</span>
+                <div className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums shrink-0">
+                  <span title={t('participatedRaids')}>{c.participatedRaids}×</span>
+                  <span title={t('lootReceived')} className="hidden xs:block">{c.lootCount} Loot</span>
                 </div>
               </div>
             ))}
@@ -445,23 +438,25 @@ export function DashboardClient({
         )}
       </section>
 
-      <section aria-labelledby="my-signups-heading" className="space-y-3">
-        <h2 id="my-signups-heading" className="text-lg font-semibold text-foreground">
-          {t('mySignups')}
-        </h2>
+      <section aria-labelledby="my-signups-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+          <h2 id="my-signups-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+            {t('mySignups')}
+          </h2>
+        </div>
         {signups.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t('mySignupsEmpty')}</p>
+          <p className="px-5 py-4 text-muted-foreground text-sm">{t('mySignupsEmpty')}</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border bg-card">
+          <div className="overflow-x-auto">
             <table className="min-w-[980px] w-full text-sm">
-              <thead className="border-b border-border bg-muted/20">
+              <thead className="border-b border-border bg-muted/30">
                 <tr className="text-left">
-                  <th className="px-3 py-2">{t('scheduledAt')}</th>
-                  <th className="px-3 py-2">{t('status')}</th>
-                  <th className="px-3 py-2">{t('raid')}</th>
-                  <th className="px-3 py-2">{t('character')}</th>
-                  <th className="px-3 py-2">{t('myStatus')}</th>
-                  <th className="px-3 py-2 text-right">{t('actions')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('scheduledAt')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('status')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('raid')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('character')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('myStatus')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide text-right">{t('actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -481,15 +476,15 @@ export function DashboardClient({
                   return (
                     <tr
                       key={key}
-                      className="border-b border-border last:border-b-0 odd:bg-background even:bg-muted/10 hover:bg-muted/20"
+                      className="border-b border-border last:border-b-0 hover:bg-muted/20 transition-colors"
                     >
-                      <td className="px-3 py-2 align-top text-muted-foreground">
+                      <td className="px-4 py-3 align-top text-muted-foreground tabular-nums text-sm">
                         {new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(s.scheduledAtIso))}
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground align-top">
-                        <span className="capitalize">{s.raidStatus}</span>
+                      <td className="px-4 py-3 text-muted-foreground align-top">
+                        <span className="text-xs capitalize">{s.raidStatus}</span>
                       </td>
-                      <td className="px-3 py-2 align-top">
+                      <td className="px-4 py-3 align-top">
                         <Link
                           href={`/${locale}/guild/${s.guildId}/raid/${s.raidId}`}
                           className="block min-w-0"
@@ -502,10 +497,10 @@ export function DashboardClient({
                           </div>
                         </Link>
                       </td>
-                      <td className="px-3 py-2 align-top">
+                      <td className="px-4 py-3 align-top">
                         <button
                           type="button"
-                          className="inline-flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 hover:bg-muted min-w-0"
+                          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 hover:bg-muted min-w-0 transition-colors"
                           onClick={() => router.push(`/${locale}/guild/${s.guildId}/raid/${s.raidId}?mode=signup`)}
                           title={t('signupEdit')}
                         >
@@ -542,19 +537,19 @@ export function DashboardClient({
                           />
                         </button>
                       </td>
-                      <td className="px-3 py-2 align-top">
+                      <td className="px-4 py-3 align-top">
                         {statusIcon ? (
                           <span title={t('myStatus')} className="text-base">
                             {statusIcon}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground">{t('notSignedUp')}</span>
+                          <span className="text-xs text-muted-foreground">{t('notSignedUp')}</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 align-top text-right">
+                      <td className="px-4 py-3 align-top text-right">
                         <button
                           type="button"
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors text-muted-foreground"
                           aria-label={t('actions')}
                           title={t('actions')}
                           onClick={(e) => {
@@ -586,17 +581,17 @@ export function DashboardClient({
               {(() => {
                 const [guildId, raidId] = openSignupMenuKey.split(':');
                 return (
-                  <div className="w-44 rounded-md border border-border bg-background shadow-md overflow-hidden">
+                  <div className="w-44 rounded-xl border border-border bg-popover shadow-lg overflow-hidden">
                     <Link
                       href={`/${locale}/guild/${encodeURIComponent(guildId)}/raid/${encodeURIComponent(raidId)}?mode=signup`}
-                      className="block px-3 py-2 text-sm hover:bg-muted"
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-muted transition-colors"
                       onClick={() => closeAllMenus()}
                     >
-                      ⚙️ {t('signupEdit')}
+                      {t('signupEdit')}
                     </Link>
                     <button
                       type="button"
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted text-destructive"
+                      className="w-full text-left flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-muted transition-colors text-destructive"
                       onClick={async () => {
                         await fetch(
                           `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups`,
@@ -616,9 +611,9 @@ export function DashboardClient({
           )
         : null}
 
-      <section aria-labelledby="calendar-heading" className="space-y-3">
-        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
-          <h2 id="calendar-heading" className="text-lg font-semibold text-foreground">
+      <section aria-labelledby="calendar-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 border-b border-border bg-muted/20">
+          <h2 id="calendar-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('calendar')}
           </h2>
 
@@ -690,7 +685,7 @@ export function DashboardClient({
             {canCreateGuilds.length > 0 ? (
               <button
                 type="button"
-                className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 shadow-sm transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
                   const pos = openMenuAtButton(e.currentTarget);
@@ -705,6 +700,7 @@ export function DashboardClient({
           </div>
         </div>
 
+        <div className="p-4 sm:p-5">
         {calendarView === 'tiles' ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 items-start">
             {days.map((day) => {
@@ -716,14 +712,14 @@ export function DashboardClient({
                 <div
                   key={key}
                   className={[
-                    'rounded-lg border bg-card p-3',
-                    isToday ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-900/10' : 'border-border',
-                    isPast ? 'opacity-60' : '',
+                    'rounded-xl border bg-card p-3 shadow-sm',
+                    isToday ? 'border-primary/50 ring-1 ring-primary/20' : 'border-border',
+                    isPast ? 'opacity-55' : '',
                   ].join(' ')}
                 >
                   <div className="flex items-center justify-between">
                     <div className="font-semibold text-foreground">
-                      {formatDayLabel(locale, day)} {isToday ? <span className="text-xs text-emerald-700 dark:text-emerald-400">({t('todayShort')})</span> : null}
+                      {formatDayLabel(locale, day)} {isToday ? <span className="text-xs text-primary font-semibold ml-0.5">({t('todayShort')})</span> : null}
                     </div>
                     <div className="text-xs text-muted-foreground">{raids.length}</div>
                   </div>
@@ -741,13 +737,13 @@ export function DashboardClient({
                         const signupState = signupIndicator(r.signupUntilIso, r.status);
                         const signupUntilOpen = expandedSignupUntilRaidId === r.id;
                         return (
-                          <div key={r.id} className="rounded-md border border-border bg-background px-2 py-2">
+                          <div key={r.id} className="rounded-lg border border-border bg-background/60 px-3 py-2.5">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2 min-w-0">
                                   <Link
                                     href={`/${locale}/guild/${r.guildId}/raid/${r.id}`}
-                                    className="font-semibold text-foreground hover:underline block truncate"
+                                    className="font-medium text-foreground hover:text-primary transition-colors block truncate text-sm"
                                     title={r.name}
                                   >
                                     {r.name}
@@ -782,7 +778,7 @@ export function DashboardClient({
                                 {r.canEdit ? (
                                   <button
                                     type="button"
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors text-muted-foreground"
                                     aria-label={t('actions')}
                                     title={t('actions')}
                                     onClick={(e) => {
@@ -795,13 +791,13 @@ export function DashboardClient({
                                       setOpenNewRaidMenuPos(null);
                                     }}
                                   >
-                                    ⋮
+                                    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
                                   </button>
                                 ) : null}
                                 {r.hasNote ? (
                                   <button
                                     type="button"
-                                    className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                                    className="shrink-0 rounded-lg border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                                     onClick={() => setExpandedNoteRaidId(noteOpen ? null : r.id)}
                                     aria-label={t('toggleNote')}
                                     title={t('toggleNote')}
@@ -818,27 +814,27 @@ export function DashboardClient({
                               </div>
                             ) : null}
 
-                            <div className="mt-2 flex items-center justify-between gap-2">
+                            <div className="mt-2.5 flex items-center justify-between gap-2 pt-2 border-t border-border/50">
                               <div className="text-sm">
                                 {status ? (
                                   <span title={t('myStatus')}>{status}</span>
                                 ) : (
-                                  <span className="text-muted-foreground">{t('notSignedUp')}</span>
+                                  <span className="text-xs text-muted-foreground">{t('notSignedUp')}</span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
                                 {!r.mySignup ? (
                                   r.status === 'open' || r.status === 'announced' ? (
                                     <Link
                                       href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                                      className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                                      className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
                                       aria-label={t('signupStart')}
                                       title={t('signupStart')}
                                     >
-                                      ➕
+                                      + {t('signupStart')}
                                     </Link>
                                   ) : (
-                                    <span className="text-xs text-muted-foreground">Anmeldung gesperrt</span>
+                                    <span className="text-xs text-muted-foreground">Gesperrt</span>
                                   )
                                 ) : (
                                   <>
@@ -846,32 +842,32 @@ export function DashboardClient({
                                       <>
                                         <Link
                                           href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                                          className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                                          className="inline-flex items-center justify-center rounded-lg border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
                                           aria-label={t('signupEdit')}
                                           title={t('signupEdit')}
                                         >
-                                          ⚙️
+                                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                         </Link>
                                         <button
                                           type="button"
-                                          className="inline-flex items-center justify-center rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
+                                          className="inline-flex items-center justify-center rounded-lg border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
                                           aria-label={t('signupWithdraw')}
                                           title={t('signupWithdraw')}
                                           onClick={() => void calendarWithdrawSignup(r)}
                                         >
-                                          ➖
+                                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                         </button>
                                       </>
                                     ) : (
-                                      <span className="text-xs text-muted-foreground">Anmeldung gesperrt</span>
+                                      <span className="text-xs text-muted-foreground">Gesperrt</span>
                                     )}
                                   </>
                                 )}
                               </div>
                             </div>
 
-                            <div className="mt-2 text-xs text-muted-foreground">
-                              {r.signupCount}/{r.maxPlayers} {t('signups')}
+                            <div className="mt-1.5 text-xs text-muted-foreground">
+                              <span className="tabular-nums">{r.signupCount}/{r.maxPlayers}</span> {t('signups')}
                             </div>
                           </div>
                         );
@@ -883,17 +879,17 @@ export function DashboardClient({
             })}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border bg-card">
+          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
             <table className="min-w-[980px] w-full text-sm">
-              <thead className="border-b border-border bg-muted/20">
+              <thead className="border-b border-border bg-muted/30">
                 <tr className="text-left">
-                  <th className="px-3 py-2">{t('scheduledAt')}</th>
-                  <th className="px-3 py-2">{t('raid')}</th>
-                  <th className="px-3 py-2">Anmeldung bis</th>
-                  <th className="px-3 py-2">{t('status')}</th>
-                  <th className="px-3 py-2">{t('myStatus')}</th>
-                  <th className="px-3 py-2">Schnellaktion</th>
-                  <th className="px-3 py-2 text-right">{t('actions')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('scheduledAt')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('raid')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Anmeldung bis</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('status')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('myStatus')}</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Schnellaktion</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide text-right">{t('actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -905,41 +901,40 @@ export function DashboardClient({
                   );
                   const signupState = signupIndicator(r.signupUntilIso, r.status);
                   return (
-                    <tr key={r.id} className="border-b border-border last:border-b-0 odd:bg-background even:bg-muted/10 hover:bg-muted/20">
-                      <td className="px-3 py-2 text-muted-foreground">
+                    <tr key={r.id} className="border-b border-border last:border-b-0 hover:bg-muted/20 transition-colors">
+                      <td className="px-4 py-3 text-muted-foreground tabular-nums text-sm">
                         {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(r.scheduledAtIso))}{' '}
                         <span className="text-xs">{timeLabel}</span>
                       </td>
-                      <td className="px-3 py-2">
-                        <Link href={`/${locale}/guild/${r.guildId}/raid/${r.id}`} className="text-primary hover:underline">
+                      <td className="px-4 py-3">
+                        <Link href={`/${locale}/guild/${r.guildId}/raid/${r.id}`} className="font-medium text-foreground hover:text-primary transition-colors">
                           {r.name}
                         </Link>
                         <div className="text-xs text-muted-foreground">{r.dungeonName}</div>
                         <div className="text-xs text-muted-foreground">@ {r.guildName}</div>
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground">
+                      <td className="px-4 py-3 text-muted-foreground text-xs">
                         <span title={signupUntilLabel}>Anmeldung: {signupState.icon}</span>
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground">
+                      <td className="px-4 py-3 text-muted-foreground text-xs">
                         <span>{raidStatusLabel(r.status)}</span>
                         {r.announcedGroupCount != null ? (
-                          <span className="block text-xs">
+                          <span className="block">
                             {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}
                           </span>
                         ) : null}
                       </td>
-                      <td className="px-3 py-2">{status ? status : <span className="text-muted-foreground">{t('notSignedUp')}</span>}</td>
-                      <td className="px-3 py-2">
+                      <td className="px-4 py-3">{status ? status : <span className="text-xs text-muted-foreground">{t('notSignedUp')}</span>}</td>
+                      <td className="px-4 py-3">
                         {!r.mySignup ? (
                           r.status === 'open' || r.status === 'announced' ? (
                             <Link
                               href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                              className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1.5 hover:bg-muted"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
                               title={t('signupStart')}
                               aria-label={t('signupStart')}
                             >
-                              <span>➕</span>
-                              <span>Anmelden</span>
+                              + Anmelden
                             </Link>
                           ) : (
                             <span className="text-xs text-muted-foreground">—</span>
@@ -947,22 +942,21 @@ export function DashboardClient({
                         ) : r.status === 'open' || r.status === 'announced' ? (
                           <button
                             type="button"
-                            className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1.5 hover:bg-muted"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
                             title={t('signupWithdraw')}
                             aria-label={t('signupWithdraw')}
                             onClick={() => void calendarWithdrawSignup(r)}
                           >
-                            <span>➖</span>
-                            <span>Abmelden</span>
+                            Abmelden
                           </button>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-4 py-3 text-right">
                         <button
                           type="button"
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors text-muted-foreground"
                           title={t('actions')}
                           aria-label={t('actions')}
                           onClick={(e) => {
@@ -975,7 +969,7 @@ export function DashboardClient({
                             setOpenNewRaidMenuPos(null);
                           }}
                         >
-                          ⋮
+                          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
                         </button>
                       </td>
                     </tr>
@@ -985,6 +979,7 @@ export function DashboardClient({
             </table>
           </div>
         )}
+        </div>
       </section>
 
       {openCalendarActionRaidId && openCalendarActionPos
@@ -999,41 +994,43 @@ export function DashboardClient({
                   const raid = calendarRaids.find((x) => x.id === openCalendarActionRaidId);
                   if (!raid) return null;
                   return (
-                    <div className="w-52 rounded-md border border-border bg-background shadow-lg overflow-hidden">
+                    <div className="w-52 rounded-xl border border-border bg-popover shadow-xl overflow-hidden">
+                      <div className="px-1 py-1">
                       {raid.status === 'open' || raid.status === 'announced' ? (
                         <Link
                           href={`/${locale}/guild/${raid.guildId}/raid/${raid.id}?mode=signup`}
-                          className="block px-3 py-2 text-sm hover:bg-muted"
+                          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
                           onClick={() => closeAllMenus()}
                         >
-                          ⚙️ {raid.mySignup ? t('signupEdit') : t('signupStart')}
+                          {raid.mySignup ? t('signupEdit') : t('signupStart')}
                         </Link>
                       ) : (
-                        <div className="px-3 py-2 text-sm text-muted-foreground">⚙️ Anmeldung gesperrt</div>
+                        <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">Anmeldung gesperrt</div>
                       )}
                       {raid.canEdit ? (
                         <>
+                          <div className="h-px bg-border mx-1 my-1" />
                           <button
                             type="button"
-                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
+                            className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
                             onClick={() => {
                               closeAllMenus();
                               router.push(`/${locale}/guild/${raid.guildId}/raid/${raid.id}/plan`);
                             }}
                           >
-                            📅 {tRaidDetail('menuPlan')}
+                            {tRaidDetail('menuPlan')}
                           </button>
                           <Link
                             href={`/${locale}/guild/${raid.guildId}/raid/${raid.id}?mode=edit`}
-                            className="block px-3 py-2.5 text-sm hover:bg-muted"
+                            className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
                             onClick={() => closeAllMenus()}
                           >
-                            ✏️ {t('raidEdit')}
+                            {t('raidEdit')}
                           </Link>
                           {raid.status === 'open' || raid.status === 'announced' ? (
                             <button
                               type="button"
-                              className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
+                              className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
                               onClick={async () => {
                                 await fetch(
                                   `/api/guilds/${encodeURIComponent(raid.guildId)}/raids/${encodeURIComponent(raid.id)}`,
@@ -1047,12 +1044,13 @@ export function DashboardClient({
                                 router.refresh();
                               }}
                             >
-                              🚫 Raid absagen
+                              Raid absagen
                             </button>
                           ) : null}
+                          <div className="h-px bg-border mx-1 my-1" />
                           <button
                             type="button"
-                            className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted text-destructive"
+                            className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
                             onClick={async () => {
                               await fetch(
                                 `/api/guilds/${encodeURIComponent(raid.guildId)}/raids/${encodeURIComponent(raid.id)}`,
@@ -1062,10 +1060,11 @@ export function DashboardClient({
                               router.refresh();
                             }}
                           >
-                            🗑️ Raid löschen
+                            Raid löschen
                           </button>
                         </>
                       ) : null}
+                      </div>
                     </div>
                   );
                 })()}
@@ -1081,27 +1080,29 @@ export function DashboardClient({
               style={{ position: 'fixed', top: openNewRaidMenuPos.top, left: openNewRaidMenuPos.left, zIndex: 1000 }}
               onMouseDown={(e) => e.stopPropagation()}
             >
-              <div className="w-56 rounded-md border border-border bg-background shadow-md overflow-hidden">
-                <div className="px-3 py-2 text-xs font-semibold text-muted-foreground">{t('newRaid')}</div>
+              <div className="w-56 rounded-xl border border-border bg-popover shadow-xl overflow-hidden">
+                <div className="px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b border-border">{t('newRaid')}</div>
+                <div className="px-1 py-1">
                 {canCreateGuilds.map((g) => (
                   <Link
                     key={g.id}
                     href={`/${locale}/guild/${encodeURIComponent(g.id)}/raid/new`}
-                    className="block px-3 py-2 text-sm hover:bg-muted"
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
                     onClick={() => closeAllMenus()}
                   >
-                    ➕ {t('createSingleRaid')} — {g.name}
+                    {t('createSingleRaid')} — {g.name}
                   </Link>
                 ))}
-                <div className="border-t border-border" />
+                <div className="h-px bg-border mx-1 my-1" />
                 <button
                   type="button"
                   disabled
-                  className="w-full text-left px-3 py-2 text-sm text-muted-foreground opacity-60 cursor-not-allowed"
+                  className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground opacity-50 cursor-not-allowed"
                   title={t('createMultiRaidSoon')}
                 >
-                  ⏳ {t('createMultiRaid')}
+                  {t('createMultiRaid')}
                 </button>
+                </div>
               </div>
             </div>,
             document.body

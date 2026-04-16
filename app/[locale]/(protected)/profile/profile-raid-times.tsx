@@ -74,14 +74,16 @@ export function ProfileRaidTimes({ initialData }: { initialData: RaidTimeRow[] }
 
   return (
     <section className="mb-8" aria-labelledby="raid-times-heading">
-      <h2 id="raid-times-heading" className="text-lg font-semibold text-foreground mb-2">
-        {t('raidTimes')}
-      </h2>
-      <p className="text-muted-foreground text-sm mb-4">{t('raidTimesDescription')}</p>
+      <div className="pb-3 border-b border-border mb-4">
+        <h2 id="raid-times-heading" className="text-base font-semibold text-foreground tracking-tight">
+          {t('raidTimes')}
+        </h2>
+        <p className="text-muted-foreground text-sm mt-1">{t('raidTimesDescription')}</p>
+      </div>
       {saveError && (
-        <p className="text-destructive text-sm mb-2" role="alert">
+        <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
           {saveError}
-        </p>
+        </div>
       )}
       <AvailabilityGrid
         initialSlots={initialSlots}

@@ -161,10 +161,10 @@ export function AvailabilityGrid({
   }, [collectSlots, weekFocus, onSave, isDirty]);
 
   return (
-    <div className="relative">
+    <div className="relative rounded-xl border border-border bg-card p-4 shadow-sm">
       {saving && (
         <div
-          className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/80 backdrop-blur-[1px]"
+          className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/80 backdrop-blur-[1px]"
           aria-busy="true"
           aria-live="polite"
         >
@@ -190,13 +190,13 @@ export function AvailabilityGrid({
             >
               <thead>
                 <tr>
-                  <th className="w-9 min-w-[36px] border border-border bg-muted/50 p-0.5 text-left font-medium text-muted-foreground">
+                  <th className="w-9 min-w-[36px] border border-border bg-muted/40 p-0.5 text-left text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {t('timeSlot')}
                   </th>
                   {WEEKDAYS.map((day) => (
                     <th
                       key={day}
-                      className="w-10 min-w-[42px] max-w-[48px] border border-border bg-muted/50 p-0.5 text-center font-medium text-muted-foreground"
+                      className="w-10 min-w-[42px] max-w-[48px] border border-border bg-muted/40 p-0.5 text-center text-[9px] font-semibold uppercase tracking-wide text-muted-foreground"
                     >
                       {day}
                     </th>
@@ -206,7 +206,7 @@ export function AvailabilityGrid({
               <tbody>
                 {TIME_SLOTS_30MIN.map((slot) => (
                   <tr key={slot}>
-                    <td className="border border-border bg-muted/30 p-0.5 font-medium text-foreground whitespace-nowrap">
+                    <td className="border border-border bg-muted/20 p-0.5 text-[10px] font-medium text-muted-foreground whitespace-nowrap tabular-nums">
                       {slot}
                     </td>
                     {WEEKDAYS.map((day) => {
@@ -240,16 +240,16 @@ export function AvailabilityGrid({
               </tbody>
             </table>
           </div>
-          <p className="text-muted-foreground text-xs flex items-center gap-3 flex-wrap w-full" role="note">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block w-3 h-3 bg-amber-500/80 rounded-sm shrink-0" aria-hidden />
-              <span>{t('preferenceMaybe')}</span>
+          <div className="flex items-center gap-4 flex-wrap" role="note">
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="inline-block w-3 h-3 bg-amber-500/80 rounded shrink-0" aria-hidden />
+              {t('preferenceMaybe')}
             </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block w-3 h-3 bg-green-500/80 rounded-sm shrink-0" aria-hidden />
-              <span>{t('preferenceLikely')}</span>
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="inline-block w-3 h-3 bg-green-500/80 rounded shrink-0" aria-hidden />
+              {t('preferenceLikely')}
             </span>
-          </p>
+          </div>
         </div>
 
         {/* Rechte Spalte: direkt neben der Tabelle, Markieren als, Fokus, Speichern */}
@@ -292,14 +292,14 @@ export function AvailabilityGrid({
                 {t('weekFocusWeekend')}
               </button>
             </div>
-            <p className="text-muted-foreground text-xs mt-1.5 max-w-[200px]">{t('weekFocusHint')}</p>
+            <p className="text-muted-foreground text-xs mt-1.5 max-w-[200px] leading-relaxed">{t('weekFocusHint')}</p>
           </div>
 
           <button
             type="button"
             onClick={handleSave}
             disabled={saving || !isDirty}
-            className="mt-auto rounded bg-primary text-primary-foreground px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:pointer-events-none"
+            className="mt-auto rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50 disabled:pointer-events-none"
           >
             {saving ? t('saving') : t('save')}
           </button>

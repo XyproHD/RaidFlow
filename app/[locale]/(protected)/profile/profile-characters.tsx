@@ -893,10 +893,12 @@ export function ProfileCharacters({
 
   return (
     <section className="mb-8" aria-labelledby="characters-heading">
-      <h2 id="characters-heading" className="text-lg font-semibold text-foreground mb-2">
-        {t('characters')}
-      </h2>
-      <p className="text-muted-foreground text-sm mb-4">{t('charactersDescription')}</p>
+      <div className="pb-3 border-b border-border mb-4">
+        <h2 id="characters-heading" className="text-base font-semibold text-foreground tracking-tight">
+          {t('characters')}
+        </h2>
+        <p className="text-muted-foreground text-sm mt-1">{t('charactersDescription')}</p>
+      </div>
 
       {list.length === 0 && (
         <p className="text-muted-foreground text-sm mb-2">{t('noCharacters')}</p>
@@ -904,8 +906,8 @@ export function ProfileCharacters({
       <div className="mb-4 space-y-2 max-w-[44rem] min-w-0">
         {groupedCharacters.map((group) => (
           <div key={group.guildId ?? '__no_guild__'} className="space-y-2">
-            <div className="pt-2">
-              <h3 className="text-sm font-semibold text-foreground">{group.guildName}</h3>
+            <div className="pt-3">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{group.guildName}</h3>
             </div>
             {group.characters.map((c) => {
               const cClassId = c.classId ?? getClassIdForSpec(c.mainSpec);
@@ -916,7 +918,7 @@ export function ProfileCharacters({
               return (
                 <div
                   key={c.id}
-                  className="grid items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-sm grid-cols-[32px_28px_1fr_44px] sm:grid-cols-[32px_28px_auto_1fr_minmax(4rem,1fr)_44px] min-w-0"
+                  className="grid items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 shadow-sm grid-cols-[32px_28px_1fr_44px] sm:grid-cols-[32px_28px_auto_1fr_minmax(4rem,1fr)_44px] min-w-0"
                 >
                   <div className="flex shrink-0 items-center justify-center w-8 h-8 mr-0.5" title={mainOrAltTitle}>
                     {showMainTwink ? (
@@ -973,7 +975,7 @@ export function ProfileCharacters({
                         setOpenMenuId(menuOpen ? null : c.id);
                       }}
                       disabled={loading}
-                      className="flex h-11 w-11 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted/50 text-foreground hover:bg-muted disabled:opacity-50"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
                       aria-label={t('characterMenu')}
                       aria-expanded={menuOpen}
                     >
@@ -982,7 +984,7 @@ export function ProfileCharacters({
                       </span>
                     </button>
                     {menuOpen && (
-                      <div className="absolute right-0 top-full z-20 mt-1 min-w-[140px] rounded-md border border-border bg-background py-1 shadow-md">
+                      <div className="absolute right-0 top-full z-20 mt-1.5 min-w-[160px] rounded-xl border border-border bg-popover px-1 py-1 shadow-lg">
                         {canSetMain(c) && (
                           <button
                             type="button"
@@ -991,7 +993,7 @@ export function ProfileCharacters({
                               setOpenMenuId(null);
                             }}
                             disabled={loading}
-                            className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                            className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted transition-colors"
                           >
                             {t('setAsMain')}
                           </button>
@@ -1003,7 +1005,7 @@ export function ProfileCharacters({
                             setOpenMenuId(null);
                           }}
                           disabled={loading}
-                          className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-muted"
+                          className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted transition-colors"
                         >
                           {t('editCharacter')}
                         </button>
@@ -1025,8 +1027,11 @@ export function ProfileCharacters({
           ref={openAddButtonRef}
           type="button"
           onClick={openAdd}
-          className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm font-medium"
+          className="inline-flex items-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors"
         >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
           {t('addCharacter')}
         </button>
       </div>
@@ -1042,21 +1047,25 @@ export function ProfileCharacters({
         >
           <div
             ref={modalRef}
-            className="bg-background border border-border rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+            className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-4 border-b border-border flex justify-between items-center">
-              <h3 id="modal-character-title" className="text-lg font-semibold">
+            <div className="px-5 py-4 border-b border-border flex justify-between items-center">
+              <h3 id="modal-character-title" className="text-base font-semibold text-foreground tracking-tight">
                 {modalOpen === 'add' ? t('addCharacter') : t('editCharacter')}
               </h3>
-              <button type="button" onClick={closeModal} className="text-muted-foreground hover:text-foreground p-1" aria-label={t('close')}>×</button>
+              <button type="button" onClick={closeModal} className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" aria-label={t('close')}>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
             <form
               onSubmit={modalOpen === 'add' ? handleAdd : handleSaveEdit}
-              className="p-4"
+              className="px-5 py-4"
             >
               {formContent}
-              <div className="flex flex-wrap gap-2 mt-4">
+              <div className="flex flex-wrap gap-2 mt-5 pt-4 border-t border-border">
                 <button
                   type="submit"
                   disabled={
@@ -1068,11 +1077,11 @@ export function ProfileCharacters({
                     (modalOpen === 'add' && !autoRealmId) ||
                     (guilds.length > 0 && !guildId)
                   }
-                  className="rounded bg-primary text-primary-foreground px-4 py-2 text-sm disabled:opacity-50"
+                  className="rounded-lg bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
                 >
                   {t('save')}
                 </button>
-                <button type="button" onClick={closeModal} className="rounded border border-input px-4 py-2 text-sm">
+                <button type="button" onClick={closeModal} className="rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors">
                   {t('cancel')}
                 </button>
                 {modalOpen === 'edit' && editingId && (
@@ -1080,7 +1089,7 @@ export function ProfileCharacters({
                     type="button"
                     onClick={() => editingId && handleDelete(editingId)}
                     disabled={loading}
-                    className="rounded border border-destructive text-destructive px-4 py-2 text-sm hover:bg-destructive/10"
+                    className="ml-auto rounded-lg border border-destructive/40 text-destructive px-4 py-2.5 text-sm font-medium hover:bg-destructive/10 transition-colors"
                   >
                     {t('deleteCharacter')}
                   </button>

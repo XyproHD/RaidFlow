@@ -3,50 +3,52 @@
 @tailwind utilities;
 
 @layer base {
-  /* Light Mode: helle, freundliche Farben mit gutem Kontrast (Standard) */
+  /* Light Mode — kühles Off-White, satter Indigoblau-Primary */
   :root {
-    --background: 40 20% 98%;
-    --foreground: 220 15% 18%;
+    --background: 220 22% 97%;
+    --foreground: 224 28% 14%;
     --card: 0 0% 100%;
-    --card-foreground: 220 15% 18%;
+    --card-foreground: 224 28% 14%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 15% 18%;
-    --primary: 220 70% 42%;
+    --popover-foreground: 224 28% 14%;
+    --primary: 224 62% 44%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 40 25% 92%;
-    --secondary-foreground: 220 15% 25%;
-    --muted: 40 15% 94%;
-    --muted-foreground: 220 10% 42%;
-    --accent: 40 30% 90%;
-    --accent-foreground: 220 15% 22%;
+    --secondary: 220 20% 92%;
+    --secondary-foreground: 224 25% 22%;
+    --muted: 220 20% 94%;
+    --muted-foreground: 220 12% 44%;
+    --accent: 220 20% 90%;
+    --accent-foreground: 224 25% 20%;
     --destructive: 0 72% 48%;
     --destructive-foreground: 0 0% 100%;
-    --border: 40 15% 88%;
-    --input: 40 15% 88%;
-    --ring: 220 70% 42%;
-    --radius: 0.5rem;
+    --border: 220 16% 87%;
+    --input: 220 16% 87%;
+    --ring: 224 62% 44%;
+    --radius: 0.625rem;
   }
-  /* Dark Mode: dunkle Grautöne, Kontrastfarbe gemäßigtes dunkles Grün (kein Blau/Orange) */
+
+  /* Dark Mode — tiefes Marineblau, gedämpftes Stahlblau als Primary */
   .dark {
-    --background: 0 0% 9%;
-    --foreground: 0 0% 95%;
-    --card: 0 0% 12%;
-    --card-foreground: 0 0% 95%;
-    --popover: 0 0% 12%;
-    --popover-foreground: 0 0% 95%;
-    --primary: 152 28% 38%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 16%;
-    --secondary-foreground: 0 0% 92%;
-    --muted: 0 0% 14%;
-    --muted-foreground: 0 0% 62%;
-    --accent: 0 0% 18%;
-    --accent-foreground: 0 0% 92%;
-    --destructive: 0 62% 45%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 20%;
-    --input: 0 0% 20%;
-    --ring: 152 28% 38%;
+    --background: 224 22% 8%;
+    --foreground: 210 14% 86%;
+    --card: 224 18% 12%;
+    --card-foreground: 210 14% 86%;
+    --popover: 224 18% 13%;
+    --popover-foreground: 210 14% 86%;
+    --primary: 214 36% 62%;
+    --primary-foreground: 224 40% 9%;
+    --secondary: 224 14% 17%;
+    --secondary-foreground: 210 12% 74%;
+    --muted: 224 14% 15%;
+    --muted-foreground: 210 8% 50%;
+    --accent: 224 14% 19%;
+    --accent-foreground: 210 14% 86%;
+    --destructive: 0 60% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 224 14% 22%;
+    --input: 224 14% 22%;
+    --ring: 214 36% 62%;
+    --radius: 0.625rem;
   }
 }
 
@@ -55,21 +57,26 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer utilities {
+  .bg-hero-gradient {
+    background-image: radial-gradient(ellipse 80% 60% at 50% 0%, hsl(var(--primary) / 0.08), transparent);
   }
 }
 
 @keyframes rf-feedback-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.25);
+    box-shadow: 0 0 0 0 hsl(214 36% 62% / 0.18);
   }
   50% {
-    box-shadow: 0 0 0 12px rgba(251, 191, 36, 0);
+    box-shadow: 0 0 0 10px hsl(214 36% 62% / 0);
   }
 }
 
 .rf-feedback-fab {
-  animation: rf-feedback-pulse 4.5s ease-in-out infinite;
+  animation: rf-feedback-pulse 5s ease-in-out infinite;
 }
-

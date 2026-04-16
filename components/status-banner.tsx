@@ -8,7 +8,7 @@ export function StatusBanner({ message }: { message: string }) {
   if (!trimmed) return null;
   return (
     <div
-      className="px-4 py-2 text-center text-sm bg-muted/80 text-muted-foreground border-b border-border"
+      className="px-4 py-2.5 text-center text-sm bg-primary/10 text-foreground border-b border-primary/20 font-medium"
       role="status"
       aria-label={t('label')}
     >
