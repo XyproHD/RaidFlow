@@ -5,6 +5,7 @@
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import {
   getSpecEmoji,
+  getClassEmoji,
   getRoleEmoji,
 } from '@/lib/discord-wow-emojis';
 import type { DiscordEmbed, DiscordMessageComponent } from '@/lib/discord-guild-api';
@@ -102,14 +103,14 @@ function placementPrefix(placement: string | null | undefined): string {
 }
 
 function signupLine(s: RaidEmbedSignup, emojis: Record<string, string>): string {
-  const spec      = s.signedSpec?.trim() || s.mainSpec?.trim() || '?';
-  const charName  = s.characterName || '?';
-  const twink     = s.isMain === false ? ' *(T)*' : '';
-  const late      = s.isLate ? ' ⏱' : '';
-  const pl        = placementPrefix(s.leaderPlacement);
-  const emoji     = getSpecEmoji(spec, emojis);
-  const emojiPart = emoji ? `${emoji} ` : '';
-  return `${pl}${emojiPart}${charName} (${spec})${twink}${late}`;
+  const spec       = s.signedSpec?.trim() || s.mainSpec?.trim() || '?';
+  const charName   = s.characterName || '?';
+  const twink      = s.isMain === false ? ' *(T)*' : '';
+  const pl         = placementPrefix(s.leaderPlacement);
+  const classEmoji = getClassEmoji(spec, emojis);
+  const specEmoji  = getSpecEmoji(spec, emojis);
+  const emojiPart  = [classEmoji, specEmoji].filter(Boolean).join('');
+  return `${pl}${emojiPart}${emojiPart ? ' ' : ''}${charName}${twink}`;
 }
 
 /** Zählt Gruppen in announced_planner_groups_json. */

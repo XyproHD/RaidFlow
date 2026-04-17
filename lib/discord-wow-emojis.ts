@@ -63,12 +63,46 @@ export const ROLE_FALLBACK_EMOJI: Record<string, string> = {
   Healer: '💚',
 };
 
+/** Klassen-Name (letztes Wort aus Spec-Anzeigename) → Emoji-Key in discord_emojis */
+export const CLASS_EMOJI_KEY: Record<string, string> = {
+  Druid:   'wow_druid',
+  Hunter:  'wow_hunter',
+  Mage:    'wow_mage',
+  Paladin: 'wow_paladin',
+  Priest:  'wow_priest',
+  Rogue:   'wow_rogue',
+  Shaman:  'wow_shaman',
+  Warlock: 'wow_warlock',
+  Warrior: 'wow_warrior',
+  // MoP-Klassen
+  Monk:    'wow_monk',
+};
+
+/**
+ * Extrahiert den Klassenname aus einem Spec-Anzeigenamen.
+ * "Holy Paladin" → "Paladin", "Feral (DPS) Druid" → "Druid".
+ */
+export function getClassFromSpec(spec: string): string {
+  const parts = (spec ?? '').trim().split(' ');
+  return parts[parts.length - 1] ?? '';
+}
+
 /**
  * Gibt das Discord-Emoji-Markup für eine Spec zurück.
  * Fallback: leerer String.
  */
 export function getSpecEmoji(spec: string, emojis: Record<string, string>): string {
   const key = SPEC_EMOJI_KEY[spec?.trim() ?? ''];
+  return key ? (emojis[key] ?? '') : '';
+}
+
+/**
+ * Gibt das Discord-Emoji-Markup für die Klasse eines Specs zurück.
+ * Fallback: leerer String.
+ */
+export function getClassEmoji(spec: string, emojis: Record<string, string>): string {
+  const className = getClassFromSpec(spec);
+  const key = CLASS_EMOJI_KEY[className];
   return key ? (emojis[key] ?? '') : '';
 }
 

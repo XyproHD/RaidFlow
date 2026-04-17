@@ -1402,28 +1402,90 @@ function clearEditFlow(userId, raidId) { joinFlowState.delete(eKey(userId, raidI
 
 const PUNC_LABELS = { on_time: '🟢 Rechtzeitig', tight: '🟡 Wird knapp', late: '🕒 Später' };
 
+// ---------------------------------------------------------------------------
+// WoW-Emoji-Hilfsfunktionen für den Bot
+// ---------------------------------------------------------------------------
+const SPEC_EMOJI_KEY_BOT = {
+  'Holy Paladin':           'wow_holy_pala',
+  'Protection Paladin':     'wow_protection',
+  'Retribution Paladin':    'wow_retribution',
+  'Holy Priest':            'wow_holy_priest',
+  'Discipline Priest':      'wow_discipline',
+  'Shadow Priest':          'wow_shadow',
+  'Protection Warrior':     'wow_protection',
+  'Arms Warrior':           'wow_arms',
+  'Fury Warrior':           'wow_fury',
+  'Affliction Warlock':     'wow_affliction',
+  'Demonology Warlock':     'wow_demonology',
+  'Destruction Warlock':    'wow_destruction',
+  'Restoration Shaman':     'wow_restoration',
+  'Elemental Shaman':       'wow_elemental',
+  'Enhancement Shaman':     'wow_enhancement',
+  'Assassination Rogue':    'wow_assassination',
+  'Combat Rogue':           'wow_combat',
+  'Subtlety Rogue':         'wow_subtlety',
+  'Arcane Mage':            'wow_arcane',
+  'Fire Mage':              'wow_fire',
+  'Frost Mage':             'wow_frost',
+  'Beast Mastery Hunter':   'wow_beastmastery',
+  'Marksmanship Hunter':    'wow_marksman',
+  'Survival Hunter':        'wow_survival',
+  'Balance Druid':          'wow_balance',
+  'Feral Druid':            'wow_feral',
+  'Feral (DPS) Druid':      'wow_feral',
+  'Restoration Druid':      'wow_restoration',
+};
+
+/** Parst Discord-Emoji-Markup <:name:id> oder <a:name:id> zu einem Discord.js-Emoji-Objekt. */
+function parseDiscordEmoji(markup) {
+  if (!markup || typeof markup !== 'string') return null;
+  const m = markup.match(/^<(a?):([^:]+):(\d+)>$/);
+  if (!m) return null;
+  return { animated: m[1] === 'a', name: m[2], id: m[3] };
+}
+
+/** Gibt ein Discord.js-Emoji-Objekt für einen Spec zurück oder null. */
+function specEmojiObj(spec, emojis) {
+  const key    = SPEC_EMOJI_KEY_BOT[spec?.trim() ?? ''];
+  const markup = key ? emojis?.[key] : null;
+  return markup ? parseDiscordEmoji(markup) : null;
+}
+
+/** Baut eine ActionRow mit Spec-Buttons (Buttons statt Dropdown). */
+async function buildSpecRow(rid, charNoDash, state, isEdit) {
+  const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+  const prefix = isEdit ? 'editspecbtn' : 'specbtn';
+  const specs  = [state.mainSpec, state.offSpec].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+
+  const buttons = specs.slice(0, 5).map((spec, idx) => {
+    const isSelected = spec === state.selectedSpec;
+    const emoji      = specEmojiObj(spec, state.emojis ?? {});
+    const btn = new ButtonBuilder()
+      .setCustomId(`rf:${prefix}:${rid}:${charNoDash}:${idx}`)
+      .setLabel(truncateDiscordLabel(spec, 40))
+      .setStyle(isSelected ? ButtonStyle.Primary : ButtonStyle.Secondary);
+    if (emoji) btn.setEmoji(emoji);
+    return btn;
+  });
+
+  return new ActionRowBuilder().addComponents(...buttons);
+}
+
 /** Baut die Spec/Pünktlichkeit-Auswahl-Nachricht für den Join-Flow. */
-async function buildJoinConfigMessage(raidId, state) {
-  const { StringSelectMenuBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+async function buildJoinConfigMessage(raidId, state, errorHint) {
+  const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
   const rid        = raidId.replace(/-/g, '');
   const charNoDash = state.charId.replace(/-/g, '');
   const rows       = [];
 
-  const specOptions = [{ label: state.mainSpec, value: state.mainSpec, description: 'Main-Spec' }];
-  if (state.offSpec && state.offSpec !== state.mainSpec) {
-    specOptions.push({ label: state.offSpec, value: state.offSpec, description: 'Off-Spec' });
-  }
-  rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`rf:specsel:${rid}:${charNoDash}`)
-      .setPlaceholder('Spec auswählen…')
-      .addOptions(specOptions.map(o => ({ ...o, default: o.value === state.selectedSpec })))
-  ));
+  // Spec-Buttons
+  rows.push(await buildSpecRow(rid, charNoDash, state, false));
 
+  // Pünktlichkeit-Buttons
   const puncDefs = [
-    { key: 'on_time', style: ButtonStyle.Success  },
-    { key: 'tight',   style: ButtonStyle.Primary  },
-    { key: 'late',    style: ButtonStyle.Danger   },
+    { key: 'on_time', style: ButtonStyle.Success },
+    { key: 'tight',   style: ButtonStyle.Primary },
+    { key: 'late',    style: ButtonStyle.Danger  },
   ];
   rows.push(new ActionRowBuilder().addComponents(
     ...puncDefs.map(p =>
@@ -1434,44 +1496,43 @@ async function buildJoinConfigMessage(raidId, state) {
     )
   ));
 
+  // Notiz + Anmelden
+  const noteLabel = state.note?.trim()
+    ? `📝 Notiz: "${state.note.trim().slice(0, 30)}${state.note.length > 30 ? '…' : ''}"`
+    : '📝 Notiz hinzufügen';
   rows.push(new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`rf:joinnote:${rid}:${charNoDash}`)
+      .setLabel(noteLabel)
+      .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`rf:submit:${rid}:${charNoDash}`)
       .setLabel('✅ Anmelden')
       .setStyle(ButtonStyle.Success)
-      .setDisabled(!state.selectedSpec)
+      .setDisabled(!state.selectedSpec),
   ));
 
   const specDisp = state.selectedSpec ? `**${state.selectedSpec}**` : '*bitte wählen*';
   const puncDisp = PUNC_LABELS[state.selectedPunc] ?? PUNC_LABELS.on_time;
+  const noteDisp = state.note?.trim() ? `\n📝 Notiz: "${state.note.trim().slice(0, 60)}"` : '';
+  const warnDisp = errorHint ? `\n\n⚠️ ${errorHint}` : '';
+
   return {
-    content:    `**Anmeldung: ${state.charName}**\n📋 Spec: ${specDisp}  ·  ⏰ Pünktlichkeit: ${puncDisp}`,
+    content:    `**Anmeldung: ${state.charName}**\n\n⚔️ Deine Spezialisierung:\n⏰ Pünktlichkeit: ${puncDisp}${noteDisp}${warnDisp}`,
     components: rows,
     ephemeral:  true,
   };
 }
 
 /** Baut die Bearbeiten-Nachricht. */
-async function buildEditConfigMessage(raidId, state) {
-  const { StringSelectMenuBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+async function buildEditConfigMessage(raidId, state, errorHint) {
+  const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
   const rid        = raidId.replace(/-/g, '');
   const charNoDash = (state.charId ?? '').replace(/-/g, '');
   const rows       = [];
 
-  const specOptions = [{ label: state.mainSpec, value: state.mainSpec }];
-  if (state.offSpec && state.offSpec !== state.mainSpec) {
-    specOptions.push({ label: state.offSpec, value: state.offSpec });
-  }
-  rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`rf:editspec:${rid}:${charNoDash}`)
-      .setPlaceholder('Spec auswählen…')
-      .addOptions(specOptions.map(o => ({
-        label:   truncateDiscordLabel(o.label, 100),
-        value:   o.value,
-        default: o.value === state.selectedSpec,
-      })))
-  ));
+  // Spec-Buttons
+  rows.push(await buildSpecRow(rid, charNoDash, state, true));
 
   const puncDefs = [
     { key: 'on_time', style: ButtonStyle.Success },
@@ -1487,10 +1548,13 @@ async function buildEditConfigMessage(raidId, state) {
     )
   ));
 
+  const noteLabel = state.existingNote?.trim()
+    ? `📝 Notiz: "${state.existingNote.trim().slice(0, 30)}${state.existingNote.length > 30 ? '…' : ''}"`
+    : '📝 Notiz bearbeiten';
   rows.push(new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`rf:editnote:${rid}:${charNoDash}`)
-      .setLabel('📝 Notiz bearbeiten')
+      .setLabel(noteLabel)
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`rf:submitedit:${rid}:${charNoDash}`)
@@ -1498,11 +1562,11 @@ async function buildEditConfigMessage(raidId, state) {
       .setStyle(ButtonStyle.Success),
   ));
 
-  const specDisp = state.selectedSpec ? `**${state.selectedSpec}**` : '*bitte wählen*';
-  const puncDisp = PUNC_LABELS[state.selectedPunc] ?? PUNC_LABELS.on_time;
-  const noteDisp = state.existingNote ? `  ·  📝 "${state.existingNote.slice(0, 40)}${state.existingNote.length > 40 ? '…' : ''}"` : '';
+  const puncDisp  = PUNC_LABELS[state.selectedPunc] ?? PUNC_LABELS.on_time;
+  const noteDisp  = state.existingNote?.trim() ? `\n📝 Notiz: "${state.existingNote.trim().slice(0, 60)}"` : '';
+  const warnDisp  = errorHint ? `\n\n⚠️ ${errorHint}` : '';
   return {
-    content:    `**Anmeldung bearbeiten: ${state.charName}**\n📋 Spec: ${specDisp}  ·  ⏰ Pünktlichkeit: ${puncDisp}${noteDisp}`,
+    content:    `**Anmeldung bearbeiten: ${state.charName}**\n\n⚔️ Deine Spezialisierung:\n⏰ Pünktlichkeit: ${puncDisp}${noteDisp}${warnDisp}`,
     components: rows,
     ephemeral:  true,
   };
@@ -1528,7 +1592,8 @@ async function handleRaidJoinButton(interaction, raidId, guildId) {
     await interaction.reply({ content: raidActionErrorText('NOT_LINKED'), ephemeral: true }).catch(() => {});
     return;
   }
-  const chars = Array.isArray(json.characters) ? json.characters : [];
+  const chars       = Array.isArray(json.characters) ? json.characters : [];
+  const emojis      = json.discordEmojis ?? {};
   if (chars.length === 0) {
     await interaction.reply({ content: raidActionErrorText('NO_CHARACTER'), ephemeral: true }).catch(() => {});
     return;
@@ -1537,16 +1602,18 @@ async function handleRaidJoinButton(interaction, raidId, guildId) {
     const c = chars[0];
     setJoinFlow(interaction.user.id, raidId, {
       charId: c.id, charName: c.name, mainSpec: c.mainSpec, offSpec: c.offSpec ?? null,
-      selectedSpec: c.mainSpec, selectedPunc: 'on_time',
+      selectedSpec: c.mainSpec, selectedPunc: 'on_time', note: '', emojis,
     });
     const msg = await buildJoinConfigMessage(raidId, getJoinFlow(interaction.user.id, raidId));
     await interaction.reply(msg).catch(() => {});
     return;
   }
-  // Mehrere Chars → Auswahl-Menü (keine Vorauswahl)
+  // Mehrere Chars → Auswahl-Menü (keine Vorauswahl, emojis im State merken für späteren Step)
   const { StringSelectMenuBuilder, ActionRowBuilder } = await import('discord.js');
   const raidNoDash  = raidId.replace(/-/g, '');
   const guildNoDash = guildId.replace(/-/g, '');
+  // Temp-Emojis im State vorhalten (charId wird später durch Char-Auswahl gesetzt)
+  setJoinFlow(interaction.user.id, raidId, { emojis, _pendingChars: chars });
   const select = new StringSelectMenuBuilder()
     .setCustomId(`rf:selchar:${raidNoDash}:${guildNoDash}`)
     .setPlaceholder('Charakter auswählen…')
@@ -1583,6 +1650,7 @@ async function handleRaidEditButton(interaction, raidId) {
     selectedSpec: signup.signedSpec ?? char?.mainSpec ?? '?',
     selectedPunc: signup.punctuality ?? 'on_time',
     existingNote: signup.note ?? '',
+    emojis: json.discordEmojis ?? {},
   });
   const msg = await buildEditConfigMessage(raidId, getEditFlow(interaction.user.id, raidId));
   await interaction.reply(msg).catch(() => {});
@@ -1608,32 +1676,36 @@ async function handleRaidUnregButton(interaction, raidId) {
 async function handleRaidCharSelect(interaction, raidId) {
   const charId = interaction.values?.[0];
   if (!charId) { await interaction.reply({ content: '❌ Keine Auswahl.', ephemeral: true }).catch(() => {}); return; }
-  const { ok, json } = await getDiscordAction({ action: 'get-chars', discordUserId: interaction.user.id, raidId });
-  const chars = ok && Array.isArray(json.characters) ? json.characters : [];
-  const char  = chars.find(c => c.id === charId) ?? { id: charId, name: '?', mainSpec: '', offSpec: null };
+  // Emojis aus dem vorherigen Pending-State übernehmen
+  const pending = getJoinFlow(interaction.user.id, raidId);
+  const emojis  = pending?.emojis ?? {};
+  const chars   = pending?._pendingChars ?? [];
+  const char    = chars.find(c => c.id === charId) ?? { id: charId, name: '?', mainSpec: '', offSpec: null };
   setJoinFlow(interaction.user.id, raidId, {
     charId: char.id, charName: char.name, mainSpec: char.mainSpec, offSpec: char.offSpec ?? null,
-    selectedSpec: char.mainSpec, selectedPunc: 'on_time',
+    selectedSpec: char.mainSpec, selectedPunc: 'on_time', note: '', emojis,
   });
   const msg = await buildJoinConfigMessage(raidId, getJoinFlow(interaction.user.id, raidId));
   await interaction.update(msg).catch(() => {});
 }
 
-async function handleSpecSelect(interaction, raidId) {
-  const selectedSpec = interaction.values?.[0];
-  if (!selectedSpec) return;
+async function handleSpecButton(interaction, raidId, specIdx) {
   const flow = getJoinFlow(interaction.user.id, raidId);
   if (!flow) { await interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf Anmelden klicken.', ephemeral: true }).catch(() => {}); return; }
+  const specs       = [flow.mainSpec, flow.offSpec].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+  const selectedSpec = specs[parseInt(specIdx, 10)];
+  if (!selectedSpec) return;
   setJoinFlow(interaction.user.id, raidId, { ...flow, selectedSpec });
   const msg = await buildJoinConfigMessage(raidId, getJoinFlow(interaction.user.id, raidId));
   await interaction.update(msg).catch(() => {});
 }
 
-async function handleEditSpecSelect(interaction, raidId) {
-  const selectedSpec = interaction.values?.[0];
-  if (!selectedSpec) return;
+async function handleEditSpecButton(interaction, raidId, specIdx) {
   const state = getEditFlow(interaction.user.id, raidId);
   if (!state) { await interaction.reply({ content: '⚠️ Sitzung abgelaufen.', ephemeral: true }).catch(() => {}); return; }
+  const specs        = [state.mainSpec, state.offSpec].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
+  const selectedSpec = specs[parseInt(specIdx, 10)];
+  if (!selectedSpec) return;
   setEditFlow(interaction.user.id, raidId, { ...state, selectedSpec });
   const msg = await buildEditConfigMessage(raidId, getEditFlow(interaction.user.id, raidId));
   await interaction.update(msg).catch(() => {});
@@ -1665,22 +1737,37 @@ async function handleSubmitJoin(interaction, raidId, charId) {
     await interaction.reply({ content: '⚠️ Bitte zuerst eine Spec auswählen.', ephemeral: true }).catch(() => {});
     return;
   }
+  // Bei "Später" ohne Notiz: Formular behalten + Hinweis
+  if (flow.selectedPunc === 'late' && !flow.note?.trim()) {
+    const msg = await buildJoinConfigMessage(raidId, flow, 'Bei „Später" ist eine kurze Notiz Pflicht. Bitte klicke auf 📝 Notiz.');
+    await interaction.update(msg).catch(() => {});
+    return;
+  }
   await interaction.deferUpdate().catch(() => {});
   const { ok, json } = await callDiscordAction({
     action: 'join', discordUserId: interaction.user.id, raidId,
     characterId: flow.charId, type: 'normal',
-    signedSpec: flow.selectedSpec, punctuality: flow.selectedPunc ?? 'on_time', note: '',
+    signedSpec: flow.selectedSpec, punctuality: flow.selectedPunc ?? 'on_time',
+    note: flow.note ?? '',
   });
+  if (!ok) {
+    const errMsg = await buildJoinConfigMessage(raidId, flow, raidActionErrorText(json.error));
+    await interaction.editReply({ ...errMsg, components: errMsg.components }).catch(() => {});
+    return;
+  }
   clearJoinFlow(interaction.user.id, raidId);
-  await interaction.editReply({
-    content: ok ? `✅ ${json.message ?? 'Anmeldung erfolgreich!'}` : raidActionErrorText(json.error),
-    components: [],
-  }).catch(() => {});
+  await interaction.editReply({ content: `✅ ${json.message ?? 'Anmeldung erfolgreich!'}`, components: [] }).catch(() => {});
 }
 
 async function handleSubmitEdit(interaction, raidId) {
   const state = getEditFlow(interaction.user.id, raidId);
   if (!state) { await interaction.reply({ content: '⚠️ Sitzung abgelaufen.', ephemeral: true }).catch(() => {}); return; }
+  // Bei "Später" ohne Notiz: Formular behalten + Hinweis
+  if (state.selectedPunc === 'late' && !state.existingNote?.trim()) {
+    const msg = await buildEditConfigMessage(raidId, state, 'Bei „Später" ist eine kurze Notiz Pflicht. Bitte klicke auf 📝 Notiz bearbeiten.');
+    await interaction.update(msg).catch(() => {});
+    return;
+  }
   await interaction.deferUpdate().catch(() => {});
   const { ok, json } = await callDiscordAction({
     action: 'edit-signup', discordUserId: interaction.user.id, raidId,
@@ -1688,14 +1775,34 @@ async function handleSubmitEdit(interaction, raidId) {
     signedSpec: state.selectedSpec, punctuality: state.selectedPunc ?? 'on_time',
     note: state.existingNote ?? '',
   });
+  if (!ok) {
+    const errMsg = await buildEditConfigMessage(raidId, state, raidActionErrorText(json.error));
+    await interaction.editReply({ ...errMsg, components: errMsg.components }).catch(() => {});
+    return;
+  }
   clearEditFlow(interaction.user.id, raidId);
-  await interaction.editReply({
-    content: ok ? `✅ ${json.message ?? 'Anmeldung aktualisiert!'}` : raidActionErrorText(json.error),
-    components: [],
-  }).catch(() => {});
+  await interaction.editReply({ content: `✅ ${json.message ?? 'Anmeldung aktualisiert!'}`, components: [] }).catch(() => {});
 }
 
-// --- Notiz-Modal (Edit) -----------------------------------------------------
+// --- Notiz-Modal (Join-Flow) -------------------------------------------------
+
+async function handleJoinNoteButton(interaction, raidId) {
+  const flow = getJoinFlow(interaction.user.id, raidId);
+  const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+  const modal = new ModalBuilder()
+    .setCustomId(`rfm:joinnote:${raidId.replace(/-/g, '')}`)
+    .setTitle('Notiz hinzufügen');
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('note').setLabel('Notiz (bei „Später" Pflicht, sonst optional)')
+        .setStyle(TextInputStyle.Paragraph).setValue(flow?.note ?? '').setRequired(false).setMaxLength(500)
+        .setPlaceholder('z. B. „Ca. 15 Minuten später wegen Arbeit"')
+    ),
+  );
+  await interaction.showModal(modal).catch(() => {});
+}
+
+// --- Notiz-Modal (Edit-Flow) -------------------------------------------------
 
 async function handleEditNoteButton(interaction, raidId) {
   const state = getEditFlow(interaction.user.id, raidId);
@@ -1705,8 +1812,9 @@ async function handleEditNoteButton(interaction, raidId) {
     .setTitle('Notiz bearbeiten');
   modal.addComponents(
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('note').setLabel('Notiz (optional, bei „Später" empfohlen)')
+      new TextInputBuilder().setCustomId('note').setLabel('Notiz (bei „Später" Pflicht, sonst optional)')
         .setStyle(TextInputStyle.Paragraph).setValue(state?.existingNote ?? '').setRequired(false).setMaxLength(500)
+        .setPlaceholder('z. B. „Ca. 15 Minuten später wegen Arbeit"')
     ),
   );
   await interaction.showModal(modal).catch(() => {});
@@ -1725,12 +1833,22 @@ async function handleRaidUnregModal(interaction, raidId) {
   }).catch(() => {});
 }
 
+async function handleJoinNoteModal(interaction, raidId) {
+  const note = interaction.fields.getTextInputValue('note').trim();
+  const flow = getJoinFlow(interaction.user.id, raidId);
+  if (flow) setJoinFlow(interaction.user.id, raidId, { ...flow, note });
+  await interaction.reply({
+    content:   `📝 Notiz gespeichert${note ? `: "${note.slice(0, 60)}"` : ' (leer)'}. Klicke auf **✅ Anmelden** um fortzufahren.`,
+    ephemeral: true,
+  }).catch(() => {});
+}
+
 async function handleEditNoteModal(interaction, raidId) {
   const note = interaction.fields.getTextInputValue('note').trim();
   const state = getEditFlow(interaction.user.id, raidId);
   if (state) setEditFlow(interaction.user.id, raidId, { ...state, existingNote: note });
   await interaction.reply({
-    content:   '📝 Notiz gespeichert. Klicke auf **✅ Speichern** um die Änderungen zu übernehmen.',
+    content:   `📝 Notiz gespeichert${note ? `: "${note.slice(0, 60)}"` : ' (leer)'}. Klicke auf **✅ Speichern** um die Änderungen zu übernehmen.`,
     ephemeral: true,
   }).catch(() => {});
 }
@@ -1771,6 +1889,9 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'unreg')       { await handleRaidUnregButton(interaction, raidId); return; }
         if (action === 'punc')        { await handlePuncButton(interaction, raidId, punc); return; }
         if (action === 'editpunc')    { await handleEditPuncButton(interaction, raidId, punc); return; }
+        if (action === 'specbtn')     { await handleSpecButton(interaction, raidId, punc); return; }    // punc = specIdx
+        if (action === 'editspecbtn') { await handleEditSpecButton(interaction, raidId, punc); return; }
+        if (action === 'joinnote')    { await handleJoinNoteButton(interaction, raidId); return; }
         if (action === 'submit')      { await handleSubmitJoin(interaction, raidId, extra); return; }
         if (action === 'submitedit')  { await handleSubmitEdit(interaction, raidId); return; }
         if (action === 'editnote')    { await handleEditNoteButton(interaction, raidId); return; }
@@ -1817,16 +1938,13 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.isStringSelectMenu()) {
     const customId = interaction.customId;
     // Raid Select-Menüs (rf:<action>:<raidNoDash>:...)
-    if (customId.startsWith('rf:selchar:') || customId.startsWith('rf:specsel:') || customId.startsWith('rf:editspec:')) {
+    if (customId.startsWith('rf:selchar:')) {
       const parts  = customId.split(':');
-      const action = parts[1];
       const raidId = noDashToUuid(parts[2]);
       try {
-        if (action === 'selchar') { await handleRaidCharSelect(interaction, raidId); }
-        else if (action === 'specsel')  { await handleSpecSelect(interaction, raidId); }
-        else if (action === 'editspec') { await handleEditSpecSelect(interaction, raidId); }
+        await handleRaidCharSelect(interaction, raidId);
       } catch (e) {
-        console.error('[RaidSelect]', customId, e);
+        console.error('[RaidCharSelect]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
       }
       return;
@@ -1964,6 +2082,7 @@ client.on('interactionCreate', async (interaction) => {
       const raidId = noDashToUuid(parts[2]);
       try {
         if (action === 'unreg')    { await handleRaidUnregModal(interaction, raidId); return; }
+        if (action === 'joinnote') { await handleJoinNoteModal(interaction, raidId); return; }
         if (action === 'editnote') { await handleEditNoteModal(interaction, raidId); return; }
       } catch (e) {
         console.error('[RaidModal]', customId, e);

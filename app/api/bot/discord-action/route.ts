@@ -9,6 +9,7 @@ import {
 } from '@/lib/raid-self-signup-mutation';
 import { normalizeSignupType, normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
 import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
+import { getAppConfig } from '@/lib/app-config';
 
 /**
  * Discord-Interaktions-API (aufgerufen durch discord-bot nach Button-/Modal-Interaktionen).
@@ -63,17 +64,22 @@ export async function GET(request: NextRequest) {
   }
 
   if (action === 'get-signup') {
-    const signup = await prisma.rfRaidSignup.findFirst({
-      where: { raidId, userId: user.id },
-      include: {
-        character: { select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true } },
-      },
-    });
+    const [signup, appCfg] = await Promise.all([
+      prisma.rfRaidSignup.findFirst({
+        where: { raidId, userId: user.id },
+        include: {
+          character: { select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true } },
+        },
+      }),
+      getAppConfig().catch(() => null),
+    ]);
+    const discordEmojis = appCfg?.discordEmojis ?? {};
     if (!signup) {
-      return NextResponse.json({ linked: true, signup: null });
+      return NextResponse.json({ linked: true, signup: null, discordEmojis });
     }
     return NextResponse.json({
       linked: true,
+      discordEmojis,
       signup: {
         id:          signup.id,
         type:        signup.type,
@@ -96,13 +102,16 @@ export async function GET(request: NextRequest) {
   }
 
   if (action === 'get-chars') {
-    const chars = await prisma.rfCharacter.findMany({
-      where: { userId: user.id, guildId: raid.guildId },
-      select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true },
-      orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
-      take: 25,
-    });
-    return NextResponse.json({ linked: true, guildId: raid.guildId, characters: chars });
+    const [chars, appCfg] = await Promise.all([
+      prisma.rfCharacter.findMany({
+        where: { userId: user.id, guildId: raid.guildId },
+        select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true },
+        orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+        take: 25,
+      }),
+      getAppConfig().catch(() => null),
+    ]);
+    return NextResponse.json({ linked: true, guildId: raid.guildId, characters: chars, discordEmojis: appCfg?.discordEmojis ?? {} });
   }
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
