@@ -236,11 +236,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const characterId   = typeof body.characterId   === 'string' ? body.characterId.trim()   : '';
-    const typeRaw       = typeof body.type          === 'string' ? body.type.trim()           : 'normal';
-    const signedSpecRaw = typeof body.signedSpec    === 'string' ? body.signedSpec.trim()     : '';
-    const noteRaw       = typeof body.note          === 'string' ? body.note.trim()           : '';
-    const punctualityRaw = typeof body.punctuality  === 'string' ? body.punctuality.trim()    : 'on_time';
+    const characterId    = typeof body.characterId    === 'string' ? body.characterId.trim()    : '';
+    const typeRaw        = typeof body.type           === 'string' ? body.type.trim()            : 'normal';
+    const signedSpecRaw  = typeof body.signedSpec     === 'string' ? body.signedSpec.trim()      : '';
+    const noteRaw        = typeof body.note           === 'string' ? body.note.trim()            : '';
+    const punctualityRaw = typeof body.punctuality    === 'string' ? body.punctuality.trim()     : 'on_time';
+    const onlySignedSpec = body.onlySignedSpec === true;
+    const forbidReserve  = body.forbidReserve  === true;
 
     if (!characterId) {
       return NextResponse.json({ error: 'Missing characterId' }, { status: 400 });
@@ -267,7 +269,7 @@ export async function POST(request: NextRequest) {
     const validation = validateRaidSignupBusinessRules({
       phase,
       typeNorm,
-      forbidReserve: false,
+      forbidReserve,
       punctuality,
       note:              noteRaw,
       signedSpecRaw:     effectiveSpec,
@@ -286,8 +288,8 @@ export async function POST(request: NextRequest) {
       characterId:    char.id,
       typeNorm,
       signedSpecRaw:  effectiveSpec,
-      onlySignedSpec: false,
-      forbidReserve:  false,
+      onlySignedSpec,
+      forbidReserve,
       punctuality,
       note:           noteRaw,
     });

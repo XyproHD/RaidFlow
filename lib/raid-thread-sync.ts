@@ -95,6 +95,7 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
       announcedGroupsJson: raid.announcedPlannerGroupsJson,
       discordEmojis,
       signups: raid.signups.map(s => ({
+        id:              s.id,
         userId:          s.userId,
         characterName:   s.character?.name ?? null,
         mainSpec:        s.character?.mainSpec ?? null,
