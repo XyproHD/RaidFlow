@@ -17,6 +17,7 @@ import {
   editChannelMessageFull,
 } from '@/lib/discord-guild-api';
 import { buildRaidEmbed, buildRaidActionButtons } from '@/lib/raid-embed-builder';
+import { getAppConfig } from '@/lib/app-config';
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
@@ -78,6 +79,9 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
       }
     }
 
+    const appConfig = await getAppConfig().catch(() => null);
+    const discordEmojis = appConfig?.discordEmojis ?? {};
+
     const embedInput = {
       raidId:             raid.id,
       guildId:            raid.guildId,
@@ -89,6 +93,7 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
       maxPlayers:         raid.maxPlayers,
       signupVisibility:   raid.signupVisibility,
       announcedGroupsJson: raid.announcedPlannerGroupsJson,
+      discordEmojis,
       signups: raid.signups.map(s => ({
         userId:          s.userId,
         characterName:   s.character?.name ?? null,

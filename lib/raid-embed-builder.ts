@@ -3,6 +3,10 @@
  * Wird beim Erstellen und bei jedem Update des Raids aufgerufen.
  */
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
+import {
+  getSpecEmoji,
+  getRoleEmoji,
+} from '@/lib/discord-wow-emojis';
 import type { DiscordEmbed, DiscordMessageComponent } from '@/lib/discord-guild-api';
 
 // ---------------------------------------------------------------------------
@@ -41,7 +45,8 @@ export type RaidEmbedInput = {
   maxPlayers: number;
   signupVisibility: string;
   signups: RaidEmbedSignup[];
-  announcedGroupsJson?: unknown; // announced_planner_groups_json
+  announcedGroupsJson?: unknown;
+  discordEmojis?: Record<string, string>;
   appUrl: string;
   locale?: string;
 };
@@ -96,13 +101,15 @@ function placementPrefix(placement: string | null | undefined): string {
   return '';
 }
 
-function signupLine(s: RaidEmbedSignup): string {
+function signupLine(s: RaidEmbedSignup, emojis: Record<string, string>): string {
   const spec      = s.signedSpec?.trim() || s.mainSpec?.trim() || '?';
   const charName  = s.characterName || '?';
   const twink     = s.isMain === false ? ' *(T)*' : '';
   const late      = s.isLate ? ' ⏱' : '';
   const pl        = placementPrefix(s.leaderPlacement);
-  return `${pl}${charName} (${spec})${twink}${late}`;
+  const emoji     = getSpecEmoji(spec, emojis);
+  const emojiPart = emoji ? `${emoji} ` : '';
+  return `${pl}${emojiPart}${charName} (${spec})${twink}${late}`;
 }
 
 /** Zählt Gruppen in announced_planner_groups_json. */
@@ -121,7 +128,7 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
   const {
     raidId, guildId, raidName, dungeonNames, scheduledAt, signupUntil,
     status, maxPlayers, signupVisibility, signups, announcedGroupsJson,
-    appUrl, locale = 'de',
+    discordEmojis = {}, appUrl, locale = 'de',
   } = input;
 
   const now = new Date();
@@ -162,7 +169,7 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     inline: true,
   });
 
-  // Spielerzahl (unique Discord-User-IDs, ohne Reserve)
+  // Spielerzahl (unique User-IDs, ohne Reserve)
   const mainSignups    = signups.filter(s => s.type !== 'reserve' && s.type !== 'declined');
   const reserveSignups = signups.filter(s => s.type === 'reserve');
   const uniquePlayers  = new Set(mainSignups.map(s => s.userId)).size;
@@ -189,32 +196,32 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     }
 
     const roleGroups = [
-      { label: 'Tanks',     emoji: '🛡️', key: 'Tank'   },
-      { label: 'Nahkampf',  emoji: '⚔️',  key: 'Melee'  },
-      { label: 'Fernkampf', emoji: '🏹',  key: 'Range'  },
-      { label: 'Heiler',    emoji: '💚',  key: 'Healer' },
+      { label: 'Tanks',     key: 'Tank'   },
+      { label: 'Nahkampf',  key: 'Melee'  },
+      { label: 'Fernkampf', key: 'Range'  },
+      { label: 'Heiler',    key: 'Healer' },
     ];
 
-    for (const { label, emoji, key } of roleGroups) {
+    for (const { label, key } of roleGroups) {
       const group = byRole[key];
       if (!group?.length) continue;
-      const lines = group.map(signupLine);
-      // Feld-Wert max 1024 Zeichen; bei vielen Einträgen kürzen
+      const lines = group.map(s => signupLine(s, discordEmojis));
       let value = lines.join('\n');
       if (value.length > 1000) {
         const shown   = lines.filter((_, i) => lines.slice(0, i + 1).join('\n').length <= 950);
         const rest    = lines.length - shown.length;
         value = shown.join('\n') + `\n*… und ${rest} weitere*`;
       }
+      const roleEmojiStr = getRoleEmoji(key, discordEmojis);
       fields.push({
-        name:   `${emoji} ${label} (${group.length})`,
-        value:  value,
+        name:   `${roleEmojiStr} ${label} (${group.length})`,
+        value,
         inline: false,
       });
     }
 
     if (byRole['?'].length > 0) {
-      const lines = byRole['?'].map(signupLine);
+      const lines = byRole['?'].map(s => signupLine(s, discordEmojis));
       fields.push({
         name:   `❓ Unbekannte Rolle (${byRole['?'].length})`,
         value:  lines.join('\n').slice(0, 1024),
@@ -224,7 +231,7 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
 
     // --- Reserve ---
     if (reserveSignups.length > 0) {
-      const lines = reserveSignups.map(signupLine);
+      const lines = reserveSignups.map(s => signupLine(s, discordEmojis));
       let value = lines.join('\n');
       if (value.length > 1000) {
         const shown = lines.filter((_, i) => lines.slice(0, i + 1).join('\n').length <= 950);
@@ -237,7 +244,6 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
       });
     }
   } else if (!isRevealed) {
-    // Signups versteckt
     const hint = reserveSignups.length > 0
       ? `🔒 Anmeldungen nicht öffentlich · ${reserveSignups.length} auf Reserve`
       : '🔒 Anmeldungen nicht öffentlich';
@@ -270,7 +276,6 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
 /**
  * Erstellt die Action-Row mit den vier Raid-Buttons.
  * customId-Format: rf:<action>:<raidIdNoDash>:<guildIdNoDash>
- * Maximale Länge: 8 + 32 + 1 + 32 = 73 Zeichen (< 100 Limit).
  */
 export function buildRaidActionButtons(
   raidId: string,
@@ -283,7 +288,7 @@ export function buildRaidActionButtons(
     type: 1, // ACTION_ROW
     components: [
       {
-        type:      2, // BUTTON
+        type:      2,
         style:     3, // Success (grün)
         label:     'Quickjoin',
         emoji:     { name: '⚡' },

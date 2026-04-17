@@ -70,9 +70,10 @@ export async function GET(request: NextRequest) {
       },
     });
     if (!signup) {
-      return NextResponse.json({ signup: null });
+      return NextResponse.json({ linked: true, signup: null });
     }
     return NextResponse.json({
+      linked: true,
       signup: {
         id:          signup.id,
         type:        signup.type,
