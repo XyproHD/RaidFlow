@@ -189,25 +189,34 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
   const groupCount = announcedGroups?.groups.length ?? 1;
   const totalMax   = maxPlayers * groupCount;
 
-  let anmeldungenValue = `${uniquePlayers} / ${maxPlayers}`;
-  if (groupCount > 1) {
-    anmeldungenValue += ` *(${totalMax} für ${groupCount} Gruppen)*`;
-  }
+  const anmeldungenValue = groupCount > 1
+    ? `${uniquePlayers} / ${totalMax} (${maxPlayers} je Gruppe)`
+    : `${uniquePlayers} / ${maxPlayers}`;
 
-  // --- Description: Links + Stammdaten + Separator ---
+  // --- Description: Links ---
   const deadlineIcon = signupDeadlineIcon(signupUntil);
-  const description = [
-    `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl})`,
-    '',
-    `**Termin:** ${formatDate(scheduledAt)} · ${formatTime(scheduledAt)} Uhr`,
-    `**Anmeldung bis:** ${deadlineIcon} ${formatDate(signupUntil)} · ${formatTime(signupUntil)} Uhr`,
-    `**Status:** ${statusText(status, signupUntil)}`,
-    `**Anmeldungen:** ${anmeldungenValue}`,
-    '──────────────────────────────',
+  const description  = `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl})`;
+
+  // --- Zwei inline-Felder als tabellarische Stammdaten ---
+  const labelCol = [
+    '**Termin:**',
+    '**Anmeldung bis:**',
+    '**Status:**',
+    '**Anmeldungen:**',
+  ].join('\n');
+  const valueCol = [
+    `${formatDate(scheduledAt)} · ${formatTime(scheduledAt)} Uhr`,
+    `${deadlineIcon} ${formatDate(signupUntil)} · ${formatTime(signupUntil)} Uhr`,
+    statusText(status, signupUntil),
+    anmeldungenValue,
   ].join('\n');
 
-  // --- Felder: Spielerliste ---
-  const fields: NonNullable<DiscordEmbed['fields']> = [];
+  // --- Felder: Stammdaten (zwei inline-Spalten) + Separator + Spielerliste ---
+  const fields: NonNullable<DiscordEmbed['fields']> = [
+    { name: '\u200b', value: labelCol, inline: true  },
+    { name: '\u200b', value: valueCol, inline: true  },
+    { name: '\u200b', value: '──────────────────────────────', inline: false },
+  ];
 
   if (isAnnounced && announcedGroups && announcedGroups.groups.length > 0) {
     // -----------------------------------------------------------------------
@@ -243,16 +252,18 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
       fields.push({ name: fieldName, value: fieldValue, inline: false });
     }
 
-    // Reserve am Ende
-    if (announcedGroups.reserveOrder.length > 0) {
+    // Reserve am Ende – immer anzeigen
+    {
       const signupById2 = new Map(signups.map(s => [s.id, s]));
       const resLines = announcedGroups.reserveOrder
         .map(id => signupById2.get(id))
         .filter((s): s is RaidEmbedSignup => !!s)
         .map(s => playerLine(s, discordEmojis));
-      if (resLines.length > 0) {
-        fields.push({ name: `Reserve (${resLines.length})`, value: truncateLines(resLines), inline: false });
-      }
+      fields.push({
+        name:   `Reserve (${resLines.length})`,
+        value:  resLines.length > 0 ? truncateLines(resLines) : '*Keine Reserve*',
+        inline: false,
+      });
     }
   } else if (isRevealed && mainSignups.length > 0) {
     // -----------------------------------------------------------------------
@@ -293,17 +304,27 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
       fields.push({ name: `❓ Unbekannte Rolle (${byRole['?'].length})`, value: truncateLines(lines), inline: false });
     }
 
-    if (reserveSignups.length > 0) {
-      const lines = reserveSignups.map(s => playerLine(s, discordEmojis));
-      fields.push({ name: `Reserve (${reserveSignups.length})`, value: truncateLines(lines), inline: false });
-    }
+    // Reserve immer anzeigen
+    const resLinesOpen = reserveSignups.map(s => playerLine(s, discordEmojis));
+    fields.push({
+      name:   `Reserve (${reserveSignups.length})`,
+      value:  resLinesOpen.length > 0 ? truncateLines(resLinesOpen) : '*Keine Reserve*',
+      inline: false,
+    });
   } else if (!isRevealed) {
     const hint = reserveSignups.length > 0
       ? `*Anmeldungen nicht öffentlich · ${reserveSignups.length} auf Reserve*`
       : '*Anmeldungen nicht öffentlich*';
     fields.push({ name: '\u200b', value: hint, inline: false });
+    // Reserve zählen, aber nicht auflisten
+    fields.push({
+      name:   `Reserve (${reserveSignups.length})`,
+      value:  '*nicht öffentlich*',
+      inline: false,
+    });
   } else {
     fields.push({ name: '\u200b', value: '*Noch keine Anmeldungen.*', inline: false });
+    fields.push({ name: 'Reserve (0)', value: '*Keine Reserve*', inline: false });
   }
 
   return { title, description, color, fields };

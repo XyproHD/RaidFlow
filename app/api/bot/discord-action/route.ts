@@ -64,41 +64,27 @@ export async function GET(request: NextRequest) {
   }
 
   if (action === 'get-signup') {
-    const [signup, appCfg] = await Promise.all([
-      prisma.rfRaidSignup.findFirst({
-        where: { raidId, userId: user.id },
-        include: {
-          character: { select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true } },
-        },
+    const [rawSignups, appCfg] = await Promise.all([
+      prisma.rfRaidSignup.findMany({
+        where:   { raidId, userId: user.id },
+        include: { character: { select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true } } },
+        orderBy: { signedAt: 'asc' },
       }),
       getAppConfig().catch(() => null),
     ]);
     const discordEmojis = appCfg?.discordEmojis ?? {};
-    if (!signup) {
-      return NextResponse.json({ linked: true, signup: null, discordEmojis });
-    }
-    return NextResponse.json({
-      linked: true,
-      discordEmojis,
-      signup: {
-        id:          signup.id,
-        type:        signup.type,
-        signedSpec:  signup.signedSpec,
-        punctuality: signup.punctuality,
-        note:        signup.note,
-        isLate:      signup.isLate,
-        character: signup.character
-          ? {
-              id:       signup.character.id,
-              name:     signup.character.name,
-              mainSpec: signup.character.mainSpec,
-              offSpec:  signup.character.offSpec,
-              isMain:   signup.character.isMain,
-            }
-          : null,
-      },
-      signupUntil: raid.signupUntil.toISOString(),
-    });
+    const signups = rawSignups.map(s => ({
+      id:          s.id,
+      type:        s.type,
+      signedSpec:  s.signedSpec,
+      punctuality: s.punctuality,
+      note:        s.note,
+      isLate:      s.isLate,
+      character:   s.character
+        ? { id: s.character.id, name: s.character.name, mainSpec: s.character.mainSpec, offSpec: s.character.offSpec, isMain: s.character.isMain }
+        : null,
+    }));
+    return NextResponse.json({ linked: true, signups, discordEmojis, signupUntil: raid.signupUntil.toISOString() });
   }
 
   if (action === 'get-chars') {
@@ -306,7 +292,8 @@ export async function POST(request: NextRequest) {
   // Abmelden (Unregister)
   // -------------------------------------------------------------------------
   if (action === 'unregister') {
-    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    const reason        = typeof body.reason    === 'string' ? body.reason.trim()    : '';
+    const signupIdParam = typeof body.signupId  === 'string' ? body.signupId.trim()  : '';
     const isLateCancellation = new Date() > raid.signupUntil;
 
     if (isLateCancellation && !reason) {
@@ -317,7 +304,11 @@ export async function POST(request: NextRequest) {
     }
 
     const deleted = await prisma.rfRaidSignup.deleteMany({
-      where: { raidId, userId: user.id },
+      where: {
+        raidId,
+        userId: user.id,
+        ...(signupIdParam ? { id: signupIdParam } : {}),
+      },
     });
 
     if (deleted.count === 0) {
