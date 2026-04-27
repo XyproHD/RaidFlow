@@ -84,6 +84,7 @@ export async function PATCH(
     if (!exec.ok) {
       return NextResponse.json({ error: exec.error }, { status: exec.status });
     }
+    void syncRaidThreadSummary(raidId);
     return NextResponse.json({ ok: true, status: 'announced' });
   }
 

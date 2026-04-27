@@ -1,7 +1,5 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
-import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
-
 export type AnnouncedGroupPayload = {
   rosterOrder: string[];
   raidLeaderUserId: string | null;
@@ -212,6 +210,5 @@ export async function executeRaidAnnounceTransaction(args: {
     });
   }
 
-  void syncRaidThreadSummary(raidId);
   return { ok: true };
 }

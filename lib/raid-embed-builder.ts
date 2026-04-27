@@ -7,7 +7,6 @@ import {
   getSpecEmoji,
   getClassEmoji,
   getRoleEmoji,
-  ROLE_FALLBACK_EMOJI,
 } from '@/lib/discord-wow-emojis';
 import type { AnnouncedGroupPayload } from '@/lib/raid-announce';
 import type { DiscordEmbed, DiscordMessageComponent } from '@/lib/discord-guild-api';
@@ -22,6 +21,16 @@ const COLOR = {
   locked:             0xEB459E,
   cancelled:          0xED4245,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Rollen-Definitionen (Reihenfolge für Zusammenfassung + Spielerliste)
+// ---------------------------------------------------------------------------
+const ROLE_DEFS = [
+  { key: 'Tank',   label: 'Tanks'    },
+  { key: 'Melee',  label: 'Nahkampf' },
+  { key: 'Range',  label: 'Fernkampf'},
+  { key: 'Healer', label: 'Heiler'   },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Typen
@@ -100,37 +109,25 @@ function statusText(status: string, signupUntil: Date): string {
   return 'Offen';
 }
 
-/** Spieler-Zeile: <KlasseEmoji><SpecEmoji> Charname (T) */
-function playerLine(
-  s: RaidEmbedSignup,
-  emojis: Record<string, string>,
-  prefix = ''
-): string {
+/** Spieler-Zeile: {KlasseEmoji}{SpecEmoji} Charname *(T)* */
+function playerLine(s: RaidEmbedSignup, emojis: Record<string, string>): string {
   const spec       = s.signedSpec?.trim() || s.mainSpec?.trim() || '?';
   const charName   = s.characterName || '?';
   const twink      = s.isMain === false ? ' *(T)*' : '';
   const classEmoji = getClassEmoji(spec, emojis);
   const specEmoji  = getSpecEmoji(spec, emojis);
   const emojiPart  = [classEmoji, specEmoji].filter(Boolean).join('');
-  return `${prefix}${emojiPart}${emojiPart ? ' ' : ''}${charName}${twink}`;
-}
-
-/** Platzierungs-Prefix für Rollen-Ansicht (offen, noch nicht angekündigt). */
-function placementPrefix(
-  placement: string | null | undefined,
-  showPlacement: boolean
-): string {
-  if (!showPlacement) return '';
-  if (placement === 'confirmed')  return '[G] ';
-  if (placement === 'substitute') return '[E] ';
-  return '';
+  return `${emojiPart}${emojiPart ? ' ' : ''}${charName}${twink}`;
 }
 
 function parseStoredGroups(json: unknown): StoredAnnouncedGroups | null {
   if (!json || typeof json !== 'object') return null;
   const d = json as Record<string, unknown>;
   if (!Array.isArray(d.groups)) return null;
-  return { groups: d.groups as AnnouncedGroupPayload[], reserveOrder: Array.isArray(d.reserveOrder) ? d.reserveOrder as string[] : [] };
+  return {
+    groups: d.groups as AnnouncedGroupPayload[],
+    reserveOrder: Array.isArray(d.reserveOrder) ? d.reserveOrder as string[] : [],
+  };
 }
 
 function truncateLines(lines: string[], maxChars = 1000): string {
@@ -150,6 +147,69 @@ function truncateLines(lines: string[], maxChars = 1000): string {
 }
 
 // ---------------------------------------------------------------------------
+// Zusammenfassungs-Helfer
+// ---------------------------------------------------------------------------
+
+/**
+ * Gesamte Rollen-Zusammenfassung für den Embed-Header.
+ * Zeigt ⚠️ wenn eine Rolle 0 Spieler hat.
+ */
+function roleSummaryLine(
+  byRole: Record<string, RaidEmbedSignup[]>,
+  emojis: Record<string, string>
+): string {
+  return ROLE_DEFS.map(({ key }) => {
+    const count = byRole[key]?.length ?? 0;
+    const emoji = getRoleEmoji(key, emojis);
+    const countStr = count === 0 ? '**0** ⚠️' : String(count);
+    return `${emoji} ${countStr}`;
+  }).join('  ·  ');
+}
+
+/**
+ * Klassen-Zusammenfassung als Emoji-Zählung (absteigend sortiert).
+ * Wird nur angezeigt wenn Klassen-Emojis konfiguriert sind.
+ */
+function classCountLine(
+  signups: RaidEmbedSignup[],
+  emojis: Record<string, string>
+): string {
+  const counts = new Map<string, number>();
+  for (const s of signups) {
+    const spec = s.signedSpec?.trim() || s.mainSpec?.trim() || '';
+    const cls  = getClassEmoji(spec, emojis);
+    if (!cls) continue;
+    counts.set(cls, (counts.get(cls) ?? 0) + 1);
+  }
+  if (counts.size === 0) return '';
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([emoji, n]) => `${emoji} ${n}`)
+    .join('  ');
+}
+
+/**
+ * Kompakte Rollen-Verteilung für eine einzelne Gruppe.
+ */
+function groupRoleSummaryLine(
+  signupIds: string[],
+  signupById: Map<string, RaidEmbedSignup>,
+  emojis: Record<string, string>
+): string {
+  const counts: Record<string, number> = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
+  for (const id of signupIds) {
+    const s = signupById.get(id);
+    if (!s) continue;
+    const spec = s.signedSpec?.trim() || s.mainSpec?.trim();
+    const role = spec ? roleFromSpecDisplayName(spec) : null;
+    if (role && role in counts) counts[role]++;
+  }
+  return ROLE_DEFS
+    .map(({ key }) => `${getRoleEmoji(key, emojis)} ${counts[key]}`)
+    .join('  ');
+}
+
+// ---------------------------------------------------------------------------
 // Embed-Builder
 // ---------------------------------------------------------------------------
 
@@ -160,11 +220,9 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     discordEmojis = {}, appUrl, locale = 'de',
   } = input;
 
-  const showPlacement = status === 'announced' || status === 'locked';
-  const isAnnounced  = status === 'announced' || status === 'locked';
-  const isRevealed   = signupVisibility === 'public' || isAnnounced;
+  const isAnnounced = status === 'announced' || status === 'locked';
+  const isRevealed  = signupVisibility === 'public' || isAnnounced;
 
-  // Gruppen-Daten aus announced_planner_groups_json
   const announcedGroups = parseStoredGroups(announcedGroupsJson);
 
   // --- Basisdaten ---
@@ -176,22 +234,28 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
   const raidUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}`;
   const planUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}/plan`;
 
-  // Zählung: nur non-reserve, non-declined für unique Spieler
+  // Zählung & Rollen-Verteilung (früh berechnet, für Zusammenfassung + Spielerliste)
   const mainSignups    = signups.filter(s => s.type !== 'reserve' && s.type !== 'declined');
   const reserveSignups = signups.filter(s => s.type === 'reserve');
   const uniquePlayers  = new Set(mainSignups.map(s => s.userId)).size;
 
   const groupCount = announcedGroups?.groups.length ?? 1;
   const totalMax   = maxPlayers * groupCount;
-
   const anmeldungenValue = groupCount > 1
     ? `${uniquePlayers} / ${totalMax} (${maxPlayers} je Gruppe)`
     : `${uniquePlayers} / ${maxPlayers}`;
 
+  const byRole: Record<string, RaidEmbedSignup[]> = { Tank: [], Melee: [], Range: [], Healer: [], '?': [] };
+  for (const s of mainSignups) {
+    const spec = s.signedSpec?.trim() || s.mainSpec?.trim();
+    const role = spec ? roleFromSpecDisplayName(spec) : null;
+    (byRole[role ?? '?'] ??= []).push(s);
+  }
+
   // --- Description: Links ---
   const description = `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl})`;
 
-  // --- Zwei inline-Felder als tabellarische Stammdaten ---
+  // --- Stammdaten: zwei parallele Inline-Felder ---
   const labelCol = [
     '📅 **Termin**',
     '🗓️ **Anmeldung bis**',
@@ -205,34 +269,53 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     anmeldungenValue,
   ].join('\n');
 
-  // --- Felder: Stammdaten (zwei inline-Spalten) + Separator + Spielerliste ---
   const fields: NonNullable<DiscordEmbed['fields']> = [
-    { name: '\u200b', value: labelCol, inline: true  },
-    { name: '\u200b', value: valueCol, inline: true  },
-    { name: '\u200b', value: '──────────────────────────────', inline: false },
+    { name: '\u200b', value: labelCol, inline: true },
+    { name: '\u200b', value: valueCol, inline: true },
   ];
+
+  // --- Zusammenfassung je Rolle + Klasse (wenn Anmeldungen sichtbar) ---
+  if (isRevealed && mainSignups.length > 0) {
+    const roleLine  = roleSummaryLine(byRole, discordEmojis);
+    const classLine = classCountLine(mainSignups, discordEmojis);
+    const summaryValue = classLine ? `${roleLine}\n${classLine}` : roleLine;
+    fields.push({ name: '\u200b', value: summaryValue, inline: false });
+  }
+
+  // Visueller Trenner (leeres Feld = Abstandshalter)
+  fields.push({ name: '\u200b', value: '\u200b', inline: false });
 
   if (isAnnounced && announcedGroups && announcedGroups.groups.length > 0) {
     // -----------------------------------------------------------------------
-    // Angekündigt: Gruppen-Ansicht
+    // Angekündigt / Abgeschlossen: Gruppen-Ansicht
     // -----------------------------------------------------------------------
-    const signupById = new Map(signups.map(s => [s.id, s]));
+    const signupById   = new Map(signups.map(s => [s.id, s]));
     const signupByUser = new Map(signups.map(s => [s.userId, s]));
 
     for (let gi = 0; gi < announcedGroups.groups.length; gi++) {
+      // Optischer Trenner zwischen Gruppen
+      if (gi > 0) {
+        fields.push({ name: '\u200b', value: '\u200b', inline: false });
+      }
+
       const group = announcedGroups.groups[gi];
       const lines: string[] = [];
 
-      // Lead/Loot-Header am Anfang des Field-Values
+      // Lead/Loot-Header mit Labels
       const leadSignup = group.raidLeaderUserId ? signupByUser.get(group.raidLeaderUserId) : null;
       const lootSignup = group.lootmasterUserId ? signupByUser.get(group.lootmasterUserId) : null;
       const headerParts: string[] = [];
-      if (leadSignup?.characterName) headerParts.push(`👑 **${leadSignup.characterName}**`);
-      if (lootSignup?.characterName) headerParts.push(`💰 **${lootSignup.characterName}**`);
+      if (leadSignup?.characterName) headerParts.push(`👑 Raidleader: **${leadSignup.characterName}**`);
+      if (lootSignup?.characterName) headerParts.push(`💰 Lootmeister: **${lootSignup.characterName}**`);
       if (headerParts.length > 0) {
         lines.push(headerParts.join('  ·  '));
-        lines.push('──────────────────────────────');
       }
+
+      // Rollen-Verteilung der Gruppe
+      lines.push(groupRoleSummaryLine(group.rosterOrder, signupById, discordEmojis));
+
+      // Trenner vor Spielerliste (U+25AC BLACK RECTANGLE, deutlich sichtbar)
+      lines.push('▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬');
 
       for (const signupId of group.rosterOrder) {
         const s = signupById.get(signupId);
@@ -240,13 +323,14 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
         lines.push(playerLine(s, discordEmojis));
       }
 
-      const fieldName  = `Gruppe ${gi + 1}`;
-      const fieldValue = lines.length > 0 ? truncateLines(lines) : '*leer*';
-
-      fields.push({ name: fieldName, value: fieldValue, inline: false });
+      fields.push({
+        name:  `Gruppe ${gi + 1}`,
+        value: lines.length > 0 ? truncateLines(lines) : '*leer*',
+        inline: false,
+      });
     }
 
-    // Reserve am Ende – immer anzeigen
+    // Reserve am Ende
     {
       const signupById2 = new Map(signups.map(s => [s.id, s]));
       const resLines = announcedGroups.reserveOrder
@@ -254,66 +338,51 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
         .filter((s): s is RaidEmbedSignup => !!s)
         .map(s => playerLine(s, discordEmojis));
       fields.push({
-        name:   `Reserve (${resLines.length})`,
-        value:  resLines.length > 0 ? truncateLines(resLines) : '*Keine Reserve*',
+        name:  `Reserve (${resLines.length})`,
+        value: resLines.length > 0 ? truncateLines(resLines) : '*Keine Reserve*',
         inline: false,
       });
     }
+
   } else if (isRevealed && mainSignups.length > 0) {
     // -----------------------------------------------------------------------
-    // Offen: Rollen-Ansicht (nur wenn Anmeldungen öffentlich)
+    // Offen: Rollen-Ansicht (inline = 2-spaltig für bessere Übersicht)
     // -----------------------------------------------------------------------
-    const byRole: Record<string, RaidEmbedSignup[]> = { Tank: [], Melee: [], Range: [], Healer: [], '?': [] };
-    for (const s of mainSignups) {
-      const spec = s.signedSpec?.trim() || s.mainSpec?.trim();
-      const role = spec ? roleFromSpecDisplayName(spec) : null;
-      (byRole[role ?? '?'] ??= []).push(s);
-    }
-
-    const roleGroups = [
-      { label: 'Tanks',     key: 'Tank'   },
-      { label: 'Nahkampf',  key: 'Melee'  },
-      { label: 'Fernkampf', key: 'Range'  },
-      { label: 'Heiler',    key: 'Healer' },
-    ];
-
-    for (const { label, key } of roleGroups) {
+    for (const { key, label } of ROLE_DEFS) {
       const group = byRole[key];
       if (!group?.length) continue;
-      const showPl = showPlacement;
-      const lines = group.map(s => {
-        const pl = placementPrefix(s.leaderPlacement, showPl);
-        return playerLine(s, discordEmojis, pl);
-      });
       const roleEmoji = getRoleEmoji(key, discordEmojis);
       fields.push({
-        name:   `${roleEmoji} ${label} (${group.length})`.trim(),
-        value:  truncateLines(lines),
-        inline: false,
+        name:  `${roleEmoji} ${label} (${group.length})`.trim(),
+        value: truncateLines(group.map(s => playerLine(s, discordEmojis))),
+        inline: true,
       });
     }
 
     if (byRole['?'].length > 0) {
-      const lines = byRole['?'].map(s => playerLine(s, discordEmojis));
-      fields.push({ name: `❓ Unbekannte Rolle (${byRole['?'].length})`, value: truncateLines(lines), inline: false });
+      fields.push({
+        name:  `❓ Unbekannte Rolle (${byRole['?'].length})`,
+        value: truncateLines(byRole['?'].map(s => playerLine(s, discordEmojis))),
+        inline: false,
+      });
     }
 
-    // Reserve immer anzeigen
-    const resLinesOpen = reserveSignups.map(s => playerLine(s, discordEmojis));
     fields.push({
-      name:   `Reserve (${reserveSignups.length})`,
-      value:  resLinesOpen.length > 0 ? truncateLines(resLinesOpen) : '*Keine Reserve*',
+      name:  `Reserve (${reserveSignups.length})`,
+      value: reserveSignups.length > 0
+        ? truncateLines(reserveSignups.map(s => playerLine(s, discordEmojis)))
+        : '*Keine Reserve*',
       inline: false,
     });
+
   } else if (!isRevealed) {
     const hint = reserveSignups.length > 0
       ? `*Anmeldungen nicht öffentlich · ${reserveSignups.length} auf Reserve*`
       : '*Anmeldungen nicht öffentlich*';
     fields.push({ name: '\u200b', value: hint, inline: false });
-    // Reserve zählen, aber nicht auflisten
     fields.push({
-      name:   `Reserve (${reserveSignups.length})`,
-      value:  '*nicht öffentlich*',
+      name:  `Reserve (${reserveSignups.length})`,
+      value: '*nicht öffentlich*',
       inline: false,
     });
   } else {
