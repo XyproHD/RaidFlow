@@ -28,13 +28,13 @@ export type DashboardCharacterQueryRow = {
   gearScore: number | null;
   guildDiscordDisplayName: string | null;
   guild: { name: string } | null;
-  battlenetProfile: { battlenetCharacterId: bigint | null } | null;
+  battlenetProfile: { battlenetCharacterId: bigint | null; realmSlug: string } | null;
 };
 
 export async function findManyRfCharactersForDashboard(userId: string): Promise<DashboardCharacterQueryRow[]> {
   const include = {
     guild: { select: { name: true } },
-    battlenetProfile: { select: { battlenetCharacterId: true } },
+    battlenetProfile: { select: { battlenetCharacterId: true, realmSlug: true } },
   } as const;
   try {
     const rows = await prisma.rfCharacter.findMany({
@@ -70,7 +70,7 @@ export async function findManyRfCharactersForDashboard(userId: string): Promise<
         createdAt: true,
         updatedAt: true,
         guild: { select: { name: true } },
-        battlenetProfile: { select: { battlenetCharacterId: true } },
+        battlenetProfile: { select: { battlenetCharacterId: true, realmSlug: true } },
       },
       orderBy: dashboardOrderBy,
     });

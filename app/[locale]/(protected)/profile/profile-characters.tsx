@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
-import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect, useLayoutEffect, forwardRef, useImperativeHandle } from 'react';
 import { SpecIcon } from '@/components/spec-icon';
 import { ClassIcon } from '@/components/class-icon';
 import {
@@ -19,7 +19,7 @@ import {
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
 
-type CharacterRow = {
+export type CharacterRow = {
   id: string;
   name: string;
   guildId: string | null;
@@ -33,9 +33,15 @@ type CharacterRow = {
   classId?: string | null;
   hasBattlenet?: boolean;
   battlenetRealmSlug?: string | null;
+  participatedRaids?: number;
+  lootCount?: number;
 };
 
-type GuildOption = { id: string; name: string; battlenetRealmId?: string | null };
+export type GuildOption = { id: string; name: string; battlenetRealmId?: string | null };
+
+export type ProfileCharactersHandle = {
+  openAdd: () => void;
+};
 
 function getClassIdForSpec(displayName: string): string | null {
   return getSpecByDisplayName(displayName)?.classId ?? null;
@@ -53,13 +59,15 @@ function realmNameAndVersion(realm: WowRealm): { name: string; version: string }
   return { name, version };
 }
 
-export function ProfileCharacters({
-  initialData,
-  guilds,
-}: {
+export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
   initialData: CharacterRow[];
   guilds: GuildOption[];
-}) {
+  embedded?: boolean;
+}>(function ProfileCharacters({
+  initialData,
+  guilds,
+  embedded = false,
+}, ref) {
   const t = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
@@ -175,6 +183,8 @@ export function ProfileCharacters({
     setEditingId(null);
     resetForm();
   }, [resetForm]);
+
+  useImperativeHandle(ref, () => ({ openAdd }), [openAdd]);
 
   useEffect(() => {
     if (modalOpen !== 'add' && modalOpen !== 'edit') return;
@@ -891,6 +901,212 @@ export function ProfileCharacters({
     </>
   );
 
+  const modal = (modalOpen === 'add' || modalOpen === 'edit') ? (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-character-title"
+      onClick={closeModal}
+    >
+      <div
+        ref={modalRef}
+        className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-border flex justify-between items-center">
+          <h3 id="modal-character-title" className="text-base font-semibold text-foreground tracking-tight">
+            {modalOpen === 'add' ? t('addCharacter') : t('editCharacter')}
+          </h3>
+          <button type="button" onClick={closeModal} className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" aria-label={t('close')}>
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <form
+          onSubmit={modalOpen === 'add' ? handleAdd : handleSaveEdit}
+          className="px-5 py-4"
+        >
+          {formContent}
+          <div className="flex flex-wrap gap-2 mt-5 pt-4 border-t border-border">
+            <button
+              type="submit"
+              disabled={
+                loading ||
+                !name.trim() ||
+                !classId ||
+                !mainSpecId ||
+                (modalOpen === 'add' && !addBnetAligned) ||
+                (modalOpen === 'add' && !autoRealmId) ||
+                (guilds.length > 0 && !guildId)
+              }
+              className="rounded-lg bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {t('save')}
+            </button>
+            <button type="button" onClick={closeModal} className="rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors">
+              {t('cancel')}
+            </button>
+            {modalOpen === 'edit' && editingId && (
+              <button
+                type="button"
+                onClick={() => editingId && handleDelete(editingId)}
+                disabled={loading}
+                className="ml-auto rounded-lg border border-destructive/40 text-destructive px-4 py-2.5 text-sm font-medium hover:bg-destructive/10 transition-colors"
+              >
+                {t('deleteCharacter')}
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+    </div>
+  ) : null;
+
+  const addButton = (
+    <button
+      ref={openAddButtonRef}
+      type="button"
+      onClick={openAdd}
+      className="inline-flex items-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors"
+    >
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+      </svg>
+      {t('addCharacter')}
+    </button>
+  );
+
+  if (embedded) {
+    return (
+      <>
+        {list.length === 0 && (
+          <p className="text-muted-foreground text-sm py-2">{t('noCharacters')}</p>
+        )}
+        <div className="space-y-2 max-w-[44rem] min-w-0">
+          {groupedCharacters.map((group) => (
+            <div key={group.guildId ?? '__no_guild__'} className="space-y-2">
+              <div className="pt-2">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{group.guildName}</h3>
+              </div>
+              {group.characters.map((c) => {
+                const cClassId = c.classId ?? getClassIdForSpec(c.mainSpec);
+                const showMainTwink = !!c.guildId;
+                const mainOrAltTitle = showMainTwink ? (c.isMain ? t('mainLabel') : t('altLabel')) : undefined;
+                const ICON_SIZE = 24;
+                const menuOpen = openMenuId === c.id;
+                return (
+                  <div
+                    key={c.id}
+                    className="grid items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 shadow-sm grid-cols-[32px_28px_1fr_44px] sm:grid-cols-[32px_28px_auto_1fr_minmax(4rem,1fr)_44px] min-w-0"
+                  >
+                    <div className="flex shrink-0 items-center justify-center w-8 h-8 mr-0.5" title={mainOrAltTitle}>
+                      {showMainTwink ? (
+                        <CharacterMainStar
+                          isMain={!!c.isMain}
+                          titleMain={t('mainLabel')}
+                          titleAlt={t('altLabel')}
+                          sizePx={22}
+                        />
+                      ) : (
+                        <span className="w-8 h-8" aria-hidden />
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center justify-center w-7 h-7">
+                      {cClassId && <ClassIcon classId={cClassId} size={ICON_SIZE} title={c.mainSpec} />}
+                    </div>
+                    <div className="flex items-center gap-1 min-w-0 sm:col-span-2">
+                      <CharacterSpecIconsInline
+                        mainSpec={c.mainSpec}
+                        offSpec={c.offSpec}
+                        size={ICON_SIZE}
+                        slashClassName="font-medium shrink-0"
+                        offSpecWrapperClassName="shrink-0"
+                        offSpecIconClassName="opacity-90"
+                      />
+                      <CharacterNameBadges
+                        name={c.name}
+                        discordName={c.guildDiscordDisplayName}
+                        hasBattlenet={c.hasBattlenet}
+                        characterId={c.id}
+                        gearScore={c.gearScore}
+                        containerClassName="flex-wrap"
+                        nameClassName="font-medium text-base min-w-0"
+                        bnetTitle={t('bnetLinkedBadgeTitle')}
+                        onGearscoreUpdated={(nextStored) => {
+                          setList((prev) => prev.map((row) => (row.id === c.id ? { ...row, gearScore: nextStored } : row)));
+                        }}
+                      />
+                    </div>
+                    <div className="text-sm text-muted-foreground truncate min-w-0 hidden sm:flex flex-col items-center justify-center gap-0.5">
+                      <span className="truncate max-w-full" title={c.guildName ?? undefined}>
+                        {c.guildName ?? '–'}
+                      </span>
+                      {(c.participatedRaids != null || c.lootCount != null) && (
+                        <span className="text-xs tabular-nums text-muted-foreground/70">
+                          {c.participatedRaids != null ? `${c.participatedRaids}×` : ''}
+                          {c.participatedRaids != null && c.lootCount != null ? ' · ' : ''}
+                          {c.lootCount != null ? `${c.lootCount} Loot` : ''}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      className="relative flex justify-end shrink-0 col-start-4 row-start-1 sm:col-start-auto sm:row-start-auto"
+                      ref={menuOpen ? menuRef : undefined}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenMenuId(menuOpen ? null : c.id);
+                        }}
+                        disabled={loading}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+                        aria-label={t('characterMenu')}
+                        aria-expanded={menuOpen}
+                      >
+                        <span className="text-lg leading-none" aria-hidden>⋮</span>
+                      </button>
+                      {menuOpen && (
+                        <div className="absolute right-0 top-full z-20 mt-1.5 min-w-[160px] rounded-xl border border-border bg-popover px-1 py-1 shadow-lg">
+                          {canSetMain(c) && (
+                            <button
+                              type="button"
+                              onClick={() => { handleSetMain(c.id); setOpenMenuId(null); }}
+                              disabled={loading}
+                              className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted transition-colors"
+                            >
+                              {t('setAsMain')}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => { openEdit(c); setOpenMenuId(null); }}
+                            disabled={loading}
+                            className="w-full rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-muted transition-colors"
+                          >
+                            {t('editCharacter')}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground col-span-4 sm:hidden" title={c.guildName ?? undefined}>
+                      {c.guildName ? `${t('guild')}: ${c.guildName}` : '–'}
+                      {c.participatedRaids != null ? ` · ${c.participatedRaids}×` : ''}
+                      {c.lootCount != null ? ` · ${c.lootCount} Loot` : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        {modal}
+      </>
+    );
+  }
+
   return (
     <section className="mb-8" aria-labelledby="characters-heading">
       <div className="pb-3 border-b border-border mb-4">
@@ -1023,82 +1239,10 @@ export function ProfileCharacters({
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button
-          ref={openAddButtonRef}
-          type="button"
-          onClick={openAdd}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors"
-        >
-          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          {t('addCharacter')}
-        </button>
+        {addButton}
       </div>
 
-      {/* Modal: Charakter anlegen oder bearbeiten */}
-      {(modalOpen === 'add' || modalOpen === 'edit') && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="modal-character-title"
-          onClick={closeModal}
-        >
-          <div
-            ref={modalRef}
-            className="bg-card border border-border rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-5 py-4 border-b border-border flex justify-between items-center">
-              <h3 id="modal-character-title" className="text-base font-semibold text-foreground tracking-tight">
-                {modalOpen === 'add' ? t('addCharacter') : t('editCharacter')}
-              </h3>
-              <button type="button" onClick={closeModal} className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" aria-label={t('close')}>
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <form
-              onSubmit={modalOpen === 'add' ? handleAdd : handleSaveEdit}
-              className="px-5 py-4"
-            >
-              {formContent}
-              <div className="flex flex-wrap gap-2 mt-5 pt-4 border-t border-border">
-                <button
-                  type="submit"
-                  disabled={
-                    loading ||
-                    !name.trim() ||
-                    !classId ||
-                    !mainSpecId ||
-                    (modalOpen === 'add' && !addBnetAligned) ||
-                    (modalOpen === 'add' && !autoRealmId) ||
-                    (guilds.length > 0 && !guildId)
-                  }
-                  className="rounded-lg bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  {t('save')}
-                </button>
-                <button type="button" onClick={closeModal} className="rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground hover:bg-muted transition-colors">
-                  {t('cancel')}
-                </button>
-                {modalOpen === 'edit' && editingId && (
-                  <button
-                    type="button"
-                    onClick={() => editingId && handleDelete(editingId)}
-                    disabled={loading}
-                    className="ml-auto rounded-lg border border-destructive/40 text-destructive px-4 py-2.5 text-sm font-medium hover:bg-destructive/10 transition-colors"
-                  >
-                    {t('deleteCharacter')}
-                  </button>
-                )}
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {modal}
     </section>
   );
-}
+});
