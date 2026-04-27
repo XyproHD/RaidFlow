@@ -147,8 +147,8 @@ export async function POST(
     note,
   });
 
-  void syncRaidThreadSummary(raidId);
-  void postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
+  await syncRaidThreadSummary(raidId);
+  await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
     characterName: character.name,
     signedSpec:    signedSpecRaw || null,
     type:          typeNorm,

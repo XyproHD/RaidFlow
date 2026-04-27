@@ -127,7 +127,7 @@ export async function POST(
     note,
   });
   await syncRaidThreadSummary(raidId);
-  void postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
+  await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
     characterName: character.name,
     signedSpec:    signedSpecRaw || null,
     type:          typeNorm,
@@ -229,7 +229,7 @@ export async function DELETE(
     newValue: auditNewValue,
   });
   await syncRaidThreadSummary(raidId);
-  void postSignupChangeThreadNotice(raidId, 'unsignup', {
+  await postSignupChangeThreadNotice(raidId, 'unsignup', {
     characterName: deletedChar?.name ?? null,
     signedSpec:    existing.signedSpec,
     type:          existing.type,

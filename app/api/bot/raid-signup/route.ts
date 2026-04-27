@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     });
     await syncRaidThreadSummary(raidId);
     if (toDelete) {
-      void postSignupChangeThreadNotice(raidId, 'unsignup', {
+      await postSignupChangeThreadNotice(raidId, 'unsignup', {
         characterName: toDelete.character?.name ?? null,
         signedSpec:    toDelete.signedSpec,
         type:          toDelete.type,
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
       },
     });
     await syncRaidThreadSummary(raidId);
-    void postSignupChangeThreadNotice(raidId, 'signup', {
+    await postSignupChangeThreadNotice(raidId, 'signup', {
       characterName: picked.name,
       signedSpec:    picked.mainSpec,
       type,
@@ -185,7 +185,7 @@ export async function POST(request: NextRequest) {
       },
     });
     await syncRaidThreadSummary(raidId);
-    void postSignupChangeThreadNotice(raidId, 'signup', {
+    await postSignupChangeThreadNotice(raidId, 'signup', {
       characterName: ch.name,
       signedSpec:    ch.mainSpec,
       type:          typeNorm,
