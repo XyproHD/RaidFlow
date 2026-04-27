@@ -32,13 +32,6 @@ const ROLE_DEFS = [
   { key: 'Healer', label: 'Heiler'   },
 ] as const;
 
-/** Unicode-Emojis als Fallback für ANSI-Blöcke (Custom-Server-Emojis rendern dort nicht). */
-const ROLE_UNICODE: Record<string, string> = {
-  Tank:   '🛡️',
-  Melee:  '⚔️',
-  Range:  '🏹',
-  Healer: '💚',
-};
 
 // ---------------------------------------------------------------------------
 // Typen
@@ -179,32 +172,29 @@ function truncateLines(lines: string[], maxChars = 1000): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Rollen-Zusammenfassung als ANSI-Codeblock (nur Desktop-Discord).
- * Zeigt count/min in fett-rot wenn Mindestvorgabe nicht erfüllt, sonst nur count.
- * Unicode-Emojis statt Custom-Server-Emojis (ANSI-Blöcke rendern nur Unicode).
+ * Rollen-Zusammenfassung mit Server-Icons (bzw. Unicode-Fallback).
+ * Mindestvorgabe nicht erfüllt → **count/min** (fett), sonst nur count.
  */
-function roleSummaryAnsi(
+function roleSummaryLine(
   byRole: Record<string, RaidEmbedSignup[]>,
-  mins: { Tank: number; Melee: number; Range: number; Healer: number },
+  mins:   { Tank: number; Melee: number; Range: number; Healer: number },
+  emojis: Record<string, string>,
 ): string {
-  const RESET    = '\u001b[0m';
-  const RED_BOLD = '\u001b[1;31m';
-
   const parts = ROLE_DEFS.map(({ key }) => {
     const count = byRole[key]?.length ?? 0;
     const min   = mins[key as keyof typeof mins] ?? 0;
-    const emoji = ROLE_UNICODE[key] ?? '';
+    const emoji = getRoleEmoji(key, emojis);
     if (min > 0 && count < min) {
-      return `${emoji} ${RED_BOLD}${count}/${min}${RESET}`;
+      return `${emoji} **${count}/${min}**`;
     }
     return `${emoji} ${count}`;
   });
-
-  return `\`\`\`ansi\n${parts.join('  ')}\n\`\`\``;
+  return parts.join('  ');
 }
 
 /**
- * Klassen-Zusammenfassung als Emoji-Zählung (absteigend sortiert nach Anzahl).
+ * Klassen-Zusammenfassung — gleiche Optik wie Rollen-Zeile.
+ * Trenner ` · ` zwischen Einträgen, nach je 5 Klassen Zeilenumbruch.
  * Nur ausgegeben wenn Custom-Server-Emojis konfiguriert sind.
  */
 function classCountLine(
@@ -219,10 +209,18 @@ function classCountLine(
     counts.set(cls, (counts.get(cls) ?? 0) + 1);
   }
   if (counts.size === 0) return '';
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([emoji, n]) => `${emoji} ${n}`)
-    .join('  ');
+
+  const COLS = 5;
+  const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const rows: string[] = [];
+  for (let i = 0; i < entries.length; i += COLS) {
+    rows.push(
+      entries.slice(i, i + COLS)
+        .map(([emoji, n]) => `${emoji} ${n}`)
+        .join('  ·  ')
+    );
+  }
+  return rows.join('\n');
 }
 
 /**
@@ -319,7 +317,7 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
   // --- Zusammenfassung je Rolle (ANSI) + Klasse (wenn Anmeldungen sichtbar) ---
   if (isRevealed && mainSignups.length > 0) {
     const mins      = { Tank: minTanks, Melee: minMelee, Range: minRange, Healer: minHealers };
-    const roleLine  = roleSummaryAnsi(byRole, mins);
+    const roleLine  = roleSummaryLine(byRole, mins, discordEmojis);
     const classLine = classCountLine(mainSignups, discordEmojis);
     const summaryValue = classLine ? `${roleLine}\n${classLine}` : roleLine;
     fields.push({ name: '\u200b', value: summaryValue, inline: false });
