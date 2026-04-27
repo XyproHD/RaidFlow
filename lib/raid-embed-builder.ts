@@ -100,10 +100,6 @@ function statusText(status: string, signupUntil: Date): string {
   return 'Offen';
 }
 
-function signupDeadlineIcon(signupUntil: Date): string {
-  return new Date() > signupUntil ? '🔴' : '🟢';
-}
-
 /** Spieler-Zeile: <KlasseEmoji><SpecEmoji> Charname (T) */
 function playerLine(
   s: RaidEmbedSignup,
@@ -119,7 +115,7 @@ function playerLine(
   return `${prefix}${emojiPart}${emojiPart ? ' ' : ''}${charName}${twink}`;
 }
 
-/** Platzierungs-Prefix nur wenn Raid angekündigt/abgeschlossen. */
+/** Platzierungs-Prefix für Rollen-Ansicht (offen, noch nicht angekündigt). */
 function placementPrefix(
   placement: string | null | undefined,
   showPlacement: boolean
@@ -164,7 +160,6 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     discordEmojis = {}, appUrl, locale = 'de',
   } = input;
 
-  const now          = new Date();
   const showPlacement = status === 'announced' || status === 'locked';
   const isAnnounced  = status === 'announced' || status === 'locked';
   const isRevealed   = signupVisibility === 'public' || isAnnounced;
@@ -194,19 +189,18 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     : `${uniquePlayers} / ${maxPlayers}`;
 
   // --- Description: Links ---
-  const deadlineIcon = signupDeadlineIcon(signupUntil);
-  const description  = `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl})`;
+  const description = `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl})`;
 
   // --- Zwei inline-Felder als tabellarische Stammdaten ---
   const labelCol = [
-    '**Termin:**',
-    '**Anmeldung bis:**',
-    '**Status:**',
-    '**Anmeldungen:**',
+    '📅 **Termin**',
+    '🗓️ **Anmeldung bis**',
+    '📊 **Status**',
+    '👥 **Plätze**',
   ].join('\n');
   const valueCol = [
     `${formatDate(scheduledAt)} · ${formatTime(scheduledAt)} Uhr`,
-    `${deadlineIcon} ${formatDate(signupUntil)} · ${formatTime(signupUntil)} Uhr`,
+    `${formatDate(signupUntil)} · ${formatTime(signupUntil)} Uhr`,
     statusText(status, signupUntil),
     anmeldungenValue,
   ].join('\n');
@@ -229,25 +223,25 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
       const group = announcedGroups.groups[gi];
       const lines: string[] = [];
 
+      // Lead/Loot-Header am Anfang des Field-Values
+      const leadSignup = group.raidLeaderUserId ? signupByUser.get(group.raidLeaderUserId) : null;
+      const lootSignup = group.lootmasterUserId ? signupByUser.get(group.lootmasterUserId) : null;
+      const headerParts: string[] = [];
+      if (leadSignup?.characterName) headerParts.push(`👑 **${leadSignup.characterName}**`);
+      if (lootSignup?.characterName) headerParts.push(`💰 **${lootSignup.characterName}**`);
+      if (headerParts.length > 0) {
+        lines.push(headerParts.join('  ·  '));
+        lines.push('──────────────────────────────');
+      }
+
       for (const signupId of group.rosterOrder) {
         const s = signupById.get(signupId);
         if (!s) continue;
-        const isLead  = group.raidLeaderUserId  && s.userId === group.raidLeaderUserId;
-        const isLoot  = group.lootmasterUserId  && s.userId === group.lootmasterUserId;
-        let prefix = '';
-        if (isLead && isLoot) prefix = '[Lead][Loot] ';
-        else if (isLead)      prefix = '[Lead] ';
-        else if (isLoot)      prefix = '[Loot] ';
-        lines.push(playerLine(s, discordEmojis, prefix));
+        lines.push(playerLine(s, discordEmojis));
       }
 
-      const groupNum = gi + 1;
-      const leadSignup  = group.raidLeaderUserId  ? signupByUser.get(group.raidLeaderUserId)  : null;
-      const lootSignup  = group.lootmasterUserId  ? signupByUser.get(group.lootmasterUserId)  : null;
-      const leadHint    = leadSignup ? ` · Lead: ${leadSignup.characterName ?? '?'}` : '';
-      const lootHint    = lootSignup ? ` · Loot: ${lootSignup.characterName ?? '?'}` : '';
-      const fieldName   = `Gruppe ${groupNum}${leadHint}${lootHint}`.slice(0, 256);
-      const fieldValue  = lines.length > 0 ? truncateLines(lines) : '*leer*';
+      const fieldName  = `Gruppe ${gi + 1}`;
+      const fieldValue = lines.length > 0 ? truncateLines(lines) : '*leer*';
 
       fields.push({ name: fieldName, value: fieldValue, inline: false });
     }
