@@ -79,6 +79,8 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
       }
     }
 
+    const threadTitle = `${dungeonNames[0]} – ${raid.name}`.slice(0, 100);
+
     const appConfig = await getAppConfig().catch(() => null);
     const discordEmojis = appConfig?.discordEmojis ?? {};
 
@@ -157,7 +159,6 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
       components,
     });
 
-    const threadTitle = `${dungeonNames[0]} – ${raid.name}`.slice(0, 100);
     let threadId: string | null = null;
     try {
       const result = await createThreadFromMessage(raid.discordChannelId, messageId, threadTitle);
