@@ -41,6 +41,7 @@ export type GuildOption = { id: string; name: string; battlenetRealmId?: string 
 
 export type ProfileCharactersHandle = {
   openAdd: () => void;
+  openEdit: (c: CharacterRow) => void;
 };
 
 function getClassIdForSpec(displayName: string): string | null {
@@ -63,10 +64,12 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
   initialData: CharacterRow[];
   guilds: GuildOption[];
   embedded?: boolean;
+  modalOnly?: boolean;
 }>(function ProfileCharacters({
   initialData,
   guilds,
   embedded = false,
+  modalOnly = false,
 }, ref) {
   const t = useTranslations('profile');
   const locale = useLocale();
@@ -184,7 +187,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
     resetForm();
   }, [resetForm]);
 
-  useImperativeHandle(ref, () => ({ openAdd }), [openAdd]);
+  useImperativeHandle(ref, () => ({ openAdd, openEdit }), [openAdd, openEdit]);
 
   useEffect(() => {
     if (modalOpen !== 'add' && modalOpen !== 'edit') return;
@@ -977,6 +980,10 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
       {t('addCharacter')}
     </button>
   );
+
+  if (modalOnly) {
+    return <>{modal}</>;
+  }
 
   if (embedded) {
     return (
