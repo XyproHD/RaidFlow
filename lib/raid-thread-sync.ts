@@ -91,6 +91,10 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
       signupUntil:        raid.signupUntil,
       status:             raid.status,
       maxPlayers:         raid.maxPlayers,
+      minTanks:           raid.minTanks,
+      minMelee:           raid.minMelee,
+      minRange:           raid.minRange,
+      minHealers:         raid.minHealers,
       signupVisibility:   raid.signupVisibility,
       announcedGroupsJson: raid.announcedPlannerGroupsJson,
       discordEmojis,
@@ -103,6 +107,7 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
         isMain:          s.character?.isMain ?? null,
         leaderPlacement: s.leaderPlacement,
         isLate:          s.isLate,
+        punctuality:     s.punctuality,
         type:            s.type,
       })),
       appUrl: getAppUrl(),
@@ -159,6 +164,75 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // Benachrichtigungen (werden als neue Thread-Nachrichten gepostet)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Signup-Änderungs-Protokoll
+// ---------------------------------------------------------------------------
+
+export type SignupChangeAction = 'signup' | 'unsignup' | 'edit';
+
+export interface SignupChangeDetails {
+  characterName: string | null;
+  signedSpec:    string | null;
+  type:          string;
+  punctuality?:  string;
+  note?:         string | null;
+}
+
+/**
+ * Postet eine kurze Protokoll-Nachricht in den Raid-Thread wenn sich ein Spieler
+ * anmeldet, abmeldet oder seine Anmeldung bearbeitet.
+ * Nur aktiv wenn Anmeldungen öffentlich sind (signupVisibility = public)
+ * oder der Raid bereits angekündigt/abgeschlossen ist.
+ */
+export async function postSignupChangeThreadNotice(
+  raidId:  string,
+  action:  SignupChangeAction,
+  details: SignupChangeDetails,
+): Promise<void> {
+  try {
+    const raid = await prisma.rfRaid.findUnique({
+      where:  { id: raidId },
+      select: { discordThreadId: true, signupVisibility: true, status: true },
+    });
+    if (!raid?.discordThreadId) return;
+
+    const isPublic =
+      raid.signupVisibility === 'public' ||
+      raid.status === 'announced' ||
+      raid.status === 'locked';
+    if (!isPublic) return;
+
+    const { createChannelMessage } = await import('@/lib/discord-guild-api');
+
+    const charName = details.characterName || '?';
+    const specText = details.signedSpec ? ` · ${details.signedSpec}` : '';
+    const typeText = details.type === 'reserve'   ? ' *(Reserve)*'
+                   : details.type === 'uncertain' ? ' *(Unsicher)*'
+                   : '';
+    const puncText = details.punctuality === 'tight' ? ' ⏳ Wird knapp'
+                   : details.punctuality === 'late'  ? ' 🕐 Kommt später'
+                   : '';
+    const noteText = details.note ? `\n> ${details.note}` : '';
+
+    let content: string;
+    if (action === 'signup') {
+      content = `✍️ **${charName}** hat sich angemeldet${specText}${typeText}${puncText}${noteText}`;
+    } else if (action === 'unsignup') {
+      content = `🚪 **${charName}** hat sich abgemeldet`;
+    } else {
+      content = `✏️ **${charName}** hat die Anmeldung bearbeitet${specText}${typeText}${puncText}${noteText}`;
+    }
+
+    await createChannelMessage(raid.discordThreadId, content.slice(0, 2000));
+  } catch (e) {
+    console.error('[postSignupChangeThreadNotice]', raidId, e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Raid-gesetzt-Benachrichtigung
 // ---------------------------------------------------------------------------
 
 /** Zusätzliche Thread-Nachricht nach „Raid setzen" (Benachrichtigung). */

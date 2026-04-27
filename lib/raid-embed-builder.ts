@@ -32,6 +32,14 @@ const ROLE_DEFS = [
   { key: 'Healer', label: 'Heiler'   },
 ] as const;
 
+/** Unicode-Emojis als Fallback für ANSI-Blöcke (Custom-Server-Emojis rendern dort nicht). */
+const ROLE_UNICODE: Record<string, string> = {
+  Tank:   '🛡️',
+  Melee:  '⚔️',
+  Range:  '🏹',
+  Healer: '💚',
+};
+
 // ---------------------------------------------------------------------------
 // Typen
 // ---------------------------------------------------------------------------
@@ -44,6 +52,8 @@ export type RaidEmbedSignup = {
   isMain?: boolean | null;
   leaderPlacement?: string | null;
   isLate?: boolean;
+  /** on_time | tight | late */
+  punctuality?: string | null;
   type: string;
 };
 
@@ -61,6 +71,11 @@ export type RaidEmbedInput = {
   signupUntil: Date;
   status: string;
   maxPlayers: number;
+  /** Rollen-Mindestvorgaben – 0 = keine Vorgabe */
+  minTanks?: number;
+  minMelee?: number;
+  minRange?: number;
+  minHealers?: number;
   signupVisibility: string;
   signups: RaidEmbedSignup[];
   announcedGroupsJson?: unknown;
@@ -109,15 +124,28 @@ function statusText(status: string, signupUntil: Date): string {
   return 'Offen';
 }
 
-/** Spieler-Zeile: {KlasseEmoji}{SpecEmoji} Charname *(T)* */
+/**
+ * Pünktlichkeits-Icon am Zeilenende der Spielerzeile.
+ * on_time → kein Icon (Default, kein Rauschen)
+ * tight   → ⏳  (wird knapp)
+ * late    → 🕐  (kommt später)
+ */
+function punctualityIcon(p: string | null | undefined): string {
+  if (p === 'tight') return ' ⏳';
+  if (p === 'late')  return ' 🕐';
+  return '';
+}
+
+/** Spieler-Zeile: {KlasseEmoji}{SpecEmoji} Charname *(T)* {PuncIcon} */
 function playerLine(s: RaidEmbedSignup, emojis: Record<string, string>): string {
   const spec       = s.signedSpec?.trim() || s.mainSpec?.trim() || '?';
   const charName   = s.characterName || '?';
   const twink      = s.isMain === false ? ' *(T)*' : '';
+  const punc       = punctualityIcon(s.punctuality);
   const classEmoji = getClassEmoji(spec, emojis);
   const specEmoji  = getSpecEmoji(spec, emojis);
   const emojiPart  = [classEmoji, specEmoji].filter(Boolean).join('');
-  return `${emojiPart}${emojiPart ? ' ' : ''}${charName}${twink}`;
+  return `${emojiPart}${emojiPart ? ' ' : ''}${charName}${twink}${punc}`;
 }
 
 function parseStoredGroups(json: unknown): StoredAnnouncedGroups | null {
@@ -151,24 +179,33 @@ function truncateLines(lines: string[], maxChars = 1000): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Gesamte Rollen-Zusammenfassung für den Embed-Header.
- * Zeigt ⚠️ wenn eine Rolle 0 Spieler hat.
+ * Rollen-Zusammenfassung als ANSI-Codeblock (nur Desktop-Discord).
+ * Zeigt count/min in fett-rot wenn Mindestvorgabe nicht erfüllt, sonst nur count.
+ * Unicode-Emojis statt Custom-Server-Emojis (ANSI-Blöcke rendern nur Unicode).
  */
-function roleSummaryLine(
+function roleSummaryAnsi(
   byRole: Record<string, RaidEmbedSignup[]>,
-  emojis: Record<string, string>
+  mins: { Tank: number; Melee: number; Range: number; Healer: number },
 ): string {
-  return ROLE_DEFS.map(({ key }) => {
+  const RESET    = '\u001b[0m';
+  const RED_BOLD = '\u001b[1;31m';
+
+  const parts = ROLE_DEFS.map(({ key }) => {
     const count = byRole[key]?.length ?? 0;
-    const emoji = getRoleEmoji(key, emojis);
-    const countStr = count === 0 ? '**0** ⚠️' : String(count);
-    return `${emoji} ${countStr}`;
-  }).join('  ·  ');
+    const min   = mins[key as keyof typeof mins] ?? 0;
+    const emoji = ROLE_UNICODE[key] ?? '';
+    if (min > 0 && count < min) {
+      return `${emoji} ${RED_BOLD}${count}/${min}${RESET}`;
+    }
+    return `${emoji} ${count}`;
+  });
+
+  return `\`\`\`ansi\n${parts.join('  ')}\n\`\`\``;
 }
 
 /**
- * Klassen-Zusammenfassung als Emoji-Zählung (absteigend sortiert).
- * Wird nur angezeigt wenn Klassen-Emojis konfiguriert sind.
+ * Klassen-Zusammenfassung als Emoji-Zählung (absteigend sortiert nach Anzahl).
+ * Nur ausgegeben wenn Custom-Server-Emojis konfiguriert sind.
  */
 function classCountLine(
   signups: RaidEmbedSignup[],
@@ -189,7 +226,7 @@ function classCountLine(
 }
 
 /**
- * Kompakte Rollen-Verteilung für eine einzelne Gruppe.
+ * Kompakte Rollen-Verteilung für eine einzelne Gruppe (Unicode-Emojis).
  */
 function groupRoleSummaryLine(
   signupIds: string[],
@@ -219,6 +256,11 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     status, maxPlayers, signupVisibility, signups, announcedGroupsJson,
     discordEmojis = {}, appUrl, locale = 'de',
   } = input;
+
+  const minTanks   = input.minTanks   ?? 0;
+  const minMelee   = input.minMelee   ?? 0;
+  const minRange   = input.minRange   ?? 0;
+  const minHealers = input.minHealers ?? 0;
 
   const isAnnounced = status === 'announced' || status === 'locked';
   const isRevealed  = signupVisibility === 'public' || isAnnounced;
@@ -274,15 +316,16 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     { name: '\u200b', value: valueCol, inline: true },
   ];
 
-  // --- Zusammenfassung je Rolle + Klasse (wenn Anmeldungen sichtbar) ---
+  // --- Zusammenfassung je Rolle (ANSI) + Klasse (wenn Anmeldungen sichtbar) ---
   if (isRevealed && mainSignups.length > 0) {
-    const roleLine  = roleSummaryLine(byRole, discordEmojis);
+    const mins      = { Tank: minTanks, Melee: minMelee, Range: minRange, Healer: minHealers };
+    const roleLine  = roleSummaryAnsi(byRole, mins);
     const classLine = classCountLine(mainSignups, discordEmojis);
     const summaryValue = classLine ? `${roleLine}\n${classLine}` : roleLine;
     fields.push({ name: '\u200b', value: summaryValue, inline: false });
   }
 
-  // Visueller Trenner (leeres Feld = Abstandshalter)
+  // Visueller Trenner (leeres Feld = nativer Abstandshalter)
   fields.push({ name: '\u200b', value: '\u200b', inline: false });
 
   if (isAnnounced && announcedGroups && announcedGroups.groups.length > 0) {
@@ -293,7 +336,6 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     const signupByUser = new Map(signups.map(s => [s.userId, s]));
 
     for (let gi = 0; gi < announcedGroups.groups.length; gi++) {
-      // Optischer Trenner zwischen Gruppen
       if (gi > 0) {
         fields.push({ name: '\u200b', value: '\u200b', inline: false });
       }
@@ -301,7 +343,7 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
       const group = announcedGroups.groups[gi];
       const lines: string[] = [];
 
-      // Lead/Loot-Header mit Labels
+      // Lead/Loot-Header mit Klartext-Labels
       const leadSignup = group.raidLeaderUserId ? signupByUser.get(group.raidLeaderUserId) : null;
       const lootSignup = group.lootmasterUserId ? signupByUser.get(group.lootmasterUserId) : null;
       const headerParts: string[] = [];
@@ -314,7 +356,7 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
       // Rollen-Verteilung der Gruppe
       lines.push(groupRoleSummaryLine(group.rosterOrder, signupById, discordEmojis));
 
-      // Trenner vor Spielerliste (U+25AC BLACK RECTANGLE, deutlich sichtbar)
+      // Trenner vor Spielerliste (U+25AC BLACK RECTANGLE)
       lines.push('▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬');
 
       for (const signupId of group.rosterOrder) {
@@ -330,7 +372,7 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
       });
     }
 
-    // Reserve am Ende
+    // Reserve
     {
       const signupById2 = new Map(signups.map(s => [s.id, s]));
       const resLines = announcedGroups.reserveOrder

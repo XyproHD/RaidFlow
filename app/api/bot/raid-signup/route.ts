@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyBotSecret } from '@/lib/bot-auth';
 import { resolveRaidAccess, computeRaidSignupPhase } from '@/lib/raid-detail-access';
 import { normalizeSignupType } from '@/lib/raid-signup-constants';
-import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
+import { syncRaidThreadSummary, postSignupChangeThreadNotice } from '@/lib/raid-thread-sync';
 
 /**
  * POST /api/bot/raid-signup
@@ -57,10 +57,22 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === 'delete') {
+    const toDelete = await prisma.rfRaidSignup.findFirst({
+      where:   { raidId, userId: user.id },
+      include: { character: { select: { name: true } } },
+    });
     const deleted = await prisma.rfRaidSignup.deleteMany({
       where: { raidId, userId: user.id },
     });
     await syncRaidThreadSummary(raidId);
+    if (toDelete) {
+      void postSignupChangeThreadNotice(raidId, 'unsignup', {
+        characterName: toDelete.character?.name ?? null,
+        signedSpec:    toDelete.signedSpec,
+        type:          toDelete.type,
+        punctuality:   toDelete.punctuality,
+      });
+    }
     return NextResponse.json({ ok: true, deletedCount: deleted.count });
   }
 
@@ -88,13 +100,13 @@ export async function POST(request: NextRequest) {
   if (mode === 'oneclick') {
     const main = await prisma.rfCharacter.findFirst({
       where: { userId: user.id, guildId, isMain: true },
-      select: { id: true, mainSpec: true },
+      select: { id: true, name: true, mainSpec: true },
       orderBy: { updatedAt: 'desc' },
     });
     const fallback = !main
       ? await prisma.rfCharacter.findFirst({
           where: { userId: user.id, guildId },
-          select: { id: true, mainSpec: true },
+          select: { id: true, name: true, mainSpec: true },
           orderBy: { updatedAt: 'desc' },
         })
       : null;
@@ -125,6 +137,12 @@ export async function POST(request: NextRequest) {
       },
     });
     await syncRaidThreadSummary(raidId);
+    void postSignupChangeThreadNotice(raidId, 'signup', {
+      characterName: picked.name,
+      signedSpec:    picked.mainSpec,
+      type,
+      punctuality:   'on_time',
+    });
     return NextResponse.json({ ok: true });
   }
 
@@ -141,7 +159,7 @@ export async function POST(request: NextRequest) {
 
     const ch = await prisma.rfCharacter.findFirst({
       where: { id: cid, userId: user.id, guildId },
-      select: { id: true, mainSpec: true },
+      select: { id: true, name: true, mainSpec: true },
     });
     if (!ch) {
       return NextResponse.json({ error: 'Character not found for user/guild' }, { status: 404 });
@@ -167,6 +185,12 @@ export async function POST(request: NextRequest) {
       },
     });
     await syncRaidThreadSummary(raidId);
+    void postSignupChangeThreadNotice(raidId, 'signup', {
+      characterName: ch.name,
+      signedSpec:    ch.mainSpec,
+      type:          typeNorm,
+      punctuality:   'on_time',
+    });
     return NextResponse.json({ ok: true });
   }
 

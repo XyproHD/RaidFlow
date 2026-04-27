@@ -10,7 +10,7 @@ import {
   validateRaidSignupBusinessRules,
 } from '@/lib/raid-self-signup-mutation';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
-import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
+import { syncRaidThreadSummary, postSignupChangeThreadNotice } from '@/lib/raid-thread-sync';
 
 /**
  * POST /api/guilds/[guildId]/raids/[raidId]/signups
@@ -90,7 +90,7 @@ export async function POST(
 
   const character = await prisma.rfCharacter.findFirst({
     where: { id: characterId, userId, guildId },
-    select: { id: true, mainSpec: true, offSpec: true },
+    select: { id: true, name: true, mainSpec: true, offSpec: true },
   });
   if (!character) {
     return NextResponse.json(
@@ -127,6 +127,13 @@ export async function POST(
     note,
   });
   await syncRaidThreadSummary(raidId);
+  void postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
+    characterName: character.name,
+    signedSpec:    signedSpecRaw || null,
+    type:          typeNorm,
+    punctuality,
+    note,
+  });
   return NextResponse.json({ signup }, { status: isCreate ? 201 : 200 });
 }
 
@@ -200,6 +207,10 @@ export async function DELETE(
     }
   }
 
+  const deletedChar = await prisma.rfCharacter.findUnique({
+    where:  { id: existing.characterId },
+    select: { name: true },
+  });
   const prevSnap = snapshotSignup(existing);
   await prisma.rfRaidSignup.delete({ where: { id: existing.id } });
   const auditNewValue =
@@ -216,5 +227,11 @@ export async function DELETE(
     newValue: auditNewValue,
   });
   await syncRaidThreadSummary(raidId);
+  void postSignupChangeThreadNotice(raidId, 'unsignup', {
+    characterName: deletedChar?.name ?? null,
+    signedSpec:    existing.signedSpec,
+    type:          existing.type,
+    punctuality:   existing.punctuality,
+  });
   return NextResponse.json({ ok: true });
 }

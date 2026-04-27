@@ -10,12 +10,12 @@ export async function pickCharacterForRaidSignup(
   if (cid) {
     return prisma.rfCharacter.findFirst({
       where: { id: cid, userId, guildId },
-      select: { id: true, mainSpec: true, offSpec: true },
+      select: { id: true, name: true, mainSpec: true, offSpec: true },
     });
   }
   return prisma.rfCharacter.findFirst({
     where: { userId, guildId },
     orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
-    select: { id: true, mainSpec: true, offSpec: true },
+    select: { id: true, name: true, mainSpec: true, offSpec: true },
   });
 }
