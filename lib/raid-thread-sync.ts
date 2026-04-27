@@ -124,6 +124,22 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
           embeds:     [embed],
           components,
         });
+        // Thread nachholen wenn er fehlt (z. B. Ersterstellung fehlgeschlagen)
+        if (!raid.discordThreadId) {
+          try {
+            const result = await createThreadFromMessage(
+              raid.discordChannelId,
+              raid.discordChannelMessageId,
+              threadTitle
+            );
+            await prisma.rfRaid.update({
+              where: { id: raidId },
+              data:  { discordThreadId: result.threadId },
+            });
+          } catch {
+            // Thread existiert bereits oder Kanal unterstützt keine Threads – ignorieren
+          }
+        }
         return;
       } catch (e) {
         console.warn('[syncRaidThreadSummary] edit failed, re-posting:', e);

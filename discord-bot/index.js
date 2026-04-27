@@ -1613,14 +1613,37 @@ async function buildEditConfigMessage(raidId, state, errorHint) {
 
 // --- Button-Handler ----------------------------------------------------------
 
+/** Sperrt alle Buttons einer Nachricht während der Bot verarbeitet. */
+async function disableRaidPostButtons(message) {
+  if (!message?.components?.length) return;
+  const { ActionRowBuilder, ButtonBuilder } = await import('discord.js');
+  const disabledRows = message.components.map(row =>
+    new ActionRowBuilder().addComponents(
+      row.components.map(btn => ButtonBuilder.from(btn).setDisabled(true))
+    )
+  );
+  await message.edit({ components: disabledRows });
+}
+
 async function handleRaidQuickjoin(interaction, raidId) {
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  // Buttons sperren während Verarbeitung – User sieht, dass der Bot arbeitet
+  const originalComponents = interaction.message?.components ?? [];
+  if (originalComponents.length) {
+    await disableRaidPostButtons(interaction.message).catch(() => {});
+  }
   const { ok, json } = await callDiscordAction({
     action: 'quickjoin', discordUserId: interaction.user.id, raidId,
   });
   await interaction.editReply({
     content: ok ? `⚡ ${json.message ?? 'Quickjoin erfolgreich!'}` : raidActionErrorText(json.error),
   }).catch(() => {});
+  // Fertigmeldung nach 5 Sekunden löschen
+  setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+  // Bei Fehler Buttons sofort wiederherstellen (Erfolg: syncRaidThreadSummary übernimmt das)
+  if (!ok && originalComponents.length) {
+    await interaction.message.edit({ components: originalComponents }).catch(() => {});
+  }
 }
 
 async function handleRaidJoinButton(interaction, raidId, guildId) {
@@ -1941,6 +1964,7 @@ async function handleSubmitJoin(interaction, raidId, charId) {
   }
   clearJoinFlow(interaction.user.id, raidId);
   await interaction.editReply({ content: `✅ ${json.message ?? 'Anmeldung erfolgreich!'}`, components: [] }).catch(() => {});
+  setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
 }
 
 async function handleSubmitEdit(interaction, raidId) {
@@ -1970,6 +1994,7 @@ async function handleSubmitEdit(interaction, raidId) {
   }
   clearEditFlow(interaction.user.id, raidId);
   await interaction.editReply({ content: `✅ ${json.message ?? 'Anmeldung aktualisiert!'}`, components: [] }).catch(() => {});
+  setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
 }
 
 // --- Notiz-Modal (Join-Flow) -------------------------------------------------
@@ -2029,6 +2054,7 @@ async function handleRaidUnregModal(interaction, raidId) {
   await interaction.editReply({
     content: ok ? `✅ ${json.message ?? 'Abmeldung erfolgreich.'}` : raidActionErrorText(json.error),
   }).catch(() => {});
+  setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
 }
 
 async function handleJoinNoteModal(interaction, raidId) {
