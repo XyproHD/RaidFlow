@@ -207,10 +207,12 @@ export async function DELETE(
     }
   }
 
-  const deletedChar = await prisma.rfCharacter.findUnique({
-    where:  { id: existing.characterId },
-    select: { name: true },
-  });
+  const deletedChar = existing.characterId
+    ? await prisma.rfCharacter.findUnique({
+        where:  { id: existing.characterId },
+        select: { name: true },
+      })
+    : null;
   const prevSnap = snapshotSignup(existing);
   await prisma.rfRaidSignup.delete({ where: { id: existing.id } });
   const auditNewValue =
