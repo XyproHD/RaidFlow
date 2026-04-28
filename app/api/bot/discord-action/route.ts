@@ -8,7 +8,8 @@ import {
   validateSignedSpecForCharacter,
 } from '@/lib/raid-self-signup-mutation';
 import { normalizeSignupType, normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
-import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
+import { postSignupChangeThreadNotice, syncRaidThreadSummary } from '@/lib/raid-thread-sync';
+import { getAppConfig } from '@/lib/app-config';
 
 /**
  * Discord-Interaktions-API (aufgerufen durch discord-bot nach Button-/Modal-Interaktionen).
@@ -63,45 +64,40 @@ export async function GET(request: NextRequest) {
   }
 
   if (action === 'get-signup') {
-    const signup = await prisma.rfRaidSignup.findFirst({
-      where: { raidId, userId: user.id },
-      include: {
-        character: { select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true } },
-      },
-    });
-    if (!signup) {
-      return NextResponse.json({ signup: null });
-    }
-    return NextResponse.json({
-      signup: {
-        id:          signup.id,
-        type:        signup.type,
-        signedSpec:  signup.signedSpec,
-        punctuality: signup.punctuality,
-        note:        signup.note,
-        isLate:      signup.isLate,
-        character: signup.character
-          ? {
-              id:       signup.character.id,
-              name:     signup.character.name,
-              mainSpec: signup.character.mainSpec,
-              offSpec:  signup.character.offSpec,
-              isMain:   signup.character.isMain,
-            }
-          : null,
-      },
-      signupUntil: raid.signupUntil.toISOString(),
-    });
+    const [rawSignups, appCfg] = await Promise.all([
+      prisma.rfRaidSignup.findMany({
+        where:   { raidId, userId: user.id },
+        include: { character: { select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true } } },
+        orderBy: { signedAt: 'asc' },
+      }),
+      getAppConfig().catch(() => null),
+    ]);
+    const discordEmojis = appCfg?.discordEmojis ?? {};
+    const signups = rawSignups.map(s => ({
+      id:          s.id,
+      type:        s.type,
+      signedSpec:  s.signedSpec,
+      punctuality: s.punctuality,
+      note:        s.note,
+      isLate:      s.isLate,
+      character:   s.character
+        ? { id: s.character.id, name: s.character.name, mainSpec: s.character.mainSpec, offSpec: s.character.offSpec, isMain: s.character.isMain }
+        : null,
+    }));
+    return NextResponse.json({ linked: true, signups, discordEmojis, signupUntil: raid.signupUntil.toISOString() });
   }
 
   if (action === 'get-chars') {
-    const chars = await prisma.rfCharacter.findMany({
-      where: { userId: user.id, guildId: raid.guildId },
-      select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true },
-      orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
-      take: 25,
-    });
-    return NextResponse.json({ linked: true, guildId: raid.guildId, characters: chars });
+    const [chars, appCfg] = await Promise.all([
+      prisma.rfCharacter.findMany({
+        where: { userId: user.id, guildId: raid.guildId },
+        select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true },
+        orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+        take: 25,
+      }),
+      getAppConfig().catch(() => null),
+    ]);
+    return NextResponse.json({ linked: true, guildId: raid.guildId, characters: chars, discordEmojis: appCfg?.discordEmojis ?? {} });
   }
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
@@ -176,13 +172,13 @@ export async function POST(request: NextRequest) {
     const phase = computeRaidSignupPhase(raid);
     const main  = await prisma.rfCharacter.findFirst({
       where:   { userId: user.id, guildId: raid.guildId, isMain: true },
-      select:  { id: true, mainSpec: true },
+      select:  { id: true, name: true, mainSpec: true },
       orderBy: { updatedAt: 'desc' },
     });
     const fallback = !main
       ? await prisma.rfCharacter.findFirst({
           where:   { userId: user.id, guildId: raid.guildId },
-          select:  { id: true, mainSpec: true },
+          select:  { id: true, name: true, mainSpec: true },
           orderBy: { updatedAt: 'desc' },
         })
       : null;
@@ -211,7 +207,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await syncRaidThreadSummary(raidId);
+    const pickedType = phase === 'reserve_only' ? 'reserve' : 'normal';
+    await syncRaidThreadSummary(raidId, { embedOnly: true });
+    await postSignupChangeThreadNotice(raidId, 'signup', {
+      characterName: picked.name,
+      signedSpec:    picked.mainSpec,
+      type:          pickedType,
+      punctuality:   'on_time',
+    });
     return NextResponse.json({ ok: true, message: 'Quickjoin erfolgreich!' });
   }
 
@@ -226,11 +229,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const characterId   = typeof body.characterId   === 'string' ? body.characterId.trim()   : '';
-    const typeRaw       = typeof body.type          === 'string' ? body.type.trim()           : 'normal';
-    const signedSpecRaw = typeof body.signedSpec    === 'string' ? body.signedSpec.trim()     : '';
-    const noteRaw       = typeof body.note          === 'string' ? body.note.trim()           : '';
-    const punctualityRaw = typeof body.punctuality  === 'string' ? body.punctuality.trim()    : 'on_time';
+    const characterId    = typeof body.characterId    === 'string' ? body.characterId.trim()    : '';
+    const typeRaw        = typeof body.type           === 'string' ? body.type.trim()            : 'normal';
+    const signedSpecRaw  = typeof body.signedSpec     === 'string' ? body.signedSpec.trim()      : '';
+    const noteRaw        = typeof body.note           === 'string' ? body.note.trim()            : '';
+    const punctualityRaw = typeof body.punctuality    === 'string' ? body.punctuality.trim()     : 'on_time';
+    const onlySignedSpec = body.onlySignedSpec === true;
+    const forbidReserve  = body.forbidReserve  === true;
 
     if (!characterId) {
       return NextResponse.json({ error: 'Missing characterId' }, { status: 400 });
@@ -245,7 +250,7 @@ export async function POST(request: NextRequest) {
 
     const char = await prisma.rfCharacter.findFirst({
       where:  { id: characterId, userId: user.id, guildId: raid.guildId },
-      select: { id: true, mainSpec: true, offSpec: true },
+      select: { id: true, name: true, mainSpec: true, offSpec: true },
     });
     if (!char) {
       return NextResponse.json({ error: 'Character not found' }, { status: 404 });
@@ -257,7 +262,7 @@ export async function POST(request: NextRequest) {
     const validation = validateRaidSignupBusinessRules({
       phase,
       typeNorm,
-      forbidReserve: false,
+      forbidReserve,
       punctuality,
       note:              noteRaw,
       signedSpecRaw:     effectiveSpec,
@@ -276,13 +281,19 @@ export async function POST(request: NextRequest) {
       characterId:    char.id,
       typeNorm,
       signedSpecRaw:  effectiveSpec,
-      onlySignedSpec: false,
-      forbidReserve:  false,
+      onlySignedSpec,
+      forbidReserve,
       punctuality,
       note:           noteRaw,
     });
 
-    await syncRaidThreadSummary(raidId);
+    await syncRaidThreadSummary(raidId, { embedOnly: true });
+    await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
+      characterName: char.name,
+      signedSpec:    effectiveSpec,
+      type:          typeNorm,
+      punctuality,
+    });
     return NextResponse.json({
       ok: true,
       isCreate,
@@ -294,7 +305,8 @@ export async function POST(request: NextRequest) {
   // Abmelden (Unregister)
   // -------------------------------------------------------------------------
   if (action === 'unregister') {
-    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    const reason        = typeof body.reason    === 'string' ? body.reason.trim()    : '';
+    const signupIdParam = typeof body.signupId  === 'string' ? body.signupId.trim()  : '';
     const isLateCancellation = new Date() > raid.signupUntil;
 
     if (isLateCancellation && !reason) {
@@ -304,13 +316,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const deleted = await prisma.rfRaidSignup.deleteMany({
-      where: { raidId, userId: user.id },
+    const whereUnreg = {
+      raidId,
+      userId: user.id,
+      ...(signupIdParam ? { id: signupIdParam } : {}),
+    };
+    const removedRows = await prisma.rfRaidSignup.findMany({
+      where:   whereUnreg,
+      include: { character: { select: { name: true } } },
     });
 
-    if (deleted.count === 0) {
+    if (removedRows.length === 0) {
       return NextResponse.json({ error: 'NOT_SIGNED_UP', message: 'Keine Anmeldung gefunden.' }, { status: 404 });
     }
+
+    await prisma.rfRaidSignup.deleteMany({ where: whereUnreg });
 
     if (reason) {
       await prisma.rfAuditLog.create({
@@ -326,7 +346,15 @@ export async function POST(request: NextRequest) {
       }).catch(() => { /* Audit-Fehler sind nicht kritisch */ });
     }
 
-    await syncRaidThreadSummary(raidId);
+    await syncRaidThreadSummary(raidId, { embedOnly: true });
+    for (const row of removedRows) {
+      await postSignupChangeThreadNotice(raidId, 'unsignup', {
+        characterName: row.character?.name ?? null,
+        signedSpec:    row.signedSpec,
+        type:          row.type,
+        punctuality:   row.punctuality,
+      });
+    }
     return NextResponse.json({ ok: true, message: 'Abmeldung erfolgreich.' });
   }
 

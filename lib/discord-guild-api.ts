@@ -359,6 +359,30 @@ export async function editChannelMessageFull(
 }
 
 /**
+ * Löscht eine Nachricht im Kanal oder Thread (Best-Effort: 404 wird ignoriert).
+ */
+export async function deleteChannelMessage(
+  channelId: string,
+  messageId: string
+): Promise<void> {
+  const token = getBotToken();
+  if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+
+  const res = await fetch(
+    `${DISCORD_API_BASE}/channels/${channelId}/messages/${messageId}`,
+    {
+      method:  'DELETE',
+      headers: { Authorization: `Bot ${token}` },
+    }
+  );
+
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text();
+    throw new Error(`Discord API delete message: ${res.status} ${text}`);
+  }
+}
+
+/**
  * Erstellt einen öffentlichen Thread aus einer bestehenden Nachricht.
  * POST /channels/{channel.id}/messages/{message.id}/threads
  */

@@ -9,6 +9,7 @@ import {
   commitRaidSelfSignupMutation,
   validateRaidSignupBusinessRules,
 } from '@/lib/raid-self-signup-mutation';
+import { syncRaidThreadSummary, postSignupChangeThreadNotice } from '@/lib/raid-thread-sync';
 
 function readDiscordUserId(request: NextRequest, body: Record<string, unknown>): string {
   const q = request.nextUrl.searchParams.get('discordUserId')?.trim();
@@ -146,5 +147,12 @@ export async function POST(
     note,
   });
 
+  await syncRaidThreadSummary(raidId);
+  await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
+    characterName: character.name,
+    signedSpec:    signedSpecRaw || null,
+    type:          typeNorm,
+    punctuality,
+  });
   return NextResponse.json({ signup, signupPhase: phase }, { status: isCreate ? 201 : 200 });
 }

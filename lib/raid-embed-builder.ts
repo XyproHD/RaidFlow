@@ -3,23 +3,41 @@
  * Wird beim Erstellen und bei jedem Update des Raids aufgerufen.
  */
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
+import {
+  getSpecEmoji,
+  getClassEmoji,
+  getRoleEmoji,
+} from '@/lib/discord-wow-emojis';
+import type { AnnouncedGroupPayload } from '@/lib/raid-announce';
 import type { DiscordEmbed, DiscordMessageComponent } from '@/lib/discord-guild-api';
 
 // ---------------------------------------------------------------------------
-// Farben je Status
+// Embed-Farben je Status
 // ---------------------------------------------------------------------------
 const COLOR = {
-  open_signup_open:   0x57F287, // grün
-  open_signup_closed: 0xFEE75C, // gelb
-  announced:          0x5865F2, // Discord-Blurple
-  locked:             0xEB459E, // pink/fuchsia
-  cancelled:          0xED4245, // rot
+  open_signup_open:   0x57F287,
+  open_signup_closed: 0xFEE75C,
+  announced:          0x5865F2,
+  locked:             0xEB459E,
+  cancelled:          0xED4245,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Rollen-Definitionen (Reihenfolge für Zusammenfassung + Spielerliste)
+// ---------------------------------------------------------------------------
+const ROLE_DEFS = [
+  { key: 'Tank',   label: 'Tanks'    },
+  { key: 'Melee',  label: 'Nahkampf' },
+  { key: 'Range',  label: 'Fernkampf'},
+  { key: 'Healer', label: 'Heiler'   },
+] as const;
+
 
 // ---------------------------------------------------------------------------
 // Typen
 // ---------------------------------------------------------------------------
 export type RaidEmbedSignup = {
+  id: string;
   userId: string;
   characterName?: string | null;
   mainSpec?: string | null;
@@ -27,7 +45,14 @@ export type RaidEmbedSignup = {
   isMain?: boolean | null;
   leaderPlacement?: string | null;
   isLate?: boolean;
-  type: string; // normal | uncertain | reserve | declined
+  /** on_time | tight | late */
+  punctuality?: string | null;
+  type: string;
+};
+
+export type StoredAnnouncedGroups = {
+  groups: AnnouncedGroupPayload[];
+  reserveOrder: string[];
 };
 
 export type RaidEmbedInput = {
@@ -39,9 +64,17 @@ export type RaidEmbedInput = {
   signupUntil: Date;
   status: string;
   maxPlayers: number;
+  /** Rollen-Mindestvorgaben – 0 = keine Vorgabe */
+  minTanks?: number;
+  minMelee?: number;
+  minRange?: number;
+  minHealers?: number;
   signupVisibility: string;
   signups: RaidEmbedSignup[];
-  announcedGroupsJson?: unknown; // announced_planner_groups_json
+  announcedGroupsJson?: unknown;
+  discordEmojis?: Record<string, string>;
+  /** Öffentliche Raid-Notiz (rf_raid.note), nicht Planer-HTML */
+  publicNote?: string | null;
   appUrl: string;
   locale?: string;
 };
@@ -50,12 +83,10 @@ export type RaidEmbedInput = {
 // Hilfsfunktionen
 // ---------------------------------------------------------------------------
 
-/** UUID-Striche entfernen für kompaktere customIds (32 statt 36 Zeichen). */
 export function uuidNoDash(uuid: string): string {
   return uuid.replace(/-/g, '');
 }
 
-/** 32-Zeichen-String zurück in UUID-Format bringen. */
 export function noDashToUuid(s: string): string {
   if (s.length !== 32) return s;
   return `${s.slice(0, 8)}-${s.slice(8, 12)}-${s.slice(12, 16)}-${s.slice(16, 20)}-${s.slice(20)}`;
@@ -65,10 +96,12 @@ function formatDE(date: Date, opts: Intl.DateTimeFormatOptions): string {
   return new Intl.DateTimeFormat('de-DE', { timeZone: 'Europe/Berlin', ...opts }).format(date);
 }
 
-function formatDateTime(date: Date): string {
-  const d = formatDE(date, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
-  const t = formatDE(date, { hour: '2-digit', minute: '2-digit' });
-  return `${d} · ${t} Uhr`;
+function formatDate(date: Date): string {
+  return formatDE(date, { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function formatTime(date: Date): string {
+  return formatDE(date, { hour: '2-digit', minute: '2-digit' });
 }
 
 function embedColor(status: string, signupUntil: Date): number {
@@ -78,39 +111,156 @@ function embedColor(status: string, signupUntil: Date): number {
   return new Date() > signupUntil ? COLOR.open_signup_closed : COLOR.open_signup_open;
 }
 
-function statusLabel(status: string, signupUntil: Date): string {
-  if (status === 'cancelled') return '🔴 Abgesagt';
-  if (status === 'locked')    return '🔒 Gesetzt';
-  if (status === 'announced') return '📢 Angekündigt';
-  if (new Date() > signupUntil) return '🟡 Offen (Anmeldeschluss vorbei)';
-  return '🟢 Offen';
+function statusText(status: string, signupUntil: Date): string {
+  if (status === 'cancelled') return 'Abgesagt';
+  if (status === 'locked')    return 'Abgeschlossen';
+  if (status === 'announced') return 'Angekündigt';
+  if (new Date() > signupUntil) return 'Offen';
+  return 'Offen';
 }
 
-function signupUntilLabel(signupUntil: Date): string {
-  return new Date() > signupUntil ? '🔴 Geschlossen' : '🟢 Offen';
-}
-
-function placementPrefix(placement: string | null | undefined): string {
-  if (placement === 'confirmed') return '[G] ';
-  if (placement === 'substitute') return '[E] ';
+/**
+ * Pünktlichkeits-Icon am Zeilenende der Spielerzeile.
+ * on_time → kein Icon (Default, kein Rauschen)
+ * tight   → ⏳  (wird knapp)
+ * late    → 🕐  (kommt später)
+ */
+function punctualityIcon(p: string | null | undefined): string {
+  if (p === 'tight') return ' ⏳';
+  if (p === 'late')  return ' 🕐';
   return '';
 }
 
-function signupLine(s: RaidEmbedSignup): string {
-  const spec      = s.signedSpec?.trim() || s.mainSpec?.trim() || '?';
-  const charName  = s.characterName || '?';
-  const twink     = s.isMain === false ? ' *(T)*' : '';
-  const late      = s.isLate ? ' ⏱' : '';
-  const pl        = placementPrefix(s.leaderPlacement);
-  return `${pl}${charName} (${spec})${twink}${late}`;
+/** Spieler-Zeile: {KlasseEmoji}{SpecEmoji} Charname *(T)* {PuncIcon} */
+function playerLine(s: RaidEmbedSignup, emojis: Record<string, string>): string {
+  const spec       = s.signedSpec?.trim() || s.mainSpec?.trim() || '?';
+  const charName   = s.characterName || '?';
+  const twink      = s.isMain === false ? ' *(T)*' : '';
+  const punc       = punctualityIcon(s.punctuality);
+  const classEmoji = getClassEmoji(spec, emojis);
+  const specEmoji  = getSpecEmoji(spec, emojis);
+  const emojiPart  = [classEmoji, specEmoji].filter(Boolean).join('');
+  return `${emojiPart}${emojiPart ? ' ' : ''}${charName}${twink}${punc}`;
 }
 
-/** Zählt Gruppen in announced_planner_groups_json. */
-function countAnnouncedGroups(json: unknown): number {
-  if (!json || typeof json !== 'object') return 0;
-  const data = json as Record<string, unknown>;
-  if (!Array.isArray(data.groups)) return 0;
-  return data.groups.length;
+function parseStoredGroups(json: unknown): StoredAnnouncedGroups | null {
+  if (!json || typeof json !== 'object') return null;
+  const d = json as Record<string, unknown>;
+  if (!Array.isArray(d.groups)) return null;
+  return {
+    groups: d.groups as AnnouncedGroupPayload[],
+    reserveOrder: Array.isArray(d.reserveOrder) ? d.reserveOrder as string[] : [],
+  };
+}
+
+/** Raid-Notiz fürs Embed: HTML-Artefakte entfernen, Länge begrenzen. */
+function plainTextForDiscord(raw: string, maxLen: number): string {
+  let t = raw
+    .replace(/\r\n/g, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .trim();
+  if (t.length > maxLen) t = `${t.slice(0, maxLen - 1)}…`;
+  return t;
+}
+
+function truncateLines(lines: string[], maxChars = 1000): string {
+  let value = '';
+  let count = 0;
+  for (const line of lines) {
+    const next = value ? `${value}\n${line}` : line;
+    if (next.length > maxChars) {
+      const remaining = lines.length - count;
+      if (remaining > 0) value += `\n*… +${remaining} weitere*`;
+      break;
+    }
+    value = next;
+    count++;
+  }
+  return value;
+}
+
+// ---------------------------------------------------------------------------
+// Zusammenfassungs-Helfer
+// ---------------------------------------------------------------------------
+
+/**
+ * Rollen-Zusammenfassung mit Server-Icons (bzw. Unicode-Fallback).
+ * Mindestvorgabe nicht erfüllt → **count/min** (fett), sonst nur count.
+ */
+function roleSummaryLine(
+  byRole: Record<string, RaidEmbedSignup[]>,
+  mins:   { Tank: number; Melee: number; Range: number; Healer: number },
+  emojis: Record<string, string>,
+): string {
+  const parts = ROLE_DEFS.map(({ key }) => {
+    const count = byRole[key]?.length ?? 0;
+    const min   = mins[key as keyof typeof mins] ?? 0;
+    const emoji = getRoleEmoji(key, emojis);
+    if (min > 0 && count < min) {
+      return `${emoji} **${count}/${min}**`;
+    }
+    return `${emoji} ${count}`;
+  });
+  return parts.join('  ');
+}
+
+/**
+ * Klassen-Zusammenfassung — gleiche Optik wie Rollen-Zeile.
+ * Trenner ` · ` zwischen Einträgen, nach je 5 Klassen Zeilenumbruch.
+ * Nur ausgegeben wenn Custom-Server-Emojis konfiguriert sind.
+ */
+function classCountLine(
+  signups: RaidEmbedSignup[],
+  emojis: Record<string, string>
+): string {
+  const counts = new Map<string, number>();
+  for (const s of signups) {
+    const spec = s.signedSpec?.trim() || s.mainSpec?.trim() || '';
+    const cls  = getClassEmoji(spec, emojis);
+    if (!cls) continue;
+    counts.set(cls, (counts.get(cls) ?? 0) + 1);
+  }
+  if (counts.size === 0) return '';
+
+  const COLS = 5;
+  const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  const rows: string[] = [];
+  for (let i = 0; i < entries.length; i += COLS) {
+    rows.push(
+      entries.slice(i, i + COLS)
+        .map(([emoji, n]) => `${emoji} ${n}`)
+        .join('  ·  ')
+    );
+  }
+  return rows.join('\n');
+}
+
+/**
+ * Kompakte Rollen-Verteilung für eine einzelne Gruppe (Unicode-Emojis).
+ */
+function groupRoleSummaryLine(
+  signupIds: string[],
+  signupById: Map<string, RaidEmbedSignup>,
+  emojis: Record<string, string>
+): string {
+  const counts: Record<string, number> = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
+  for (const id of signupIds) {
+    const s = signupById.get(id);
+    if (!s) continue;
+    const spec = s.signedSpec?.trim() || s.mainSpec?.trim();
+    const role = spec ? roleFromSpecDisplayName(spec) : null;
+    if (role && role in counts) counts[role]++;
+  }
+  return ROLE_DEFS
+    .map(({ key }) => `${getRoleEmoji(key, emojis)} ${counts[key]}`)
+    .join('  ');
 }
 
 // ---------------------------------------------------------------------------
@@ -121,157 +271,208 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
   const {
     raidId, guildId, raidName, dungeonNames, scheduledAt, signupUntil,
     status, maxPlayers, signupVisibility, signups, announcedGroupsJson,
-    appUrl, locale = 'de',
+    discordEmojis = {}, appUrl, locale = 'de',
   } = input;
 
-  const now = new Date();
-  const isRevealed = signupVisibility === 'public' || status === 'locked' || status === 'announced';
+  const minTanks   = input.minTanks   ?? 0;
+  const minMelee   = input.minMelee   ?? 0;
+  const minRange   = input.minRange   ?? 0;
+  const minHealers = input.minHealers ?? 0;
 
-  // --- Titel ---
+  const isAnnounced = status === 'announced' || status === 'locked';
+  const isRevealed  = signupVisibility === 'public' || isAnnounced;
+
+  const announcedGroups = parseStoredGroups(announcedGroupsJson);
+
+  // --- Basisdaten ---
   const title = `⚔️ ${raidName} — ${dungeonNames.join(' + ')}`.slice(0, 256);
-
-  // --- Farbe ---
   const color = embedColor(status, signupUntil);
 
-  // --- Links in Description ---
-  const base     = appUrl.replace(/\/$/, '');
-  const dashUrl  = `${base}/${locale}/dashboard`;
-  const raidUrl  = `${base}/${locale}/guild/${guildId}/raid/${raidId}`;
-  const planUrl  = `${base}/${locale}/guild/${guildId}/raid/${raidId}/plan`;
-  const description =
-    `[🏠 Dashboard](${dashUrl}) · [⚔️ Raid ansehen](${raidUrl}) · [📋 Planer](${planUrl})`;
+  const base    = appUrl.replace(/\/$/, '');
+  const dashUrl = `${base}/${locale}/dashboard`;
+  const raidUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}`;
+  const planUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}/plan`;
+  const linksMarkdown = `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl})`;
 
-  // --- Felder ---
-  const fields: NonNullable<DiscordEmbed['fields']> = [];
+  const publicNotePlain = input.publicNote?.trim()
+    ? plainTextForDiscord(input.publicNote.trim(), 3900)
+    : '';
+  const description = publicNotePlain
+    ? `ℹ️ ${publicNotePlain}`.slice(0, 4096)
+    : undefined;
 
-  fields.push({
-    name:   '📅 Termin',
-    value:  formatDateTime(scheduledAt),
-    inline: true,
-  });
-
-  fields.push({
-    name:   '⏳ Anmeldung bis',
-    value:  `${formatDateTime(signupUntil)}\n${signupUntilLabel(signupUntil)}`,
-    inline: true,
-  });
-
-  fields.push({
-    name:   '📊 Raid-Status',
-    value:  statusLabel(status, signupUntil),
-    inline: true,
-  });
-
-  // Spielerzahl (unique Discord-User-IDs, ohne Reserve)
+  // Zählung & Rollen-Verteilung (früh berechnet, für Zusammenfassung + Spielerliste)
   const mainSignups    = signups.filter(s => s.type !== 'reserve' && s.type !== 'declined');
   const reserveSignups = signups.filter(s => s.type === 'reserve');
   const uniquePlayers  = new Set(mainSignups.map(s => s.userId)).size;
-  const groupCount     = countAnnouncedGroups(announcedGroupsJson);
 
-  let playerValue = `**${uniquePlayers}** / ${maxPlayers}`;
-  if (groupCount > 1) playerValue += `  ·  ${groupCount} Gruppen`;
+  const groupCount = announcedGroups?.groups.length ?? 1;
+  const totalMax   = maxPlayers * groupCount;
+  const anmeldungenValue = groupCount > 1
+    ? `${uniquePlayers} / ${totalMax} (${maxPlayers} je Gruppe)`
+    : `${uniquePlayers} / ${maxPlayers}`;
 
-  fields.push({
-    name:   '👥 Anmeldungen',
-    value:  playerValue,
-    inline: true,
-  });
+  const byRole: Record<string, RaidEmbedSignup[]> = { Tank: [], Melee: [], Range: [], Healer: [], '?': [] };
+  for (const s of mainSignups) {
+    const spec = s.signedSpec?.trim() || s.mainSpec?.trim();
+    const role = spec ? roleFromSpecDisplayName(spec) : null;
+    (byRole[role ?? '?'] ??= []).push(s);
+  }
 
+  // --- Stammdaten: zwei parallele Inline-Felder ---
+  const labelCol = [
+    '📅 **Termin**',
+    '🗓️ **Anmeldung bis**',
+    '📊 **Status**',
+    '👥 **Plätze**',
+  ].join('\n');
+  const valueCol = [
+    `${formatDate(scheduledAt)} · ${formatTime(scheduledAt)} Uhr`,
+    `${formatDate(signupUntil)} · ${formatTime(signupUntil)} Uhr`,
+    statusText(status, signupUntil),
+    anmeldungenValue,
+  ].join('\n');
+
+  const fields: NonNullable<DiscordEmbed['fields']> = [
+    { name: '\u200b', value: labelCol, inline: true },
+    { name: '\u200b', value: valueCol, inline: true },
+  ];
+
+  // --- Zusammenfassung je Rolle (ANSI) + Klasse (wenn Anmeldungen sichtbar) ---
   if (isRevealed && mainSignups.length > 0) {
-    // --- Anmeldungen nach Rolle ---
-    const byRole: Record<string, RaidEmbedSignup[]> = {
-      Tank: [], Melee: [], Range: [], Healer: [], '?': [],
-    };
-    for (const s of mainSignups) {
-      const spec = s.signedSpec?.trim() || s.mainSpec?.trim();
-      const role = spec ? roleFromSpecDisplayName(spec) : null;
-      (byRole[role ?? '?'] ??= []).push(s);
+    const mins      = { Tank: minTanks, Melee: minMelee, Range: minRange, Healer: minHealers };
+    const roleLine  = roleSummaryLine(byRole, mins, discordEmojis);
+    const classLine = classCountLine(mainSignups, discordEmojis);
+    const summaryValue = classLine ? `${roleLine}\n${classLine}` : roleLine;
+    fields.push({ name: '\u200b', value: summaryValue, inline: false });
+  }
+
+  // Visueller Trenner (leeres Feld = nativer Abstandshalter)
+  fields.push({ name: '\u200b', value: '\u200b', inline: false });
+
+  if (isAnnounced && announcedGroups && announcedGroups.groups.length > 0) {
+    // -----------------------------------------------------------------------
+    // Angekündigt / Abgeschlossen: Gruppen-Ansicht
+    // -----------------------------------------------------------------------
+    const signupById   = new Map(signups.map(s => [s.id, s]));
+    const signupByUser = new Map(signups.map(s => [s.userId, s]));
+
+    for (let gi = 0; gi < announcedGroups.groups.length; gi++) {
+      if (gi > 0) {
+        fields.push({ name: '\u200b', value: '\u200b', inline: false });
+      }
+
+      const group = announcedGroups.groups[gi];
+      const lines: string[] = [];
+
+      // Lead/Loot-Header mit Klartext-Labels
+      const leadSignup = group.raidLeaderUserId ? signupByUser.get(group.raidLeaderUserId) : null;
+      const lootSignup = group.lootmasterUserId ? signupByUser.get(group.lootmasterUserId) : null;
+      const headerParts: string[] = [];
+      if (leadSignup?.characterName) headerParts.push(`👑 Raidleader: **${leadSignup.characterName}**`);
+      if (lootSignup?.characterName) headerParts.push(`💰 Lootmeister: **${lootSignup.characterName}**`);
+      if (headerParts.length > 0) {
+        lines.push(headerParts.join('  ·  '));
+      }
+
+      // Rollen-Verteilung der Gruppe
+      lines.push(groupRoleSummaryLine(group.rosterOrder, signupById, discordEmojis));
+
+      // Trenner vor Spielerliste (U+25AC BLACK RECTANGLE)
+      lines.push('▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬');
+
+      for (const signupId of group.rosterOrder) {
+        const s = signupById.get(signupId);
+        if (!s) continue;
+        lines.push(playerLine(s, discordEmojis));
+      }
+
+      fields.push({
+        name:  `Gruppe ${gi + 1}`,
+        value: lines.length > 0 ? truncateLines(lines) : '*leer*',
+        inline: false,
+      });
     }
 
-    const roleGroups = [
-      { label: 'Tanks',     emoji: '🛡️', key: 'Tank'   },
-      { label: 'Nahkampf',  emoji: '⚔️',  key: 'Melee'  },
-      { label: 'Fernkampf', emoji: '🏹',  key: 'Range'  },
-      { label: 'Heiler',    emoji: '💚',  key: 'Healer' },
-    ];
+    // Visueller Trenner (leeres Feld = nativer Abstandshalter)
+    fields.push({ name: '\u200b', value: '\u200b', inline: false });
+    // Reserve
+    
+    {
+      const signupById2 = new Map(signups.map(s => [s.id, s]));
+      const resLines = announcedGroups.reserveOrder
+        .map(id => signupById2.get(id))
+        .filter((s): s is RaidEmbedSignup => !!s)
+        .map(s => playerLine(s, discordEmojis));
+      fields.push({
+        name:  `Reserve (${resLines.length})`,
+        value: resLines.length > 0 ? truncateLines(resLines) : '*Keine Reserve*',
+        inline: false,
+      });
+    }
 
-    for (const { label, emoji, key } of roleGroups) {
+  } else if (isRevealed && mainSignups.length > 0) {
+    // -----------------------------------------------------------------------
+    // Offen: Rollen-Ansicht (inline = 2-spaltig für bessere Übersicht)
+    // -----------------------------------------------------------------------
+    for (const { key, label } of ROLE_DEFS) {
       const group = byRole[key];
       if (!group?.length) continue;
-      const lines = group.map(signupLine);
-      // Feld-Wert max 1024 Zeichen; bei vielen Einträgen kürzen
-      let value = lines.join('\n');
-      if (value.length > 1000) {
-        const shown   = lines.filter((_, i) => lines.slice(0, i + 1).join('\n').length <= 950);
-        const rest    = lines.length - shown.length;
-        value = shown.join('\n') + `\n*… und ${rest} weitere*`;
-      }
+      const roleEmoji = getRoleEmoji(key, discordEmojis);
       fields.push({
-        name:   `${emoji} ${label} (${group.length})`,
-        value:  value,
-        inline: false,
+        name:  `${roleEmoji} ${label} (${group.length})`.trim(),
+        value: truncateLines(group.map(s => playerLine(s, discordEmojis))),
+        inline: true,
       });
     }
 
     if (byRole['?'].length > 0) {
-      const lines = byRole['?'].map(signupLine);
       fields.push({
-        name:   `❓ Unbekannte Rolle (${byRole['?'].length})`,
-        value:  lines.join('\n').slice(0, 1024),
+        name:  `❓ Unbekannte Rolle (${byRole['?'].length})`,
+        value: truncateLines(byRole['?'].map(s => playerLine(s, discordEmojis))),
         inline: false,
       });
     }
+  // Visueller Trenner (leeres Feld = nativer Abstandshalter)
+  fields.push({ name: '\u200b', value: '\u200b', inline: false });
 
-    // --- Reserve ---
-    if (reserveSignups.length > 0) {
-      const lines = reserveSignups.map(signupLine);
-      let value = lines.join('\n');
-      if (value.length > 1000) {
-        const shown = lines.filter((_, i) => lines.slice(0, i + 1).join('\n').length <= 950);
-        value = shown.join('\n') + `\n*… und ${lines.length - shown.length} weitere*`;
-      }
-      fields.push({
-        name:   `📋 Reserve (${reserveSignups.length})`,
-        value,
-        inline: false,
-      });
-    }
+    fields.push({
+      name:  `Reserve (${reserveSignups.length})`,
+      value: reserveSignups.length > 0
+        ? truncateLines(reserveSignups.map(s => playerLine(s, discordEmojis)))
+        : '*Keine Reserve*',
+      inline: false,
+    });
+
   } else if (!isRevealed) {
-    // Signups versteckt
     const hint = reserveSignups.length > 0
-      ? `🔒 Anmeldungen nicht öffentlich · ${reserveSignups.length} auf Reserve`
-      : '🔒 Anmeldungen nicht öffentlich';
+      ? `*Anmeldungen nicht öffentlich · ${reserveSignups.length} auf Reserve*`
+      : '*Anmeldungen nicht öffentlich*';
+    fields.push({ name: '\u200b', value: hint, inline: false });
     fields.push({
-      name:   '👁️ Anmeldungen',
-      value:  hint,
+      name:  `Reserve (${reserveSignups.length})`,
+      value: '*nicht öffentlich*',
       inline: false,
     });
-  } else if (mainSignups.length === 0) {
-    fields.push({
-      name:   '📭 Anmeldungen',
-      value:  'Noch keine Anmeldungen.',
-      inline: false,
-    });
+  } else {
+    fields.push({ name: '\u200b', value: '*Noch keine Anmeldungen.*', inline: false });
+    fields.push({ name: 'Reserve (0)', value: '*Keine Reserve*', inline: false });
   }
+  // Visueller Trenner (leeres Feld = nativer Abstandshalter)
+  fields.push({ name: '\u200b', value: '\u200b', inline: false });
 
-  return {
-    title,
-    description,
-    color,
-    fields,
-    timestamp: scheduledAt.toISOString(),
-  };
+  fields.push({
+    name:   '🔗',
+    value:  linksMarkdown.slice(0, 1024),
+    inline: false,
+  });
+
+  return { title, ...(description ? { description } : {}), color, fields };
 }
 
 // ---------------------------------------------------------------------------
 // Buttons
 // ---------------------------------------------------------------------------
-
-/**
- * Erstellt die Action-Row mit den vier Raid-Buttons.
- * customId-Format: rf:<action>:<raidIdNoDash>:<guildIdNoDash>
- * Maximale Länge: 8 + 32 + 1 + 32 = 73 Zeichen (< 100 Limit).
- */
 export function buildRaidActionButtons(
   raidId: string,
   guildId: string
@@ -280,36 +481,12 @@ export function buildRaidActionButtons(
   const gid = uuidNoDash(guildId);
 
   return {
-    type: 1, // ACTION_ROW
+    type: 1,
     components: [
-      {
-        type:      2, // BUTTON
-        style:     3, // Success (grün)
-        label:     'Quickjoin',
-        emoji:     { name: '⚡' },
-        custom_id: `rf:qj:${rid}:${gid}`,
-      },
-      {
-        type:      2,
-        style:     1, // Primary (blau)
-        label:     'Anmelden',
-        emoji:     { name: '📋' },
-        custom_id: `rf:join:${rid}:${gid}`,
-      },
-      {
-        type:      2,
-        style:     2, // Secondary (grau)
-        label:     'Bearbeiten',
-        emoji:     { name: '✏️' },
-        custom_id: `rf:edit:${rid}:${gid}`,
-      },
-      {
-        type:      2,
-        style:     4, // Danger (rot)
-        label:     'Abmelden',
-        emoji:     { name: '🚪' },
-        custom_id: `rf:unreg:${rid}:${gid}`,
-      },
+      { type: 2, style: 3, label: 'Quickjoin',  emoji: { name: '⚡' },  custom_id: `rf:qj:${rid}:${gid}` },
+      { type: 2, style: 1, label: 'Anmelden',   emoji: { name: '📋' }, custom_id: `rf:join:${rid}:${gid}` },
+      { type: 2, style: 2, label: 'Bearbeiten', emoji: { name: '✏️' }, custom_id: `rf:edit:${rid}:${gid}` },
+      { type: 2, style: 4, label: 'Abmelden',   emoji: { name: '🚪' }, custom_id: `rf:unreg:${rid}:${gid}` },
     ],
   };
 }

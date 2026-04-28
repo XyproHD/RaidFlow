@@ -17,6 +17,7 @@ import {
   editChannelMessageFull,
 } from '@/lib/discord-guild-api';
 import { buildRaidEmbed, buildRaidActionButtons } from '@/lib/raid-embed-builder';
+import { getAppConfig } from '@/lib/app-config';
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
@@ -51,6 +52,15 @@ async function loadRaidForSync(raidId: string) {
 // Kern-Sync
 // ---------------------------------------------------------------------------
 
+export type SyncRaidThreadSummaryOptions = {
+  /**
+   * Nur das Embed patchen — ohne `components` im PATCH, damit bestehende Buttons
+   * (z. B. während Discord-Interaktion kurz deaktiviert) nicht von der API
+   * zurückgesetzt werden.
+   */
+  embedOnly?: boolean;
+};
+
 /**
  * Erstellt oder aktualisiert den Embed-Post im Discord-Channel.
  *
@@ -58,7 +68,10 @@ async function loadRaidForSync(raidId: string) {
  * - Kein discordChannelMessageId → neue Nachricht + Thread erstellen
  * - Vorhandenes discordChannelMessageId → Nachricht patchen
  */
-export async function syncRaidThreadSummary(raidId: string): Promise<void> {
+export async function syncRaidThreadSummary(
+  raidId: string,
+  opts?: SyncRaidThreadSummaryOptions,
+): Promise<void> {
   try {
     const raid = await loadRaidForSync(raidId);
     if (!raid?.discordChannelId) return;
@@ -78,18 +91,30 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
       }
     }
 
+    const threadTitle = `${dungeonNames[0]} – ${raid.name}`.slice(0, 100);
+
+    const appConfig = await getAppConfig().catch(() => null);
+    const discordEmojis = appConfig?.discordEmojis ?? {};
+
     const embedInput = {
       raidId:             raid.id,
       guildId:            raid.guildId,
       raidName:           raid.name,
+      publicNote:         raid.note,
       dungeonNames,
       scheduledAt:        raid.scheduledAt,
       signupUntil:        raid.signupUntil,
       status:             raid.status,
       maxPlayers:         raid.maxPlayers,
+      minTanks:           raid.minTanks,
+      minMelee:           raid.minMelee,
+      minRange:           raid.minRange,
+      minHealers:         raid.minHealers,
       signupVisibility:   raid.signupVisibility,
       announcedGroupsJson: raid.announcedPlannerGroupsJson,
+      discordEmojis,
       signups: raid.signups.map(s => ({
+        id:              s.id,
         userId:          s.userId,
         characterName:   s.character?.name ?? null,
         mainSpec:        s.character?.mainSpec ?? null,
@@ -97,6 +122,7 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
         isMain:          s.character?.isMain ?? null,
         leaderPlacement: s.leaderPlacement,
         isLate:          s.isLate,
+        punctuality:     s.punctuality,
         type:            s.type,
       })),
       appUrl: getAppUrl(),
@@ -109,10 +135,29 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
     // --- Nachricht bearbeiten ---
     if (raid.discordChannelMessageId) {
       try {
-        await editChannelMessageFull(raid.discordChannelId, raid.discordChannelMessageId, {
-          embeds:     [embed],
-          components,
-        });
+        await editChannelMessageFull(
+          raid.discordChannelId,
+          raid.discordChannelMessageId,
+          opts?.embedOnly
+            ? { embeds: [embed] }
+            : { embeds: [embed], components },
+        );
+        // Thread nachholen wenn er fehlt (z. B. Ersterstellung fehlgeschlagen)
+        if (!raid.discordThreadId) {
+          try {
+            const result = await createThreadFromMessage(
+              raid.discordChannelId,
+              raid.discordChannelMessageId,
+              threadTitle
+            );
+            await prisma.rfRaid.update({
+              where: { id: raidId },
+              data:  { discordThreadId: result.threadId },
+            });
+          } catch {
+            // Thread existiert bereits oder Kanal unterstützt keine Threads – ignorieren
+          }
+        }
         return;
       } catch (e) {
         console.warn('[syncRaidThreadSummary] edit failed, re-posting:', e);
@@ -130,7 +175,6 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
       components,
     });
 
-    const threadTitle = `${dungeonNames[0]} – ${raid.name}`.slice(0, 100);
     let threadId: string | null = null;
     try {
       const result = await createThreadFromMessage(raid.discordChannelId, messageId, threadTitle);
@@ -153,6 +197,68 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // Benachrichtigungen (werden als neue Thread-Nachrichten gepostet)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Signup-Änderungs-Protokoll
+// ---------------------------------------------------------------------------
+
+export type SignupChangeAction = 'signup' | 'unsignup' | 'edit';
+
+export interface SignupChangeDetails {
+  characterName: string | null;
+  signedSpec:    string | null;
+  type:          string;
+  punctuality?:  string;
+}
+
+/**
+ * Postet eine kurze Protokoll-Nachricht in den Raid-Thread wenn sich ein Spieler
+ * anmeldet, abmeldet oder seine Anmeldung bearbeitet.
+ * Protokoll wird gepostet, solange der Raid nicht abgesagt ist und ein Thread existiert
+ * (unabhängig von signupVisibility — der Thread ist die Raid-Diskussion).
+ */
+export async function postSignupChangeThreadNotice(
+  raidId:  string,
+  action:  SignupChangeAction,
+  details: SignupChangeDetails,
+): Promise<void> {
+  try {
+    const raid = await prisma.rfRaid.findUnique({
+      where:  { id: raidId },
+      select: { discordThreadId: true, status: true },
+    });
+    if (!raid?.discordThreadId) return;
+    if (raid.status === 'cancelled') return;
+
+    const { createChannelMessage } = await import('@/lib/discord-guild-api');
+
+    const charName = details.characterName || '?';
+    const specText = details.signedSpec ? ` · ${details.signedSpec}` : '';
+    const typeText = details.type === 'reserve'   ? ' *(Reserve)*'
+                   : details.type === 'uncertain' ? ' *(Unsicher)*'
+                   : '';
+    const puncText = details.punctuality === 'tight' ? ' ⏳ Wird knapp'
+                   : details.punctuality === 'late'  ? ' 🕐 Kommt später'
+                   : '';
+
+    let content: string;
+    if (action === 'signup') {
+      content = `✍️ **${charName}** hat sich angemeldet${specText}${typeText}${puncText}`;
+    } else if (action === 'unsignup') {
+      content = `🚪 **${charName}** hat sich abgemeldet`;
+    } else {
+      content = `✏️ **${charName}** hat die Anmeldung bearbeitet${specText}${typeText}${puncText}`;
+    }
+
+    await createChannelMessage(raid.discordThreadId, content.slice(0, 2000));
+  } catch (e) {
+    console.error('[postSignupChangeThreadNotice]', raidId, e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Raid-gesetzt-Benachrichtigung
 // ---------------------------------------------------------------------------
 
 /** Zusätzliche Thread-Nachricht nach „Raid setzen" (Benachrichtigung). */

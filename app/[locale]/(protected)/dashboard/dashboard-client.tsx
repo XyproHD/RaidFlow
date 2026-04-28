@@ -1,12 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { createPortal } from 'react-dom';
+import { ProfileCharacters, type ProfileCharactersHandle, type CharacterRow as ProfileCharacterRow, type GuildOption as ProfileGuildOption } from '../profile/profile-characters';
 import { ClassIcon } from '@/components/class-icon';
-import { SpecIcon } from '@/components/spec-icon';
 import { RoleIcon } from '@/components/role-icon';
 import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
@@ -22,11 +22,13 @@ export type DashboardGuild = {
   armoryUrl: string | null;
   realmLabel: string | null;
   canManage: boolean;
+  battlenetRealmId?: string | null;
 };
 
 export type DashboardCharacter = {
   id: string;
   name: string;
+  guildId: string | null;
   guildName: string | null;
   hasBattlenet: boolean;
   gearScore: number | null;
@@ -36,6 +38,7 @@ export type DashboardCharacter = {
   isMain: boolean;
   participatedRaids: number;
   lootCount: number;
+  battlenetRealmSlug: string | null;
 };
 
 export type DashboardSignupRow = {
@@ -202,7 +205,10 @@ export function DashboardClient({
   const tProfile = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
+  const profileCharactersRef = useRef<ProfileCharactersHandle>(null);
   const [expandedNoteRaidId, setExpandedNoteRaidId] = useState<string | null>(null);
+  const [openCharMenuId, setOpenCharMenuId] = useState<string | null>(null);
+  const [openCharMenuPos, setOpenCharMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [openSignupMenuKey, setOpenSignupMenuKey] = useState<string | null>(null);
   const [openSignupMenuPos, setOpenSignupMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [openNewRaidMenuPos, setOpenNewRaidMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -224,12 +230,25 @@ export function DashboardClient({
   );
 
   const closeAllMenus = () => {
+    setOpenCharMenuId(null);
+    setOpenCharMenuPos(null);
     setOpenSignupMenuKey(null);
     setOpenSignupMenuPos(null);
     setOpenNewRaidMenuPos(null);
     setOpenCalendarActionRaidId(null);
     setOpenCalendarActionPos(null);
   };
+
+  async function handleCharSetMain(id: string) {
+    await fetch(`/api/user/characters/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ isMain: true }),
+    });
+    closeAllMenus();
+    router.refresh();
+  }
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -391,51 +410,104 @@ export function DashboardClient({
           <h2 id="my-stats-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('myStats')}
           </h2>
+          <button
+            type="button"
+            onClick={() => profileCharactersRef.current?.openAdd()}
+            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+          >
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            {tProfile('addCharacter')}
+          </button>
         </div>
         {characters.length === 0 ? (
           <p className="px-5 py-4 text-muted-foreground text-sm">{t('noCharacters')}</p>
         ) : (
           <div className="divide-y divide-border">
-            {characters.map((c) => (
-              <div key={c.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors">
-                <div className="flex shrink-0 items-center justify-center w-5 h-5">
-                  <CharacterMainStar
-                    isMain={!!c.isMain}
-                    titleMain={tProfile('mainLabel')}
-                    titleAlt={tProfile('altLabel')}
-                    sizePx={14}
-                  />
+            {characters.map((c) => {
+              const menuOpen = openCharMenuId === c.id;
+              return (
+                <div key={c.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors">
+                  <div className="flex shrink-0 items-center justify-center w-5 h-5">
+                    <CharacterMainStar
+                      isMain={!!c.isMain}
+                      titleMain={tProfile('mainLabel')}
+                      titleAlt={tProfile('altLabel')}
+                      sizePx={14}
+                    />
+                  </div>
+                  <div className="flex shrink-0 items-center justify-center">
+                    {c.classId ? <ClassIcon classId={c.classId} size={20} title={c.mainSpec} /> : null}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <CharacterSpecIconsInline
+                      mainSpec={c.mainSpec}
+                      offSpec={c.offSpec}
+                      size={18}
+                      slashClassName="hidden"
+                      offSpecIconClassName="opacity-70"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                    <span className="font-medium text-sm text-foreground truncate" title={c.name}>{c.name}</span>
+                    {c.hasBattlenet ? <BattlenetLogo size={14} title={tProfile('bnetLinkedBadgeTitle')} /> : null}
+                    <CharacterGearscoreBadge
+                      characterId={c.id}
+                      hasBattlenet={c.hasBattlenet}
+                      gearScore={c.gearScore}
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground hidden sm:block shrink-0 truncate max-w-[110px]" title={c.guildName ?? undefined}>{c.guildName ?? '–'}</span>
+                  <span className="text-xs text-muted-foreground tabular-nums shrink-0" title={t('participatedRaids')}>
+                    {c.participatedRaids}× Raids
+                  </span>
+                  <button
+                    type="button"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                    aria-label={tProfile('characterMenu')}
+                    aria-expanded={menuOpen}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const pos = openMenuAtButton(e.currentTarget);
+                      setOpenCharMenuPos(pos);
+                      setOpenCharMenuId(menuOpen ? null : c.id);
+                      setOpenSignupMenuKey(null);
+                      setOpenSignupMenuPos(null);
+                      setOpenNewRaidMenuPos(null);
+                      setOpenCalendarActionRaidId(null);
+                      setOpenCalendarActionPos(null);
+                    }}
+                  >
+                    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                  </button>
                 </div>
-                <div className="flex shrink-0 items-center justify-center">
-                  {c.classId ? <ClassIcon classId={c.classId} size={20} title={c.mainSpec} /> : null}
-                </div>
-                <div className="flex shrink-0 items-center gap-0.5">
-                  <CharacterSpecIconsInline
-                    mainSpec={c.mainSpec}
-                    offSpec={c.offSpec}
-                    size={18}
-                    slashClassName="hidden"
-                    offSpecIconClassName="opacity-70"
-                  />
-                </div>
-                <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                  <span className="font-medium text-sm text-foreground truncate" title={c.name}>{c.name}</span>
-                  {c.hasBattlenet ? <BattlenetLogo size={14} title={tProfile('bnetLinkedBadgeTitle')} /> : null}
-                  <CharacterGearscoreBadge
-                    characterId={c.id}
-                    hasBattlenet={c.hasBattlenet}
-                    gearScore={c.gearScore}
-                  />
-                </div>
-                <span className="text-xs text-muted-foreground hidden sm:block shrink-0 truncate max-w-[110px]" title={c.guildName ?? undefined}>{c.guildName ?? '–'}</span>
-                <div className="flex items-center gap-3 text-xs text-muted-foreground tabular-nums shrink-0">
-                  <span title={t('participatedRaids')}>{c.participatedRaids}×</span>
-                  <span title={t('lootReceived')} className="hidden xs:block">{c.lootCount} Loot</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
+        <ProfileCharacters
+          ref={profileCharactersRef}
+          initialData={characters.map((c): ProfileCharacterRow => ({
+            id: c.id,
+            name: c.name,
+            guildId: c.guildId,
+            guildName: c.guildName,
+            gearScore: c.gearScore,
+            mainSpec: c.mainSpec,
+            offSpec: c.offSpec,
+            isMain: c.isMain,
+            classId: c.classId,
+            hasBattlenet: c.hasBattlenet,
+            battlenetRealmSlug: c.battlenetRealmSlug,
+          }))}
+          guilds={guilds.map((g): ProfileGuildOption => ({
+            id: g.id,
+            name: g.name,
+            battlenetRealmId: g.battlenetRealmId,
+          }))}
+          modalOnly={true}
+        />
       </section>
 
       <section aria-labelledby="my-signups-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
@@ -571,6 +643,59 @@ export function DashboardClient({
           </div>
         )}
       </section>
+
+      {openCharMenuId && openCharMenuPos
+        ? createPortal(
+            <div
+              style={{ position: 'fixed', top: openCharMenuPos.top, left: openCharMenuPos.left, zIndex: 1000 }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              {(() => {
+                const char = characters.find((x) => x.id === openCharMenuId);
+                if (!char) return null;
+                const canSetMain = !!char.guildId && !char.isMain;
+                return (
+                  <div className="w-44 rounded-xl border border-border bg-popover shadow-lg overflow-hidden">
+                    <div className="px-1 py-1">
+                      {canSetMain && (
+                        <button
+                          type="button"
+                          className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                          onClick={() => void handleCharSetMain(char.id)}
+                        >
+                          {tProfile('setAsMain')}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                        onClick={() => {
+                          profileCharactersRef.current?.openEdit({
+                            id: char.id,
+                            name: char.name,
+                            guildId: char.guildId,
+                            guildName: char.guildName,
+                            gearScore: char.gearScore,
+                            mainSpec: char.mainSpec,
+                            offSpec: char.offSpec,
+                            isMain: char.isMain,
+                            classId: char.classId,
+                            hasBattlenet: char.hasBattlenet,
+                            battlenetRealmSlug: char.battlenetRealmSlug,
+                          });
+                          closeAllMenus();
+                        }}
+                      >
+                        {tProfile('editCharacter')}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>,
+            document.body
+          )
+        : null}
 
       {openSignupMenuKey && openSignupMenuPos
         ? createPortal(

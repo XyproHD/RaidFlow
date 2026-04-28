@@ -111,6 +111,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
         armoryUrl,
         realmLabel,
         canManage,
+        battlenetRealmId: g.battlenetRealmId ?? null,
       };
     });
 
@@ -145,6 +146,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
     const dashboardCharacters: DashboardCharacter[] = chars.map((c) => ({
       id: c.id,
       name: c.name,
+      guildId: c.guildId ?? null,
       guildName: c.guild?.name ?? null,
       hasBattlenet: !!c.battlenetProfile?.battlenetCharacterId,
       gearScore: c.gearScore ?? null,
@@ -154,6 +156,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       isMain: !!c.isMain,
       participatedRaids: completionCountByChar.get(c.id) ?? 0,
       lootCount: lootCountByChar.get(c.id) ?? 0,
+      battlenetRealmSlug: c.battlenetProfile?.realmSlug ?? null,
     }));
 
     const raidIdsInCalendar = raids.map((r) => r.id);

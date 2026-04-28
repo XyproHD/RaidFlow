@@ -49,7 +49,7 @@ export async function PATCH(
       where: { id: raidId },
       data: { status: 'cancelled' },
     });
-    void syncRaidThreadSummary(raidId);
+    await syncRaidThreadSummary(raidId);
     return NextResponse.json({ ok: true, status: 'cancelled' });
   }
 
@@ -61,8 +61,8 @@ export async function PATCH(
       where: { id: raidId },
       data: { status: 'locked' },
     });
-    void syncRaidThreadSummary(raidId);
-    void postRaidLockedThreadNotice(raidId);
+    await syncRaidThreadSummary(raidId);
+    await postRaidLockedThreadNotice(raidId);
     return NextResponse.json({ ok: true, status: 'locked' });
   }
 
@@ -84,6 +84,7 @@ export async function PATCH(
     if (!exec.ok) {
       return NextResponse.json({ error: exec.error }, { status: exec.status });
     }
+    await syncRaidThreadSummary(raidId);
     return NextResponse.json({ ok: true, status: 'announced' });
   }
 
@@ -378,7 +379,7 @@ export async function PATCH(
     });
   }
 
-  void syncRaidThreadSummary(raidId);
+  await syncRaidThreadSummary(raidId);
   return NextResponse.json({
     ok: true,
     resetSignups,
@@ -399,10 +400,23 @@ export async function DELETE(
 
   const raid = await prisma.rfRaid.findFirst({
     where: { id: raidId, guildId },
-    select: { id: true },
+    select: {
+      id: true,
+      discordChannelId: true,
+      discordChannelMessageId: true,
+    },
   });
   if (!raid) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  if (raid.discordChannelId && raid.discordChannelMessageId) {
+    try {
+      const { deleteChannelMessage } = await import('@/lib/discord-guild-api');
+      await deleteChannelMessage(raid.discordChannelId, raid.discordChannelMessageId);
+    } catch (e) {
+      console.error('[DELETE raid] Discord message delete failed:', e);
+    }
   }
 
   await prisma.rfRaid.delete({
