@@ -400,10 +400,23 @@ export async function DELETE(
 
   const raid = await prisma.rfRaid.findFirst({
     where: { id: raidId, guildId },
-    select: { id: true },
+    select: {
+      id: true,
+      discordChannelId: true,
+      discordChannelMessageId: true,
+    },
   });
   if (!raid) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  if (raid.discordChannelId && raid.discordChannelMessageId) {
+    try {
+      const { deleteChannelMessage } = await import('@/lib/discord-guild-api');
+      await deleteChannelMessage(raid.discordChannelId, raid.discordChannelMessageId);
+    } catch (e) {
+      console.error('[DELETE raid] Discord message delete failed:', e);
+    }
   }
 
   await prisma.rfRaid.delete({

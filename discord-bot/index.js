@@ -1643,37 +1643,32 @@ async function handleRaidQuickjoin(interaction, raidId) {
     action: 'quickjoin', discordUserId: interaction.user.id, raidId,
   });
 
-  if (ok) {
-    // syncRaidThreadSummary hat Buttons bereits entsperrt → nochmal sperren bis Nachricht weg ist
-    if (originalComponents.length) await disableRaidPostButtons(raidPostMsg).catch(() => {});
-    await interaction.editReply({ content: `⚡ ${json.message ?? 'Quickjoin erfolgreich!'}` }).catch(() => {});
-    setTimeout(async () => {
-      interaction.deleteReply().catch(() => {});
-      // Buttons nach Ablauf wieder freigeben
-      if (originalComponents.length) await raidPostMsg.edit({ components: originalComponents }).catch(() => {});
-    }, 5000);
-  } else {
-    // Fehler: Buttons sofort entsperren, Nachricht nach 5s löschen
-    if (originalComponents.length) await raidPostMsg.edit({ components: originalComponents }).catch(() => {});
-    await interaction.editReply({ content: raidActionErrorText(json.error) }).catch(() => {});
-    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+  if (raidPostMsg && originalComponents.length) {
+    await raidPostMsg.edit({ components: originalComponents }).catch(() => {});
   }
+
+  const outcome = ok
+    ? `⚡ ${json.message ?? 'Quickjoin erfolgreich!'}`
+    : raidActionErrorText(json.error);
+  await interaction.editReply({ content: '·', components: [] }).catch(() => {});
+  await interaction.followUp({ ephemeral: true, content: outcome }).catch(() => {});
 }
 
 async function handleRaidJoinButton(interaction, raidId, guildId) {
   // Raid-Post merken damit handleSubmitJoin die Buttons sperren/entsperren kann
   raidPostMessages.set(`${interaction.user.id}:${raidId}`, interaction.message);
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
   const { ok, json } = await getDiscordAction({
     action: 'get-chars', discordUserId: interaction.user.id, raidId,
   });
   if (!ok || json.linked === false) {
-    await interaction.reply({ content: raidActionErrorText('NOT_LINKED'), ephemeral: true }).catch(() => {});
+    await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
     return;
   }
   const chars       = Array.isArray(json.characters) ? json.characters : [];
   const emojis      = json.discordEmojis ?? {};
   if (chars.length === 0) {
-    await interaction.reply({ content: raidActionErrorText('NO_CHARACTER'), ephemeral: true }).catch(() => {});
+    await interaction.editReply({ content: raidActionErrorText('NO_CHARACTER') }).catch(() => {});
     return;
   }
   if (chars.length === 1) {
@@ -1684,7 +1679,7 @@ async function handleRaidJoinButton(interaction, raidId, guildId) {
       type: 'normal', forbidReserve: false, onlySignedSpec: false,
     });
     const msg = await buildJoinConfigMessage(raidId, getJoinFlow(interaction.user.id, raidId));
-    await interaction.reply(msg).catch(() => {});
+    await interaction.editReply({ content: msg.content, components: msg.components }).catch(() => {});
     return;
   }
   // Mehrere Chars → Auswahl-Menü (keine Vorauswahl, emojis im State merken für späteren Step)
@@ -1701,10 +1696,9 @@ async function handleRaidJoinButton(interaction, raidId, guildId) {
       value:       c.id,
       description: c.isMain ? 'Hauptcharakter' : 'Twink',
     })));
-  await interaction.reply({
+  await interaction.editReply({
     content:    '**Welchen Charakter möchtest du anmelden?**',
     components: [new ActionRowBuilder().addComponents(select)],
-    ephemeral:  true,
   }).catch(() => {});
 }
 
@@ -1724,23 +1718,24 @@ function loadEditFlowFromSignup(userId, raidId, signup, emojis) {
 async function handleRaidEditButton(interaction, raidId) {
   // Raid-Post merken damit handleSubmitEdit die Buttons sperren/entsperren kann
   raidPostMessages.set(`${interaction.user.id}:${raidId}`, interaction.message);
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
   const { ok, json } = await getDiscordAction({
     action: 'get-signup', discordUserId: interaction.user.id, raidId,
   });
   if (!ok || json.linked === false) {
-    await interaction.reply({ content: raidActionErrorText('NOT_LINKED'), ephemeral: true }).catch(() => {});
+    await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
     return;
   }
   const signups = Array.isArray(json.signups) ? json.signups : [];
   if (signups.length === 0) {
-    await interaction.reply({ content: '⚠️ Du hast keine aktive Anmeldung zum Bearbeiten.', ephemeral: true }).catch(() => {});
+    await interaction.editReply({ content: '⚠️ Du hast keine aktive Anmeldung zum Bearbeiten.' }).catch(() => {});
     return;
   }
   const emojis = json.discordEmojis ?? {};
   if (signups.length === 1) {
     loadEditFlowFromSignup(interaction.user.id, raidId, signups[0], emojis);
     const msg = await buildEditConfigMessage(raidId, getEditFlow(interaction.user.id, raidId));
-    await interaction.reply(msg).catch(() => {});
+    await interaction.editReply({ content: msg.content, components: msg.components }).catch(() => {});
     return;
   }
   // Mehrere Anmeldungen → Charakter-Auswahl
@@ -1755,10 +1750,9 @@ async function handleRaidEditButton(interaction, raidId) {
       value:       s.id,
       description: s.type === 'reserve' ? 'Reserve' : 'Normal',
     })));
-  await interaction.reply({
+  await interaction.editReply({
     content:    '**Welche Anmeldung möchtest du bearbeiten?**',
     components: [new ActionRowBuilder().addComponents(select)],
-    ephemeral:  true,
   }).catch(() => {});
 }
 
@@ -1809,6 +1803,7 @@ async function handleRaidUnregButton(interaction, raidId) {
     return;
   }
   // Mehrere Anmeldungen → Auswahl anbieten
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
   const { StringSelectMenuBuilder, ActionRowBuilder } = await import('discord.js');
   const options = [
     { label: 'Alle Anmeldungen abmelden', value: 'alle', description: `${signups.length} Anmeldungen` },
@@ -1822,10 +1817,9 @@ async function handleRaidUnregButton(interaction, raidId) {
     .setCustomId(`rf:selunreg:${raidNoDash}`)
     .setPlaceholder('Welche Anmeldung beenden?')
     .addOptions(options);
-  await interaction.reply({
+  await interaction.editReply({
     content:    '**Welche Anmeldung möchtest du beenden?**',
     components: [new ActionRowBuilder().addComponents(select)],
-    ephemeral:  true,
   }).catch(() => {});
 }
 
@@ -1983,27 +1977,23 @@ async function handleSubmitJoin(interaction, raidId, charId) {
     onlySignedSpec: flow.onlySignedSpec ?? false,
   });
   if (!ok) {
-    // Fehler: Buttons sofort entsperren, Formular mit Hinweis anzeigen
     if (raidPostMsg && raidPostComponents.length) {
       await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
     }
-    const errMsg = await buildJoinConfigMessage(raidId, flow, raidActionErrorText(json.error));
-    await interaction.editReply({ ...errMsg, components: errMsg.components }).catch(() => {});
+    await interaction.editReply({ content: '·', components: [] }).catch(() => {});
+    await interaction.followUp({ ephemeral: true, content: raidActionErrorText(json.error) }).catch(() => {});
     return;
   }
   clearJoinFlow(interaction.user.id, raidId);
   raidPostMessages.delete(`${interaction.user.id}:${raidId}`);
-  // Erfolg: syncRaidThreadSummary hat Buttons entsperrt → nochmal sperren bis Nachricht weg
   if (raidPostMsg && raidPostComponents.length) {
-    await disableRaidPostButtons(raidPostMsg).catch(() => {});
+    await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
   }
-  await interaction.editReply({ content: `✅ ${json.message ?? 'Anmeldung erfolgreich!'}`, components: [] }).catch(() => {});
-  setTimeout(async () => {
-    interaction.deleteReply().catch(() => {});
-    if (raidPostMsg && raidPostComponents.length) {
-      await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
-    }
-  }, 5000);
+  await interaction.editReply({ content: '·', components: [] }).catch(() => {});
+  await interaction.followUp({
+    ephemeral: true,
+    content:   `✅ ${json.message ?? 'Anmeldung erfolgreich!'}`,
+  }).catch(() => {});
 }
 
 async function handleSubmitEdit(interaction, raidId) {
@@ -2034,27 +2024,23 @@ async function handleSubmitEdit(interaction, raidId) {
     onlySignedSpec: state.onlySignedSpec ?? false,
   });
   if (!ok) {
-    // Fehler: Buttons sofort entsperren, Formular mit Hinweis anzeigen
     if (raidPostMsg && raidPostComponents.length) {
       await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
     }
-    const errMsg = await buildEditConfigMessage(raidId, state, raidActionErrorText(json.error));
-    await interaction.editReply({ ...errMsg, components: errMsg.components }).catch(() => {});
+    await interaction.editReply({ content: '·', components: [] }).catch(() => {});
+    await interaction.followUp({ ephemeral: true, content: raidActionErrorText(json.error) }).catch(() => {});
     return;
   }
   clearEditFlow(interaction.user.id, raidId);
   raidPostMessages.delete(`${interaction.user.id}:${raidId}`);
-  // Erfolg: syncRaidThreadSummary hat Buttons entsperrt → nochmal sperren bis Nachricht weg
   if (raidPostMsg && raidPostComponents.length) {
-    await disableRaidPostButtons(raidPostMsg).catch(() => {});
+    await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
   }
-  await interaction.editReply({ content: `✅ ${json.message ?? 'Anmeldung aktualisiert!'}`, components: [] }).catch(() => {});
-  setTimeout(async () => {
-    interaction.deleteReply().catch(() => {});
-    if (raidPostMsg && raidPostComponents.length) {
-      await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
-    }
-  }, 5000);
+  await interaction.editReply({ content: '·', components: [] }).catch(() => {});
+  await interaction.followUp({
+    ephemeral: true,
+    content:   `✅ ${json.message ?? 'Anmeldung aktualisiert!'}`,
+  }).catch(() => {});
 }
 
 // --- Notiz-Modal (Join-Flow) -------------------------------------------------
@@ -2111,10 +2097,11 @@ async function handleRaidUnregModal(interaction, raidId) {
     action: 'unregister', discordUserId: interaction.user.id, raidId, reason,
     ...(signupId ? { signupId } : {}),
   });
-  await interaction.editReply({
-    content: ok ? `✅ ${json.message ?? 'Abmeldung erfolgreich.'}` : raidActionErrorText(json.error),
-  }).catch(() => {});
-  setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+  const outcome = ok
+    ? `✅ ${json.message ?? 'Abmeldung erfolgreich.'}`
+    : raidActionErrorText(json.error);
+  await interaction.editReply({ content: '·', components: [] }).catch(() => {});
+  await interaction.followUp({ ephemeral: true, content: outcome }).catch(() => {});
 }
 
 async function handleJoinNoteModal(interaction, raidId) {

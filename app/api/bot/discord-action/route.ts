@@ -8,7 +8,7 @@ import {
   validateSignedSpecForCharacter,
 } from '@/lib/raid-self-signup-mutation';
 import { normalizeSignupType, normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
-import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
+import { postSignupChangeThreadNotice, syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 import { getAppConfig } from '@/lib/app-config';
 
 /**
@@ -172,13 +172,13 @@ export async function POST(request: NextRequest) {
     const phase = computeRaidSignupPhase(raid);
     const main  = await prisma.rfCharacter.findFirst({
       where:   { userId: user.id, guildId: raid.guildId, isMain: true },
-      select:  { id: true, mainSpec: true },
+      select:  { id: true, name: true, mainSpec: true },
       orderBy: { updatedAt: 'desc' },
     });
     const fallback = !main
       ? await prisma.rfCharacter.findFirst({
           where:   { userId: user.id, guildId: raid.guildId },
-          select:  { id: true, mainSpec: true },
+          select:  { id: true, name: true, mainSpec: true },
           orderBy: { updatedAt: 'desc' },
         })
       : null;
@@ -207,7 +207,14 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await syncRaidThreadSummary(raidId);
+    const pickedType = phase === 'reserve_only' ? 'reserve' : 'normal';
+    await syncRaidThreadSummary(raidId, { embedOnly: true });
+    await postSignupChangeThreadNotice(raidId, 'signup', {
+      characterName: picked.name,
+      signedSpec:    picked.mainSpec,
+      type:          pickedType,
+      punctuality:   'on_time',
+    });
     return NextResponse.json({ ok: true, message: 'Quickjoin erfolgreich!' });
   }
 
@@ -243,7 +250,7 @@ export async function POST(request: NextRequest) {
 
     const char = await prisma.rfCharacter.findFirst({
       where:  { id: characterId, userId: user.id, guildId: raid.guildId },
-      select: { id: true, mainSpec: true, offSpec: true },
+      select: { id: true, name: true, mainSpec: true, offSpec: true },
     });
     if (!char) {
       return NextResponse.json({ error: 'Character not found' }, { status: 404 });
@@ -280,7 +287,14 @@ export async function POST(request: NextRequest) {
       note:           noteRaw,
     });
 
-    await syncRaidThreadSummary(raidId);
+    await syncRaidThreadSummary(raidId, { embedOnly: true });
+    await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
+      characterName: char.name,
+      signedSpec:    effectiveSpec,
+      type:          typeNorm,
+      punctuality,
+      note:          noteRaw || null,
+    });
     return NextResponse.json({
       ok: true,
       isCreate,
@@ -303,17 +317,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const deleted = await prisma.rfRaidSignup.deleteMany({
-      where: {
-        raidId,
-        userId: user.id,
-        ...(signupIdParam ? { id: signupIdParam } : {}),
-      },
+    const whereUnreg = {
+      raidId,
+      userId: user.id,
+      ...(signupIdParam ? { id: signupIdParam } : {}),
+    };
+    const removedRows = await prisma.rfRaidSignup.findMany({
+      where:   whereUnreg,
+      include: { character: { select: { name: true } } },
     });
 
-    if (deleted.count === 0) {
+    if (removedRows.length === 0) {
       return NextResponse.json({ error: 'NOT_SIGNED_UP', message: 'Keine Anmeldung gefunden.' }, { status: 404 });
     }
+
+    await prisma.rfRaidSignup.deleteMany({ where: whereUnreg });
 
     if (reason) {
       await prisma.rfAuditLog.create({
@@ -329,7 +347,15 @@ export async function POST(request: NextRequest) {
       }).catch(() => { /* Audit-Fehler sind nicht kritisch */ });
     }
 
-    await syncRaidThreadSummary(raidId);
+    await syncRaidThreadSummary(raidId, { embedOnly: true });
+    for (const row of removedRows) {
+      await postSignupChangeThreadNotice(raidId, 'unsignup', {
+        characterName: row.character?.name ?? null,
+        signedSpec:    row.signedSpec,
+        type:          row.type,
+        punctuality:   row.punctuality,
+      });
+    }
     return NextResponse.json({ ok: true, message: 'Abmeldung erfolgreich.' });
   }
 

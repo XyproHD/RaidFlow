@@ -52,6 +52,15 @@ async function loadRaidForSync(raidId: string) {
 // Kern-Sync
 // ---------------------------------------------------------------------------
 
+export type SyncRaidThreadSummaryOptions = {
+  /**
+   * Nur das Embed patchen — ohne `components` im PATCH, damit bestehende Buttons
+   * (z. B. während Discord-Interaktion kurz deaktiviert) nicht von der API
+   * zurückgesetzt werden.
+   */
+  embedOnly?: boolean;
+};
+
 /**
  * Erstellt oder aktualisiert den Embed-Post im Discord-Channel.
  *
@@ -59,7 +68,10 @@ async function loadRaidForSync(raidId: string) {
  * - Kein discordChannelMessageId → neue Nachricht + Thread erstellen
  * - Vorhandenes discordChannelMessageId → Nachricht patchen
  */
-export async function syncRaidThreadSummary(raidId: string): Promise<void> {
+export async function syncRaidThreadSummary(
+  raidId: string,
+  opts?: SyncRaidThreadSummaryOptions,
+): Promise<void> {
   try {
     const raid = await loadRaidForSync(raidId);
     if (!raid?.discordChannelId) return;
@@ -122,10 +134,13 @@ export async function syncRaidThreadSummary(raidId: string): Promise<void> {
     // --- Nachricht bearbeiten ---
     if (raid.discordChannelMessageId) {
       try {
-        await editChannelMessageFull(raid.discordChannelId, raid.discordChannelMessageId, {
-          embeds:     [embed],
-          components,
-        });
+        await editChannelMessageFull(
+          raid.discordChannelId,
+          raid.discordChannelMessageId,
+          opts?.embedOnly
+            ? { embeds: [embed] }
+            : { embeds: [embed], components },
+        );
         // Thread nachholen wenn er fehlt (z. B. Ersterstellung fehlgeschlagen)
         if (!raid.discordThreadId) {
           try {
@@ -200,8 +215,8 @@ export interface SignupChangeDetails {
 /**
  * Postet eine kurze Protokoll-Nachricht in den Raid-Thread wenn sich ein Spieler
  * anmeldet, abmeldet oder seine Anmeldung bearbeitet.
- * Nur aktiv wenn Anmeldungen öffentlich sind (signupVisibility = public)
- * oder der Raid bereits angekündigt/abgeschlossen ist.
+ * Protokoll wird gepostet, solange der Raid nicht abgesagt ist und ein Thread existiert
+ * (unabhängig von signupVisibility — der Thread ist die Raid-Diskussion).
  */
 export async function postSignupChangeThreadNotice(
   raidId:  string,
@@ -211,15 +226,10 @@ export async function postSignupChangeThreadNotice(
   try {
     const raid = await prisma.rfRaid.findUnique({
       where:  { id: raidId },
-      select: { discordThreadId: true, signupVisibility: true, status: true },
+      select: { discordThreadId: true, status: true },
     });
     if (!raid?.discordThreadId) return;
-
-    const isPublic =
-      raid.signupVisibility === 'public' ||
-      raid.status === 'announced' ||
-      raid.status === 'locked';
-    if (!isPublic) return;
+    if (raid.status === 'cancelled') return;
 
     const { createChannelMessage } = await import('@/lib/discord-guild-api');
 
