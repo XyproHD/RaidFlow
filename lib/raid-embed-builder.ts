@@ -73,6 +73,8 @@ export type RaidEmbedInput = {
   signups: RaidEmbedSignup[];
   announcedGroupsJson?: unknown;
   discordEmojis?: Record<string, string>;
+  /** Öffentliche Raid-Notiz (rf_raid.note), nicht Planer-HTML */
+  publicNote?: string | null;
   appUrl: string;
   locale?: string;
 };
@@ -149,6 +151,23 @@ function parseStoredGroups(json: unknown): StoredAnnouncedGroups | null {
     groups: d.groups as AnnouncedGroupPayload[],
     reserveOrder: Array.isArray(d.reserveOrder) ? d.reserveOrder as string[] : [],
   };
+}
+
+/** Raid-Notiz fürs Embed: HTML-Artefakte entfernen, Länge begrenzen. */
+function plainTextForDiscord(raw: string, maxLen: number): string {
+  let t = raw
+    .replace(/\r\n/g, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .trim();
+  if (t.length > maxLen) t = `${t.slice(0, maxLen - 1)}…`;
+  return t;
 }
 
 function truncateLines(lines: string[], maxChars = 1000): string {
@@ -273,6 +292,14 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
   const dashUrl = `${base}/${locale}/dashboard`;
   const raidUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}`;
   const planUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}/plan`;
+  const linksMarkdown = `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl})`;
+
+  const publicNotePlain = input.publicNote?.trim()
+    ? plainTextForDiscord(input.publicNote.trim(), 3900)
+    : '';
+  const description = publicNotePlain
+    ? `📌 **Öffentliche Notiz**\n${publicNotePlain}`.slice(0, 4096)
+    : undefined;
 
   // Zählung & Rollen-Verteilung (früh berechnet, für Zusammenfassung + Spielerliste)
   const mainSignups    = signups.filter(s => s.type !== 'reserve' && s.type !== 'declined');
@@ -291,9 +318,6 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     const role = spec ? roleFromSpecDisplayName(spec) : null;
     (byRole[role ?? '?'] ??= []).push(s);
   }
-
-  // --- Description: Links ---
-  const description = `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl})`;
 
   // --- Stammdaten: zwei parallele Inline-Felder ---
   const labelCol = [
@@ -430,7 +454,13 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     fields.push({ name: 'Reserve (0)', value: '*Keine Reserve*', inline: false });
   }
 
-  return { title, description, color, fields };
+  fields.push({
+    name:   '🔗',
+    value:  linksMarkdown.slice(0, 1024),
+    inline: false,
+  });
+
+  return { title, ...(description ? { description } : {}), color, fields };
 }
 
 // ---------------------------------------------------------------------------

@@ -153,7 +153,6 @@ export async function POST(
     signedSpec:    signedSpecRaw || null,
     type:          typeNorm,
     punctuality,
-    note,
   });
   return NextResponse.json({ signup, signupPhase: phase }, { status: isCreate ? 201 : 200 });
 }

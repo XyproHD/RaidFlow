@@ -293,7 +293,6 @@ export async function POST(request: NextRequest) {
       signedSpec:    effectiveSpec,
       type:          typeNorm,
       punctuality,
-      note:          noteRaw || null,
     });
     return NextResponse.json({
       ok: true,

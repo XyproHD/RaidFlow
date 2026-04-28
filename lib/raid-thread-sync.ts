@@ -100,6 +100,7 @@ export async function syncRaidThreadSummary(
       raidId:             raid.id,
       guildId:            raid.guildId,
       raidName:           raid.name,
+      publicNote:         raid.note,
       dungeonNames,
       scheduledAt:        raid.scheduledAt,
       signupUntil:        raid.signupUntil,
@@ -209,7 +210,6 @@ export interface SignupChangeDetails {
   signedSpec:    string | null;
   type:          string;
   punctuality?:  string;
-  note?:         string | null;
 }
 
 /**
@@ -241,15 +241,14 @@ export async function postSignupChangeThreadNotice(
     const puncText = details.punctuality === 'tight' ? ' ⏳ Wird knapp'
                    : details.punctuality === 'late'  ? ' 🕐 Kommt später'
                    : '';
-    const noteText = details.note ? `\n> ${details.note}` : '';
 
     let content: string;
     if (action === 'signup') {
-      content = `✍️ **${charName}** hat sich angemeldet${specText}${typeText}${puncText}${noteText}`;
+      content = `✍️ **${charName}** hat sich angemeldet${specText}${typeText}${puncText}`;
     } else if (action === 'unsignup') {
       content = `🚪 **${charName}** hat sich abgemeldet`;
     } else {
-      content = `✏️ **${charName}** hat die Anmeldung bearbeitet${specText}${typeText}${puncText}${noteText}`;
+      content = `✏️ **${charName}** hat die Anmeldung bearbeitet${specText}${typeText}${puncText}`;
     }
 
     await createChannelMessage(raid.discordThreadId, content.slice(0, 2000));
