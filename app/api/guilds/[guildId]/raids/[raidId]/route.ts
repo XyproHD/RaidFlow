@@ -49,7 +49,7 @@ export async function PATCH(
       where: { id: raidId },
       data: { status: 'cancelled' },
     });
-    void syncRaidThreadSummary(raidId);
+    await syncRaidThreadSummary(raidId);
     return NextResponse.json({ ok: true, status: 'cancelled' });
   }
 
@@ -61,8 +61,8 @@ export async function PATCH(
       where: { id: raidId },
       data: { status: 'locked' },
     });
-    void syncRaidThreadSummary(raidId);
-    void postRaidLockedThreadNotice(raidId);
+    await syncRaidThreadSummary(raidId);
+    await postRaidLockedThreadNotice(raidId);
     return NextResponse.json({ ok: true, status: 'locked' });
   }
 
@@ -84,7 +84,7 @@ export async function PATCH(
     if (!exec.ok) {
       return NextResponse.json({ error: exec.error }, { status: exec.status });
     }
-    void syncRaidThreadSummary(raidId);
+    await syncRaidThreadSummary(raidId);
     return NextResponse.json({ ok: true, status: 'announced' });
   }
 
@@ -379,7 +379,7 @@ export async function PATCH(
     });
   }
 
-  void syncRaidThreadSummary(raidId);
+  await syncRaidThreadSummary(raidId);
   return NextResponse.json({
     ok: true,
     resetSignups,

@@ -1631,6 +1631,20 @@ async function disableRaidPostButtons(message) {
  */
 const raidPostMessages = new Map();
 
+/** Ephemerale Bot-Rückmeldungen nach Abschluss kurz anzeigen, dann entfernen. */
+const RAID_EPHEMERAL_TTL_MS = 3000;
+
+function scheduleDeleteRaidOutcomeMessages(interaction, followUpMessage) {
+  setTimeout(() => {
+    interaction.deleteReply().catch(() => {});
+    if (followUpMessage?.delete) followUpMessage.delete().catch(() => {});
+  }, RAID_EPHEMERAL_TTL_MS);
+}
+
+function scheduleDeleteSingleEphemeralReply(interaction) {
+  setTimeout(() => interaction.deleteReply().catch(() => {}), RAID_EPHEMERAL_TTL_MS);
+}
+
 async function handleRaidQuickjoin(interaction, raidId) {
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
   const raidPostMsg        = interaction.message;
@@ -1651,7 +1665,8 @@ async function handleRaidQuickjoin(interaction, raidId) {
     ? `⚡ ${json.message ?? 'Quickjoin erfolgreich!'}`
     : raidActionErrorText(json.error);
   await interaction.editReply({ content: '·', components: [] }).catch(() => {});
-  await interaction.followUp({ ephemeral: true, content: outcome }).catch(() => {});
+  const follow = await interaction.followUp({ ephemeral: true, content: outcome, fetchReply: true }).catch(() => null);
+  scheduleDeleteRaidOutcomeMessages(interaction, follow);
 }
 
 async function handleRaidJoinButton(interaction, raidId, guildId) {
@@ -1663,12 +1678,14 @@ async function handleRaidJoinButton(interaction, raidId, guildId) {
   });
   if (!ok || json.linked === false) {
     await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
   const chars       = Array.isArray(json.characters) ? json.characters : [];
   const emojis      = json.discordEmojis ?? {};
   if (chars.length === 0) {
     await interaction.editReply({ content: raidActionErrorText('NO_CHARACTER') }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
   if (chars.length === 1) {
@@ -1724,11 +1741,13 @@ async function handleRaidEditButton(interaction, raidId) {
   });
   if (!ok || json.linked === false) {
     await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
   const signups = Array.isArray(json.signups) ? json.signups : [];
   if (signups.length === 0) {
     await interaction.editReply({ content: '⚠️ Du hast keine aktive Anmeldung zum Bearbeiten.' }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
   const emojis = json.discordEmojis ?? {};
@@ -1789,6 +1808,7 @@ async function handleRaidUnregButton(interaction, raidId) {
   });
   if (!ok || json.linked === false) {
     await interaction.reply({ content: raidActionErrorText('NOT_LINKED'), ephemeral: true }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
   const signups    = Array.isArray(json.signups) ? json.signups : [];
@@ -1796,6 +1816,7 @@ async function handleRaidUnregButton(interaction, raidId) {
 
   if (signups.length === 0) {
     await interaction.reply({ content: '⚠️ Du hast keine aktive Anmeldung.', ephemeral: true }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
   if (signups.length === 1) {
@@ -1950,6 +1971,7 @@ async function handleSubmitJoin(interaction, raidId, charId) {
   const flow = getJoinFlow(interaction.user.id, raidId);
   if (!flow?.selectedSpec) {
     await interaction.reply({ content: '⚠️ Bitte zuerst eine Spec auswählen.', ephemeral: true }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
   // Bei "Später" ohne Notiz: Formular behalten + Hinweis
@@ -1981,7 +2003,12 @@ async function handleSubmitJoin(interaction, raidId, charId) {
       await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
     }
     await interaction.editReply({ content: '·', components: [] }).catch(() => {});
-    await interaction.followUp({ ephemeral: true, content: raidActionErrorText(json.error) }).catch(() => {});
+    const follow = await interaction.followUp({
+      ephemeral:   true,
+      content:     raidActionErrorText(json.error),
+      fetchReply:  true,
+    }).catch(() => null);
+    scheduleDeleteRaidOutcomeMessages(interaction, follow);
     return;
   }
   clearJoinFlow(interaction.user.id, raidId);
@@ -1990,15 +2017,21 @@ async function handleSubmitJoin(interaction, raidId, charId) {
     await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
   }
   await interaction.editReply({ content: '·', components: [] }).catch(() => {});
-  await interaction.followUp({
-    ephemeral: true,
-    content:   `✅ ${json.message ?? 'Anmeldung erfolgreich!'}`,
-  }).catch(() => {});
+  const followOk = await interaction.followUp({
+    ephemeral:   true,
+    content:     `✅ ${json.message ?? 'Anmeldung erfolgreich!'}`,
+    fetchReply:  true,
+  }).catch(() => null);
+  scheduleDeleteRaidOutcomeMessages(interaction, followOk);
 }
 
 async function handleSubmitEdit(interaction, raidId) {
   const state = getEditFlow(interaction.user.id, raidId);
-  if (!state) { await interaction.reply({ content: '⚠️ Sitzung abgelaufen.', ephemeral: true }).catch(() => {}); return; }
+  if (!state) {
+    await interaction.reply({ content: '⚠️ Sitzung abgelaufen.', ephemeral: true }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
   // Bei "Später" ohne Notiz: Formular behalten + Hinweis
   if (state.selectedPunc === 'late' && !state.existingNote?.trim()) {
     const msg = await buildEditConfigMessage(raidId, state, 'Bei „Später" ist eine kurze Notiz Pflicht. Bitte klicke auf 📝 Notiz bearbeiten.');
@@ -2028,7 +2061,12 @@ async function handleSubmitEdit(interaction, raidId) {
       await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
     }
     await interaction.editReply({ content: '·', components: [] }).catch(() => {});
-    await interaction.followUp({ ephemeral: true, content: raidActionErrorText(json.error) }).catch(() => {});
+    const follow = await interaction.followUp({
+      ephemeral:   true,
+      content:     raidActionErrorText(json.error),
+      fetchReply:  true,
+    }).catch(() => null);
+    scheduleDeleteRaidOutcomeMessages(interaction, follow);
     return;
   }
   clearEditFlow(interaction.user.id, raidId);
@@ -2037,10 +2075,12 @@ async function handleSubmitEdit(interaction, raidId) {
     await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
   }
   await interaction.editReply({ content: '·', components: [] }).catch(() => {});
-  await interaction.followUp({
-    ephemeral: true,
-    content:   `✅ ${json.message ?? 'Anmeldung aktualisiert!'}`,
-  }).catch(() => {});
+  const followOk = await interaction.followUp({
+    ephemeral:   true,
+    content:     `✅ ${json.message ?? 'Anmeldung aktualisiert!'}`,
+    fetchReply:  true,
+  }).catch(() => null);
+  scheduleDeleteRaidOutcomeMessages(interaction, followOk);
 }
 
 // --- Notiz-Modal (Join-Flow) -------------------------------------------------
@@ -2101,7 +2141,8 @@ async function handleRaidUnregModal(interaction, raidId) {
     ? `✅ ${json.message ?? 'Abmeldung erfolgreich.'}`
     : raidActionErrorText(json.error);
   await interaction.editReply({ content: '·', components: [] }).catch(() => {});
-  await interaction.followUp({ ephemeral: true, content: outcome }).catch(() => {});
+  const follow = await interaction.followUp({ ephemeral: true, content: outcome, fetchReply: true }).catch(() => null);
+  scheduleDeleteRaidOutcomeMessages(interaction, follow);
 }
 
 async function handleJoinNoteModal(interaction, raidId) {
@@ -2112,6 +2153,7 @@ async function handleJoinNoteModal(interaction, raidId) {
     content:   `📝 Notiz gespeichert${note ? `: "${note.slice(0, 60)}"` : ' (leer)'}. Klicke auf **✅ Anmelden** um fortzufahren.`,
     ephemeral: true,
   }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
 }
 
 async function handleEditNoteModal(interaction, raidId) {
@@ -2122,6 +2164,7 @@ async function handleEditNoteModal(interaction, raidId) {
     content:   `📝 Notiz gespeichert${note ? `: "${note.slice(0, 60)}"` : ' (leer)'}. Klicke auf **✅ Speichern** um die Änderungen zu übernehmen.`,
     ephemeral: true,
   }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
 }
 
 // =============================================================================
