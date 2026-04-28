@@ -298,7 +298,7 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     ? plainTextForDiscord(input.publicNote.trim(), 3900)
     : '';
   const description = publicNotePlain
-    ? `📌 **Öffentliche Notiz**\n${publicNotePlain}`.slice(0, 4096)
+    ? `ℹ️ ${publicNotePlain}`.slice(0, 4096)
     : undefined;
 
   // Zählung & Rollen-Verteilung (früh berechnet, für Zusammenfassung + Spielerliste)
@@ -394,7 +394,10 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
       });
     }
 
+    // Visueller Trenner (leeres Feld = nativer Abstandshalter)
+    fields.push({ name: '\u200b', value: '\u200b', inline: false });
     // Reserve
+    
     {
       const signupById2 = new Map(signups.map(s => [s.id, s]));
       const resLines = announcedGroups.reserveOrder
@@ -453,6 +456,8 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     fields.push({ name: '\u200b', value: '*Noch keine Anmeldungen.*', inline: false });
     fields.push({ name: 'Reserve (0)', value: '*Keine Reserve*', inline: false });
   }
+  // Visueller Trenner (leeres Feld = nativer Abstandshalter)
+  fields.push({ name: '\u200b', value: '\u200b', inline: false });
 
   fields.push({
     name:   '🔗',
