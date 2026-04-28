@@ -433,6 +433,8 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
         inline: false,
       });
     }
+  // Visueller Trenner (leeres Feld = nativer Abstandshalter)
+  fields.push({ name: '\u200b', value: '\u200b', inline: false });
 
     fields.push({
       name:  `Reserve (${reserveSignups.length})`,
