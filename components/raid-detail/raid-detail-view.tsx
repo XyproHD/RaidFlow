@@ -105,19 +105,35 @@ export type RaidDetailCharacter = {
 
 export type MySignupSerialized = RaidSignupSelfSnapshot;
 
-function myStatusIcon(
-  raidStatus: string,
-  mySignups: MySignupSerialized[]
-): '⌛' | '⚠️' | '✅' | '🪑' | null {
-  if (!mySignups.length) return null;
-  if (raidStatus !== 'locked' && raidStatus !== 'announced') return '⌛';
-  if (mySignups.some((s) => s.setConfirmed)) return '✅';
-  if (mySignups.some((s) => s.leaderPlacement === 'substitute')) return '🪑';
-  return '⚠️';
-}
-
 function signupTypeNorm(v: string) {
   return v === 'main' ? 'normal' : v;
+}
+
+/** Bin da / Unklar / Reserve / Nicht da — Icon nach Pünktlichkeit, Erklärung im title. */
+function signupAttendanceKindMeta(signup: { type: string }, t: (key: string) => string): { sym: string; title: string } {
+  const tn = signupTypeNorm(signup.type);
+  if (tn === 'declined') return { sym: '✕', title: t('signupType_declined') };
+  if (tn === 'uncertain') return { sym: '?', title: t('signupType_uncertain') };
+  if (tn === 'reserve') return { sym: '🪑', title: t('signupType_reserve') };
+  return { sym: '●', title: t('signupType_verfugbar') };
+}
+
+/** Raid-Slot aus Sicht des Spielers: Tooltip Noch nicht geplant | Dabei | Reserve | Absage. */
+function myPlacementStatusMeta(
+  signup: MySignupSerialized,
+  raidStatus: string,
+  t: (key: string) => string
+): { sym: string; title: string } {
+  const tn = signupTypeNorm(signup.type);
+  if (tn === 'declined') return { sym: '✕', title: t('myPlacement_absage') };
+  if (tn === 'reserve') return { sym: '🪑', title: t('myPlacement_reserve') };
+  if (raidStatus === 'locked' || raidStatus === 'announced') {
+    if (signup.leaderPlacement === 'substitute') return { sym: '🪑', title: t('myPlacement_reserve') };
+    if (signup.setConfirmed) return { sym: '✓', title: t('myPlacement_dabei') };
+    return { sym: '○', title: t('myPlacement_nochNicht') };
+  }
+  if (tn === 'uncertain') return { sym: '○', title: t('myPlacement_nochNicht') };
+  return { sym: '✓', title: t('myPlacement_dabei') };
 }
 
 function signupIndicator(
@@ -324,12 +340,7 @@ export function RaidDetailView({
   ]);
 
   const signupState = signupIndicator(raid.signupUntil, raid.status);
-  const myActiveSignups = useMemo(
-    () => mySignups.filter((s) => signupTypeNorm(s.type) !== 'declined'),
-    [mySignups]
-  );
-  const statusIcon = myStatusIcon(raid.status, myActiveSignups);
-  const hasMyActiveSignup = myActiveSignups.length > 0;
+  const hasMySignup = mySignups.length > 0;
 
   async function doCancelRaid() {
     if (!window.confirm(tEdit('cancelConfirm'))) return;
@@ -610,22 +621,22 @@ export function RaidDetailView({
               onClick={() => setShowSignup(true)}
               className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline shrink-0 transition-colors"
             >
-              {hasMyActiveSignup ? t('signupLinkAnother') : t('signupLinkRegister')}
+              {hasMySignup ? t('signupLinkAnother') : t('signupLinkRegister')}
             </button>
           ) : null}
         </div>
         <div className="p-4 space-y-3">
-          {hasMyActiveSignup ? (
+          {hasMySignup ? (
             <div className="overflow-x-auto -mx-1">
-              <table className="min-w-[560px] w-full text-sm">
+              <table className="min-w-[560px] w-full text-sm border-collapse">
                 <tbody>
-                  {[...myActiveSignups]
+                  {[...mySignups]
                     .sort((a, b) => {
                       const ca = characters.find((c) => c.id === a.characterId)?.name ?? '';
                       const cb = characters.find((c) => c.id === b.characterId)?.name ?? '';
                       return ca.localeCompare(cb);
                     })
-                    .map((signup, idx) => {
+                    .map((signup) => {
                       const myChar = signup.characterId
                         ? characters.find((c) => c.id === signup.characterId)
                         : null;
@@ -645,10 +656,12 @@ export function RaidDetailView({
                       const showRowMenu = raid.status === 'open' || raid.status === 'announced';
                       const noteLine = signup.note?.trim() ?? '';
                       const hasNote = noteLine.length > 0;
+                      const attKind = signupAttendanceKindMeta(signup, t);
+                      const placement = myPlacementStatusMeta(signup, raid.status, t);
 
                       return (
                         <Fragment key={signup.id}>
-                          <tr className="border-b border-border hover:bg-muted/15 transition-colors">
+                          <tr className="hover:bg-muted/15 transition-colors">
                             <td className="px-3 py-2.5 align-middle">
                               <div className="inline-flex flex-wrap items-center gap-2 min-w-0">
                                 {role ? <RoleIcon role={role} size={18} /> : null}
@@ -694,7 +707,17 @@ export function RaidDetailView({
                                     gearScore={myChar.gearScore}
                                   />
                                 ) : null}
-                                <CharacterSignupPunctualityMark kind={punct} label={punctLabel} />
+                                <span className="inline-flex items-center gap-1 shrink-0">
+                                  <CharacterSignupPunctualityMark kind={punct} label={punctLabel} />
+                                  <span
+                                    role="img"
+                                    aria-label={attKind.title}
+                                    title={attKind.title}
+                                    className="inline-flex shrink-0 text-sm leading-none cursor-default select-none"
+                                  >
+                                    {attKind.sym}
+                                  </span>
+                                </span>
                                 {hasNote ? (
                                   <button
                                     type="button"
@@ -710,25 +733,16 @@ export function RaidDetailView({
                                 ) : null}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 align-middle w-[min(14rem,28%)]">
-                              <div className="flex flex-wrap items-center gap-2">
-                                {idx === 0 && statusIcon ? (
-                                  <span className="text-base shrink-0" title={tDash('myStatus')}>
-                                    {statusIcon}
-                                  </span>
-                                ) : null}
-                                <span className="text-sm text-foreground">
-                                  {raid.status === 'locked' || raid.status === 'announced' ? (
-                                    signup.leaderPlacement === 'substitute' ? (
-                                      t('mySignupLockedSubstitute')
-                                    ) : signup.setConfirmed ? (
-                                      t('mySignupLockedConfirmed')
-                                    ) : (
-                                      t('mySignupLockedPending')
-                                    )
-                                  ) : (
-                                    signupTypeOpenLabel(t, signup.type)
-                                  )}
+                            <td className="px-3 py-2.5 align-middle w-[min(14rem,32%)]">
+                              <div className="inline-flex flex-wrap items-center gap-1.5 text-sm text-foreground">
+                                <span className="text-muted-foreground shrink-0">{t('myStatusColumnLabel')}</span>
+                                <span
+                                  role="img"
+                                  aria-label={placement.title}
+                                  title={placement.title}
+                                  className="inline-flex shrink-0 text-base leading-none cursor-default select-none"
+                                >
+                                  {placement.sym}
                                 </span>
                               </div>
                             </td>
@@ -753,7 +767,7 @@ export function RaidDetailView({
                             </td>
                           </tr>
                           {myNoteExpandedId === signup.id && hasNote ? (
-                            <tr className="border-b border-border bg-muted/25 last:border-b-0">
+                            <tr className="bg-muted/25">
                               <td
                                 colSpan={3}
                                 className="px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap"
