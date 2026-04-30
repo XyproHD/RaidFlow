@@ -226,17 +226,26 @@ export default async function RaidPlanPage(props: {
   });
   const raidLeaderLabel = leaderChar?.guildDiscordDisplayName?.trim() || discordId;
 
+  const organizerDiscordId = raid.organizerDiscordId?.trim() ?? null;
+  let organizerLabel: string | null = null;
+  if (organizerDiscordId) {
+    const orgUser = await prisma.rfUser.findUnique({
+      where: { discordId: organizerDiscordId },
+      select: { id: true },
+    });
+    if (orgUser) {
+      const orgChar = await prisma.rfCharacter.findFirst({
+        where: { userId: orgUser.id, guildId, guildDiscordDisplayName: { not: null } },
+        select: { guildDiscordDisplayName: true, name: true, isMain: true },
+        orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+      });
+      organizerLabel =
+        orgChar?.guildDiscordDisplayName?.trim() || orgChar?.name?.trim() || null;
+    }
+  }
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <Link
-          href={`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`}
-          className="text-sm text-muted-foreground hover:text-foreground hover:underline shrink-0 sm:ml-auto order-first sm:order-none"
-        >
-          {t('backDashboard')}
-        </Link>
-      </div>
-
       <RaidRosterPlanner
         locale={locale}
         guildId={guildId}
@@ -246,6 +255,7 @@ export default async function RaidPlanPage(props: {
         canEditRaid={canEditRaid}
         guildCharacters={guildCharacters}
         raidLeaderLabel={raidLeaderLabel}
+        organizerLabel={organizerLabel}
         initialRaidLeaderUserId={raid.raidLeaderId ?? null}
         initialLootmasterUserId={raid.lootmasterId ?? null}
         initialPlannerLeaderNotesHtml={raid.plannerLeaderNotesHtml ?? null}

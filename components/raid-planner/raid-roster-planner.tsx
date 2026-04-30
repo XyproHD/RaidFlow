@@ -258,6 +258,13 @@ function typeNorm(v: string) {
   return v === 'main' ? 'normal' : v;
 }
 
+function attendanceRowVariant(s: RosterPlannerSignup): 'default' | 'uncertain' | 'declined' {
+  const tn = typeNorm(s.signupType);
+  if (tn === 'uncertain') return 'uncertain';
+  if (tn === 'declined') return 'declined';
+  return 'default';
+}
+
 function reserveSignupIdsFrom(signups: RosterPlannerSignup[]): string[] {
   return signups.filter((s) => typeNorm(s.signupType) === 'reserve').map((s) => s.id);
 }
@@ -305,6 +312,7 @@ export function RaidRosterPlanner({
   initialSignups,
   guildCharacters,
   raidLeaderLabel,
+  organizerLabel,
   canEditRaid,
   initialRaidLeaderUserId,
   initialLootmasterUserId,
@@ -320,6 +328,8 @@ export function RaidRosterPlanner({
   initialSignups: RosterPlannerSignup[];
   guildCharacters: GuildCharacterOption[];
   raidLeaderLabel: string;
+  /** Anzeige-Name des Organisators (Gilden-Discord-Name); null wenn nicht gesetzt oder nicht auflösbar */
+  organizerLabel: string | null;
   canEditRaid: boolean;
   initialRaidLeaderUserId: string | null;
   initialLootmasterUserId: string | null;
@@ -566,6 +576,15 @@ export function RaidRosterPlanner({
     tight: true,
     late: true,
   });
+  const [attendanceFilter, setAttendanceFilter] = useState<{
+    bin_da: boolean;
+    unklar: boolean;
+    nicht_da: boolean;
+  }>({
+    bin_da: true,
+    unklar: true,
+    nicht_da: true,
+  });
   const [pulseForbidReserveId, setPulseForbidReserveId] = useState<string | null>(null);
 
   const [leaderMenuOpen, setLeaderMenuOpen] = useState(false);
@@ -619,12 +638,6 @@ export function RaidRosterPlanner({
 
   const scheduledAt = useMemo(() => new Date(raid.scheduledAt), [raid.scheduledAt]);
   const scheduledEndAt = raid.scheduledEndAt ? new Date(raid.scheduledEndAt) : null;
-  const dateShort = new Intl.DateTimeFormat(intlLocale, {
-    weekday: 'short',
-    day: '2-digit',
-    month: '2-digit',
-    year: '2-digit',
-  }).format(scheduledAt);
   const raidTermin = formatRaidTerminLine(intlLocale, scheduledAt, scheduledEndAt);
 
   const leaderLootUserIds = useMemo(() => {
@@ -742,6 +755,17 @@ export function RaidRosterPlanner({
     [punctualityFilter]
   );
 
+  const passesAttendanceFilter = useCallback(
+    (s: RosterPlannerSignup) => {
+      const tn = typeNorm(s.signupType);
+      if (tn === 'reserve') return true;
+      if (tn === 'declined') return attendanceFilter.nicht_da;
+      if (tn === 'uncertain') return attendanceFilter.unklar;
+      return attendanceFilter.bin_da;
+    },
+    [attendanceFilter]
+  );
+
   const addCandidates = useMemo(() => {
     const q = addQuery.trim().toLowerCase();
     const all = guildCharacters.filter((c) => !usedCharacterIds.has(c.id));
@@ -774,28 +798,74 @@ export function RaidRosterPlanner({
     return poolIds.filter((id) => {
       const s = byId.get(id);
       if (!s) return false;
-      return passesCharFilters(s) && passesPunctuality(s);
+      return passesCharFilters(s) && passesPunctuality(s) && passesAttendanceFilter(s);
     });
-  }, [poolIds, byId, passesCharFilters, passesPunctuality]);
+  }, [poolIds, byId, passesCharFilters, passesPunctuality, passesAttendanceFilter]);
+
+  const standardPoolIds = useMemo(
+    () =>
+      filteredPoolIds.filter((id) => {
+        const s = byId.get(id);
+        if (!s) return false;
+        const tn = typeNorm(s.signupType);
+        return tn !== 'uncertain' && tn !== 'declined';
+      }),
+    [filteredPoolIds, byId]
+  );
+
+  const uncertainPoolIds = useMemo(
+    () =>
+      filteredPoolIds.filter((id) => {
+        const s = byId.get(id);
+        return !!s && typeNorm(s.signupType) === 'uncertain';
+      }),
+    [filteredPoolIds, byId]
+  );
+
+  const declinedPoolIds = useMemo(
+    () =>
+      filteredPoolIds.filter((id) => {
+        const s = byId.get(id);
+        return !!s && typeNorm(s.signupType) === 'declined';
+      }),
+    [filteredPoolIds, byId]
+  );
 
   const filteredReserveIds = useMemo(() => {
     return reserveOrder.filter((id) => {
       const s = byId.get(id);
       if (!s) return false;
-      return passesCharFilters(s) && passesPunctuality(s);
+      return (
+        passesCharFilters(s) && passesPunctuality(s) && passesAttendanceFilter(s)
+      );
     });
-  }, [reserveOrder, byId, passesCharFilters, passesPunctuality]);
+  }, [reserveOrder, byId, passesCharFilters, passesPunctuality, passesAttendanceFilter]);
 
-  const poolByRole = useMemo(() => {
+  const poolIdsToRoleMap = useCallback((ids: string[]) => {
     const m = new Map<TbcRole, string[]>();
     for (const r of ROLE_ORDER) m.set(r, []);
-    for (const id of filteredPoolIds) {
+    for (const id of ids) {
       const s = byId.get(id);
       if (!s) continue;
       m.get(s.role)?.push(id);
     }
     return m;
-  }, [filteredPoolIds, byId]);
+  }, [byId]);
+
+  const standardPoolByRole = useMemo(
+    () => poolIdsToRoleMap(standardPoolIds),
+    [standardPoolIds, poolIdsToRoleMap]
+  );
+
+  const uncertainPoolByRole = useMemo(
+    () => poolIdsToRoleMap(uncertainPoolIds),
+    [uncertainPoolIds, poolIdsToRoleMap]
+  );
+
+  const declinedPoolByRole = useMemo(
+    () => poolIdsToRoleMap(declinedPoolIds),
+    [declinedPoolIds, poolIdsToRoleMap]
+  );
 
   const reserveByRole = useMemo(() => {
     const m = new Map<TbcRole, string[]>();
@@ -879,6 +949,14 @@ export function RaidRosterPlanner({
     setPunctualityFilter((prev) => {
       const next = { ...prev, [k]: !prev[k] };
       if (!next.on_time && !next.tight && !next.late) return prev;
+      return next;
+    });
+  };
+
+  const toggleAttendance = (k: 'bin_da' | 'unklar' | 'nicht_da') => {
+    setAttendanceFilter((prev) => {
+      const next = { ...prev, [k]: !prev[k] };
+      if (!next.bin_da && !next.unklar && !next.nicht_da) return prev;
       return next;
     });
   };
@@ -1137,6 +1215,7 @@ export function RaidRosterPlanner({
     const punct = punctualityOf(s);
     const punctLabel =
       punct === 'on_time' ? t('punctualityOnTime') : punct === 'tight' ? t('punctualityTight') : t('punctualityLate');
+    const attVariant = attendanceRowVariant(s);
     return (
       <div
         key={`${source}-${s.id}`}
@@ -1144,7 +1223,11 @@ export function RaidRosterPlanner({
         data-planner-row
         data-signup-id={s.id}
         className={cn(
-          'flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background px-2 py-1.5 text-sm cursor-grab active:cursor-grabbing touch-none select-none',
+          'flex flex-wrap items-center gap-2 rounded-lg border bg-background px-2 py-1.5 text-sm cursor-grab active:cursor-grabbing touch-none select-none',
+          attVariant === 'default' && 'border-border',
+          attVariant === 'uncertain' && 'border-red-400/60 dark:border-red-700/55',
+          attVariant === 'declined' &&
+            'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40',
           isDragging && 'opacity-25'
         )}
         onPointerDown={(e) => onRowPointerDown(e, s.id, source)}
@@ -1567,35 +1650,37 @@ export function RaidRosterPlanner({
       `}</style>
       <header
         className={cn(
-          'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b border-border pb-5 transition-opacity duration-200',
+          'rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden transition-opacity duration-200',
           dragActive && 'opacity-35 pointer-events-none'
         )}
       >
-        <div className="min-w-0 space-y-1 flex-1">
-          <p className="text-sm text-muted-foreground">
-            {raid.dungeonLabel} · {raid.guildName} · {dateShort}
-          </p>
-          <div className="flex items-start gap-2">
-            <h1 className="text-2xl font-bold text-foreground tracking-tight min-w-0 flex-1">{raid.name}</h1>
-            <button
-              type="button"
-              className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
-              aria-label={t('raidLeaderMenu')}
-              title={t('raidLeaderMenu')}
-              onClick={(e) => {
-                e.stopPropagation();
-                const pos = openMenuAtButton(e.currentTarget);
-                setLeaderMenuPos(pos);
-                setLeaderMenuOpen((o) => !o);
-              }}
-            >
-              <span className="text-lg leading-none">☰</span>
-            </button>
+        <div className="relative px-4 py-3 sm:px-5 sm:py-4 pr-14 sm:pr-16">
+          <button
+            type="button"
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+            aria-label={t('raidLeaderMenu')}
+            title={t('raidLeaderMenu')}
+            onClick={(e) => {
+              e.stopPropagation();
+              const pos = openMenuAtButton(e.currentTarget);
+              setLeaderMenuPos(pos);
+              setLeaderMenuOpen((o) => !o);
+            }}
+          >
+            <span className="text-lg leading-none">☰</span>
+          </button>
+          <div className="min-w-0 space-y-1.5 pr-1">
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">{raid.name}</h1>
+            <p className="text-sm text-foreground/90">{raid.dungeonLabel}</p>
+            <p className="text-sm text-foreground/90">
+              <span className="text-muted-foreground">{tRoster('metaTermin')}</span>{' '}
+              {raidTermin}
+            </p>
+            <p className="text-sm text-foreground/90">
+              <span className="text-muted-foreground">{tRoster('metaOrganizer')}</span>{' '}
+              {organizerLabel ?? tRoster('organizerUnset')}
+            </p>
           </div>
-          <p className="text-base text-foreground/90">
-            <span className="text-muted-foreground">{t('raidSlotLabel')}:</span> {raidTermin}
-          </p>
-          <p className="text-xs text-muted-foreground">{tRoster('draftHint')}</p>
         </div>
       </header>
 
@@ -2019,10 +2104,10 @@ export function RaidRosterPlanner({
             </div>
             <div className="p-3 space-y-4 max-h-[min(70vh,720px)] overflow-y-auto">
               {ROLE_ORDER.map((role) => {
-                const ids = poolByRole.get(role) ?? [];
+                const ids = standardPoolByRole.get(role) ?? [];
                 if (ids.length === 0) return null;
                 return (
-                  <div key={role}>
+                  <div key={`std-${role}`}>
                     <div className="flex items-center gap-2 mb-2 text-xs font-medium text-muted-foreground">
                       <RoleIcon role={role} size={16} />
                       <span>{role}</span>
@@ -2037,6 +2122,70 @@ export function RaidRosterPlanner({
                   </div>
                 );
               })}
+              {uncertainPoolIds.length > 0 ? (
+                <div
+                  className={cn(
+                    'space-y-3',
+                    standardPoolIds.length > 0 ? 'border-t border-border pt-4' : 'pt-1'
+                  )}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {tRoster('sectionUncertainSignups')}
+                  </p>
+                  {ROLE_ORDER.map((role) => {
+                    const ids = uncertainPoolByRole.get(role) ?? [];
+                    if (ids.length === 0) return null;
+                    return (
+                      <div key={`unc-${role}`}>
+                        <div className="flex items-center gap-2 mb-2 text-xs font-medium text-muted-foreground">
+                          <RoleIcon role={role} size={16} />
+                          <span>{role}</span>
+                        </div>
+                        <div className="space-y-2 pl-1" role="list">
+                          {ids.map((id) => {
+                            const s = byId.get(id);
+                            if (!s) return null;
+                            return renderRow(s, 'pool');
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {declinedPoolIds.length > 0 ? (
+                <div
+                  className={cn(
+                    'space-y-3',
+                    standardPoolIds.length > 0 || uncertainPoolIds.length > 0
+                      ? 'border-t border-border pt-4'
+                      : 'pt-1'
+                  )}
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {tRoster('sectionDeclinedSignups')}
+                  </p>
+                  {ROLE_ORDER.map((role) => {
+                    const ids = declinedPoolByRole.get(role) ?? [];
+                    if (ids.length === 0) return null;
+                    return (
+                      <div key={`dec-${role}`}>
+                        <div className="flex items-center gap-2 mb-2 text-xs font-medium text-muted-foreground">
+                          <RoleIcon role={role} size={16} />
+                          <span>{role}</span>
+                        </div>
+                        <div className="space-y-2 pl-1" role="list">
+                          {ids.map((id) => {
+                            const s = byId.get(id);
+                            if (!s) return null;
+                            return renderRow(s, 'pool');
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
               {filteredPoolIds.length === 0 && poolIds.length > 0 ? (
                 <p className="text-sm text-muted-foreground">{tRoster('poolFilteredEmpty')}</p>
               ) : null}
@@ -2192,6 +2341,38 @@ export function RaidRosterPlanner({
                           : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
                       )}
                       aria-pressed={punctualityFilter[k]}
+                      title={label}
+                    >
+                      <span className="shrink-0" aria-hidden>
+                        {icon}
+                      </span>
+                      <span className="truncate">{label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5 pt-1">
+                <span className="text-muted-foreground text-xs">{tRoster('filterAttendance')}</span>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      ['bin_da', tRoster('filterAttendanceBinDa'), '✅'] as const,
+                      ['unklar', tRoster('filterAttendanceUnklar'), '❔'] as const,
+                      ['nicht_da', tRoster('filterAttendanceNichtDa'), '🚫'] as const,
+                    ] as const
+                  ).map(([k, label, icon]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => toggleAttendance(k)}
+                      className={cn(
+                        'rounded-lg border px-2 py-1.5 text-xs sm:text-sm flex items-center gap-1.5 justify-start min-w-0',
+                        attendanceFilter[k]
+                          ? 'border-primary/50 bg-primary/10 text-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                      )}
+                      aria-pressed={attendanceFilter[k]}
                       title={label}
                     >
                       <span className="shrink-0" aria-hidden>
@@ -2493,85 +2674,97 @@ export function RaidRosterPlanner({
         : null}
 
       {dragSession && dragPoint && draggedSignup
-        ? createPortal(
-            <div
-              className="pointer-events-none fixed z-[1100] rounded-lg border border-primary bg-background px-2 py-1.5 text-sm shadow-xl flex flex-wrap items-center gap-2"
-              style={{
-                left: dragPoint.clientX - dragSession.offsetX,
-                top: dragPoint.clientY - dragSession.offsetY,
-                width: dragSession.originRect.width,
-                minHeight: dragSession.originRect.height,
-              }}
-            >
-              <CharacterMainStar
-                isMain={!!draggedSignup.isMain}
-                titleMain={tProfile('mainLabel')}
-                titleAlt={tProfile('altLabel')}
-                sizePx={16}
-              />
-              {draggedSignup.classId ? <ClassIcon classId={draggedSignup.classId} size={22} /> : null}
-              {renderSpecIcons(draggedSignup, false)}
-              <span className="font-medium truncate inline-flex items-center gap-1">
-                {draggedSignup.name}
-                <CharacterSignupPunctualityMark
-                  kind={punctualityOf(draggedSignup)}
-                  label={
-                    punctualityOf(draggedSignup) === 'on_time'
-                      ? t('punctualityOnTime')
-                      : punctualityOf(draggedSignup) === 'tight'
-                        ? t('punctualityTight')
-                        : t('punctualityLate')
-                  }
+        ? (() => {
+            const dv = attendanceRowVariant(draggedSignup);
+            return createPortal(
+              <div
+                className={cn(
+                  'pointer-events-none fixed z-[1100] rounded-lg border bg-background px-2 py-1.5 text-sm shadow-xl flex flex-wrap items-center gap-2',
+                  dv === 'default' && 'border-primary',
+                  dv === 'uncertain' && 'border-red-400/60 dark:border-red-700/55',
+                  dv === 'declined' &&
+                    'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40'
+                )}
+                style={{
+                  left: dragPoint.clientX - dragSession.offsetX,
+                  top: dragPoint.clientY - dragSession.offsetY,
+                  width: dragSession.originRect.width,
+                  minHeight: dragSession.originRect.height,
+                }}
+              >
+                <CharacterMainStar
+                  isMain={!!draggedSignup.isMain}
+                  titleMain={tProfile('mainLabel')}
+                  titleAlt={tProfile('altLabel')}
+                  sizePx={16}
                 />
-              </span>
-            </div>,
-            document.body
-          )
+                {draggedSignup.classId ? <ClassIcon classId={draggedSignup.classId} size={22} /> : null}
+                {renderSpecIcons(draggedSignup, false)}
+                <span className="font-medium truncate inline-flex items-center gap-1">
+                  {draggedSignup.name}
+                  <CharacterSignupPunctualityMark
+                    kind={punctualityOf(draggedSignup)}
+                    label={
+                      punctualityOf(draggedSignup) === 'on_time'
+                        ? t('punctualityOnTime')
+                        : punctualityOf(draggedSignup) === 'tight'
+                          ? t('punctualityTight')
+                          : t('punctualityLate')
+                    }
+                  />
+                </span>
+              </div>,
+              document.body
+            );
+          })()
         : null}
 
       {flyBack && byId.get(flyBack.signupId)
-        ? createPortal(
-            <div
-              ref={flyBackRef}
-              className="fixed z-[1100] pointer-events-none rounded-lg border border-border bg-background shadow-lg flex flex-wrap items-center gap-2 px-2 py-1.5 text-sm"
-              style={{
-                left: flyBack.fromLeft,
-                top: flyBack.fromTop,
-                width: flyBack.width,
-                minHeight: flyBack.height,
-              }}
-            >
-              {(() => {
-                const s = byId.get(flyBack.signupId)!;
-                return (
-                  <>
-                    <CharacterMainStar
-                      isMain={!!s.isMain}
-                      titleMain={tProfile('mainLabel')}
-                      titleAlt={tProfile('altLabel')}
-                      sizePx={16}
-                    />
-                    {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
-                    {renderSpecIcons(s, false)}
-                    <span className="font-medium truncate inline-flex items-center gap-1">
-                      {s.name}
-                      <CharacterSignupPunctualityMark
-                        kind={punctualityOf(s)}
-                        label={
-                          punctualityOf(s) === 'on_time'
-                            ? t('punctualityOnTime')
-                            : punctualityOf(s) === 'tight'
-                              ? t('punctualityTight')
-                              : t('punctualityLate')
-                        }
-                      />
-                    </span>
-                  </>
-                );
-              })()}
-            </div>,
-            document.body
-          )
+        ? (() => {
+            const s = byId.get(flyBack.signupId)!;
+            const fv = attendanceRowVariant(s);
+            return createPortal(
+              <div
+                ref={flyBackRef}
+                className={cn(
+                  'fixed z-[1100] pointer-events-none rounded-lg border bg-background shadow-lg flex flex-wrap items-center gap-2 px-2 py-1.5 text-sm',
+                  fv === 'default' && 'border-border',
+                  fv === 'uncertain' && 'border-red-400/60 dark:border-red-700/55',
+                  fv === 'declined' &&
+                    'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40'
+                )}
+                style={{
+                  left: flyBack.fromLeft,
+                  top: flyBack.fromTop,
+                  width: flyBack.width,
+                  minHeight: flyBack.height,
+                }}
+              >
+                <CharacterMainStar
+                  isMain={!!s.isMain}
+                  titleMain={tProfile('mainLabel')}
+                  titleAlt={tProfile('altLabel')}
+                  sizePx={16}
+                />
+                {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
+                {renderSpecIcons(s, false)}
+                <span className="font-medium truncate inline-flex items-center gap-1">
+                  {s.name}
+                  <CharacterSignupPunctualityMark
+                    kind={punctualityOf(s)}
+                    label={
+                      punctualityOf(s) === 'on_time'
+                        ? t('punctualityOnTime')
+                        : punctualityOf(s) === 'tight'
+                          ? t('punctualityTight')
+                          : t('punctualityLate')
+                    }
+                  />
+                </span>
+              </div>,
+              document.body
+            );
+          })()
         : null}
 
       {addOpen

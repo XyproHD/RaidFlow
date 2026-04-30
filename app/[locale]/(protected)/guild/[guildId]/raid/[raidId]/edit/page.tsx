@@ -76,6 +76,7 @@ export default async function RaidEditStandalonePage(props: {
     discordThreadId: ctx.raid.discordThreadId,
     discordChannelId: ctx.raid.discordChannelId,
     discordLeaderChannelId: ctx.raid.discordLeaderChannelId,
+    organizerDiscordId: ctx.raid.organizerDiscordId ?? null,
     dungeon: {
       id: ctx.raid.dungeon.id,
       name: ctx.raid.dungeon.names[0]?.name ?? ctx.raid.dungeon.name,
