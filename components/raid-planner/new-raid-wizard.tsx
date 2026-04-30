@@ -1396,7 +1396,7 @@ export function NewRaidWizard({
                       'h-8 w-full rounded border text-[11px] font-medium transition-colors bg-background hover:bg-muted/40',
                       'border-border',
                       inRange && 'ring-2 ring-primary ring-offset-1 ring-offset-background',
-                      pickingEnd && rangeStartIdx === i && 'ring-2 ring-amber-500'
+                      rangeStartIdx === i && 'ring-2 ring-amber-500'
                     )}
                   >
                     <span className="flex items-center justify-between gap-2 px-2">
