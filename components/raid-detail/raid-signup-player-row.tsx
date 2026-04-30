@@ -9,12 +9,15 @@ import { CharacterNameWithDiscordInline } from '@/components/character-display-p
 export type AnmeldungRow = {
   id: string;
   userId: string;
+  /** DB-Feld; für Pünktlichkeits-Anzeige (Fallback: isLate). */
+  punctuality?: string | null;
   character: {
     name: string;
     mainSpec: string;
     offSpec: string | null;
     isMain: boolean;
     guildDiscordDisplayName?: string | null;
+    gearScore?: number | null;
   } | null;
   signedSpec: string | null;
   type: string;

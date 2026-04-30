@@ -5,7 +5,6 @@ import { getTranslations } from 'next-intl/server';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
-import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { RaidDetailView, type AnnouncedLayoutProps } from '@/components/raid-detail/raid-detail-view';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 import {
@@ -164,23 +163,6 @@ export default async function RaidDetailPage(props: {
     }
   }
 
-  const typeNorm = (v: string) => (v === 'main' ? 'normal' : v);
-  const roleStats = {
-    Tank: { normal: 0, uncertain: 0, reserve: 0 },
-    Melee: { normal: 0, uncertain: 0, reserve: 0 },
-    Range: { normal: 0, uncertain: 0, reserve: 0 },
-    Healer: { normal: 0, uncertain: 0, reserve: 0 },
-  };
-  for (const s of raid.signups) {
-    const spec = (s.signedSpec?.trim() || s.character?.mainSpec?.trim() || null) as string | null;
-    const role = roleFromSpecDisplayName(spec);
-    const tn = typeNorm(s.type);
-    if (!role || !(role in roleStats)) continue;
-    if (tn === 'normal' || tn === 'uncertain' || tn === 'reserve') {
-      roleStats[role as keyof typeof roleStats][tn]++;
-    }
-  }
-
   const raidForView = {
     ...raid,
     scheduledAt: raid.scheduledAt.toISOString(),
@@ -221,7 +203,6 @@ export default async function RaidDetailPage(props: {
         raid={raidForView}
         dungeonLabel={dungeonLabel}
         organizerLabel={organizerLabel}
-        roleStats={roleStats}
         canEdit={canEdit}
         canEditRaid={canEditRaid}
         canSignup={canSignup}

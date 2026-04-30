@@ -14,7 +14,11 @@ import {
 } from '@/components/raid-planner/raid-roster-planner';
 import { getRaidDetailContext } from '@/lib/raid-detail-access';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
-import { buildSpecStatsByMinKeys } from '@/lib/min-spec-keys';
+import { buildSpecAttendanceByMinKeys } from '@/lib/min-spec-keys';
+import {
+  computeRoleAttendanceFromSignups,
+  computeClassSignupTotals,
+} from '@/lib/raid-overview-attendance';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 
 const RaidRosterPlanner = dynamic(
@@ -91,36 +95,22 @@ export default async function RaidPlanPage(props: {
       : null;
 
   const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
-  type RoleStat = { normal: number; uncertain: number; reserve: number };
 
-  const typeNorm = (v: string) => (v === 'main' ? 'normal' : v);
-
-  const roleStats: Record<(typeof ROLE_KEYS)[number], RoleStat> = {
-    Tank: { normal: 0, uncertain: 0, reserve: 0 },
-    Melee: { normal: 0, uncertain: 0, reserve: 0 },
-    Range: { normal: 0, uncertain: 0, reserve: 0 },
-    Healer: { normal: 0, uncertain: 0, reserve: 0 },
-  };
-  for (const s of raid.signups) {
-    const spec = (s.signedSpec?.trim() || s.character?.mainSpec?.trim() || null) as string | null;
-    const role = roleFromSpecDisplayName(spec);
-    const tn = typeNorm(s.type);
-    if (!role || !(role in roleStats)) continue;
-    if (tn === 'normal' || tn === 'uncertain' || tn === 'reserve') {
-      roleStats[role as keyof typeof roleStats][tn]++;
-    }
-  }
+  const roleAttendance = computeRoleAttendanceFromSignups(raid.signups);
+  const classSignupTotals = computeClassSignupTotals(raid.signups);
 
   const minSpecsObj =
     raid.minSpecs && typeof raid.minSpecs === 'object' && !Array.isArray(raid.minSpecs)
       ? (raid.minSpecs as Record<string, number>)
       : null;
 
-  const specCountsByType: Record<string, RoleStat> = buildSpecStatsByMinKeys(
+  const specAttendanceByKey = buildSpecAttendanceByMinKeys(
     raid.signups.map((s) => ({
       type: s.type,
       signedSpec: s.signedSpec,
       character: s.character ? { mainSpec: s.character.mainSpec } : null,
+      punctuality: s.punctuality,
+      isLate: s.isLate,
     })),
     minSpecsObj
   );
@@ -266,10 +256,11 @@ export default async function RaidPlanPage(props: {
           maxPlayers: raid.maxPlayers,
         }}
         overviewProps={{
-          roleStats,
+          roleAttendance,
+          classSignupTotals,
           roleMinByKey,
           minSpecsObj,
-          specCountsByType,
+          specAttendanceByKey,
         }}
         initialSignups={initialSignups}
       />
