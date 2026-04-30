@@ -87,8 +87,8 @@ export function MinSpecRequirementRow({
 
   const wrapClass =
     variant === 'wizard'
-      ? 'flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/15 px-3 py-2'
-      : 'flex flex-wrap gap-2 items-center';
+      ? 'flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/15 px-3 py-3 shadow-sm'
+      : 'flex flex-wrap gap-3 items-center rounded-lg border border-border bg-muted/15 px-3 py-2 shadow-sm';
 
   const countClass =
     countInputClassName ??

@@ -218,8 +218,7 @@ export function NewRaidWizard({
   const [scheduleSnapshot, setScheduleSnapshot] = useState<null | {
     scheduledDate: string;
     rangeStartIdx: number;
-    rangeEndIdx: number;
-    pickingEnd: boolean;
+    durationHours: number;
     signupDatetimeLocal: string;
   }>(null);
   const [loading, setLoading] = useState(true);
@@ -240,12 +239,6 @@ export function NewRaidWizard({
   const [dungeonMenuOpen, setDungeonMenuOpen] = useState(false);
   const [name, setName] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.name : ''));
   const [note, setNote] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.note ?? '' : ''));
-  const [raidLeaderId, setRaidLeaderId] = useState(() =>
-    mode === 'edit' && initialRaid ? (initialRaid.raidLeaderId ?? '') : currentUserId
-  );
-  const [lootmasterId, setLootmasterId] = useState<string>(() =>
-    mode === 'edit' && initialRaid ? (initialRaid.lootmasterId ?? '') : ''
-  );
   const [organizerDiscordId, setOrganizerDiscordId] = useState(() =>
     mode === 'edit' && initialRaid ? (initialRaid.organizerDiscordId ?? '') : ''
   );
@@ -307,16 +300,20 @@ export function NewRaidWizard({
     }
     return DEFAULT_SLOT_IDX;
   });
-  const [rangeEndIdx, setRangeEndIdx] = useState(() => {
+  const [durationHours, setDurationHours] = useState(() => {
     if (mode === 'edit' && initialRaid) {
-      const end = initialRaid.scheduledEndAt ? new Date(initialRaid.scheduledEndAt) : addMinutes(new Date(initialRaid.scheduledAt), 30);
-      const endMinus = addMinutes(end, -30);
-      const slot = `${String(endMinus.getHours()).padStart(2, '0')}:${String(endMinus.getMinutes()).padStart(2, '0')}`;
-      return Math.max(0, SLOTS.indexOf(slot));
+      const s = new Date(initialRaid.scheduledAt);
+      const e = initialRaid.scheduledEndAt ? new Date(initialRaid.scheduledEndAt) : addMinutes(s, 30);
+      const diffHours = (e.getTime() - s.getTime()) / (1000 * 60 * 60);
+      return Math.max(1, Math.min(10, diffHours));
     }
-    return DEFAULT_SLOT_IDX;
+    return 3;
   });
-  const [pickingEnd, setPickingEnd] = useState(false);
+
+  const rangeEndIdx = useMemo(() => {
+    const slots = Math.round(durationHours * 2);
+    return (rangeStartIdx + Math.max(1, slots) - 1) % SLOTS.length;
+  }, [rangeStartIdx, durationHours]);
 
   const [mainAltFilter, setMainAltFilter] = useState<MainAltFilter>('mains');
   const [allowWeekday, setAllowWeekday] = useState(true);
@@ -355,9 +352,8 @@ export function NewRaidWizard({
   const signupUntil = useMemo(() => parseDatetimeLocal(signupDatetimeLocal), [signupDatetimeLocal]);
 
   const rangeIndices = useMemo(() => {
-    if (pickingEnd) return [rangeStartIdx];
     return expandSlotIndicesForward(rangeStartIdx, rangeEndIdx);
-  }, [rangeStartIdx, rangeEndIdx, pickingEnd]);
+  }, [rangeStartIdx, rangeEndIdx]);
 
   const rangeSlotStrings = useMemo(
     () => slotStringsForIndices(rangeIndices),
@@ -413,10 +409,11 @@ export function NewRaidWizard({
         setDungeonIds([first.id]);
         setMaxPlayers(first.maxPlayers);
       }
-      if (json.leaders.some((l) => l.userId === currentUserId)) {
-        setRaidLeaderId(currentUserId);
-      } else if (json.leaders[0]) {
-        setRaidLeaderId(json.leaders[0].userId);
+      if (mode === 'create') {
+        const me = json.leaders.find((l) => l.userId === currentUserId);
+        if (me?.discordId) {
+          setOrganizerDiscordId(me.discordId);
+        }
       }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Error');
@@ -685,30 +682,14 @@ export function NewRaidWizard({
   };
 
   const handleTimelineClick = (i: number) => {
-    if (!pickingEnd) {
-      setRangeStartIdx(i);
-      setRangeEndIdx(i);
-      setPickingEnd(true);
-    } else {
-      setRangeEndIdx(i);
-      setPickingEnd(false);
-    }
+    setRangeStartIdx(i);
   };
 
   const handleRaidStartDatetimeChange = (s: string) => {
     const d = parseDatetimeLocal(s);
     const { baseYmd, slotIndex } = localDateTimeToNearestRaidBaseAndSlotIndex(d);
     setScheduledDate(baseYmd);
-    const N = SLOTS.length;
-    const oldIndices = expandSlotIndicesForward(rangeStartIdx, rangeEndIdx);
-    const len = Math.max(1, oldIndices.length);
-    let endIdx = slotIndex;
-    for (let k = 1; k < len; k++) {
-      endIdx = (endIdx + 1) % N;
-    }
     setRangeStartIdx(slotIndex);
-    setRangeEndIdx(endIdx);
-    setPickingEnd(false);
     setSignupDatetimeLocal(toDatetimeLocalValue(suggestedSignupBeforeRaid(d)));
   };
 
@@ -716,11 +697,9 @@ export function NewRaidWizard({
     setScheduleSnapshot({
       scheduledDate,
       rangeStartIdx,
-      rangeEndIdx,
-      pickingEnd,
+      durationHours,
       signupDatetimeLocal,
     });
-    setPickingEnd(false);
     setAvailabilityOpen(true);
   };
 
@@ -728,8 +707,7 @@ export function NewRaidWizard({
     if (scheduleSnapshot) {
       setScheduledDate(scheduleSnapshot.scheduledDate);
       setRangeStartIdx(scheduleSnapshot.rangeStartIdx);
-      setRangeEndIdx(scheduleSnapshot.rangeEndIdx);
-      setPickingEnd(scheduleSnapshot.pickingEnd);
+      setDurationHours(scheduleSnapshot.durationHours);
       setSignupDatetimeLocal(scheduleSnapshot.signupDatetimeLocal);
     }
     setScheduleSnapshot(null);
@@ -792,8 +770,8 @@ export function NewRaidWizard({
         dungeonIds,
         name,
         note: note || null,
-        raidLeaderId,
-        lootmasterId: lootmasterId || null,
+        raidLeaderId: currentUserId,
+        lootmasterId: null,
         minTanks,
         minMelee,
         minRange,
@@ -1030,35 +1008,6 @@ export function NewRaidWizard({
                 />
               </label>
               <label className="flex flex-col gap-1.5 text-sm">
-                <span className="text-muted-foreground">{t('raidLeader')}</span>
-                <select
-                  className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
-                  value={raidLeaderId}
-                  onChange={(e) => setRaidLeaderId(e.target.value)}
-                >
-                  {data.leaders.map((l) => (
-                    <option key={l.userId} value={l.userId}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="text-muted-foreground">{t('lootmaster')}</span>
-                <select
-                  className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
-                  value={lootmasterId}
-                  onChange={(e) => setLootmasterId(e.target.value)}
-                >
-                  <option value="">{t('lootmasterNone')}</option>
-                  {data.leaders.map((l) => (
-                    <option key={l.userId} value={l.userId}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
                 <span className="text-muted-foreground">{t('organizer')}</span>
                 <select
                   className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
@@ -1124,7 +1073,7 @@ export function NewRaidWizard({
             </h2>
             <fieldset disabled={!editable} className="space-y-4 disabled:opacity-70">
               <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-end">
-                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-md">
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-[12rem]">
                   <span className="text-muted-foreground">
                     {t('scheduledDate')} <span className="text-destructive">*</span>
                   </span>
@@ -1135,7 +1084,23 @@ export function NewRaidWizard({
                     onChange={(e) => handleRaidStartDatetimeChange(e.target.value)}
                   />
                 </label>
-                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-md">
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-[8rem]">
+                  <span className="text-muted-foreground">
+                    {t('duration')} <span className="text-destructive">*</span>
+                  </span>
+                  <select
+                    className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
+                    value={durationHours}
+                    onChange={(e) => setDurationHours(Number(e.target.value))}
+                  >
+                    {[1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10].map((h) => (
+                      <option key={h} value={h}>
+                        {h} {h === 1 ? t('hour') : t('hours')}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm lg:max-w-[12rem]">
                   <span className="text-muted-foreground">
                     {t('signupUntilCombined')} <span className="text-destructive">*</span>
                   </span>
@@ -1164,38 +1129,35 @@ export function NewRaidWizard({
             <h2 className="text-lg font-semibold text-foreground border-b border-border pb-2">
               {t('sectionMinimum')}
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="flex flex-wrap gap-2">
               {roleMinConfig.map(({ role, val, set, key }) => (
-                <div
+                <label
                   key={key}
-                  className="rounded-lg border border-border bg-muted/20 p-2.5 flex flex-col gap-1.5"
+                  className="rounded-lg border border-border bg-muted/20 px-3 py-2 flex items-center gap-3 flex-1 min-w-[120px]"
                 >
-                  <div className="text-sm font-medium text-foreground">{t(key)}</div>
-                  <div className="flex items-center justify-center gap-2 min-h-[2.25rem]">
-                    <RoleIcon role={role} size={22} />
-                    <span className="text-muted-foreground select-none" aria-hidden>
-                      |
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={25}
-                      className="w-12 shrink-0 rounded-md border border-input bg-background px-1.5 py-1 text-center text-sm tabular-nums"
-                      value={val}
-                      onChange={(e) => set(Number(e.target.value))}
-                      aria-label={t(key)}
-                    />
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground flex-1">
+                    <RoleIcon role={role} size={20} />
+                    {t(key)}
                   </div>
-                </div>
+                  <input
+                    type="number"
+                    min={0}
+                    max={25}
+                    className="w-14 shrink-0 rounded-md border border-input bg-background px-2 py-1 text-center text-sm tabular-nums"
+                    value={val}
+                    onChange={(e) => set(Number(e.target.value))}
+                    aria-label={t(key)}
+                  />
+                </label>
               ))}
             </div>
 
             <div className="space-y-3 pt-2">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-3">
                 <span className="text-sm font-medium">{t('minSpecs')}</span>
                 <button
                   type="button"
-                  className="text-sm text-primary hover:underline"
+                  className="rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium hover:bg-muted/50"
                   onClick={addMinSpecRow}
                 >
                   {t('addMinSpec')}
@@ -1236,21 +1198,21 @@ export function NewRaidWizard({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1.5 text-sm max-w-md">
-              <span className="text-muted-foreground">{t('leaderChannelLabel')}</span>
-              <select
-                className="rounded-md border border-input bg-background px-3 py-2"
-                value={discordLeaderChannelId}
-                onChange={(e) => setDiscordLeaderChannelId(e.target.value)}
-              >
-                <option value="">{t('lootmasterNone')}</option>
-                {data.allowedChannels.map((ch) => (
-                  <option key={ch.id} value={ch.discordChannelId}>
-                    {ch.name || ch.discordChannelId}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <label className="flex flex-col gap-1.5 text-sm max-w-md">
+                <span className="text-muted-foreground">{t('leaderChannelLabel')}</span>
+                <select
+                  className="rounded-md border border-input bg-background px-3 py-2"
+                  value={discordLeaderChannelId}
+                  onChange={(e) => setDiscordLeaderChannelId(e.target.value)}
+                >
+                  <option value="">{t('channelNoPost')}</option>
+                  {data.allowedChannels.map((ch) => (
+                    <option key={ch.id} value={ch.discordChannelId}>
+                      {ch.name || ch.discordChannelId}
+                    </option>
+                  ))}
+                </select>
+              </label>
           </section>
 
           {isEdit ? (
