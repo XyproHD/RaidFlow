@@ -169,6 +169,18 @@ export async function PATCH(
         ? body.discordLeaderChannelId.trim() || null
         : raid.discordLeaderChannelId;
 
+  let organizerDiscordId: string | null | undefined = undefined;
+  if ('organizerDiscordId' in body) {
+    const raw = body.organizerDiscordId;
+    if (raw === null || raw === '') {
+      organizerDiscordId = null;
+    } else if (typeof raw === 'string' && raw.trim()) {
+      organizerDiscordId = raw.trim();
+    } else if (raw !== undefined) {
+      return NextResponse.json({ error: 'Invalid organizerDiscordId' }, { status: 400 });
+    }
+  }
+
   const dungeonId =
     typeof body.dungeonId === 'string' && body.dungeonId.trim()
       ? body.dungeonId.trim()
@@ -326,6 +338,22 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid loot master' }, { status: 400 });
   }
 
+  if (organizerDiscordId !== undefined && organizerDiscordId !== null) {
+    const orgUser = await prisma.rfUser.findUnique({
+      where: { discordId: organizerDiscordId },
+      select: { id: true },
+    });
+    if (!orgUser) {
+      return NextResponse.json({ error: 'Invalid organizer (unknown Discord user)' }, { status: 400 });
+    }
+    if (!(await verifyUserInGuild(orgUser.id))) {
+      return NextResponse.json(
+        { error: 'Organizer must be a raid-eligible guild participant' },
+        { status: 400 }
+      );
+    }
+  }
+
   if (discordLeaderChannelId) {
     const allowedLeader = await prisma.rfGuildAllowedChannel.findFirst({
       where: { guildId, discordChannelId: discordLeaderChannelId },
@@ -354,6 +382,7 @@ export async function PATCH(
     raidGroupRestrictionId,
     discordChannelId,
     discordLeaderChannelId,
+    ...(organizerDiscordId !== undefined ? { organizerDiscordId } : {}),
     maxPlayers,
     scheduledAt,
     scheduledEndAt,

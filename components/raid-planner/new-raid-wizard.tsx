@@ -92,7 +92,7 @@ type Bootstrap = {
   dungeons: { id: string; name: string; maxPlayers: number }[];
   raidGroups: { id: string; name: string }[];
   allowedChannels: { id: string; discordChannelId: string; name: string | null }[];
-  leaders: { userId: string; label: string }[];
+  leaders: { userId: string; discordId: string; label: string }[];
   groupCharAllowed: GroupCharRule[];
   members: PoolMember[];
 };
@@ -202,6 +202,7 @@ export function NewRaidWizard({
     discordChannelId: string | null;
     discordLeaderChannelId?: string | null;
     status: string;
+    organizerDiscordId?: string | null;
   };
 }) {
   const t = useTranslations('raidPlanner');
@@ -244,6 +245,9 @@ export function NewRaidWizard({
   );
   const [lootmasterId, setLootmasterId] = useState<string>(() =>
     mode === 'edit' && initialRaid ? (initialRaid.lootmasterId ?? '') : ''
+  );
+  const [organizerDiscordId, setOrganizerDiscordId] = useState(() =>
+    mode === 'edit' && initialRaid ? (initialRaid.organizerDiscordId ?? '') : ''
   );
   const [minTanks, setMinTanks] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minTanks : 1));
   const [minMelee, setMinMelee] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minMelee : 0));
@@ -803,6 +807,7 @@ export function NewRaidWizard({
         signupVisibility,
         discordChannelId: discordChannelId.trim() || null,
         discordLeaderChannelId: discordLeaderChannelId.trim() || null,
+        organizerDiscordId: organizerDiscordId.trim() || null,
       };
 
       const res = await fetch(isEdit ? `/api/guilds/${guildId}/raids/${raidId}` : `/api/guilds/${guildId}/raids`, {
@@ -1048,6 +1053,21 @@ export function NewRaidWizard({
                   <option value="">{t('lootmasterNone')}</option>
                   {data.leaders.map((l) => (
                     <option key={l.userId} value={l.userId}>
+                      {l.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="text-muted-foreground">{t('organizer')}</span>
+                <select
+                  className="rounded-md border border-input bg-background px-3 py-2 text-foreground"
+                  value={organizerDiscordId}
+                  onChange={(e) => setOrganizerDiscordId(e.target.value)}
+                >
+                  <option value="">{t('organizerNone')}</option>
+                  {data.leaders.map((l) => (
+                    <option key={l.discordId} value={l.discordId}>
                       {l.label}
                     </option>
                   ))}

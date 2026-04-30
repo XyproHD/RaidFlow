@@ -82,6 +82,14 @@ export async function POST(
       ? body.lootmasterId.trim()
       : null;
 
+  const organizerDiscordIdRaw = body.organizerDiscordId;
+  const organizerDiscordId =
+    organizerDiscordIdRaw === null || organizerDiscordIdRaw === ''
+      ? null
+      : typeof organizerDiscordIdRaw === 'string' && organizerDiscordIdRaw.trim()
+        ? organizerDiscordIdRaw.trim()
+        : null;
+
   const raidGroupRestrictionId =
     typeof body.raidGroupRestrictionId === 'string' && body.raidGroupRestrictionId.trim()
       ? body.raidGroupRestrictionId.trim()
@@ -173,6 +181,22 @@ export async function POST(
     return NextResponse.json({ error: 'Invalid loot master' }, { status: 400 });
   }
 
+  if (organizerDiscordId) {
+    const orgUser = await prisma.rfUser.findUnique({
+      where: { discordId: organizerDiscordId },
+      select: { id: true },
+    });
+    if (!orgUser) {
+      return NextResponse.json({ error: 'Invalid organizer (unknown Discord user)' }, { status: 400 });
+    }
+    if (!(await verifyUserInGuild(orgUser.id))) {
+      return NextResponse.json(
+        { error: 'Organizer must be a raid-eligible guild participant' },
+        { status: 400 }
+      );
+    }
+  }
+
   if (discordLeaderChannelId) {
     const allowedLeader = await prisma.rfGuildAllowedChannel.findFirst({
       where: { guildId, discordChannelId: discordLeaderChannelId },
@@ -215,6 +239,7 @@ export async function POST(
       name,
       raidLeaderId,
       lootmasterId,
+      organizerDiscordId,
       minTanks,
       minMelee,
       minRange,

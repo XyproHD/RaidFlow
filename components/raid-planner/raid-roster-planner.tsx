@@ -312,6 +312,7 @@ export function RaidRosterPlanner({
   initialSignups,
   guildCharacters,
   raidLeaderLabel,
+  organizerLabel,
   canEditRaid,
   initialRaidLeaderUserId,
   initialLootmasterUserId,
@@ -327,6 +328,8 @@ export function RaidRosterPlanner({
   initialSignups: RosterPlannerSignup[];
   guildCharacters: GuildCharacterOption[];
   raidLeaderLabel: string;
+  /** Anzeige-Name des Organisators (Gilden-Discord-Name); null wenn nicht gesetzt oder nicht auflösbar */
+  organizerLabel: string | null;
   canEditRaid: boolean;
   initialRaidLeaderUserId: string | null;
   initialLootmasterUserId: string | null;
@@ -635,12 +638,6 @@ export function RaidRosterPlanner({
 
   const scheduledAt = useMemo(() => new Date(raid.scheduledAt), [raid.scheduledAt]);
   const scheduledEndAt = raid.scheduledEndAt ? new Date(raid.scheduledEndAt) : null;
-  const dateShort = new Intl.DateTimeFormat(intlLocale, {
-    weekday: 'short',
-    day: '2-digit',
-    month: '2-digit',
-    year: '2-digit',
-  }).format(scheduledAt);
   const raidTermin = formatRaidTerminLine(intlLocale, scheduledAt, scheduledEndAt);
 
   const leaderLootUserIds = useMemo(() => {
@@ -1653,35 +1650,37 @@ export function RaidRosterPlanner({
       `}</style>
       <header
         className={cn(
-          'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b border-border pb-5 transition-opacity duration-200',
+          'rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden transition-opacity duration-200',
           dragActive && 'opacity-35 pointer-events-none'
         )}
       >
-        <div className="min-w-0 space-y-1 flex-1">
-          <p className="text-sm text-muted-foreground">
-            {raid.dungeonLabel} · {raid.guildName} · {dateShort}
-          </p>
-          <div className="flex items-start gap-2">
-            <h1 className="text-2xl font-bold text-foreground tracking-tight min-w-0 flex-1">{raid.name}</h1>
-            <button
-              type="button"
-              className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
-              aria-label={t('raidLeaderMenu')}
-              title={t('raidLeaderMenu')}
-              onClick={(e) => {
-                e.stopPropagation();
-                const pos = openMenuAtButton(e.currentTarget);
-                setLeaderMenuPos(pos);
-                setLeaderMenuOpen((o) => !o);
-              }}
-            >
-              <span className="text-lg leading-none">☰</span>
-            </button>
+        <div className="relative px-4 py-3 sm:px-5 sm:py-4 pr-14 sm:pr-16">
+          <button
+            type="button"
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+            aria-label={t('raidLeaderMenu')}
+            title={t('raidLeaderMenu')}
+            onClick={(e) => {
+              e.stopPropagation();
+              const pos = openMenuAtButton(e.currentTarget);
+              setLeaderMenuPos(pos);
+              setLeaderMenuOpen((o) => !o);
+            }}
+          >
+            <span className="text-lg leading-none">☰</span>
+          </button>
+          <div className="min-w-0 space-y-1.5 pr-1">
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">{raid.name}</h1>
+            <p className="text-sm text-foreground/90">{raid.dungeonLabel}</p>
+            <p className="text-sm text-foreground/90">
+              <span className="text-muted-foreground">{tRoster('metaTermin')}</span>{' '}
+              {raidTermin}
+            </p>
+            <p className="text-sm text-foreground/90">
+              <span className="text-muted-foreground">{tRoster('metaOrganizer')}</span>{' '}
+              {organizerLabel ?? tRoster('organizerUnset')}
+            </p>
           </div>
-          <p className="text-base text-foreground/90">
-            <span className="text-muted-foreground">{t('raidSlotLabel')}:</span> {raidTermin}
-          </p>
-          <p className="text-xs text-muted-foreground">{tRoster('draftHint')}</p>
         </div>
       </header>
 

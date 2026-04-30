@@ -58,6 +58,7 @@ export async function GET(
           user: {
             select: {
               id: true,
+              discordId: true,
               characters: {
                 where: { guildId },
                 orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
@@ -139,7 +140,7 @@ export async function GET(
       labelChar?.guildDiscordDisplayName?.trim() ||
       labelChar?.name?.trim() ||
       `User ${row.user.id.slice(0, 8)}…`;
-    return { userId: row.user.id, label };
+    return { userId: row.user.id, discordId: row.user.discordId, label };
   });
 
   const storedChannels = await prisma.rfGuildAllowedChannel.findMany({

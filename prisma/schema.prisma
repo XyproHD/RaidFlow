@@ -234,6 +234,8 @@ model RfRaid {
   note                    String?   @db.Text
   /// Rich-HTML (Planer): Raidleiter-Notizen zum Raid (nur Planung)
   plannerLeaderNotesHtml  String?   @map("planner_leader_notes_html") @db.Text
+  /// Discord-User-ID (Snowflake) des Organisators; Anzeige über Gilden-Discord-Name des verknüpften RaidFlow-Users
+  organizerDiscordId      String?   @map("organizer_discord_id")
   /// Nach „Raid ankündigen“: Gruppen (Reihenfolge Gesetzt), Reserve-Reihenfolge, RL/LM userIds pro Gruppe (JSON)
   announcedPlannerGroupsJson Json?   @map("announced_planner_groups_json")
   maxPlayers              Int       @map("max_players")

@@ -45,7 +45,7 @@ type PoolMember = {
 type Bootstrap = {
   dungeons: { id: string; name: string; maxPlayers: number }[];
   raidGroups: { id: string; name: string }[];
-  leaders: { userId: string; label: string }[];
+  leaders: { userId: string; discordId: string; label: string }[];
   groupCharAllowed: GroupCharRule[];
   members: PoolMember[];
 };
@@ -97,6 +97,7 @@ export type RaidEditSerialized = {
   discordThreadId: string | null;
   discordChannelId: string | null;
   discordLeaderChannelId: string | null;
+  organizerDiscordId?: string | null;
   dungeon: { id: string; name: string };
   raidGroupRestriction: { id: string; name: string } | null;
   signups: RaidEditSignupRow[];
