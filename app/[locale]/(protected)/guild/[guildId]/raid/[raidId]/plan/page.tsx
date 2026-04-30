@@ -256,8 +256,6 @@ export default async function RaidPlanPage(props: {
         guildCharacters={guildCharacters}
         raidLeaderLabel={raidLeaderLabel}
         organizerLabel={organizerLabel}
-        initialRaidLeaderUserId={raid.raidLeaderId ?? null}
-        initialLootmasterUserId={raid.lootmasterId ?? null}
         initialPlannerLeaderNotesHtml={raid.plannerLeaderNotesHtml ?? null}
         raid={{
           name: raid.name,

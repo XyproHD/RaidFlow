@@ -314,8 +314,6 @@ export function RaidRosterPlanner({
   raidLeaderLabel,
   organizerLabel,
   canEditRaid,
-  initialRaidLeaderUserId,
-  initialLootmasterUserId,
   initialPlannerLeaderNotesHtml,
   raidStatus,
   persistedServerPlannerOrder = null,
@@ -331,8 +329,6 @@ export function RaidRosterPlanner({
   /** Anzeige-Name des Organisators (Gilden-Discord-Name); null wenn nicht gesetzt oder nicht auflösbar */
   organizerLabel: string | null;
   canEditRaid: boolean;
-  initialRaidLeaderUserId: string | null;
-  initialLootmasterUserId: string | null;
   initialPlannerLeaderNotesHtml: string | null;
   /** rf_raid.status — Ankündigen nur bei open */
   raidStatus: string;
@@ -380,8 +376,8 @@ export function RaidRosterPlanner({
   const [plannerGroups, setPlannerGroups] = useState<PlannerGroup[]>(() => [
     {
       rosterOrder: [],
-      raidLeaderUserId: initialRaidLeaderUserId,
-      lootmasterUserId: initialLootmasterUserId,
+      raidLeaderUserId: null,
+      lootmasterUserId: null,
     },
   ]);
   const [reserveOrder, setReserveOrder] = useState<string[]>(() => reserveSignupIdsFrom(initialSignups));
@@ -446,15 +442,15 @@ export function RaidRosterPlanner({
 
       const defaultGroup = (): PlannerGroup => ({
         rosterOrder: [],
-        raidLeaderUserId: initialRaidLeaderUserId,
-        lootmasterUserId: initialLootmasterUserId,
+        raidLeaderUserId: null,
+        lootmasterUserId: null,
       });
 
       let nextGroups: PlannerGroup[];
 
       const rawGroups = stored && Array.isArray(stored.groups) ? stored.groups : null;
       if (rawGroups && rawGroups.length > 0) {
-        nextGroups = rawGroups.map((g, idx) => {
+        nextGroups = rawGroups.map((g) => {
           const o = g as Record<string, unknown>;
           const ordRaw = o.rosterOrder;
           const ord = Array.isArray(ordRaw)
@@ -463,15 +459,11 @@ export function RaidRosterPlanner({
           const rl =
             typeof o.raidLeaderUserId === 'string' && o.raidLeaderUserId.trim()
               ? o.raidLeaderUserId.trim()
-              : idx === 0
-                ? initialRaidLeaderUserId
-                : null;
+              : null;
           const lm =
             typeof o.lootmasterUserId === 'string' && o.lootmasterUserId.trim()
               ? o.lootmasterUserId.trim()
-              : idx === 0
-                ? initialLootmasterUserId
-                : null;
+              : null;
           return { rosterOrder: ord, raidLeaderUserId: rl, lootmasterUserId: lm };
         });
         if (nextReserve.length === 0) {
@@ -495,8 +487,8 @@ export function RaidRosterPlanner({
         nextGroups = [
           {
             rosterOrder: nextRoster,
-            raidLeaderUserId: initialRaidLeaderUserId,
-            lootmasterUserId: initialLootmasterUserId,
+            raidLeaderUserId: null,
+            lootmasterUserId: null,
           },
         ];
       }
@@ -543,13 +535,7 @@ export function RaidRosterPlanner({
         leaderNotesHtml: initialPlannerLeaderNotesHtml ?? '',
       });
     },
-    [
-      orderStorageKey,
-      initialRaidLeaderUserId,
-      initialLootmasterUserId,
-      initialPlannerLeaderNotesHtml,
-      persistedServerPlannerOrder,
-    ]
+    [orderStorageKey, initialPlannerLeaderNotesHtml, persistedServerPlannerOrder]
   );
 
   useEffect(() => {
@@ -1844,8 +1830,8 @@ export function RaidRosterPlanner({
                   ...prev,
                   {
                     rosterOrder: [],
-                    raidLeaderUserId: initialRaidLeaderUserId,
-                    lootmasterUserId: initialLootmasterUserId,
+                    raidLeaderUserId: null,
+                    lootmasterUserId: null,
                   },
                 ])
               }

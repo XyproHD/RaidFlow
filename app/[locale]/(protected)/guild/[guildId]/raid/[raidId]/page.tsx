@@ -188,23 +188,39 @@ export default async function RaidDetailPage(props: {
     signupUntil: raid.signupUntil.toISOString(),
   };
 
+  const dungeonLabel =
+    raid.dungeonNames && raid.dungeonNames.length > 0
+      ? raid.dungeonNames.join(' / ')
+      : raid.dungeon.names[0]?.name ?? raid.dungeon.name;
+
+  const organizerDiscordId = raid.organizerDiscordId?.trim() ?? null;
+  let organizerLabel: string | null = null;
+  if (organizerDiscordId) {
+    const orgUser = await prisma.rfUser.findUnique({
+      where: { discordId: organizerDiscordId },
+      select: { id: true },
+    });
+    if (orgUser) {
+      const orgChar = await prisma.rfCharacter.findFirst({
+        where: { userId: orgUser.id, guildId, guildDiscordDisplayName: { not: null } },
+        select: { guildDiscordDisplayName: true, name: true, isMain: true },
+        orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+      });
+      organizerLabel =
+        orgChar?.guildDiscordDisplayName?.trim() || orgChar?.name?.trim() || null;
+    }
+  }
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <Link
-          href={`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`}
-          className="text-sm text-muted-foreground hover:text-foreground hover:underline shrink-0 sm:ml-auto order-first sm:order-none"
-        >
-          {t('backDashboard')}
-        </Link>
-      </div>
-
       <RaidDetailView
         locale={locale}
         guildId={guildId}
         raidId={raidId}
         userId={userId}
         raid={raidForView}
+        dungeonLabel={dungeonLabel}
+        organizerLabel={organizerLabel}
         roleStats={roleStats}
         canEdit={canEdit}
         canEditRaid={canEditRaid}
