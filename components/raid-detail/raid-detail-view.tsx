@@ -11,7 +11,7 @@ import {
 } from '@/lib/min-spec-keys';
 import {
   computeRoleAttendanceFromSignups,
-  computeClassSignupTotals,
+  computeRoleClassCountsByRole,
 } from '@/lib/raid-overview-attendance';
 import { ClassIcon } from '@/components/class-icon';
 import { RoleIcon } from '@/components/role-icon';
@@ -118,22 +118,28 @@ function signupAttendanceKindMeta(signup: { type: string }, t: (key: string) => 
   return { sym: '●', title: t('signupType_verfugbar') };
 }
 
-/** Raid-Slot aus Sicht des Spielers: Tooltip Noch nicht geplant | Dabei | Reserve | Absage. */
+/** Raid-Slot aus Sicht des Spielers (nach Ankündigung); vorher immer „Noch nicht geplant“. */
 function myPlacementStatusMeta(
   signup: MySignupSerialized,
   raidStatus: string,
   t: (key: string) => string
 ): { sym: string; title: string } {
-  const tn = signupTypeNorm(signup.type);
-  if (tn === 'declined') return { sym: '✕', title: t('myPlacement_absage') };
-  if (tn === 'reserve') return { sym: '🪑', title: t('myPlacement_reserve') };
-  if (raidStatus === 'locked' || raidStatus === 'announced') {
-    if (signup.leaderPlacement === 'substitute') return { sym: '🪑', title: t('myPlacement_reserve') };
-    if (signup.setConfirmed) return { sym: '✓', title: t('myPlacement_dabei') };
+  const planned = raidStatus === 'announced' || raidStatus === 'locked';
+  if (!planned) {
     return { sym: '○', title: t('myPlacement_nochNicht') };
   }
-  if (tn === 'uncertain') return { sym: '○', title: t('myPlacement_nochNicht') };
-  return { sym: '✓', title: t('myPlacement_dabei') };
+
+  const tn = signupTypeNorm(signup.type);
+  if (tn === 'declined') {
+    return { sym: '✕', title: t('myPlacement_absage') };
+  }
+  if (signup.setConfirmed) {
+    return { sym: '✓', title: t('myPlacement_dabei') };
+  }
+  if (signup.leaderPlacement === 'substitute') {
+    return { sym: '🪑', title: t('myPlacement_reserve') };
+  }
+  return { sym: '✕', title: t('myPlacement_absage') };
 }
 
 function signupIndicator(
@@ -312,7 +318,7 @@ export function RaidDetailView({
 
   const overviewSummaryProps: RaidOverviewSummaryProps = useMemo(() => {
     const roleAttendance = computeRoleAttendanceFromSignups(raid.signups);
-    const classSignupTotals = computeClassSignupTotals(raid.signups);
+    const roleClassByRole = computeRoleClassCountsByRole(raid.signups);
     const specAttendanceByKey = buildSpecAttendanceByMinKeys(
       raid.signups.map((s) => ({
         type: s.type,
@@ -325,7 +331,7 @@ export function RaidDetailView({
     );
     return {
       roleAttendance,
-      classSignupTotals,
+      roleClassByRole,
       roleMinByKey,
       minSpecsObj,
       specAttendanceByKey,

@@ -17,7 +17,7 @@ import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 import { buildSpecAttendanceByMinKeys } from '@/lib/min-spec-keys';
 import {
   computeRoleAttendanceFromSignups,
-  computeClassSignupTotals,
+  computeRoleClassCountsByRole,
 } from '@/lib/raid-overview-attendance';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 
@@ -97,7 +97,7 @@ export default async function RaidPlanPage(props: {
   const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
 
   const roleAttendance = computeRoleAttendanceFromSignups(raid.signups);
-  const classSignupTotals = computeClassSignupTotals(raid.signups);
+  const roleClassByRole = computeRoleClassCountsByRole(raid.signups);
 
   const minSpecsObj =
     raid.minSpecs && typeof raid.minSpecs === 'object' && !Array.isArray(raid.minSpecs)
@@ -257,7 +257,7 @@ export default async function RaidPlanPage(props: {
         }}
         overviewProps={{
           roleAttendance,
-          classSignupTotals,
+          roleClassByRole,
           roleMinByKey,
           minSpecsObj,
           specAttendanceByKey,

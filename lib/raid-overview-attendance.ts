@@ -11,6 +11,8 @@ export const OVERVIEW_ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
 
 export type OverviewAttendanceSlice = { clear: number; unclear: number };
 
+export type RoleClassCountRow = { classId: string; total: number };
+
 function typeNorm(v: string) {
   return v === 'main' ? 'normal' : v;
 }
@@ -70,22 +72,42 @@ export function computeRoleAttendanceFromSignups(
   return out;
 }
 
-/** Anmeldungen je Klasse (alle nicht-abgesagten mit auflösbarer Klasse). */
-export function computeClassSignupTotals(signups: SignupLike[]): { classId: string; total: number }[] {
-  const counts = new Map<string, number>();
+/** Pro Rolle: Anzahl Anmeldungen je Klasse (nicht abgesagt, mit auflösbarer Klasse). */
+export function computeRoleClassCountsByRole(
+  signups: SignupLike[]
+): Record<(typeof OVERVIEW_ROLE_KEYS)[number], RoleClassCountRow[]> {
+  const maps = {
+    Tank: new Map<string, number>(),
+    Melee: new Map<string, number>(),
+    Range: new Map<string, number>(),
+    Healer: new Map<string, number>(),
+  } as const;
+
   for (const s of signups) {
     const tn = typeNorm(s.type);
     if (tn === 'declined') continue;
     const spec = effectiveSpec(s);
     if (!spec) continue;
+    const role = roleFromSpecDisplayName(spec);
+    if (!role || !(role in maps)) continue;
     const cid = getSpecByDisplayName(spec)?.classId;
     if (!cid) continue;
-    counts.set(cid, (counts.get(cid) ?? 0) + 1);
+    const m = maps[role as keyof typeof maps];
+    m.set(cid, (m.get(cid) ?? 0) + 1);
   }
-  const list: { classId: string; total: number }[] = [];
-  for (const classId of TBC_CLASS_IDS) {
-    const total = counts.get(classId) ?? 0;
-    if (total > 0) list.push({ classId, total });
+
+  const out = {
+    Tank: [] as RoleClassCountRow[],
+    Melee: [] as RoleClassCountRow[],
+    Range: [] as RoleClassCountRow[],
+    Healer: [] as RoleClassCountRow[],
+  };
+  for (const key of OVERVIEW_ROLE_KEYS) {
+    const m = maps[key];
+    for (const classId of TBC_CLASS_IDS) {
+      const total = m.get(classId) ?? 0;
+      if (total > 0) out[key].push({ classId, total });
+    }
   }
-  return list;
+  return out;
 }
