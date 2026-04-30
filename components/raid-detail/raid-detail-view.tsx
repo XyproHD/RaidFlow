@@ -1,7 +1,7 @@
 'use client';
 
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -114,6 +114,10 @@ function myStatusIcon(
   if (mySignups.some((s) => s.setConfirmed)) return '✅';
   if (mySignups.some((s) => s.leaderPlacement === 'substitute')) return '🪑';
   return '⚠️';
+}
+
+function signupTypeNorm(v: string) {
+  return v === 'main' ? 'normal' : v;
 }
 
 function signupIndicator(
@@ -232,7 +236,7 @@ export function RaidDetailView({
     left: number;
   } | null>(null);
   const [showSignup, setShowSignup] = useState(initialSignupOpen);
-  const [expandedNote, setExpandedNote] = useState(false);
+  const [myNoteExpandedId, setMyNoteExpandedId] = useState<string | null>(null);
   const [withdrawBusy, setWithdrawBusy] = useState(false);
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const [withdrawReason, setWithdrawReason] = useState('');
@@ -244,6 +248,7 @@ export function RaidDetailView({
         setLeaderMenuOpen(false);
         setLeaderMenuPos(null);
         setMySignupRowMenu(null);
+        setMyNoteExpandedId(null);
         setWithdrawDialogOpen(false);
       }
     };
@@ -272,7 +277,12 @@ export function RaidDetailView({
 
   const signupById = useMemo(() => new Map(raid.signups.map((s) => [s.id, s])), [raid.signups]);
 
-  const rows: AnmeldungRow[] = visibleSignups.map(raidSignupToAnmeldungRow);
+  const rows: AnmeldungRow[] = visibleSignups
+    .filter((s) => signupTypeNorm(s.type) !== 'declined')
+    .map(raidSignupToAnmeldungRow);
+  const absagenRows: AnmeldungRow[] = visibleSignups
+    .filter((s) => signupTypeNorm(s.type) === 'declined')
+    .map(raidSignupToAnmeldungRow);
 
   const visibilityLabel =
     raid.signupVisibility === 'raid_leader_only' ? t('visibilityLeaders') : t('visibilityPublic');
@@ -314,8 +324,12 @@ export function RaidDetailView({
   ]);
 
   const signupState = signupIndicator(raid.signupUntil, raid.status);
-  const statusIcon = myStatusIcon(raid.status, mySignups);
-  const hasMySignup = mySignups.length > 0;
+  const myActiveSignups = useMemo(
+    () => mySignups.filter((s) => signupTypeNorm(s.type) !== 'declined'),
+    [mySignups]
+  );
+  const statusIcon = myStatusIcon(raid.status, myActiveSignups);
+  const hasMyActiveSignup = myActiveSignups.length > 0;
 
   async function doCancelRaid() {
     if (!window.confirm(tEdit('cancelConfirm'))) return;
@@ -590,67 +604,52 @@ export function RaidDetailView({
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/20 px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">{t('mySignupSection')}</h2>
-          {canSignup && (raid.status === 'open' || raid.status === 'announced') && !hasMySignup ? (
+          {canSignup && (raid.status === 'open' || raid.status === 'announced') ? (
             <button
               type="button"
               onClick={() => setShowSignup(true)}
               className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline shrink-0 transition-colors"
             >
-              {t('signupLinkRegister')}
+              {hasMyActiveSignup ? t('signupLinkAnother') : t('signupLinkRegister')}
             </button>
           ) : null}
         </div>
         <div className="p-4 space-y-3">
-          {hasMySignup ? (
-            <>
-              <div className="overflow-x-auto -mx-1">
-                <table className="min-w-[560px] w-full text-sm">
-                  <thead className="border-b border-border bg-muted/30">
-                    <tr className="text-left">
-                      <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                        {tDash('character')}
-                      </th>
-                      <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                        {tDash('myStatus')}
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                        {tDash('actions')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...mySignups]
-                      .sort((a, b) => {
-                        const ca = characters.find((c) => c.id === a.characterId)?.name ?? '';
-                        const cb = characters.find((c) => c.id === b.characterId)?.name ?? '';
-                        return ca.localeCompare(cb);
-                      })
-                      .map((signup, idx) => {
-                        const myChar = signup.characterId
-                          ? characters.find((c) => c.id === signup.characterId)
-                          : null;
-                        const myDiscord = myChar?.guildDiscordDisplayName?.trim();
-                        const specForIcon = signup.signedSpec ?? myChar?.mainSpec ?? null;
-                        const role = roleFromSpecDisplayName(specForIcon?.trim() || null);
-                        const derivedClassId = specForIcon
-                          ? getSpecByDisplayName(specForIcon)?.classId ?? null
-                          : null;
-                        const punct = normalizeSignupPunctuality(signup.punctuality, signup.isLate);
-                        const punctLabel =
-                          punct === 'on_time'
-                            ? t('punctualityOnTime')
-                            : punct === 'tight'
-                              ? t('punctualityTight')
-                              : t('punctualityLate');
-                        const showRowMenu =
-                          (raid.status === 'open' || raid.status === 'announced') && hasMySignup;
+          {hasMyActiveSignup ? (
+            <div className="overflow-x-auto -mx-1">
+              <table className="min-w-[560px] w-full text-sm">
+                <tbody>
+                  {[...myActiveSignups]
+                    .sort((a, b) => {
+                      const ca = characters.find((c) => c.id === a.characterId)?.name ?? '';
+                      const cb = characters.find((c) => c.id === b.characterId)?.name ?? '';
+                      return ca.localeCompare(cb);
+                    })
+                    .map((signup, idx) => {
+                      const myChar = signup.characterId
+                        ? characters.find((c) => c.id === signup.characterId)
+                        : null;
+                      const myDiscord = myChar?.guildDiscordDisplayName?.trim();
+                      const specForIcon = signup.signedSpec ?? myChar?.mainSpec ?? null;
+                      const role = roleFromSpecDisplayName(specForIcon?.trim() || null);
+                      const derivedClassId = specForIcon
+                        ? getSpecByDisplayName(specForIcon)?.classId ?? null
+                        : null;
+                      const punct = normalizeSignupPunctuality(signup.punctuality, signup.isLate);
+                      const punctLabel =
+                        punct === 'on_time'
+                          ? t('punctualityOnTime')
+                          : punct === 'tight'
+                            ? t('punctualityTight')
+                            : t('punctualityLate');
+                      const showRowMenu = raid.status === 'open' || raid.status === 'announced';
+                      const noteLine = signup.note?.trim() ?? '';
+                      const hasNote = noteLine.length > 0;
 
-                        return (
-                          <tr
-                            key={signup.id}
-                            className="border-b border-border last:border-b-0 hover:bg-muted/15 transition-colors"
-                          >
-                            <td className="px-4 py-3 align-top">
+                      return (
+                        <Fragment key={signup.id}>
+                          <tr className="border-b border-border hover:bg-muted/15 transition-colors">
+                            <td className="px-3 py-2.5 align-middle">
                               <div className="inline-flex flex-wrap items-center gap-2 min-w-0">
                                 {role ? <RoleIcon role={role} size={18} /> : null}
                                 <span className="inline-flex items-center gap-1 shrink-0">
@@ -695,16 +694,29 @@ export function RaidDetailView({
                                     gearScore={myChar.gearScore}
                                   />
                                 ) : null}
+                                <CharacterSignupPunctualityMark kind={punct} label={punctLabel} />
+                                {hasNote ? (
+                                  <button
+                                    type="button"
+                                    className="shrink-0 text-base leading-none opacity-80 hover:opacity-100"
+                                    aria-label={tDash('toggleNote')}
+                                    title={tDash('toggleNote')}
+                                    onClick={() =>
+                                      setMyNoteExpandedId((id) => (id === signup.id ? null : signup.id))
+                                    }
+                                  >
+                                    📒
+                                  </button>
+                                ) : null}
                               </div>
                             </td>
-                            <td className="px-4 py-3 align-top">
+                            <td className="px-3 py-2.5 align-middle w-[min(14rem,28%)]">
                               <div className="flex flex-wrap items-center gap-2">
                                 {idx === 0 && statusIcon ? (
                                   <span className="text-base shrink-0" title={tDash('myStatus')}>
                                     {statusIcon}
                                   </span>
                                 ) : null}
-                                <CharacterSignupPunctualityMark kind={punct} label={punctLabel} />
                                 <span className="text-sm text-foreground">
                                   {raid.status === 'locked' || raid.status === 'announced' ? (
                                     signup.leaderPlacement === 'substitute' ? (
@@ -720,7 +732,7 @@ export function RaidDetailView({
                                 </span>
                               </div>
                             </td>
-                            <td className="px-4 py-3 align-top text-right">
+                            <td className="px-3 py-2.5 align-middle text-right w-12">
                               {showRowMenu ? (
                                 <button
                                   type="button"
@@ -740,39 +752,22 @@ export function RaidDetailView({
                               ) : null}
                             </td>
                           </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
-                  onClick={() => setExpandedNote((v) => !v)}
-                  aria-label={tDash('toggleNote')}
-                  title={tDash('toggleNote')}
-                >
-                  📒
-                </button>
-              </div>
-              {expandedNote ? (
-                <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-xs text-muted-foreground space-y-2">
-                  {mySignups.map((signup) => {
-                    const ch = signup.characterId
-                      ? characters.find((c) => c.id === signup.characterId)
-                      : null;
-                    const line = signup.note?.trim() ?? '';
-                    return (
-                      <p key={signup.id} className="whitespace-pre-wrap">
-                        <span className="font-medium text-foreground">{ch?.name ?? '—'}: </span>
-                        {line.length > 0 ? line : tDash('noteHint')}
-                      </p>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </>
+                          {myNoteExpandedId === signup.id && hasNote ? (
+                            <tr className="border-b border-border bg-muted/25 last:border-b-0">
+                              <td
+                                colSpan={3}
+                                className="px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap"
+                              >
+                                {noteLine}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">{tDash('notSignedUp')}</p>
           )}
@@ -788,6 +783,18 @@ export function RaidDetailView({
             <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
           ) : null}
           <RaidAnmeldungen rows={rows} canEdit={canEdit} />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
+        <div className="border-b border-border bg-muted/20 px-4 py-3">
+          <h2 className="text-sm font-semibold text-foreground">{t('sectionAbsagen')}</h2>
+        </div>
+        <div className="p-4 space-y-2">
+          {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
+            <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
+          ) : null}
+          <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} />
         </div>
       </section>
 
