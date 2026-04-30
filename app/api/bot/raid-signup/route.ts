@@ -89,10 +89,6 @@ export async function POST(request: NextRequest) {
   }
 
   const phase = computeRaidSignupPhase(raid);
-  const existing = await prisma.rfRaidSignup.count({ where: { raidId, userId: user.id } });
-  if (existing > 0) {
-    return NextResponse.json({ error: 'ALREADY_SIGNED_UP' }, { status: 409 });
-  }
 
   let characterId: string | null = null;
   let type: string = 'normal';
@@ -114,6 +110,14 @@ export async function POST(request: NextRequest) {
     if (!picked) {
       return NextResponse.json({ error: 'NO_CHARACTER', message: 'Kein Charakter in dieser Gilde gefunden.' }, { status: 400 });
     }
+
+    const existingOneclick = await prisma.rfRaidSignup.findFirst({
+      where: { raidId, userId: user.id, characterId: picked.id },
+    });
+    if (existingOneclick) {
+      return NextResponse.json({ error: 'ALREADY_SIGNED_UP' }, { status: 409 });
+    }
+
     characterId = picked.id;
     type = phase === 'reserve_only' ? 'reserve' : 'normal';
 
@@ -153,7 +157,7 @@ export async function POST(request: NextRequest) {
     if (!cid || !typeNorm) {
       return NextResponse.json({ error: 'Missing/invalid characterId or type' }, { status: 400 });
     }
-    if (phase === 'reserve_only' && typeNorm !== 'reserve') {
+    if (phase === 'reserve_only' && typeNorm !== 'reserve' && typeNorm !== 'declined') {
       return NextResponse.json({ error: 'After signup deadline only reserve is allowed' }, { status: 400 });
     }
 
@@ -163,6 +167,13 @@ export async function POST(request: NextRequest) {
     });
     if (!ch) {
       return NextResponse.json({ error: 'Character not found for user/guild' }, { status: 404 });
+    }
+
+    const existingCustom = await prisma.rfRaidSignup.findFirst({
+      where: { raidId, userId: user.id, characterId: ch.id },
+    });
+    if (existingCustom) {
+      return NextResponse.json({ error: 'ALREADY_SIGNED_UP' }, { status: 409 });
     }
 
     await prisma.rfRaidSignup.create({

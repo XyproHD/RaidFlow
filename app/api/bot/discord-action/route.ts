@@ -164,11 +164,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existing = await prisma.rfRaidSignup.count({ where: { raidId, userId: user.id } });
-    if (existing > 0) {
-      return NextResponse.json({ error: 'ALREADY_SIGNED_UP', message: 'Du bist bereits angemeldet.' }, { status: 409 });
-    }
-
     const phase = computeRaidSignupPhase(raid);
     const main  = await prisma.rfCharacter.findFirst({
       where:   { userId: user.id, guildId: raid.guildId, isMain: true },
@@ -185,6 +180,19 @@ export async function POST(request: NextRequest) {
     const picked = main ?? fallback;
     if (!picked) {
       return NextResponse.json({ error: 'NO_CHARACTER', message: 'Kein Charakter in dieser Gilde gefunden.' }, { status: 400 });
+    }
+
+    const existing = await prisma.rfRaidSignup.findFirst({
+      where: { raidId, userId: user.id, characterId: picked.id },
+    });
+    if (existing) {
+      return NextResponse.json(
+        {
+          error: 'ALREADY_SIGNED_UP',
+          message: 'Du bist mit diesem Charakter bereits angemeldet.',
+        },
+        { status: 409 }
+      );
     }
 
     await prisma.rfRaidSignup.create({

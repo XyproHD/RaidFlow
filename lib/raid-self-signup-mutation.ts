@@ -31,7 +31,7 @@ export function validateRaidSignupBusinessRules(args: {
   const isLate = punctuality === 'late';
 
   if (typeNorm === 'declined') {
-    return { ok: false, status: 400, error: 'Invalid signup type' };
+    return { ok: true };
   }
   if (phase === 'reserve_only' && typeNorm !== 'reserve') {
     return {
@@ -108,7 +108,7 @@ export async function commitRaidSelfSignupMutation(
   };
 
   const existing = await prisma.rfRaidSignup.findFirst({
-    where: { raidId, userId },
+    where: { raidId, userId, characterId },
   });
 
   if (existing) {
