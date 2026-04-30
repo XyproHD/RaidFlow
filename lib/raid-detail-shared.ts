@@ -8,6 +8,21 @@ export type RaidPageMode = 'view' | 'edit' | 'signup';
 /** Nach Ablauf „Anmeldung bis“ nur noch Reserve; sonst volle Typen. */
 export type RaidSignupPhase = 'full' | 'reserve_only' | 'closed';
 
+/** Eigene Anmeldung(en) für Raid-Detail / Signup-Formular (ohne Prisma). */
+export type RaidSignupSelfSnapshot = {
+  id: string;
+  characterId: string | null;
+  type: string;
+  isLate: boolean;
+  punctuality: 'on_time' | 'tight' | 'late';
+  note: string | null;
+  signedSpec: string | null;
+  onlySignedSpec: boolean;
+  forbidReserve: boolean;
+  leaderPlacement: string;
+  setConfirmed: boolean;
+};
+
 export function computeRaidSignupPhase(raid: {
   status: string;
   signupUntil: Date;

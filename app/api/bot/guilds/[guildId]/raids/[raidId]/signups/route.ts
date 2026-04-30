@@ -104,7 +104,7 @@ export async function POST(
       : normalizeSignupType(typeRaw);
   if (!typeNorm) {
     return NextResponse.json(
-      { error: 'Invalid type (normal | uncertain | reserve)' },
+      { error: 'Invalid type (normal | uncertain | reserve | declined)' },
       { status: 400 }
     );
   }

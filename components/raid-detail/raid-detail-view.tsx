@@ -18,7 +18,7 @@ import { RaidSignupPlayerRow } from '@/components/raid-detail/raid-signup-player
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
 import { RaidOverviewSummaryRows } from '@/components/raid-detail/raid-overview-summary';
-import type { RaidSignupPhase } from '@/lib/raid-detail-shared';
+import type { RaidSignupPhase, RaidSignupSelfSnapshot } from '@/lib/raid-detail-shared';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 
 export type AnnouncedLayoutProps = {
@@ -55,6 +55,7 @@ export type RaidDetailRaid = {
   signups: {
     id: string;
     userId: string;
+    characterId?: string | null;
     type: string;
     isLate: boolean;
     punctuality: string;
@@ -88,28 +89,16 @@ export type RaidDetailCharacter = {
   guildDiscordDisplayName?: string | null;
 };
 
-export type MySignupSerialized = {
-  id: string;
-  characterId: string | null;
-  type: string;
-  isLate: boolean;
-  punctuality: 'on_time' | 'tight' | 'late';
-  note: string | null;
-  signedSpec: string | null;
-  onlySignedSpec: boolean;
-  forbidReserve: boolean;
-  leaderPlacement: string;
-  setConfirmed: boolean;
-};
+export type MySignupSerialized = RaidSignupSelfSnapshot;
 
 function myStatusIcon(
   raidStatus: string,
-  mySignup: MySignupSerialized | null
+  mySignups: MySignupSerialized[]
 ): '⌛' | '⚠️' | '✅' | '🪑' | null {
-  if (!mySignup) return null;
+  if (!mySignups.length) return null;
   if (raidStatus !== 'locked' && raidStatus !== 'announced') return '⌛';
-  if (mySignup.leaderPlacement === 'substitute') return '🪑';
-  if (mySignup.setConfirmed) return '✅';
+  if (mySignups.some((s) => s.setConfirmed)) return '✅';
+  if (mySignups.some((s) => s.leaderPlacement === 'substitute')) return '🪑';
   return '⚠️';
 }
 
@@ -184,7 +173,7 @@ export function RaidDetailView({
   canSignup,
   signupPhase,
   characters,
-  mySignup,
+  mySignups,
   initialSignupOpen,
   announcedLayout,
 }: {
@@ -199,7 +188,7 @@ export function RaidDetailView({
   canSignup: boolean;
   signupPhase: RaidSignupPhase;
   characters: RaidDetailCharacter[];
-  mySignup: MySignupSerialized | null;
+  mySignups: MySignupSerialized[];
   initialSignupOpen: boolean;
   announcedLayout: AnnouncedLayoutProps | null;
 }) {
@@ -304,11 +293,8 @@ export function RaidDetailView({
   );
 
   const signupState = signupIndicator(raid.signupUntil, raid.status);
-  const statusIcon = myStatusIcon(raid.status, mySignup);
-  const myChar = mySignup?.characterId
-    ? characters.find((c) => c.id === mySignup.characterId)
-    : null;
-  const myDiscord = myChar?.guildDiscordDisplayName?.trim();
+  const statusIcon = myStatusIcon(raid.status, mySignups);
+  const hasMySignup = mySignups.length > 0;
 
   async function doCancelRaid() {
     if (!window.confirm(tEdit('cancelConfirm'))) return;
@@ -357,7 +343,7 @@ export function RaidDetailView({
   }
 
   async function doWithdraw() {
-    if (raid.status === 'announced' && mySignup?.setConfirmed) {
+    if (raid.status === 'announced' && mySignups.some((s) => s.setConfirmed)) {
       setWithdrawReason('');
       setWithdrawDialogOpen(true);
       setMyMenuOpen(false);
@@ -374,9 +360,6 @@ export function RaidDetailView({
     await runWithdrawDelete(r);
     setWithdrawReason('');
   }
-
-  const noteForDisplay = mySignup?.note?.trim() ?? '';
-  const hasOwnNote = noteForDisplay.length > 0;
 
   return (
     <div className="space-y-8">
@@ -577,8 +560,8 @@ export function RaidDetailView({
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
         <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/20 px-4 py-3">
           <h2 className="text-sm font-semibold text-foreground">{t('mySignupSection')}</h2>
-          {(mySignup && (raid.status === 'open' || raid.status === 'announced')) ||
-          (!mySignup && canSignup && (raid.status === 'open' || raid.status === 'announced')) ? (
+          {(hasMySignup && (raid.status === 'open' || raid.status === 'announced')) ||
+          (!hasMySignup && canSignup && (raid.status === 'open' || raid.status === 'announced')) ? (
             <button
               type="button"
               className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0"
@@ -596,76 +579,95 @@ export function RaidDetailView({
           ) : null}
         </div>
         <div className="p-4 space-y-3">
-          {mySignup ? (
+          {hasMySignup ? (
             <>
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-2 justify-between">
-                <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
-                  {myChar ? (
-                    <>
-                      <div className="flex shrink-0 items-center justify-center w-6 h-8">
-                        <CharacterMainStar
-                          isMain={!!myChar.isMain}
-                          titleMain={tProfile('mainLabel')}
-                          titleAlt={tProfile('altLabel')}
-                          sizePx={18}
-                        />
-                      </div>
-                      {myChar.classId ? (
-                        <span className="flex shrink-0 items-center justify-center w-8 h-8">
-                          <ClassIcon classId={myChar.classId} size={26} title={myChar.mainSpec} />
-                        </span>
-                      ) : null}
-                      <SignupSpecIcons
-                        character={{
-                          mainSpec: myChar.mainSpec,
-                          offSpec: myChar.offSpec,
-                        }}
-                        signedSpec={mySignup.signedSpec}
-                        onlySignedSpec={mySignup.onlySignedSpec}
-                        viewerIsRaidLeader={canEdit}
-                      />
-                      {mySignup.isLate ? (
-                        <span className="text-base shrink-0" title={t('lateCheckbox')}>
-                          ⏱
-                        </span>
-                      ) : null}
-                      <CharacterNameWithDiscordInline
-                        name={myChar.name}
-                        discordName={myDiscord}
-                        className="font-semibold text-foreground truncate"
-                      />
-                      {myChar.hasBattlenet ? (
-                        <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} />
-                      ) : null}
-                      <CharacterGearscoreBadge
-                        characterId={myChar.id}
-                        hasBattlenet={myChar.hasBattlenet}
-                        gearScore={myChar.gearScore}
-                      />
-                      <span className="text-muted-foreground hidden sm:inline">·</span>
-                      {statusIcon ? (
-                        <span className="shrink-0" title={tDash('myStatus')}>
-                          {statusIcon}
-                        </span>
-                      ) : null}
-                      <span className="text-sm font-medium text-foreground">
-                        {raid.status === 'locked' || raid.status === 'announced' ? (
-                          mySignup.leaderPlacement === 'substitute' ? (
-                            t('mySignupLockedSubstitute')
-                          ) : mySignup.setConfirmed ? (
-                            t('mySignupLockedConfirmed')
-                          ) : (
-                            t('mySignupLockedPending')
-                          )
+              <div className="flex flex-col gap-3">
+                {mySignups.map((signup, idx) => {
+                  const myChar = signup.characterId
+                    ? characters.find((c) => c.id === signup.characterId)
+                    : null;
+                  const myDiscord = myChar?.guildDiscordDisplayName?.trim();
+                  return (
+                    <div
+                      key={signup.id}
+                      className="flex flex-wrap items-center gap-x-2 gap-y-2 justify-between border-b border-border/60 pb-3 last:border-0 last:pb-0"
+                    >
+                      <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
+                        {myChar ? (
+                          <>
+                            <div className="flex shrink-0 items-center justify-center w-6 h-8">
+                              <CharacterMainStar
+                                isMain={!!myChar.isMain}
+                                titleMain={tProfile('mainLabel')}
+                                titleAlt={tProfile('altLabel')}
+                                sizePx={18}
+                              />
+                            </div>
+                            {myChar.classId ? (
+                              <span className="flex shrink-0 items-center justify-center w-8 h-8">
+                                <ClassIcon classId={myChar.classId} size={26} title={myChar.mainSpec} />
+                              </span>
+                            ) : null}
+                            <SignupSpecIcons
+                              character={{
+                                mainSpec: myChar.mainSpec,
+                                offSpec: myChar.offSpec,
+                              }}
+                              signedSpec={signup.signedSpec}
+                              onlySignedSpec={signup.onlySignedSpec}
+                              viewerIsRaidLeader={canEdit}
+                            />
+                            {signup.isLate ? (
+                              <span className="text-base shrink-0" title={t('lateCheckbox')}>
+                                ⏱
+                              </span>
+                            ) : null}
+                            <CharacterNameWithDiscordInline
+                              name={myChar.name}
+                              discordName={myDiscord}
+                              className="font-semibold text-foreground truncate"
+                            />
+                            {myChar.hasBattlenet ? (
+                              <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} />
+                            ) : null}
+                            <CharacterGearscoreBadge
+                              characterId={myChar.id}
+                              hasBattlenet={myChar.hasBattlenet}
+                              gearScore={myChar.gearScore}
+                            />
+                            {idx === 0 ? (
+                              <>
+                                <span className="text-muted-foreground hidden sm:inline">·</span>
+                                {statusIcon ? (
+                                  <span className="shrink-0" title={tDash('myStatus')}>
+                                    {statusIcon}
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : null}
+                            <span className="text-sm font-medium text-foreground">
+                              {raid.status === 'locked' || raid.status === 'announced' ? (
+                                signup.leaderPlacement === 'substitute' ? (
+                                  t('mySignupLockedSubstitute')
+                                ) : signup.setConfirmed ? (
+                                  t('mySignupLockedConfirmed')
+                                ) : (
+                                  t('mySignupLockedPending')
+                                )
+                              ) : (
+                                signupTypeOpenLabel(t, signup.type)
+                              )}
+                            </span>
+                          </>
                         ) : (
-                          signupTypeOpenLabel(t, mySignup.type)
+                          <span className="text-sm text-muted-foreground">{t('signupAnonymous')}</span>
                         )}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">{t('signupAnonymous')}</span>
-                  )}
-                </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex justify-end">
                 <button
                   type="button"
                   className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-sm hover:bg-muted"
@@ -677,8 +679,19 @@ export function RaidDetailView({
                 </button>
               </div>
               {expandedNote ? (
-                <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap">
-                  {hasOwnNote ? noteForDisplay : tDash('noteHint')}
+                <div className="rounded-md border border-border bg-muted/25 px-3 py-2 text-xs text-muted-foreground space-y-2">
+                  {mySignups.map((signup) => {
+                    const ch = signup.characterId
+                      ? characters.find((c) => c.id === signup.characterId)
+                      : null;
+                    const line = signup.note?.trim() ?? '';
+                    return (
+                      <p key={signup.id} className="whitespace-pre-wrap">
+                        <span className="font-medium text-foreground">{ch?.name ?? '—'}: </span>
+                        {line.length > 0 ? line : tDash('noteHint')}
+                      </p>
+                    );
+                  })}
                 </div>
               ) : null}
             </>
@@ -686,7 +699,7 @@ export function RaidDetailView({
             <p className="text-sm text-muted-foreground">{tDash('notSignedUp')}</p>
           )}
 
-          {canSignup && (raid.status === 'open' || raid.status === 'announced') && !mySignup ? (
+          {canSignup && (raid.status === 'open' || raid.status === 'announced') && !hasMySignup ? (
             <button
               type="button"
               onClick={() => setShowSignup(true)}
@@ -783,7 +796,7 @@ export function RaidDetailView({
                 style={{ top: myMenuPos.top, left: myMenuPos.left }}
                 onMouseDown={(e) => e.stopPropagation()}
               >
-                {mySignup && (raid.status === 'open' || raid.status === 'announced') ? (
+                {hasMySignup && (raid.status === 'open' || raid.status === 'announced') ? (
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
@@ -795,7 +808,7 @@ export function RaidDetailView({
                     ⚙️ {t('signupEditMenu')}
                   </button>
                 ) : null}
-                {mySignup && (raid.status === 'open' || raid.status === 'announced') ? (
+                {hasMySignup && (raid.status === 'open' || raid.status === 'announced') ? (
                   <button
                     type="button"
                     disabled={withdrawBusy}
@@ -805,7 +818,7 @@ export function RaidDetailView({
                     ➖ {t('withdraw')}
                   </button>
                 ) : null}
-                {!mySignup && canSignup && (raid.status === 'open' || raid.status === 'announced') ? (
+                {!hasMySignup && canSignup && (raid.status === 'open' || raid.status === 'announced') ? (
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
@@ -831,7 +844,7 @@ export function RaidDetailView({
               onClick={() => setShowSignup(false)}
             >
               <div
-                className="relative my-4 w-full max-w-2xl rounded-xl border border-border bg-background shadow-xl"
+                className="relative my-4 w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-background shadow-xl"
                 role="dialog"
                 aria-modal="true"
                 onClick={(e) => e.stopPropagation()}
@@ -846,21 +859,13 @@ export function RaidDetailView({
                     {tEdit('abort')}
                   </button>
                 </div>
-                <div className="p-4 max-h-[calc(100vh-8rem)] overflow-y-auto">
+                <div className="max-h-[calc(100vh-8rem)] overflow-y-auto rounded-b-xl p-4">
                   <RaidSignupForm
                     guildId={guildId}
                     raidId={raidId}
                     characters={characters}
                     signupPhase={signupPhase}
-                    initialCharacterId={mySignup?.characterId ?? null}
-                    initialType={mySignup?.type ?? 'normal'}
-                    initialIsLate={mySignup?.isLate ?? false}
-                    initialPunctuality={mySignup?.punctuality}
-                    initialNote={mySignup?.note ?? ''}
-                    initialSignedSpec={mySignup?.signedSpec ?? null}
-                    initialOnlySignedSpec={mySignup?.onlySignedSpec ?? false}
-                    initialForbidReserve={mySignup?.forbidReserve ?? false}
-                    hasExistingSignup={!!mySignup}
+                    mySignups={mySignups}
                     onSaved={() => setShowSignup(false)}
                   />
                 </div>
@@ -878,7 +883,7 @@ export function RaidDetailView({
               onClick={() => setWithdrawDialogOpen(false)}
             >
               <div
-                className="relative my-4 w-full max-w-lg rounded-xl border border-border bg-background shadow-xl"
+                className="relative my-4 w-full max-w-lg overflow-hidden rounded-xl border border-border bg-background shadow-xl"
                 role="dialog"
                 aria-modal="true"
                 onClick={(e) => e.stopPropagation()}

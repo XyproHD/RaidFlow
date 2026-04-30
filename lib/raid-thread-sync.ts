@@ -236,7 +236,8 @@ export async function postSignupChangeThreadNotice(
     const charName = details.characterName || '?';
     const specText = details.signedSpec ? ` · ${details.signedSpec}` : '';
     const typeText = details.type === 'reserve'   ? ' *(Reserve)*'
-                   : details.type === 'uncertain' ? ' *(Unsicher)*'
+                   : details.type === 'uncertain' ? ' *(Unklar)*'
+                   : details.type === 'declined'  ? ' *(Nicht da)*'
                    : '';
     const puncText = details.punctuality === 'tight' ? ' ⏳ Wird knapp'
                    : details.punctuality === 'late'  ? ' 🕐 Kommt später'

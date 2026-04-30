@@ -106,22 +106,21 @@ export default async function RaidDetailPage(props: {
       guildDiscordDisplayName: c.guildDiscordDisplayName,
     }));
 
-  const mySignup = raid.signups.find((s) => s.userId === userId);
-  const mySignupSerialized = mySignup
-    ? {
-        id: mySignup.id,
-        characterId: mySignup.characterId,
-        type: mySignup.type,
-        isLate: mySignup.isLate,
-        punctuality: normalizeSignupPunctuality(mySignup.punctuality, mySignup.isLate),
-        note: mySignup.note,
-        signedSpec: mySignup.signedSpec,
-        onlySignedSpec: mySignup.onlySignedSpec,
-        forbidReserve: mySignup.forbidReserve,
-        leaderPlacement: mySignup.leaderPlacement,
-        setConfirmed: mySignup.setConfirmed,
-      }
-    : null;
+  const mySignupsSerialized = raid.signups
+    .filter((s) => s.userId === userId)
+    .map((s) => ({
+      id: s.id,
+      characterId: s.characterId ?? null,
+      type: s.type,
+      isLate: s.isLate,
+      punctuality: normalizeSignupPunctuality(s.punctuality, s.isLate),
+      note: s.note,
+      signedSpec: s.signedSpec,
+      onlySignedSpec: s.onlySignedSpec,
+      forbidReserve: s.forbidReserve,
+      leaderPlacement: s.leaderPlacement,
+      setConfirmed: s.setConfirmed,
+    }));
 
   let announcedLayout: AnnouncedLayoutProps | null = null;
   if (raid.status === 'announced') {
@@ -212,7 +211,7 @@ export default async function RaidDetailPage(props: {
         canSignup={canSignup}
         signupPhase={signupPhase}
         characters={characters}
-        mySignup={mySignupSerialized}
+        mySignups={mySignupsSerialized}
         initialSignupOpen={mode === 'signup' && canSignup}
         announcedLayout={announcedLayout}
       />

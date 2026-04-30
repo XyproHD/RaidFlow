@@ -14,7 +14,7 @@ import { syncRaidThreadSummary, postSignupChangeThreadNotice } from '@/lib/raid-
 
 /**
  * POST /api/guilds/[guildId]/raids/[raidId]/signups
- * Anmeldung anlegen/aktualisieren (ein Eintrag pro User pro Raid).
+ * Anmeldung anlegen/aktualisieren (pro Charakter: raidId + userId + characterId).
  */
 export async function POST(
   request: NextRequest,
@@ -79,13 +79,12 @@ export async function POST(
 
   if (!characterId || !typeNorm) {
     return NextResponse.json(
-      { error: 'Missing or invalid characterId / type (normal | uncertain | reserve)' },
+      {
+        error:
+          'Missing or invalid characterId / type (normal | uncertain | reserve | declined)',
+      },
       { status: 400 }
     );
-  }
-
-  if (!signedSpecRaw) {
-    return NextResponse.json({ error: 'Missing signedSpec (main or off spec)' }, { status: 400 });
   }
 
   const character = await prisma.rfCharacter.findFirst({
@@ -99,13 +98,20 @@ export async function POST(
     );
   }
 
+  const signedSpecForRules =
+    typeNorm === 'declined' ? signedSpecRaw || character.mainSpec : signedSpecRaw;
+
+  if (!signedSpecForRules) {
+    return NextResponse.json({ error: 'Missing signedSpec (main or off spec)' }, { status: 400 });
+  }
+
   const rules = validateRaidSignupBusinessRules({
     phase,
     typeNorm,
     forbidReserve,
     punctuality,
     note,
-    signedSpecRaw,
+    signedSpecRaw: signedSpecForRules,
     characterMainSpec: character.mainSpec,
     characterOffSpec: character.offSpec,
   });
@@ -120,18 +126,18 @@ export async function POST(
     changedByUserId: userId,
     characterId: character.id,
     typeNorm,
-    signedSpecRaw,
-    onlySignedSpec,
-    forbidReserve,
-    punctuality,
+    signedSpecRaw: signedSpecForRules,
+    onlySignedSpec: typeNorm === 'declined' ? false : onlySignedSpec,
+    forbidReserve: typeNorm === 'declined' ? false : forbidReserve,
+    punctuality: typeNorm === 'declined' ? 'on_time' : punctuality,
     note,
   });
   await syncRaidThreadSummary(raidId);
   await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
     characterName: character.name,
-    signedSpec:    signedSpecRaw || null,
+    signedSpec:    signedSpecForRules || null,
     type:          typeNorm,
-    punctuality,
+    punctuality: typeNorm === 'declined' ? 'on_time' : punctuality,
   });
   return NextResponse.json({ signup }, { status: isCreate ? 201 : 200 });
 }
@@ -177,62 +183,69 @@ export async function DELETE(
     return NextResponse.json({ error: 'Withdrawal is not allowed for this raid' }, { status: 403 });
   }
 
-  const existing = await prisma.rfRaidSignup.findFirst({
-    where: { raidId, userId },
-  });
-  if (!existing) {
-    return NextResponse.json({ error: 'No signup' }, { status: 404 });
-  }
-
   let withdrawReason = '';
+  let characterIdFilter: string | undefined;
   const rawBody = await request.text().catch(() => '');
   if (rawBody.trim()) {
     try {
-      const j = JSON.parse(rawBody) as { withdrawReason?: unknown };
+      const j = JSON.parse(rawBody) as { withdrawReason?: unknown; characterId?: unknown };
       withdrawReason = typeof j.withdrawReason === 'string' ? j.withdrawReason.trim() : '';
+      const cid = typeof j.characterId === 'string' ? j.characterId.trim() : '';
+      if (cid) characterIdFilter = cid;
     } catch {
       return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
     }
   }
 
-  if (raid.status === 'announced' && existing.setConfirmed) {
-    if (withdrawReason.length < WITHDRAW_REASON_MIN) {
-      return NextResponse.json(
-        {
-          error: `withdrawReason required (min ${WITHDRAW_REASON_MIN} characters) when leaving a confirmed slot on an announced raid`,
-        },
-        { status: 400 }
-      );
-    }
+  const toRemove = await prisma.rfRaidSignup.findMany({
+    where: characterIdFilter
+      ? { raidId, userId, characterId: characterIdFilter }
+      : { raidId, userId },
+  });
+  if (toRemove.length === 0) {
+    return NextResponse.json({ error: 'No signup' }, { status: 404 });
   }
 
-  const deletedChar = existing.characterId
-    ? await prisma.rfCharacter.findUnique({
-        where:  { id: existing.characterId },
-        select: { name: true },
-      })
-    : null;
-  const prevSnap = snapshotSignup(existing);
-  await prisma.rfRaidSignup.delete({ where: { id: existing.id } });
-  const auditNewValue =
-    raid.status === 'announced' && existing.setConfirmed && withdrawReason.length >= WITHDRAW_REASON_MIN
-      ? JSON.stringify({ withdrawReason })
+  const needsWithdrawReason =
+    raid.status === 'announced' && toRemove.some((s) => s.setConfirmed);
+  if (needsWithdrawReason && withdrawReason.length < WITHDRAW_REASON_MIN) {
+    return NextResponse.json(
+      {
+        error: `withdrawReason required (min ${WITHDRAW_REASON_MIN} characters) when leaving a confirmed slot on an announced raid`,
+      },
+      { status: 400 }
+    );
+  }
+
+  for (const existing of toRemove) {
+    const deletedChar = existing.characterId
+      ? await prisma.rfCharacter.findUnique({
+          where:  { id: existing.characterId },
+          select: { name: true },
+        })
       : null;
-  await logRaidSignupAudit({
-    signupId: existing.id,
-    raidId,
-    guildId,
-    changedByUserId: userId,
-    action: 'signup_delete',
-    oldValue: prevSnap,
-    newValue: auditNewValue,
-  });
+    const prevSnap = snapshotSignup(existing);
+    await prisma.rfRaidSignup.delete({ where: { id: existing.id } });
+    const auditNewValue =
+      raid.status === 'announced' && existing.setConfirmed && withdrawReason.length >= WITHDRAW_REASON_MIN
+        ? JSON.stringify({ withdrawReason })
+        : null;
+    await logRaidSignupAudit({
+      signupId: existing.id,
+      raidId,
+      guildId,
+      changedByUserId: userId,
+      action: 'signup_delete',
+      oldValue: prevSnap,
+      newValue: auditNewValue,
+    });
+    await postSignupChangeThreadNotice(raidId, 'unsignup', {
+      characterName: deletedChar?.name ?? null,
+      signedSpec:    existing.signedSpec,
+      type:          existing.type,
+      punctuality:   existing.punctuality,
+    });
+  }
   await syncRaidThreadSummary(raidId);
-  await postSignupChangeThreadNotice(raidId, 'unsignup', {
-    characterName: deletedChar?.name ?? null,
-    signedSpec:    existing.signedSpec,
-    type:          existing.type,
-    punctuality:   existing.punctuality,
-  });
   return NextResponse.json({ ok: true });
 }
