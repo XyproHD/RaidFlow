@@ -258,6 +258,13 @@ function typeNorm(v: string) {
   return v === 'main' ? 'normal' : v;
 }
 
+function attendanceRowVariant(s: RosterPlannerSignup): 'default' | 'uncertain' | 'declined' {
+  const tn = typeNorm(s.signupType);
+  if (tn === 'uncertain') return 'uncertain';
+  if (tn === 'declined') return 'declined';
+  return 'default';
+}
+
 function reserveSignupIdsFrom(signups: RosterPlannerSignup[]): string[] {
   return signups.filter((s) => typeNorm(s.signupType) === 'reserve').map((s) => s.id);
 }
@@ -1205,17 +1212,13 @@ export function RaidRosterPlanner({
     return () => el.removeEventListener('transitionend', onEnd);
   }, [flyBack]);
 
-  function renderRow(
-    s: RosterPlannerSignup,
-    source: 'roster' | 'reserve' | 'pool',
-    index?: number,
-    poolVariant: 'default' | 'uncertain' | 'declined' = 'default'
-  ) {
+  function renderRow(s: RosterPlannerSignup, source: 'roster' | 'reserve' | 'pool', index?: number) {
     const isDragging = draggingId === s.id;
     const note = s.note?.trim() ?? '';
     const punct = punctualityOf(s);
     const punctLabel =
       punct === 'on_time' ? t('punctualityOnTime') : punct === 'tight' ? t('punctualityTight') : t('punctualityLate');
+    const attVariant = attendanceRowVariant(s);
     return (
       <div
         key={`${source}-${s.id}`}
@@ -1224,14 +1227,10 @@ export function RaidRosterPlanner({
         data-signup-id={s.id}
         className={cn(
           'flex flex-wrap items-center gap-2 rounded-lg border bg-background px-2 py-1.5 text-sm cursor-grab active:cursor-grabbing touch-none select-none',
-          source === 'pool' && poolVariant === 'default' && 'border-border',
-          source === 'pool' &&
-            poolVariant === 'uncertain' &&
-            'border-red-400/60 dark:border-red-700/55',
-          source === 'pool' &&
-            poolVariant === 'declined' &&
+          attVariant === 'default' && 'border-border',
+          attVariant === 'uncertain' && 'border-red-400/60 dark:border-red-700/55',
+          attVariant === 'declined' &&
             'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40',
-          source !== 'pool' && 'border-border',
           isDragging && 'opacity-25'
         )}
         onPointerDown={(e) => onRowPointerDown(e, s.id, source)}
@@ -2118,7 +2117,7 @@ export function RaidRosterPlanner({
                       {ids.map((id) => {
                         const s = byId.get(id);
                         if (!s) return null;
-                        return renderRow(s, 'pool', undefined, 'default');
+                        return renderRow(s, 'pool');
                       })}
                     </div>
                   </div>
@@ -2147,7 +2146,7 @@ export function RaidRosterPlanner({
                           {ids.map((id) => {
                             const s = byId.get(id);
                             if (!s) return null;
-                            return renderRow(s, 'pool', undefined, 'uncertain');
+                            return renderRow(s, 'pool');
                           })}
                         </div>
                       </div>
@@ -2180,7 +2179,7 @@ export function RaidRosterPlanner({
                           {ids.map((id) => {
                             const s = byId.get(id);
                             if (!s) return null;
-                            return renderRow(s, 'pool', undefined, 'declined');
+                            return renderRow(s, 'pool');
                           })}
                         </div>
                       </div>
@@ -2676,85 +2675,97 @@ export function RaidRosterPlanner({
         : null}
 
       {dragSession && dragPoint && draggedSignup
-        ? createPortal(
-            <div
-              className="pointer-events-none fixed z-[1100] rounded-lg border border-primary bg-background px-2 py-1.5 text-sm shadow-xl flex flex-wrap items-center gap-2"
-              style={{
-                left: dragPoint.clientX - dragSession.offsetX,
-                top: dragPoint.clientY - dragSession.offsetY,
-                width: dragSession.originRect.width,
-                minHeight: dragSession.originRect.height,
-              }}
-            >
-              <CharacterMainStar
-                isMain={!!draggedSignup.isMain}
-                titleMain={tProfile('mainLabel')}
-                titleAlt={tProfile('altLabel')}
-                sizePx={16}
-              />
-              {draggedSignup.classId ? <ClassIcon classId={draggedSignup.classId} size={22} /> : null}
-              {renderSpecIcons(draggedSignup, false)}
-              <span className="font-medium truncate inline-flex items-center gap-1">
-                {draggedSignup.name}
-                <CharacterSignupPunctualityMark
-                  kind={punctualityOf(draggedSignup)}
-                  label={
-                    punctualityOf(draggedSignup) === 'on_time'
-                      ? t('punctualityOnTime')
-                      : punctualityOf(draggedSignup) === 'tight'
-                        ? t('punctualityTight')
-                        : t('punctualityLate')
-                  }
+        ? (() => {
+            const dv = attendanceRowVariant(draggedSignup);
+            return createPortal(
+              <div
+                className={cn(
+                  'pointer-events-none fixed z-[1100] rounded-lg border bg-background px-2 py-1.5 text-sm shadow-xl flex flex-wrap items-center gap-2',
+                  dv === 'default' && 'border-primary',
+                  dv === 'uncertain' && 'border-red-400/60 dark:border-red-700/55',
+                  dv === 'declined' &&
+                    'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40'
+                )}
+                style={{
+                  left: dragPoint.clientX - dragSession.offsetX,
+                  top: dragPoint.clientY - dragSession.offsetY,
+                  width: dragSession.originRect.width,
+                  minHeight: dragSession.originRect.height,
+                }}
+              >
+                <CharacterMainStar
+                  isMain={!!draggedSignup.isMain}
+                  titleMain={tProfile('mainLabel')}
+                  titleAlt={tProfile('altLabel')}
+                  sizePx={16}
                 />
-              </span>
-            </div>,
-            document.body
-          )
+                {draggedSignup.classId ? <ClassIcon classId={draggedSignup.classId} size={22} /> : null}
+                {renderSpecIcons(draggedSignup, false)}
+                <span className="font-medium truncate inline-flex items-center gap-1">
+                  {draggedSignup.name}
+                  <CharacterSignupPunctualityMark
+                    kind={punctualityOf(draggedSignup)}
+                    label={
+                      punctualityOf(draggedSignup) === 'on_time'
+                        ? t('punctualityOnTime')
+                        : punctualityOf(draggedSignup) === 'tight'
+                          ? t('punctualityTight')
+                          : t('punctualityLate')
+                    }
+                  />
+                </span>
+              </div>,
+              document.body
+            );
+          })()
         : null}
 
       {flyBack && byId.get(flyBack.signupId)
-        ? createPortal(
-            <div
-              ref={flyBackRef}
-              className="fixed z-[1100] pointer-events-none rounded-lg border border-border bg-background shadow-lg flex flex-wrap items-center gap-2 px-2 py-1.5 text-sm"
-              style={{
-                left: flyBack.fromLeft,
-                top: flyBack.fromTop,
-                width: flyBack.width,
-                minHeight: flyBack.height,
-              }}
-            >
-              {(() => {
-                const s = byId.get(flyBack.signupId)!;
-                return (
-                  <>
-                    <CharacterMainStar
-                      isMain={!!s.isMain}
-                      titleMain={tProfile('mainLabel')}
-                      titleAlt={tProfile('altLabel')}
-                      sizePx={16}
-                    />
-                    {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
-                    {renderSpecIcons(s, false)}
-                    <span className="font-medium truncate inline-flex items-center gap-1">
-                      {s.name}
-                      <CharacterSignupPunctualityMark
-                        kind={punctualityOf(s)}
-                        label={
-                          punctualityOf(s) === 'on_time'
-                            ? t('punctualityOnTime')
-                            : punctualityOf(s) === 'tight'
-                              ? t('punctualityTight')
-                              : t('punctualityLate')
-                        }
-                      />
-                    </span>
-                  </>
-                );
-              })()}
-            </div>,
-            document.body
-          )
+        ? (() => {
+            const s = byId.get(flyBack.signupId)!;
+            const fv = attendanceRowVariant(s);
+            return createPortal(
+              <div
+                ref={flyBackRef}
+                className={cn(
+                  'fixed z-[1100] pointer-events-none rounded-lg border bg-background shadow-lg flex flex-wrap items-center gap-2 px-2 py-1.5 text-sm',
+                  fv === 'default' && 'border-border',
+                  fv === 'uncertain' && 'border-red-400/60 dark:border-red-700/55',
+                  fv === 'declined' &&
+                    'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40'
+                )}
+                style={{
+                  left: flyBack.fromLeft,
+                  top: flyBack.fromTop,
+                  width: flyBack.width,
+                  minHeight: flyBack.height,
+                }}
+              >
+                <CharacterMainStar
+                  isMain={!!s.isMain}
+                  titleMain={tProfile('mainLabel')}
+                  titleAlt={tProfile('altLabel')}
+                  sizePx={16}
+                />
+                {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
+                {renderSpecIcons(s, false)}
+                <span className="font-medium truncate inline-flex items-center gap-1">
+                  {s.name}
+                  <CharacterSignupPunctualityMark
+                    kind={punctualityOf(s)}
+                    label={
+                      punctualityOf(s) === 'on_time'
+                        ? t('punctualityOnTime')
+                        : punctualityOf(s) === 'tight'
+                          ? t('punctualityTight')
+                          : t('punctualityLate')
+                    }
+                  />
+                </span>
+              </div>,
+              document.body
+            );
+          })()
         : null}
 
       {addOpen
