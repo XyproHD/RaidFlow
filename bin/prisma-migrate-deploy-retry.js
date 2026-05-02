@@ -6,10 +6,10 @@
  * IMPORTANT: Must mirror pooler URL handling in lib/prisma.ts — the Prisma CLI does not
  * load lib/prisma.ts, so Session pooler (port 5432) stays broken unless we normalize here.
  *
- * Fallback: Some builders (e.g. Vercel iad1 → eu-central-1) cannot open TCP to
- * db.<project>.supabase.co:5432 (IPv6 / routing). The transaction pooler on 6543 usually works.
- * If all retries with your real DIRECT_URL fail, we retry with DIRECT_URL := DATABASE_URL
- * (unless PRISMA_MIGRATE_NO_POOLER_FALLBACK=1).
+ * Fallback: Some builders (e.g. Vercel iad1) cannot reach db.<project>.supabase.co:5432 (P1001).
+ * Do NOT fall back to DATABASE_URL as-is: that is the **transaction** pooler (6543). Prisma Migrate
+ * can **hang** on PgBouncer transaction mode. Use the **session** pooler on port **5432** instead
+ * (same host as DATABASE_URL, different port + stripped pgbouncer params).
  */
 const { execSync } = require('child_process');
 const { setTimeout: delay } = require('timers/promises');
@@ -45,6 +45,28 @@ function normalizeSupabasePoolerUrl(urlString) {
     return u.toString();
   } catch {
     return urlString;
+  }
+}
+
+/**
+ * Session pooler (5432) from transaction DATABASE_URL (6543) — safe for Prisma Migrate when db.* fails.
+ * @param {string | undefined} databaseUrl
+ * @returns {string | null}
+ */
+function sessionPoolerUrlFromTransactionDatabaseUrl(databaseUrl) {
+  if (!databaseUrl || !String(databaseUrl).trim()) return null;
+  try {
+    const u = new URL(String(databaseUrl).replace(/^postgresql:/, 'postgres:'));
+    if (!u.hostname.includes('pooler.supabase.com')) return null;
+    u.port = '5432';
+    u.searchParams.delete('pgbouncer');
+    u.searchParams.delete('connection_limit');
+    if (!u.searchParams.has('sslmode')) {
+      u.searchParams.set('sslmode', 'require');
+    }
+    return u.toString();
+  } catch {
+    return null;
   }
 }
 
@@ -120,13 +142,16 @@ async function runMigrateCycle(env, phaseLabel) {
 (async () => {
   const baseEnv = { ...process.env };
 
-  let ok = await runMigrateCycle(baseEnv, 'direct (DIRECT_URL → db.*.supabase.co)');
+  let ok = await runMigrateCycle(baseEnv, 'primary (DIRECT_URL from env)');
+
+  const sessionFallbackUrl = sessionPoolerUrlFromTransactionDatabaseUrl(baseEnv.DATABASE_URL);
 
   const canFallback =
     !ok &&
     baseEnv.DATABASE_URL &&
     baseEnv.DIRECT_URL &&
     baseEnv.DIRECT_URL !== baseEnv.DATABASE_URL &&
+    sessionFallbackUrl &&
     process.env.PRISMA_MIGRATE_NO_POOLER_FALLBACK !== '1' &&
     process.env.PRISMA_MIGRATE_NO_POOLER_FALLBACK !== 'true';
 
@@ -136,10 +161,10 @@ async function runMigrateCycle(env, phaseLabel) {
       '[prisma-migrate] ─────────────────────────────────────────────────────────────────────'
     );
     console.warn(
-      '[prisma-migrate] Fallback phase: db.* host unreachable from this builder (common on Vercel).'
+      '[prisma-migrate] Fallback: db.* unreachable — using Supabase **session** pooler :5432 for Migrate.'
     );
     console.warn(
-      '[prisma-migrate] Running migrate with DIRECT_URL := DATABASE_URL (transaction pooler).'
+      '[prisma-migrate] (Do not use transaction pooler :6543 for migrate; it can hang indefinitely.)'
     );
     console.warn(
       '[prisma-migrate] Opt out: PRISMA_MIGRATE_NO_POOLER_FALLBACK=1'
@@ -148,11 +173,15 @@ async function runMigrateCycle(env, phaseLabel) {
       '[prisma-migrate] ─────────────────────────────────────────────────────────────────────'
     );
     console.warn('');
-    const poolerEnv = { ...baseEnv, DIRECT_URL: baseEnv.DATABASE_URL };
-    logConnectionTarget('DIRECT_URL (fallback, same as DATABASE_URL)', poolerEnv.DIRECT_URL);
-    ok = await runMigrateCycle(poolerEnv, 'pooler (DIRECT_URL := DATABASE_URL)');
+    const poolerEnv = { ...baseEnv, DIRECT_URL: sessionFallbackUrl };
+    logConnectionTarget('DIRECT_URL (fallback: session pooler)', poolerEnv.DIRECT_URL);
+    ok = await runMigrateCycle(poolerEnv, 'fallback (session pooler :5432)');
   } else if (!ok && process.env.PRISMA_MIGRATE_NO_POOLER_FALLBACK === '1') {
     console.error('[prisma-migrate] Pooler fallback disabled; exiting.');
+  } else if (!ok && !sessionFallbackUrl && baseEnv.DIRECT_URL !== baseEnv.DATABASE_URL) {
+    console.error(
+      '[prisma-migrate] No session-pooler fallback possible (DATABASE_URL is not a Supabase pooler URL).'
+    );
   }
 
   if (!ok) {

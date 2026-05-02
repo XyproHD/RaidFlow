@@ -310,6 +310,70 @@ export async function POST(request: NextRequest) {
   }
 
   // -------------------------------------------------------------------------
+  // Nicht da (Declined)
+  // -------------------------------------------------------------------------
+  if (action === 'decline') {
+    const removedRows = await prisma.rfRaidSignup.findMany({
+      where:   { raidId, userId: user.id },
+      include: { character: { select: { id: true, name: true, mainSpec: true, isMain: true } } },
+      orderBy: { signedAt: 'asc' },
+    });
+
+    let markerChar = removedRows.find(r => r.character?.isMain)?.character ?? null;
+    if (!markerChar) {
+      markerChar = (await prisma.rfCharacter.findFirst({
+        where:   { userId: user.id, guildId: raid.guildId, isMain: true },
+        select:  { id: true, name: true, mainSpec: true, isMain: true },
+        orderBy: { updatedAt: 'desc' },
+      })) ?? null;
+    }
+    if (!markerChar) {
+      markerChar = await prisma.rfCharacter.findFirst({
+        where:   { userId: user.id, guildId: raid.guildId },
+        select:  { id: true, name: true, mainSpec: true, isMain: true },
+        orderBy: { updatedAt: 'desc' },
+      });
+    }
+    if (!markerChar) {
+      return NextResponse.json({ error: 'NO_CHARACTER', message: 'Kein Charakter in dieser Gilde gefunden.' }, { status: 400 });
+    }
+
+    await prisma.rfRaidSignup.deleteMany({ where: { raidId, userId: user.id } });
+
+    const { isCreate } = await commitRaidSelfSignupMutation({
+      raidId,
+      guildId:         raid.guildId,
+      userId:          user.id,
+      changedByUserId: user.id,
+      characterId:     markerChar.id,
+      typeNorm:        'declined',
+      signedSpecRaw:   markerChar.mainSpec,
+      onlySignedSpec:  false,
+      forbidReserve:   false,
+      punctuality:     'on_time',
+      note:            '',
+    });
+
+    await syncRaidThreadSummary(raidId, { embedOnly: true });
+    for (const row of removedRows) {
+      await postSignupChangeThreadNotice(raidId, 'unsignup', {
+        characterName: row.character?.name ?? null,
+        signedSpec:    row.signedSpec,
+        type:          row.type,
+        punctuality:   row.punctuality,
+      });
+    }
+    await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
+      characterName: markerChar.name,
+      signedSpec:    markerChar.mainSpec,
+      type:          'declined',
+      punctuality:   'on_time',
+    });
+
+    return NextResponse.json({ ok: true, message: 'Du bist als „nicht da“ markiert.' });
+  }
+
+  // -------------------------------------------------------------------------
   // Abmelden (Unregister)
   // -------------------------------------------------------------------------
   if (action === 'unregister') {
