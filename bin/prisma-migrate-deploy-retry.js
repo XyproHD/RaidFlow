@@ -62,6 +62,11 @@ function logConnectionTarget(label, raw) {
 }
 
 function warnEnv() {
+  if (process.env.VERCEL) {
+    console.log(
+      `[prisma-migrate] Vercel: VERCEL_ENV=${process.env.VERCEL_ENV ?? '(unset)'} GIT_COMMIT_REF=${process.env.VERCEL_GIT_COMMIT_REF ?? '(n/a)'}`
+    );
+  }
   logConnectionTarget('DATABASE_URL (effective)', process.env.DATABASE_URL);
   logConnectionTarget('DIRECT_URL (migrate/introspect)', process.env.DIRECT_URL);
 
