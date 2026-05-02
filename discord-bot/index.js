@@ -1401,6 +1401,40 @@ function setEditFlow(userId, raidId, data) {
 function clearEditFlow(userId, raidId) { joinFlowState.delete(eKey(userId, raidId)); }
 
 const PUNC_LABELS = { on_time: '🟢 Rechtzeitig', tight: '🟡 Wird knapp', late: '🕒 Später' };
+const TYPE_LABELS = { normal: 'Bin da', reserve: 'Reserve', uncertain: 'Unklar' };
+
+// ---------------------------------------------------------------------------
+// Join 2 Flow (mehrstufig: Auswahl-Gruppen + Spec je Char + Notiz-Modal)
+// ---------------------------------------------------------------------------
+function j2Key(userId, raidId) { return `join2::${userId}::${raidId}`; }
+
+function getJoin2Flow(userId, raidId) {
+  const entry = joinFlowState.get(j2Key(userId, raidId));
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    joinFlowState.delete(j2Key(userId, raidId));
+    return null;
+  }
+  return entry.data;
+}
+
+function setJoin2Flow(userId, raidId, data) {
+  joinFlowState.set(j2Key(userId, raidId), { data, expiresAt: Date.now() + JOIN_TTL_MS });
+}
+
+function clearJoin2Flow(userId, raidId) {
+  joinFlowState.delete(j2Key(userId, raidId));
+}
+
+function getUniqueSpecs(char) {
+  return [char?.mainSpec, char?.offSpec].filter(Boolean).filter((v, i, arr) => arr.indexOf(v) === i);
+}
+
+function getJoin2ActiveChar(flow) {
+  const idx = Math.max(0, Math.min(flow.step2Index ?? 0, (flow.selectedCharIds?.length ?? 1) - 1));
+  const charId = flow.selectedCharIds[idx];
+  return flow.chars.find(c => c.id === charId) ?? null;
+}
 
 // ---------------------------------------------------------------------------
 // WoW-Emoji-Hilfsfunktionen für den Bot
@@ -1709,6 +1743,455 @@ async function handleRaidJoinButton(interaction, raidId, guildId) {
     content:    '**Welchen Charakter möchtest du anmelden?**',
     components: [new ActionRowBuilder().addComponents(select)],
   }).catch(() => {});
+}
+
+async function buildJoin2Step1Message(raidId, flow, errorHint) {
+  const { StringSelectMenuBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+  const rid = raidId.replace(/-/g, '');
+  const selectedChars = Array.isArray(flow.selectedCharIds) ? flow.selectedCharIds : [];
+  const hasSelection = selectedChars.length > 0;
+
+  const charSelect = new StringSelectMenuBuilder()
+    .setCustomId(`rf:j2chars:${rid}`)
+    .setPlaceholder('Charaktere auswählen…')
+    .setMinValues(0)
+    .setMaxValues(Math.min(25, flow.chars.length))
+    .addOptions(
+      flow.chars.slice(0, 25).map(c => ({
+        label: truncateDiscordLabel(`${c.name} (${c.mainSpec})`, 100),
+        value: c.id,
+        description: c.isMain ? 'Hauptcharakter' : 'Twink',
+        default: selectedChars.includes(c.id),
+      }))
+    );
+
+  const typeSelect = new StringSelectMenuBuilder()
+    .setCustomId(`rf:j2type:${rid}`)
+    .setPlaceholder('Teilnahme wählen…')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions([
+      { label: 'Bin da', value: 'normal', default: flow.type === 'normal' },
+      { label: 'Reserve', value: 'reserve', default: flow.type === 'reserve' },
+      { label: 'Unklar', value: 'uncertain', default: flow.type === 'uncertain' },
+    ]);
+
+  const puncSelect = new StringSelectMenuBuilder()
+    .setCustomId(`rf:j2punc:${rid}`)
+    .setPlaceholder('Pünktlichkeit wählen…')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions([
+      { label: 'Rechtzeitig', value: 'on_time', default: flow.punctuality === 'on_time' },
+      { label: 'Wird knapp', value: 'tight', default: flow.punctuality === 'tight' },
+      { label: 'Später', value: 'late', default: flow.punctuality === 'late' },
+    ]);
+
+  const warn = errorHint ? `\n\n⚠️ ${errorHint}` : '';
+  return {
+    content: [
+      '**Anmelden 2 · Schritt 1/2**',
+      `Teilnahme: **${TYPE_LABELS[flow.type] ?? flow.type}**`,
+      `Pünktlichkeit: **${PUNC_LABELS[flow.punctuality] ?? flow.punctuality}**`,
+      `Ausgewählte Chars: **${selectedChars.length}**`,
+      warn,
+    ].join('\n'),
+    components: [
+      new ActionRowBuilder().addComponents(charSelect),
+      new ActionRowBuilder().addComponents(typeSelect),
+      new ActionRowBuilder().addComponents(puncSelect),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`rf:j2next:${rid}`)
+          .setLabel('Weiter zu Specs')
+          .setStyle(hasSelection ? ButtonStyle.Primary : ButtonStyle.Secondary)
+      ),
+    ],
+    ephemeral: true,
+  };
+}
+
+async function buildJoin2Step2Message(raidId, flow, errorHint) {
+  const { StringSelectMenuBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+  const rid = raidId.replace(/-/g, '');
+  const activeChar = getJoin2ActiveChar(flow);
+  if (!activeChar) {
+    return {
+      content: '⚠️ Keine Charakterauswahl vorhanden. Bitte starte „Anmelden 2“ erneut.',
+      components: [],
+      ephemeral: true,
+    };
+  }
+
+  const total = flow.selectedCharIds.length;
+  const idx = Math.max(0, Math.min(flow.step2Index ?? 0, total - 1));
+  const cfg = flow.perChar?.[activeChar.id] ?? {
+    selectedSpec: activeChar.mainSpec,
+    onlySignedSpec: false,
+    forbidReserve: false,
+  };
+  const specs = getUniqueSpecs(activeChar);
+
+  const specSelect = new StringSelectMenuBuilder()
+    .setCustomId(`rf:j2spec:${rid}:${activeChar.id.replace(/-/g, '')}`)
+    .setPlaceholder('Spec wählen…')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(
+      specs.map(spec => ({
+        label: truncateDiscordLabel(spec, 100),
+        value: spec,
+        default: (cfg.selectedSpec ?? activeChar.mainSpec) === spec,
+      }))
+    );
+
+  const optionDefs = [
+    {
+      label: 'Nur angemeldete Spec',
+      value: 'only_signed_spec',
+      default: cfg.onlySignedSpec === true,
+      description: 'Char wird nur in dieser Spec berücksichtigt',
+    },
+  ];
+  if (flow.type !== 'reserve') {
+    optionDefs.push({
+      label: 'Reserve verbieten',
+      value: 'forbid_reserve',
+      default: cfg.forbidReserve === true,
+      description: 'Dieser Char darf nicht auf Reserve verschoben werden',
+    });
+  }
+
+  const optionsSelect = new StringSelectMenuBuilder()
+    .setCustomId(`rf:j2opts:${rid}:${activeChar.id.replace(/-/g, '')}`)
+    .setPlaceholder('Optionen wählen…')
+    .setMinValues(0)
+    .setMaxValues(optionDefs.length)
+    .addOptions(optionDefs);
+
+  const notePreview = flow.note?.trim()
+    ? `Notiz: "${flow.note.trim().slice(0, 40)}${flow.note.trim().length > 40 ? '…' : ''}"`
+    : 'Notiz: —';
+  const lateHint = flow.punctuality === 'late' ? '\n⚠️ Bei „Später“ ist eine Notiz Pflicht.' : '';
+  const warn = errorHint ? `\n\n⚠️ ${errorHint}` : '';
+
+  return {
+    content: [
+      `**Anmelden 2 · Schritt 2/2 (${idx + 1}/${total})**`,
+      `Char: **${activeChar.name}**`,
+      `Teilnahme: **${TYPE_LABELS[flow.type] ?? flow.type}**`,
+      `Pünktlichkeit: **${PUNC_LABELS[flow.punctuality] ?? flow.punctuality}**`,
+      notePreview,
+      lateHint,
+      warn,
+    ].join('\n'),
+    components: [
+      new ActionRowBuilder().addComponents(specSelect),
+      new ActionRowBuilder().addComponents(optionsSelect),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`rf:j2prev:${rid}`)
+          .setLabel('Vorheriger Char')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(idx <= 0),
+        new ButtonBuilder()
+          .setCustomId(`rf:j2nextchar:${rid}`)
+          .setLabel('Nächster Char')
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(idx >= total - 1),
+      ),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`rf:j2open:${rid}`)
+          .setLabel('Notiz & Absenden')
+          .setStyle(ButtonStyle.Success),
+      ),
+    ],
+    ephemeral: true,
+  };
+}
+
+async function handleRaidJoin2Button(interaction, raidId) {
+  raidPostMessages.set(`${interaction.user.id}:${raidId}`, interaction.message);
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
+  const { ok, json } = await getDiscordAction({
+    action: 'get-chars',
+    discordUserId: interaction.user.id,
+    raidId,
+  });
+
+  if (!ok || json.linked === false) {
+    await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  const chars = Array.isArray(json.characters) ? json.characters : [];
+  if (chars.length === 0) {
+    await interaction.editReply({ content: raidActionErrorText('NO_CHARACTER') }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  setJoin2Flow(interaction.user.id, raidId, {
+    chars,
+    type: 'normal',
+    punctuality: 'on_time',
+    selectedCharIds: [],
+    perChar: {},
+    step2Index: 0,
+    note: '',
+  });
+
+  const msg = await buildJoin2Step1Message(raidId, getJoin2Flow(interaction.user.id, raidId));
+  await interaction.editReply(msg).catch(() => {});
+}
+
+async function handleJoin2CharsSelect(interaction, raidId) {
+  const flow = getJoin2Flow(interaction.user.id, raidId);
+  if (!flow) {
+    await interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 2“ klicken.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  const selectedSet = new Set(interaction.values ?? []);
+  const selectedCharIds = flow.chars.filter(c => selectedSet.has(c.id)).map(c => c.id);
+  setJoin2Flow(interaction.user.id, raidId, { ...flow, selectedCharIds });
+  const msg = await buildJoin2Step1Message(raidId, getJoin2Flow(interaction.user.id, raidId));
+  await interaction.update(msg).catch(() => {});
+}
+
+async function handleJoin2TypeSelect(interaction, raidId) {
+  const flow = getJoin2Flow(interaction.user.id, raidId);
+  if (!flow) {
+    await interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 2“ klicken.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  const type = interaction.values?.[0] ?? 'normal';
+  const perChar = { ...(flow.perChar ?? {}) };
+  if (type === 'reserve') {
+    for (const cid of Object.keys(perChar)) {
+      perChar[cid] = { ...perChar[cid], forbidReserve: false };
+    }
+  }
+  setJoin2Flow(interaction.user.id, raidId, { ...flow, type, perChar });
+  const msg = await buildJoin2Step1Message(raidId, getJoin2Flow(interaction.user.id, raidId));
+  await interaction.update(msg).catch(() => {});
+}
+
+async function handleJoin2PuncSelect(interaction, raidId) {
+  const flow = getJoin2Flow(interaction.user.id, raidId);
+  if (!flow) {
+    await interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 2“ klicken.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  const punctuality = interaction.values?.[0] ?? 'on_time';
+  setJoin2Flow(interaction.user.id, raidId, { ...flow, punctuality });
+  const msg = await buildJoin2Step1Message(raidId, getJoin2Flow(interaction.user.id, raidId));
+  await interaction.update(msg).catch(() => {});
+}
+
+async function handleJoin2ToStep2(interaction, raidId) {
+  const flow = getJoin2Flow(interaction.user.id, raidId);
+  if (!flow) {
+    await interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 2“ klicken.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  if (!Array.isArray(flow.selectedCharIds) || flow.selectedCharIds.length === 0) {
+    const msg = await buildJoin2Step1Message(raidId, flow, 'Bitte mindestens einen Charakter auswählen.');
+    await interaction.update(msg).catch(() => {});
+    return;
+  }
+
+  const perChar = { ...(flow.perChar ?? {}) };
+  for (const cid of flow.selectedCharIds) {
+    const char = flow.chars.find(c => c.id === cid);
+    if (!char) continue;
+    const oldCfg = perChar[cid] ?? {};
+    perChar[cid] = {
+      selectedSpec: oldCfg.selectedSpec ?? char.mainSpec,
+      onlySignedSpec: oldCfg.onlySignedSpec === true,
+      forbidReserve: flow.type === 'reserve' ? false : oldCfg.forbidReserve === true,
+    };
+  }
+
+  setJoin2Flow(interaction.user.id, raidId, {
+    ...flow,
+    step2Index: 0,
+    perChar,
+  });
+  const msg = await buildJoin2Step2Message(raidId, getJoin2Flow(interaction.user.id, raidId));
+  await interaction.update(msg).catch(() => {});
+}
+
+async function handleJoin2SpecSelect(interaction, raidId) {
+  const flow = getJoin2Flow(interaction.user.id, raidId);
+  if (!flow) {
+    await interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 2“ klicken.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  const activeChar = getJoin2ActiveChar(flow);
+  const selectedSpec = interaction.values?.[0];
+  if (!activeChar || !selectedSpec) {
+    await interaction.reply({ content: '⚠️ Ungültige Auswahl.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  const perChar = { ...(flow.perChar ?? {}) };
+  perChar[activeChar.id] = { ...(perChar[activeChar.id] ?? {}), selectedSpec };
+  setJoin2Flow(interaction.user.id, raidId, { ...flow, perChar });
+  const msg = await buildJoin2Step2Message(raidId, getJoin2Flow(interaction.user.id, raidId));
+  await interaction.update(msg).catch(() => {});
+}
+
+async function handleJoin2OptionsSelect(interaction, raidId) {
+  const flow = getJoin2Flow(interaction.user.id, raidId);
+  if (!flow) {
+    await interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 2“ klicken.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  const activeChar = getJoin2ActiveChar(flow);
+  if (!activeChar) {
+    await interaction.reply({ content: '⚠️ Kein aktiver Charakter.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  const selected = new Set(interaction.values ?? []);
+  const perChar = { ...(flow.perChar ?? {}) };
+  perChar[activeChar.id] = {
+    ...(perChar[activeChar.id] ?? {}),
+    selectedSpec: perChar[activeChar.id]?.selectedSpec ?? activeChar.mainSpec,
+    onlySignedSpec: selected.has('only_signed_spec'),
+    forbidReserve: flow.type === 'reserve' ? false : selected.has('forbid_reserve'),
+  };
+  setJoin2Flow(interaction.user.id, raidId, { ...flow, perChar });
+  const msg = await buildJoin2Step2Message(raidId, getJoin2Flow(interaction.user.id, raidId));
+  await interaction.update(msg).catch(() => {});
+}
+
+async function handleJoin2StepNav(interaction, raidId, direction) {
+  const flow = getJoin2Flow(interaction.user.id, raidId);
+  if (!flow) {
+    await interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 2“ klicken.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  const total = flow.selectedCharIds?.length ?? 0;
+  if (!total) {
+    const msg = await buildJoin2Step1Message(raidId, flow, 'Bitte mindestens einen Charakter auswählen.');
+    await interaction.update(msg).catch(() => {});
+    return;
+  }
+  const current = Math.max(0, Math.min(flow.step2Index ?? 0, total - 1));
+  const next = direction === 'prev'
+    ? Math.max(0, current - 1)
+    : Math.min(total - 1, current + 1);
+  setJoin2Flow(interaction.user.id, raidId, { ...flow, step2Index: next });
+  const msg = await buildJoin2Step2Message(raidId, getJoin2Flow(interaction.user.id, raidId));
+  await interaction.update(msg).catch(() => {});
+}
+
+async function handleJoin2OpenNoteModal(interaction, raidId) {
+  const flow = getJoin2Flow(interaction.user.id, raidId);
+  if (!flow) {
+    await interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 2“ klicken.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  if (!flow.selectedCharIds?.length) {
+    const msg = await buildJoin2Step1Message(raidId, flow, 'Bitte mindestens einen Charakter auswählen.');
+    await interaction.update(msg).catch(() => {});
+    return;
+  }
+
+  const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+  const modal = new ModalBuilder()
+    .setCustomId(`rfm:join2note:${raidId.replace(/-/g, '')}`)
+    .setTitle('Anmelden 2 · Notiz');
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('note')
+        .setLabel('Notiz an Raidleader')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(flow.punctuality === 'late')
+        .setValue(flow.note ?? '')
+        .setMaxLength(500)
+        .setPlaceholder(flow.punctuality === 'late'
+          ? 'Bei „Später“ bitte Verspätung angeben (z. B. „15 Min später“) '
+          : 'Optional, z. B. Abwesenheitshinweis')
+    )
+  );
+  await interaction.showModal(modal).catch(() => {});
+}
+
+async function handleJoin2NoteModal(interaction, raidId) {
+  const flow = getJoin2Flow(interaction.user.id, raidId);
+  if (!flow) {
+    await interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 2“ klicken.', ephemeral: true }).catch(() => {});
+    return;
+  }
+
+  const note = interaction.fields.getTextInputValue('note').trim();
+  if (flow.punctuality === 'late' && !note) {
+    await interaction.reply({
+      content: '⚠️ Bei „Später“ ist eine Notiz mit Verspätung erforderlich. Bitte erneut absenden.',
+      ephemeral: true,
+    }).catch(() => {});
+    return;
+  }
+
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  const raidPostMsg = raidPostMessages.get(`${interaction.user.id}:${raidId}`) ?? null;
+  const raidPostComponents = raidPostMsg?.components ?? [];
+  if (raidPostMsg && raidPostComponents.length) {
+    await disableRaidPostButtons(raidPostMsg).catch(() => {});
+  }
+
+  const selectedCharIds = flow.selectedCharIds ?? [];
+  const errors = [];
+  let okCount = 0;
+
+  for (const charId of selectedCharIds) {
+    const char = flow.chars.find(c => c.id === charId);
+    if (!char) continue;
+    const cfg = flow.perChar?.[charId] ?? {};
+    const { ok, json } = await callDiscordAction({
+      action: 'join',
+      discordUserId: interaction.user.id,
+      raidId,
+      characterId: charId,
+      type: flow.type ?? 'normal',
+      signedSpec: cfg.selectedSpec ?? char.mainSpec,
+      punctuality: flow.punctuality ?? 'on_time',
+      note,
+      forbidReserve: flow.type === 'reserve' ? false : (cfg.forbidReserve ?? false),
+      onlySignedSpec: cfg.onlySignedSpec ?? false,
+    });
+    if (ok) {
+      okCount += 1;
+    } else {
+      errors.push(`${char.name}: ${raidActionErrorText(json.error)}`);
+    }
+  }
+
+  if (raidPostMsg && raidPostComponents.length) {
+    await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
+  }
+
+  if (errors.length > 0) {
+    setJoin2Flow(interaction.user.id, raidId, { ...flow, note });
+    await interaction.editReply({
+      content: `⚠️ ${okCount} von ${selectedCharIds.length} Anmeldungen gespeichert.\n${errors.slice(0, 4).join('\n')}`,
+      components: [],
+    }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  clearJoin2Flow(interaction.user.id, raidId);
+  raidPostMessages.delete(`${interaction.user.id}:${raidId}`);
+  await interaction.editReply({
+    content: `✅ ${okCount} Charakter${okCount === 1 ? '' : 'e'} erfolgreich angemeldet.`,
+    components: [],
+  }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
 }
 
 function loadEditFlowFromSignup(userId, raidId, signup, emojis) {
@@ -2170,6 +2653,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (action === 'qj')         { await handleRaidQuickjoin(interaction, raidId); return; }
         if (action === 'join')        { await handleRaidJoinButton(interaction, raidId, extra); return; }
+        if (action === 'join2')       { await handleRaidJoin2Button(interaction, raidId); return; }
         if (action === 'edit')        { await handleRaidEditButton(interaction, raidId); return; }
         if (action === 'unreg')       { await handleRaidUnregButton(interaction, raidId); return; }
         if (action === 'punc')        { await handlePuncButton(interaction, raidId, punc); return; }
@@ -2186,6 +2670,10 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'submit')      { await handleSubmitJoin(interaction, raidId, extra); return; }
         if (action === 'submitedit')  { await handleSubmitEdit(interaction, raidId); return; }
         if (action === 'editnote')    { await handleEditNoteButton(interaction, raidId); return; }
+        if (action === 'j2next')      { await handleJoin2ToStep2(interaction, raidId); return; }
+        if (action === 'j2prev')      { await handleJoin2StepNav(interaction, raidId, 'prev'); return; }
+        if (action === 'j2nextchar')  { await handleJoin2StepNav(interaction, raidId, 'next'); return; }
+        if (action === 'j2open')      { await handleJoin2OpenNoteModal(interaction, raidId); return; }
       } catch (e) {
         console.error('[RaidButton]', bid, e);
         await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
@@ -2228,6 +2716,61 @@ client.on('interactionCreate', async (interaction) => {
   // Select-Menüs (Setup-Flow + Raid-Aktionen)
   if (interaction.isStringSelectMenu()) {
     const customId = interaction.customId;
+    if (customId.startsWith('rf:j2chars:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin2CharsSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join2CharsSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:j2type:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin2TypeSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join2TypeSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:j2punc:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin2PuncSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join2PuncSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:j2spec:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin2SpecSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join2SpecSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:j2opts:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin2OptionsSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join2OptionsSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
     // Raid Select-Menüs (rf:<action>:<raidNoDash>:...)
     if (customId.startsWith('rf:selchar:')) {
       const parts  = customId.split(':');
@@ -2396,6 +2939,7 @@ client.on('interactionCreate', async (interaction) => {
       try {
         if (action === 'unreg')    { await handleRaidUnregModal(interaction, raidId); return; }
         if (action === 'joinnote') { await handleJoinNoteModal(interaction, raidId); return; }
+        if (action === 'join2note') { await handleJoin2NoteModal(interaction, raidId); return; }
         if (action === 'editnote') { await handleEditNoteModal(interaction, raidId); return; }
       } catch (e) {
         console.error('[RaidModal]', customId, e);
