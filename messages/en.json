@@ -58,7 +58,7 @@
     "scheduledAt": "Schedule",
     "character": "Char",
     "spec": "Spec",
-    "calendar": "Calendar",
+    "calendar": "Schedule",
     "calendarEmptyDay": "—",
     "toggleNote": "Show note",
     "noteHint": "The note is visible in the raid view.",
@@ -78,7 +78,7 @@
     "bnetLinkedBadge": "BNet",
     "bnetLinkedBadgeTitle": "Linked to Battle.net"
     ,
-    "calendarTiles": "Tiles",
+    "calendarTiles": "Calendar",
     "calendarList": "List"
     ,
     "showDays": "Show days",

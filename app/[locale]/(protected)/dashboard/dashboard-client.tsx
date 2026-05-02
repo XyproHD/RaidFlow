@@ -134,6 +134,19 @@ function myStatusIcon(raidStatus: string, mySignup: DashboardCalendarRaid['mySig
   return '⚠️';
 }
 
+function myStatusIconTooltip(raidStatus: string, mySignup: DashboardCalendarRaid['mySignup']): string {
+  if (!mySignup) return '';
+  if (raidStatus !== 'locked' && raidStatus !== 'announced') return 'Angemeldet – warte auf Bestätigung durch die Raidleitung';
+  if (mySignup.leaderPlacement === 'substitute') return 'Als Ersatzspieler eingeteilt';
+  if (mySignup.setConfirmed) return 'Angemeldet und vom Raidleiter bestätigt';
+  return 'Angemeldet – noch nicht bestätigt';
+}
+
+function daysDiff(raidDate: Date, referenceDay: Date): number {
+  const ms = startOfDay(raidDate).getTime() - startOfDay(referenceDay).getTime();
+  return Math.round(ms / (1000 * 60 * 60 * 24));
+}
+
 function roleForSpecDisplayName(specDisplayName: string | null): string | null {
   if (!specDisplayName) return null;
   const parsed = getSpecByDisplayName(specDisplayName);
@@ -218,6 +231,8 @@ export function DashboardClient({
   const [calendarView, setCalendarView] = useState<'tiles' | 'list'>('tiles');
   const [showDays, setShowDays] = useState<7 | 14 | 21>(14);
   const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => startOfDay(new Date()));
+  const [listCount, setListCount] = useState(5);
+  const [listStartIdx, setListStartIdx] = useState<number | null>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const rangeStart = useMemo(() => startOfDay(addDays(calendarAnchor, -1)), [calendarAnchor]);
@@ -314,23 +329,46 @@ export function DashboardClient({
     return [...visibleCalendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime());
   }, [visibleCalendarRaids]);
 
+  const allRaidsSorted = useMemo(
+    () => [...calendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime()),
+    [calendarRaids]
+  );
+
+  const todayIdx = useMemo(() => {
+    const ms = today.getTime();
+    const idx = allRaidsSorted.findIndex((r) => startOfDay(new Date(r.scheduledAtIso)).getTime() >= ms);
+    return idx === -1 ? allRaidsSorted.length : idx;
+  }, [allRaidsSorted, today]);
+
+  const effectiveListStart = useMemo(
+    () => (listStartIdx !== null ? listStartIdx : todayIdx),
+    [listStartIdx, todayIdx]
+  );
+
+  const listRaids = useMemo(
+    () => allRaidsSorted.slice(effectiveListStart, effectiveListStart + listCount),
+    [allRaidsSorted, effectiveListStart, listCount]
+  );
+
+  const canGoListPrev = effectiveListStart > 0;
+  const canGoListNext = effectiveListStart + listCount < allRaidsSorted.length;
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('title')}</h1>
 
       <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border border-l-[3px] border-l-amber-400/60 bg-amber-500/10 dark:bg-amber-500/[0.07]">
           <h2 id="guild-memberships-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('guildMemberships')}
           </h2>
         </div>
-        <div className="p-4 space-y-2">
         {guilds.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t('noGuildMembership')}</p>
+          <p className="px-5 py-4 text-muted-foreground text-sm">{t('noGuildMembership')}</p>
         ) : (
-          <ul className="grid gap-2">
+          <ul className="divide-y divide-border">
             {guilds.map((g) => (
-              <li key={g.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-4 py-3">
+              <li key={g.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 hover:bg-muted/20 transition-colors">
                 <div className="min-w-0 flex items-center gap-2">
                   <div className="min-w-0">
                     {g.armoryUrl ? (
@@ -402,11 +440,10 @@ export function DashboardClient({
             ))}
           </ul>
         )}
-        </div>
       </section>
 
       <section aria-labelledby="my-stats-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border border-l-[3px] border-l-blue-400/60 bg-blue-500/10 dark:bg-blue-500/[0.07]">
           <h2 id="my-stats-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('myStats')}
           </h2>
@@ -511,7 +548,7 @@ export function DashboardClient({
       </section>
 
       <section aria-labelledby="my-signups-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border border-l-[3px] border-l-emerald-400/60 bg-emerald-500/10 dark:bg-emerald-500/[0.07]">
           <h2 id="my-signups-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('mySignups')}
           </h2>
@@ -611,12 +648,16 @@ export function DashboardClient({
                       </td>
                       <td className="px-4 py-3 align-top">
                         {statusIcon ? (
-                          <span title={t('myStatus')} className="text-base">
-                            {statusIcon}
+                          <span className="text-xs text-muted-foreground">
+                            Meine Anmeldung:{' '}
+                            <span
+                              className="cursor-help text-base align-middle"
+                              title={myStatusIconTooltip(s.raidStatus, { id: 'x', leaderPlacement: s.leaderPlacement, setConfirmed: s.setConfirmed })}
+                            >
+                              {statusIcon}
+                            </span>
                           </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{t('notSignedUp')}</span>
-                        )}
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 align-top text-right">
                         <button
@@ -737,55 +778,116 @@ export function DashboardClient({
         : null}
 
       <section aria-labelledby="calendar-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 border-b border-border bg-muted/20">
+        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 border-b border-border border-l-[3px] border-l-violet-400/60 bg-violet-500/10 dark:bg-violet-500/[0.07]">
           <h2 id="calendar-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('calendar')}
           </h2>
 
           {/* Filters centered */}
           <div className="flex flex-wrap items-center justify-center gap-2">
-            <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
-              <span className="text-xs text-muted-foreground">{t('showDays')}</span>
-              {[7, 14, 21].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setShowDays(n as 7 | 14 | 21)}
-                  className={
-                    showDays === n
-                      ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
-                      : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                  }
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
-              <button
-                type="button"
-                className="h-8 w-8 rounded hover:bg-muted"
-                aria-label={t('prevWeek')}
-                title={t('prevWeek')}
-                onClick={() => setCalendarAnchor((d) => addDays(d, -7))}
-              >
-                &lt;
-              </button>
-              <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
-                {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
-                {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
+            {calendarView === 'tiles' ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                <span className="text-xs text-muted-foreground">{t('showDays')}</span>
+                {[7, 14, 21].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setShowDays(n as 7 | 14 | 21)}
+                    className={
+                      showDays === n
+                        ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
+                        : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                    }
+                  >
+                    {n}
+                  </button>
+                ))}
               </div>
-              <button
-                type="button"
-                className="h-8 w-8 rounded hover:bg-muted"
-                aria-label={t('nextWeek')}
-                title={t('nextWeek')}
-                onClick={() => setCalendarAnchor((d) => addDays(d, 7))}
-              >
-                &gt;
-              </button>
-            </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                <span className="text-xs text-muted-foreground">Nächste</span>
+                {[5, 7, 10].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setListCount(n)}
+                    className={
+                      listCount === n
+                        ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
+                        : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                    }
+                  >
+                    {n}
+                  </button>
+                ))}
+                <span className="text-xs text-muted-foreground">Raids</span>
+              </div>
+            )}
+
+            {calendarView === 'tiles' ? (
+              <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
+                <button
+                  type="button"
+                  className="h-8 w-8 rounded hover:bg-muted"
+                  aria-label={t('prevWeek')}
+                  title={t('prevWeek')}
+                  onClick={() => setCalendarAnchor((d) => addDays(d, -7))}
+                >
+                  &lt;
+                </button>
+                <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
+                  {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
+                  {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
+                </div>
+                <button
+                  type="button"
+                  className="h-8 w-8 rounded hover:bg-muted"
+                  aria-label={t('nextWeek')}
+                  title={t('nextWeek')}
+                  onClick={() => setCalendarAnchor((d) => addDays(d, 7))}
+                >
+                  &gt;
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
+                <button
+                  type="button"
+                  className={cn('h-8 w-8 rounded', canGoListPrev ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
+                  disabled={!canGoListPrev}
+                  aria-label="Vorherige Raids"
+                  title="Vorherige Raids"
+                  onClick={() => setListStartIdx(Math.max(0, effectiveListStart - listCount))}
+                >
+                  &lt;
+                </button>
+                <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
+                  {listRaids.length > 0 ? (
+                    <>
+                      {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(listRaids[0].scheduledAtIso))}
+                      {listRaids.length > 1 ? (
+                        <>
+                          {' '}–{' '}
+                          {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(listRaids[listRaids.length - 1].scheduledAtIso))}
+                        </>
+                      ) : null}
+                    </>
+                  ) : (
+                    <span>Keine Raids</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className={cn('h-8 w-8 rounded', canGoListNext ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
+                  disabled={!canGoListNext}
+                  aria-label="Nächste Raids"
+                  title="Nächste Raids"
+                  onClick={() => setListStartIdx(Math.min(allRaidsSorted.length - listCount, effectiveListStart + listCount))}
+                >
+                  &gt;
+                </button>
+              </div>
+            )}
 
             <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
               <button
@@ -798,7 +900,7 @@ export function DashboardClient({
               <span className="text-muted-foreground text-xs">|</span>
               <button
                 type="button"
-                onClick={() => setCalendarView('list')}
+                onClick={() => { setCalendarView('list'); setListStartIdx(null); }}
                 className={calendarView === 'list' ? 'text-sm font-semibold text-foreground' : 'text-sm text-muted-foreground hover:text-foreground'}
               >
                 {t('calendarList')}
@@ -825,8 +927,8 @@ export function DashboardClient({
           </div>
         </div>
 
-        <div className="p-4 sm:p-5">
         {calendarView === 'tiles' ? (
+        <div className="p-4 sm:p-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 items-start">
             {days.map((day) => {
               const key = startOfDay(day).toISOString();
@@ -848,7 +950,7 @@ export function DashboardClient({
                     </div>
                     <div className="text-xs text-muted-foreground">{raids.length}</div>
                   </div>
-                  <div className="mt-2 space-y-2">
+                  <div className="mt-2 divide-y divide-border/50">
                     {raids.length === 0 ? (
                       <div className="text-sm text-muted-foreground">{t('calendarEmptyDay')}</div>
                     ) : (
@@ -862,7 +964,7 @@ export function DashboardClient({
                         const signupState = signupIndicator(r.signupUntilIso, r.status);
                         const signupUntilOpen = expandedSignupUntilRaidId === r.id;
                         return (
-                          <div key={r.id} className="rounded-lg border border-border bg-background/60 px-3 py-2.5">
+                          <div key={r.id} className="pt-2.5 pb-1">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2 min-w-0">
@@ -878,12 +980,10 @@ export function DashboardClient({
                                 <div className="text-xs text-muted-foreground truncate" title={`${r.dungeonName} • ${r.guildName}`}>
                                   {r.dungeonName} • {r.guildName}
                                 </div>
-                                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                                  <span>{raidStatusLabel(r.status)}</span>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                  <span>Raidstatus: <span className="font-medium text-foreground/80">{raidStatusLabel(r.status)}</span></span>
                                   {r.announcedGroupCount != null ? (
-                                    <span className="text-muted-foreground">
-                                      · {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}
-                                    </span>
+                                    <span> · {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}</span>
                                   ) : null}
                                 </div>
                                 <div className="mt-1 text-xs text-muted-foreground">
@@ -940,12 +1040,18 @@ export function DashboardClient({
                             ) : null}
 
                             <div className="mt-2.5 flex items-center justify-between gap-2 pt-2 border-t border-border/50">
-                              <div className="text-sm">
+                              <div className="text-xs text-muted-foreground">
                                 {status ? (
-                                  <span title={t('myStatus')}>{status}</span>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">{t('notSignedUp')}</span>
-                                )}
+                                  <span>
+                                    Meine Anmeldung:{' '}
+                                    <span
+                                      className="cursor-help text-base align-middle"
+                                      title={myStatusIconTooltip(r.status, r.mySignup)}
+                                    >
+                                      {status}
+                                    </span>
+                                  </span>
+                                ) : null}
                               </div>
                               <div className="flex items-center gap-1.5">
                                 {!r.mySignup ? (
@@ -958,9 +1064,7 @@ export function DashboardClient({
                                     >
                                       + {t('signupStart')}
                                     </Link>
-                                  ) : (
-                                    <span className="text-xs text-muted-foreground">Gesperrt</span>
-                                  )
+                                  ) : null
                                 ) : (
                                   <>
                                     {r.status === 'open' || r.status === 'announced' ? (
@@ -983,9 +1087,7 @@ export function DashboardClient({
                                           <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                         </button>
                                       </>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">Gesperrt</span>
-                                    )}
+                                    ) : null}
                                   </>
                                 )}
                               </div>
@@ -1003,8 +1105,11 @@ export function DashboardClient({
               );
             })}
           </div>
+        </div>
+        ) : listRaids.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-muted-foreground">Keine Raids in diesem Zeitraum</div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+          <div className="overflow-x-auto">
             <table className="min-w-[980px] w-full text-sm">
               <thead className="border-b border-border bg-muted/30">
                 <tr className="text-left">
@@ -1018,18 +1123,42 @@ export function DashboardClient({
                 </tr>
               </thead>
               <tbody>
-                {calendarRaidsSorted.map((r) => {
+                {listRaids.map((r) => {
                   const status = myStatusIcon(r.status, r.mySignup);
                   const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
                   const signupUntilLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
                     new Date(r.signupUntilIso)
                   );
                   const signupState = signupIndicator(r.signupUntilIso, r.status);
+                  const diff = daysDiff(new Date(r.scheduledAtIso), today);
+                  const isToday = diff === 0;
                   return (
-                    <tr key={r.id} className="border-b border-border last:border-b-0 hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-3 text-muted-foreground tabular-nums text-sm">
-                        {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(r.scheduledAtIso))}{' '}
-                        <span className="text-xs">{timeLabel}</span>
+                    <tr
+                      key={r.id}
+                      className={cn(
+                        'border-b border-border last:border-b-0 transition-colors',
+                        isToday
+                          ? 'bg-primary/5 hover:bg-primary/8'
+                          : 'hover:bg-muted/20'
+                      )}
+                    >
+                      <td className="px-4 py-3 tabular-nums text-sm">
+                        <div className={isToday ? 'font-semibold text-primary' : 'text-muted-foreground'}>
+                          {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(r.scheduledAtIso))}{' '}
+                          <span className="text-xs">{timeLabel}</span>
+                          {isToday ? <span className="ml-1 text-xs font-semibold text-primary">({t('todayShort')})</span> : null}
+                        </div>
+                        {!isToday && (
+                          diff < 0 ? (
+                            <div className="text-[11px] text-red-400/80 dark:text-red-400/60 tabular-nums">
+                              vor {Math.abs(diff)} {Math.abs(diff) === 1 ? 'Tag' : 'Tagen'}
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-emerald-600/80 dark:text-emerald-400/70 tabular-nums">
+                              in {diff} {diff === 1 ? 'Tag' : 'Tagen'}
+                            </div>
+                          )
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <Link href={`/${locale}/guild/${r.guildId}/raid/${r.id}`} className="font-medium text-foreground hover:text-primary transition-colors">
@@ -1042,14 +1171,26 @@ export function DashboardClient({
                         <span title={signupUntilLabel}>Anmeldung: {signupState.icon}</span>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
-                        <span>{raidStatusLabel(r.status)}</span>
+                        <span>Raidstatus: <span className="font-medium text-foreground/80">{raidStatusLabel(r.status)}</span></span>
                         {r.announcedGroupCount != null ? (
                           <span className="block">
                             {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}
                           </span>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3">{status ? status : <span className="text-xs text-muted-foreground">{t('notSignedUp')}</span>}</td>
+                      <td className="px-4 py-3">
+                        {status ? (
+                          <span className="text-xs text-muted-foreground">
+                            Meine Anmeldung:{' '}
+                            <span
+                              className="cursor-help text-base align-middle"
+                              title={myStatusIconTooltip(r.status, r.mySignup)}
+                            >
+                              {status}
+                            </span>
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-4 py-3">
                         {!r.mySignup ? (
                           r.status === 'open' || r.status === 'announced' ? (
@@ -1061,9 +1202,7 @@ export function DashboardClient({
                             >
                               + Anmelden
                             </Link>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )
+                          ) : null
                         ) : r.status === 'open' || r.status === 'announced' ? (
                           <button
                             type="button"
@@ -1074,9 +1213,7 @@ export function DashboardClient({
                           >
                             Abmelden
                           </button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
@@ -1104,7 +1241,6 @@ export function DashboardClient({
             </table>
           </div>
         )}
-        </div>
       </section>
 
       {openCalendarActionRaidId && openCalendarActionPos
