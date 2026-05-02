@@ -6,8 +6,10 @@
  * IMPORTANT: Must mirror pooler URL handling in lib/prisma.ts — the Prisma CLI does not
  * load lib/prisma.ts, so Session pooler (port 5432) stays broken unless we normalize here.
  *
- * For migrations, Prisma prefers DIRECT_URL (see prisma/schema.prisma). Set in Vercel to:
- * postgresql://...@db.<project-ref>.supabase.co:5432/postgres
+ * Fallback: Some builders (e.g. Vercel iad1 → eu-central-1) cannot open TCP to
+ * db.<project>.supabase.co:5432 (IPv6 / routing). The transaction pooler on 6543 usually works.
+ * If all retries with your real DIRECT_URL fail, we retry with DIRECT_URL := DATABASE_URL
+ * (unless PRISMA_MIGRATE_NO_POOLER_FALLBACK=1).
  */
 const { execSync } = require('child_process');
 const { setTimeout: delay } = require('timers/promises');
@@ -90,24 +92,72 @@ if (process.env.DATABASE_URL) {
   logConnectionTarget('DATABASE_URL (after pooler normalize)', process.env.DATABASE_URL);
 }
 
-(async () => {
-  let lastStatus = 1;
+/**
+ * @param {NodeJS.ProcessEnv} env
+ * @param {string} phaseLabel
+ * @returns {Promise<boolean>}
+ */
+async function runMigrateCycle(env, phaseLabel) {
   for (let i = 1; i <= attempts; i++) {
-    console.log(`[prisma-migrate] attempt ${i}/${attempts}`);
+    console.log(`[prisma-migrate] ${phaseLabel} — attempt ${i}/${attempts}`);
     try {
-      execSync('npx prisma migrate deploy', { stdio: 'inherit', env: process.env });
+      execSync('npx prisma migrate deploy', { stdio: 'inherit', env });
       console.log('[prisma-migrate] migrate status (verification):');
-      execSync('npx prisma migrate status', { stdio: 'inherit', env: process.env });
-      process.exit(0);
+      execSync('npx prisma migrate status', { stdio: 'inherit', env });
+      return true;
     } catch (e) {
-      lastStatus = typeof e.status === 'number' ? e.status : 1;
-      console.warn(`[prisma-migrate] attempt ${i} failed (exit ${lastStatus})`);
+      const lastStatus = typeof e.status === 'number' ? e.status : 1;
+      console.warn(`[prisma-migrate] ${phaseLabel} — attempt ${i} failed (exit ${lastStatus})`);
       if (i < attempts) {
         console.warn(`[prisma-migrate] retry in ${delayMs}ms…`);
         await delay(delayMs);
       }
     }
   }
-  console.error('[prisma-migrate] migrate deploy failed after all retries');
-  process.exit(lastStatus);
+  return false;
+}
+
+(async () => {
+  const baseEnv = { ...process.env };
+
+  let ok = await runMigrateCycle(baseEnv, 'direct (DIRECT_URL → db.*.supabase.co)');
+
+  const canFallback =
+    !ok &&
+    baseEnv.DATABASE_URL &&
+    baseEnv.DIRECT_URL &&
+    baseEnv.DIRECT_URL !== baseEnv.DATABASE_URL &&
+    process.env.PRISMA_MIGRATE_NO_POOLER_FALLBACK !== '1' &&
+    process.env.PRISMA_MIGRATE_NO_POOLER_FALLBACK !== 'true';
+
+  if (canFallback) {
+    console.warn('');
+    console.warn(
+      '[prisma-migrate] ─────────────────────────────────────────────────────────────────────'
+    );
+    console.warn(
+      '[prisma-migrate] Fallback phase: db.* host unreachable from this builder (common on Vercel).'
+    );
+    console.warn(
+      '[prisma-migrate] Running migrate with DIRECT_URL := DATABASE_URL (transaction pooler).'
+    );
+    console.warn(
+      '[prisma-migrate] Opt out: PRISMA_MIGRATE_NO_POOLER_FALLBACK=1'
+    );
+    console.warn(
+      '[prisma-migrate] ─────────────────────────────────────────────────────────────────────'
+    );
+    console.warn('');
+    const poolerEnv = { ...baseEnv, DIRECT_URL: baseEnv.DATABASE_URL };
+    logConnectionTarget('DIRECT_URL (fallback, same as DATABASE_URL)', poolerEnv.DIRECT_URL);
+    ok = await runMigrateCycle(poolerEnv, 'pooler (DIRECT_URL := DATABASE_URL)');
+  } else if (!ok && process.env.PRISMA_MIGRATE_NO_POOLER_FALLBACK === '1') {
+    console.error('[prisma-migrate] Pooler fallback disabled; exiting.');
+  }
+
+  if (!ok) {
+    console.error('[prisma-migrate] migrate deploy failed after all retries (and fallback if applicable)');
+    process.exit(1);
+  }
+  process.exit(0);
 })();
