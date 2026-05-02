@@ -134,6 +134,19 @@ function myStatusIcon(raidStatus: string, mySignup: DashboardCalendarRaid['mySig
   return '⚠️';
 }
 
+function myStatusIconTooltip(raidStatus: string, mySignup: DashboardCalendarRaid['mySignup']): string {
+  if (!mySignup) return '';
+  if (raidStatus !== 'locked' && raidStatus !== 'announced') return 'Angemeldet – warte auf Bestätigung durch die Raidleitung';
+  if (mySignup.leaderPlacement === 'substitute') return 'Als Ersatzspieler eingeteilt';
+  if (mySignup.setConfirmed) return 'Angemeldet und vom Raidleiter bestätigt';
+  return 'Angemeldet – noch nicht bestätigt';
+}
+
+function daysDiff(raidDate: Date, referenceDay: Date): number {
+  const ms = startOfDay(raidDate).getTime() - startOfDay(referenceDay).getTime();
+  return Math.round(ms / (1000 * 60 * 60 * 24));
+}
+
 function roleForSpecDisplayName(specDisplayName: string | null): string | null {
   if (!specDisplayName) return null;
   const parsed = getSpecByDisplayName(specDisplayName);
@@ -218,6 +231,8 @@ export function DashboardClient({
   const [calendarView, setCalendarView] = useState<'tiles' | 'list'>('tiles');
   const [showDays, setShowDays] = useState<7 | 14 | 21>(14);
   const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => startOfDay(new Date()));
+  const [listCount, setListCount] = useState(5);
+  const [listStartIdx, setListStartIdx] = useState<number | null>(null);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const rangeStart = useMemo(() => startOfDay(addDays(calendarAnchor, -1)), [calendarAnchor]);
@@ -314,23 +329,46 @@ export function DashboardClient({
     return [...visibleCalendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime());
   }, [visibleCalendarRaids]);
 
+  const allRaidsSorted = useMemo(
+    () => [...calendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime()),
+    [calendarRaids]
+  );
+
+  const todayIdx = useMemo(() => {
+    const ms = today.getTime();
+    const idx = allRaidsSorted.findIndex((r) => startOfDay(new Date(r.scheduledAtIso)).getTime() >= ms);
+    return idx === -1 ? allRaidsSorted.length : idx;
+  }, [allRaidsSorted, today]);
+
+  const effectiveListStart = useMemo(
+    () => (listStartIdx !== null ? listStartIdx : todayIdx),
+    [listStartIdx, todayIdx]
+  );
+
+  const listRaids = useMemo(
+    () => allRaidsSorted.slice(effectiveListStart, effectiveListStart + listCount),
+    [allRaidsSorted, effectiveListStart, listCount]
+  );
+
+  const canGoListPrev = effectiveListStart > 0;
+  const canGoListNext = effectiveListStart + listCount < allRaidsSorted.length;
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('title')}</h1>
 
-      <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+      <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border border-l-[3px] border-l-amber-400/40 shadow-sm overflow-hidden bg-amber-500/[0.025] dark:bg-amber-500/[0.04]">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-amber-500/10 dark:bg-amber-500/[0.07]">
           <h2 id="guild-memberships-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('guildMemberships')}
           </h2>
         </div>
-        <div className="p-4 space-y-2">
         {guilds.length === 0 ? (
-          <p className="text-muted-foreground text-sm">{t('noGuildMembership')}</p>
+          <p className="px-5 py-4 text-muted-foreground text-sm">{t('noGuildMembership')}</p>
         ) : (
-          <ul className="grid gap-2">
+          <ul className="divide-y divide-border">
             {guilds.map((g) => (
-              <li key={g.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-card px-4 py-3">
+              <li key={g.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 hover:bg-muted/20 transition-colors">
                 <div className="min-w-0 flex items-center gap-2">
                   <div className="min-w-0">
                     {g.armoryUrl ? (
@@ -402,11 +440,10 @@ export function DashboardClient({
             ))}
           </ul>
         )}
-        </div>
       </section>
 
-      <section aria-labelledby="my-stats-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+      <section aria-labelledby="my-stats-heading" className="rounded-xl border border-border border-l-[3px] border-l-blue-400/40 shadow-sm overflow-hidden bg-blue-500/[0.025] dark:bg-blue-500/[0.04]">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-blue-500/10 dark:bg-blue-500/[0.07]">
           <h2 id="my-stats-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('myStats')}
           </h2>
@@ -510,8 +547,8 @@ export function DashboardClient({
         />
       </section>
 
-      <section aria-labelledby="my-signups-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-muted/20">
+      <section aria-labelledby="my-signups-heading" className="rounded-xl border border-border border-l-[3px] border-l-emerald-400/40 shadow-sm overflow-hidden bg-emerald-500/[0.025] dark:bg-emerald-500/[0.04]">
+        <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-emerald-500/10 dark:bg-emerald-500/[0.07]">
           <h2 id="my-signups-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('mySignups')}
           </h2>
@@ -520,7 +557,7 @@ export function DashboardClient({
           <p className="px-5 py-4 text-muted-foreground text-sm">{t('mySignupsEmpty')}</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[980px] w-full text-sm">
+            <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/30">
                 <tr className="text-left">
                   <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('scheduledAt')}</th>
@@ -561,8 +598,11 @@ export function DashboardClient({
                           href={`/${locale}/guild/${s.guildId}/raid/${s.raidId}`}
                           className="block min-w-0"
                         >
-                          <div className="font-medium text-foreground hover:underline truncate" title={`${s.raidName} - ${s.dungeonName}`}>
-                            {s.raidName} - {s.dungeonName}
+                          <div className="font-medium text-foreground hover:underline truncate" title={s.raidName}>
+                            {s.raidName}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate" title={s.dungeonName}>
+                            {s.dungeonName}
                           </div>
                           <div className="text-xs text-muted-foreground truncate" title={s.guildName}>
                             {s.guildName}
@@ -611,12 +651,13 @@ export function DashboardClient({
                       </td>
                       <td className="px-4 py-3 align-top">
                         {statusIcon ? (
-                          <span title={t('myStatus')} className="text-base">
+                          <span
+                            className="cursor-help text-base"
+                            title={myStatusIconTooltip(s.raidStatus, { id: 'x', leaderPlacement: s.leaderPlacement, setConfirmed: s.setConfirmed })}
+                          >
                             {statusIcon}
                           </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">{t('notSignedUp')}</span>
-                        )}
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 align-top text-right">
                         <button
@@ -736,56 +777,112 @@ export function DashboardClient({
           )
         : null}
 
-      <section aria-labelledby="calendar-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
-        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 border-b border-border bg-muted/20">
+      <section aria-labelledby="calendar-heading" className="rounded-xl border border-border border-l-[3px] border-l-violet-400/40 shadow-sm overflow-hidden bg-violet-500/[0.025] dark:bg-violet-500/[0.04]">
+        <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 border-b border-border bg-violet-500/10 dark:bg-violet-500/[0.07]">
           <h2 id="calendar-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('calendar')}
           </h2>
 
           {/* Filters centered */}
           <div className="flex flex-wrap items-center justify-center gap-2">
-            <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
-              <span className="text-xs text-muted-foreground">{t('showDays')}</span>
-              {[7, 14, 21].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setShowDays(n as 7 | 14 | 21)}
-                  className={
-                    showDays === n
-                      ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
-                      : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                  }
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
-              <button
-                type="button"
-                className="h-8 w-8 rounded hover:bg-muted"
-                aria-label={t('prevWeek')}
-                title={t('prevWeek')}
-                onClick={() => setCalendarAnchor((d) => addDays(d, -7))}
-              >
-                &lt;
-              </button>
-              <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
-                {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
-                {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
+            {calendarView === 'tiles' ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                <span className="text-xs text-muted-foreground">{t('showDays')}</span>
+                {[7, 14, 21].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setShowDays(n as 7 | 14 | 21)}
+                    className={
+                      showDays === n
+                        ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
+                        : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                    }
+                  >
+                    {n}
+                  </button>
+                ))}
               </div>
-              <button
-                type="button"
-                className="h-8 w-8 rounded hover:bg-muted"
-                aria-label={t('nextWeek')}
-                title={t('nextWeek')}
-                onClick={() => setCalendarAnchor((d) => addDays(d, 7))}
-              >
-                &gt;
-              </button>
-            </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                <span className="text-xs text-muted-foreground">Nächste</span>
+                {[5, 7, 10].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setListCount(n)}
+                    className={
+                      listCount === n
+                        ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
+                        : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                    }
+                  >
+                    {n}
+                  </button>
+                ))}
+                <span className="text-xs text-muted-foreground">Raids</span>
+              </div>
+            )}
+
+            {calendarView === 'tiles' ? (
+              <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
+                <button
+                  type="button"
+                  className="h-8 w-8 rounded hover:bg-muted"
+                  aria-label={t('prevWeek')}
+                  title={t('prevWeek')}
+                  onClick={() => setCalendarAnchor((d) => addDays(d, -7))}
+                >
+                  &lt;
+                </button>
+                <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
+                  {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
+                  {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
+                </div>
+                <button
+                  type="button"
+                  className="h-8 w-8 rounded hover:bg-muted"
+                  aria-label={t('nextWeek')}
+                  title={t('nextWeek')}
+                  onClick={() => setCalendarAnchor((d) => addDays(d, 7))}
+                >
+                  &gt;
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
+                <button
+                  type="button"
+                  className={cn('h-8 w-8 rounded', canGoListPrev ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
+                  disabled={!canGoListPrev}
+                  aria-label="Vorherige Raids"
+                  title="Vorherige Raids"
+                  onClick={() => setListStartIdx(Math.max(0, effectiveListStart - listCount))}
+                >
+                  &lt;
+                </button>
+                <div className="px-2 text-xs text-muted-foreground min-w-[8rem] text-center">
+                  {listRaids.length > 0 ? (
+                    <span>
+                      Raid {effectiveListStart + 1}–{effectiveListStart + listRaids.length}
+                      {allRaidsSorted.length > 0 ? <span className="opacity-60"> / {allRaidsSorted.length}</span> : null}
+                    </span>
+                  ) : (
+                    <span>Keine Raids</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className={cn('h-8 w-8 rounded', canGoListNext ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
+                  disabled={!canGoListNext}
+                  aria-label="Nächste Raids"
+                  title="Nächste Raids"
+                  onClick={() => setListStartIdx(Math.min(allRaidsSorted.length - listCount, effectiveListStart + listCount))}
+                >
+                  &gt;
+                </button>
+              </div>
+            )}
 
             <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
               <button
@@ -798,7 +895,7 @@ export function DashboardClient({
               <span className="text-muted-foreground text-xs">|</span>
               <button
                 type="button"
-                onClick={() => setCalendarView('list')}
+                onClick={() => { setCalendarView('list'); setListStartIdx(null); }}
                 className={calendarView === 'list' ? 'text-sm font-semibold text-foreground' : 'text-sm text-muted-foreground hover:text-foreground'}
               >
                 {t('calendarList')}
@@ -825,187 +922,184 @@ export function DashboardClient({
           </div>
         </div>
 
-        <div className="p-4 sm:p-5">
         {calendarView === 'tiles' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 items-start">
-            {days.map((day) => {
-              const key = startOfDay(day).toISOString();
-              const raids = raidsByDay.get(key) ?? [];
-              const isToday = startOfDay(day).getTime() === today.getTime();
-              const isPast = startOfDay(day).getTime() < today.getTime();
-              return (
-                <div
-                  key={key}
-                  className={[
-                    'rounded-xl border bg-card p-3 shadow-sm',
-                    isToday ? 'border-primary/50 ring-1 ring-primary/20' : 'border-border',
-                    isPast ? 'opacity-55' : '',
-                  ].join(' ')}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold text-foreground">
-                      {formatDayLabel(locale, day)} {isToday ? <span className="text-xs text-primary font-semibold ml-0.5">({t('todayShort')})</span> : null}
-                    </div>
-                    <div className="text-xs text-muted-foreground">{raids.length}</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          {days.map((day) => {
+            const key = startOfDay(day).toISOString();
+            const raids = raidsByDay.get(key) ?? [];
+            const isToday = startOfDay(day).getTime() === today.getTime();
+            const isPast = startOfDay(day).getTime() < today.getTime();
+            return (
+              <div
+                key={key}
+                className={cn(
+                  'flex flex-col border-r border-b border-border/50 min-h-[5rem]',
+                  isPast && !isToday ? 'opacity-50' : ''
+                )}
+              >
+                {/* Day header */}
+                <div className={cn(
+                  'flex items-center justify-between px-3 py-2 border-b border-border/50',
+                  isToday ? 'bg-primary/[0.08]' : 'bg-muted/25'
+                )}>
+                  <div className={cn('font-semibold text-xs', isToday ? 'text-primary' : 'text-foreground')}>
+                    {formatDayLabel(locale, day)}
+                    {isToday ? <span className="ml-1 font-semibold text-primary">({t('todayShort')})</span> : null}
                   </div>
-                  <div className="mt-2 space-y-2">
-                    {raids.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">{t('calendarEmptyDay')}</div>
-                    ) : (
-                      raids.map((r) => {
-                        const status = myStatusIcon(r.status, r.mySignup);
-                        const noteOpen = expandedNoteRaidId === r.id;
-                        const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
-                        const signupUntilDateTimeLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
-                          new Date(r.signupUntilIso)
-                        );
-                        const signupState = signupIndicator(r.signupUntilIso, r.status);
-                        const signupUntilOpen = expandedSignupUntilRaidId === r.id;
-                        return (
-                          <div key={r.id} className="rounded-lg border border-border bg-background/60 px-3 py-2.5">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <Link
-                                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}`}
-                                    className="font-medium text-foreground hover:text-primary transition-colors block truncate text-sm"
-                                    title={r.name}
-                                  >
-                                    {r.name}
-                                  </Link>
-                                  <span className="text-xs text-muted-foreground shrink-0">{timeLabel}</span>
-                                </div>
-                                <div className="text-xs text-muted-foreground truncate" title={`${r.dungeonName} • ${r.guildName}`}>
-                                  {r.dungeonName} • {r.guildName}
-                                </div>
-                                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                                  <span>{raidStatusLabel(r.status)}</span>
-                                  {r.announcedGroupCount != null ? (
-                                    <span className="text-muted-foreground">
-                                      · {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}
-                                    </span>
-                                  ) : null}
-                                </div>
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 hover:text-foreground"
-                                    title={signupUntilDateTimeLabel}
-                                    onClick={() => setExpandedSignupUntilRaidId(signupUntilOpen ? null : r.id)}
-                                  >
-                                    <span>Anmeldung:</span>
-                                    <span>{signupState.icon}</span>
-                                  </button>
-                                  {signupUntilOpen ? <div className="mt-1 text-[11px]">{signupUntilDateTimeLabel}</div> : null}
-                                </div>
+                  {raids.length > 0 ? (
+                    <span className="text-[10px] text-muted-foreground tabular-nums">{raids.length}</span>
+                  ) : null}
+                </div>
+                {/* Raid entries */}
+                {raids.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-muted-foreground">{t('calendarEmptyDay')}</div>
+                ) : (
+                  <div className="divide-y divide-border/50 flex-1">
+                    {raids.map((r) => {
+                      const status = myStatusIcon(r.status, r.mySignup);
+                      const noteOpen = expandedNoteRaidId === r.id;
+                      const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
+                      const signupUntilDateTimeLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
+                        new Date(r.signupUntilIso)
+                      );
+                      const signupState = signupIndicator(r.signupUntilIso, r.status);
+                      const signupUntilOpen = expandedSignupUntilRaidId === r.id;
+                      return (
+                        <div key={r.id} className="px-3 py-2.5 hover:bg-muted/10 transition-colors">
+                          {/* Name + time + actions */}
+                          <div className="flex items-start justify-between gap-1.5">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <Link
+                                  href={`/${locale}/guild/${r.guildId}/raid/${r.id}`}
+                                  className="font-medium text-sm text-foreground hover:text-primary transition-colors truncate"
+                                  title={r.name}
+                                >
+                                  {r.name}
+                                </Link>
+                                <span className="text-xs text-muted-foreground shrink-0">{timeLabel}</span>
                               </div>
-                              <div className="ml-auto flex items-center gap-2">
-                                {r.canEdit ? (
-                                  <button
-                                    type="button"
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors text-muted-foreground"
-                                    aria-label={t('actions')}
-                                    title={t('actions')}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const pos = openMenuAtButton(e.currentTarget);
-                                      setOpenCalendarActionPos(pos);
-                                      setOpenCalendarActionRaidId(openCalendarActionRaidId === r.id ? null : r.id);
-                                      setOpenSignupMenuKey(null);
-                                      setOpenSignupMenuPos(null);
-                                      setOpenNewRaidMenuPos(null);
-                                    }}
-                                  >
-                                    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
-                                  </button>
-                                ) : null}
-                                {r.hasNote ? (
-                                  <button
-                                    type="button"
-                                    className="shrink-0 rounded-lg border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                                    onClick={() => setExpandedNoteRaidId(noteOpen ? null : r.id)}
-                                    aria-label={t('toggleNote')}
-                                    title={t('toggleNote')}
-                                  >
-                                    📒
-                                  </button>
-                                ) : null}
+                              <div className="text-xs text-muted-foreground truncate mt-0.5" title={`${r.dungeonName} · ${r.guildName}`}>
+                                {r.dungeonName} · {r.guildName}
                               </div>
+                              <div className="mt-0.5 text-xs text-muted-foreground">
+                                Raidstatus: <span className="font-medium text-foreground/80">{raidStatusLabel(r.status)}</span>
+                                {r.announcedGroupCount != null ? <span> · {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}</span> : null}
+                              </div>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors shrink-0"
+                                  title={signupUntilDateTimeLabel}
+                                  onClick={() => setExpandedSignupUntilRaidId(signupUntilOpen ? null : r.id)}
+                                >
+                                  <span>Anm.:</span>
+                                  <span>{signupState.icon}</span>
+                                </button>
+                                <span className="tabular-nums shrink-0">{r.signupCount}/{r.maxPlayers}</span>
+                              </div>
+                              {signupUntilOpen ? <div className="mt-0.5 text-[11px] text-muted-foreground">{signupUntilDateTimeLabel}</div> : null}
+                              {noteOpen ? (
+                                <div className="mt-1.5 text-xs text-muted-foreground whitespace-pre-wrap bg-muted/30 rounded px-2 py-1.5">
+                                  {r.note?.trim() ? r.note : t('noteHint')}
+                                </div>
+                              ) : null}
                             </div>
-
-                            {noteOpen ? (
-                              <div className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap">
-                                {r.note?.trim() ? r.note : t('noteHint')}
-                              </div>
-                            ) : null}
-
-                            <div className="mt-2.5 flex items-center justify-between gap-2 pt-2 border-t border-border/50">
-                              <div className="text-sm">
-                                {status ? (
-                                  <span title={t('myStatus')}>{status}</span>
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">{t('notSignedUp')}</span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                {!r.mySignup ? (
-                                  r.status === 'open' || r.status === 'announced' ? (
-                                    <Link
-                                      href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                                      className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
-                                      aria-label={t('signupStart')}
-                                      title={t('signupStart')}
-                                    >
-                                      + {t('signupStart')}
-                                    </Link>
-                                  ) : (
-                                    <span className="text-xs text-muted-foreground">Gesperrt</span>
-                                  )
-                                ) : (
-                                  <>
-                                    {r.status === 'open' || r.status === 'announced' ? (
-                                      <>
-                                        <Link
-                                          href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                                          className="inline-flex items-center justify-center rounded-lg border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
-                                          aria-label={t('signupEdit')}
-                                          title={t('signupEdit')}
-                                        >
-                                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                        </Link>
-                                        <button
-                                          type="button"
-                                          className="inline-flex items-center justify-center rounded-lg border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
-                                          aria-label={t('signupWithdraw')}
-                                          title={t('signupWithdraw')}
-                                          onClick={() => void calendarWithdrawSignup(r)}
-                                        >
-                                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground">Gesperrt</span>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="mt-1.5 text-xs text-muted-foreground">
-                              <span className="tabular-nums">{r.signupCount}/{r.maxPlayers}</span> {t('signups')}
+                            {/* Action buttons column */}
+                            <div className="flex flex-col gap-1 shrink-0">
+                              {r.hasNote ? (
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center h-6 w-6 rounded border border-border bg-card hover:bg-muted transition-colors text-xs text-muted-foreground"
+                                  onClick={() => setExpandedNoteRaidId(noteOpen ? null : r.id)}
+                                  aria-label={t('toggleNote')}
+                                  title={t('toggleNote')}
+                                >
+                                  📒
+                                </button>
+                              ) : null}
+                              {r.canEdit ? (
+                                <button
+                                  type="button"
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-border bg-card hover:bg-muted transition-colors text-muted-foreground"
+                                  aria-label={t('actions')}
+                                  title={t('actions')}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const pos = openMenuAtButton(e.currentTarget);
+                                    setOpenCalendarActionPos(pos);
+                                    setOpenCalendarActionRaidId(openCalendarActionRaidId === r.id ? null : r.id);
+                                    setOpenSignupMenuKey(null);
+                                    setOpenSignupMenuPos(null);
+                                    setOpenNewRaidMenuPos(null);
+                                  }}
+                                >
+                                  <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                                </button>
+                              ) : null}
                             </div>
                           </div>
-                        );
-                      })
-                    )}
+                          {/* Mein Status row */}
+                          <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                            {r.mySignup ? (
+                              <>
+                                <span className="text-muted-foreground shrink-0">Mein Status:</span>
+                                <span
+                                  className="text-base leading-none cursor-help"
+                                  title={myStatusIconTooltip(r.status, r.mySignup)}
+                                >
+                                  {status}
+                                </span>
+                                <span className="flex-1" />
+                                {(r.status === 'open' || r.status === 'announced') ? (
+                                  <>
+                                    <Link
+                                      href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
+                                      className="inline-flex items-center justify-center rounded border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
+                                      aria-label={t('signupEdit')}
+                                      title={t('signupEdit')}
+                                    >
+                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                    </Link>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
+                                      aria-label={t('signupWithdraw')}
+                                      title={t('signupWithdraw')}
+                                      onClick={() => void calendarWithdrawSignup(r)}
+                                    >
+                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                  </>
+                                ) : null}
+                              </>
+                            ) : (
+                              (r.status === 'open' || r.status === 'announced') ? (
+                                <Link
+                                  href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
+                                  className="inline-flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+                                  aria-label={t('signupStart')}
+                                  title={t('signupStart')}
+                                >
+                                  {t('signupShort')}
+                                </Link>
+                              ) : null
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        ) : listRaids.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-muted-foreground">Keine Raids in diesem Zeitraum</div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
-            <table className="min-w-[980px] w-full text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/30">
                 <tr className="text-left">
                   <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('scheduledAt')}</th>
@@ -1018,18 +1112,42 @@ export function DashboardClient({
                 </tr>
               </thead>
               <tbody>
-                {calendarRaidsSorted.map((r) => {
+                {listRaids.map((r) => {
                   const status = myStatusIcon(r.status, r.mySignup);
                   const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
                   const signupUntilLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
                     new Date(r.signupUntilIso)
                   );
                   const signupState = signupIndicator(r.signupUntilIso, r.status);
+                  const diff = daysDiff(new Date(r.scheduledAtIso), today);
+                  const isToday = diff === 0;
                   return (
-                    <tr key={r.id} className="border-b border-border last:border-b-0 hover:bg-muted/20 transition-colors">
-                      <td className="px-4 py-3 text-muted-foreground tabular-nums text-sm">
-                        {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(r.scheduledAtIso))}{' '}
-                        <span className="text-xs">{timeLabel}</span>
+                    <tr
+                      key={r.id}
+                      className={cn(
+                        'border-b border-border last:border-b-0 transition-colors',
+                        isToday
+                          ? 'bg-primary/5 hover:bg-primary/8'
+                          : 'hover:bg-muted/20'
+                      )}
+                    >
+                      <td className="px-4 py-3 tabular-nums text-sm">
+                        <div className={isToday ? 'font-semibold text-primary' : 'text-muted-foreground'}>
+                          {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(r.scheduledAtIso))}{' '}
+                          <span className="text-xs">{timeLabel}</span>
+                          {isToday ? <span className="ml-1 text-xs font-semibold text-primary">({t('todayShort')})</span> : null}
+                        </div>
+                        {!isToday && (
+                          diff < 0 ? (
+                            <div className="text-[11px] text-red-400/80 dark:text-red-400/60 tabular-nums">
+                              vor {Math.abs(diff)} {Math.abs(diff) === 1 ? 'Tag' : 'Tagen'}
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-emerald-600/80 dark:text-emerald-400/70 tabular-nums">
+                              in {diff} {diff === 1 ? 'Tag' : 'Tagen'}
+                            </div>
+                          )
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <Link href={`/${locale}/guild/${r.guildId}/raid/${r.id}`} className="font-medium text-foreground hover:text-primary transition-colors">
@@ -1042,14 +1160,23 @@ export function DashboardClient({
                         <span title={signupUntilLabel}>Anmeldung: {signupState.icon}</span>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
-                        <span>{raidStatusLabel(r.status)}</span>
+                        <span>Raidstatus: <span className="font-medium text-foreground/80">{raidStatusLabel(r.status)}</span></span>
                         {r.announcedGroupCount != null ? (
                           <span className="block">
                             {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}
                           </span>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3">{status ? status : <span className="text-xs text-muted-foreground">{t('notSignedUp')}</span>}</td>
+                      <td className="px-4 py-3">
+                        {status ? (
+                          <span
+                            className="cursor-help text-base"
+                            title={myStatusIconTooltip(r.status, r.mySignup)}
+                          >
+                            {status}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-4 py-3">
                         {!r.mySignup ? (
                           r.status === 'open' || r.status === 'announced' ? (
@@ -1061,9 +1188,7 @@ export function DashboardClient({
                             >
                               + Anmelden
                             </Link>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">—</span>
-                          )
+                          ) : null
                         ) : r.status === 'open' || r.status === 'announced' ? (
                           <button
                             type="button"
@@ -1074,9 +1199,7 @@ export function DashboardClient({
                           >
                             Abmelden
                           </button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
@@ -1104,7 +1227,6 @@ export function DashboardClient({
             </table>
           </div>
         )}
-        </div>
       </section>
 
       {openCalendarActionRaidId && openCalendarActionPos

@@ -5,7 +5,6 @@ import { getTranslations } from 'next-intl/server';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
-import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { RaidDetailView, type AnnouncedLayoutProps } from '@/components/raid-detail/raid-detail-view';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 import {
@@ -164,23 +163,6 @@ export default async function RaidDetailPage(props: {
     }
   }
 
-  const typeNorm = (v: string) => (v === 'main' ? 'normal' : v);
-  const roleStats = {
-    Tank: { normal: 0, uncertain: 0, reserve: 0 },
-    Melee: { normal: 0, uncertain: 0, reserve: 0 },
-    Range: { normal: 0, uncertain: 0, reserve: 0 },
-    Healer: { normal: 0, uncertain: 0, reserve: 0 },
-  };
-  for (const s of raid.signups) {
-    const spec = (s.signedSpec?.trim() || s.character?.mainSpec?.trim() || null) as string | null;
-    const role = roleFromSpecDisplayName(spec);
-    const tn = typeNorm(s.type);
-    if (!role || !(role in roleStats)) continue;
-    if (tn === 'normal' || tn === 'uncertain' || tn === 'reserve') {
-      roleStats[role as keyof typeof roleStats][tn]++;
-    }
-  }
-
   const raidForView = {
     ...raid,
     scheduledAt: raid.scheduledAt.toISOString(),
@@ -188,24 +170,39 @@ export default async function RaidDetailPage(props: {
     signupUntil: raid.signupUntil.toISOString(),
   };
 
+  const dungeonLabel =
+    raid.dungeonNames && raid.dungeonNames.length > 0
+      ? raid.dungeonNames.join(' / ')
+      : raid.dungeon.names[0]?.name ?? raid.dungeon.name;
+
+  const organizerDiscordId = raid.organizerDiscordId?.trim() ?? null;
+  let organizerLabel: string | null = null;
+  if (organizerDiscordId) {
+    const orgUser = await prisma.rfUser.findUnique({
+      where: { discordId: organizerDiscordId },
+      select: { id: true },
+    });
+    if (orgUser) {
+      const orgChar = await prisma.rfCharacter.findFirst({
+        where: { userId: orgUser.id, guildId, guildDiscordDisplayName: { not: null } },
+        select: { guildDiscordDisplayName: true, name: true, isMain: true },
+        orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
+      });
+      organizerLabel =
+        orgChar?.guildDiscordDisplayName?.trim() || orgChar?.name?.trim() || null;
+    }
+  }
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto space-y-6">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <Link
-          href={`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`}
-          className="text-sm text-muted-foreground hover:text-foreground hover:underline shrink-0 sm:ml-auto order-first sm:order-none"
-        >
-          {t('backDashboard')}
-        </Link>
-      </div>
-
       <RaidDetailView
         locale={locale}
         guildId={guildId}
         raidId={raidId}
         userId={userId}
         raid={raidForView}
-        roleStats={roleStats}
+        dungeonLabel={dungeonLabel}
+        organizerLabel={organizerLabel}
         canEdit={canEdit}
         canEditRaid={canEditRaid}
         canSignup={canSignup}

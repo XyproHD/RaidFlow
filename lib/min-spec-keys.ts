@@ -10,6 +10,10 @@ import {
   TBC_CLASS_IDS,
   getClassSpecs,
 } from '@/lib/wow-tbc-classes';
+import {
+  signupAttendanceBucket,
+  type OverviewAttendanceSlice,
+} from '@/lib/raid-overview-attendance';
 
 export const MIN_SPEC_CLASS_PREFIX = 'class:' as const;
 
@@ -220,6 +224,44 @@ export function buildSpecStatsByMinKeys(
       } else if (spec === k.trim()) {
         out[k][tn]++;
       }
+    }
+  }
+  return out;
+}
+
+export type MinSpecSignupAttendanceLike = SignupTypeStat & {
+  punctuality?: string | null;
+  isLate: boolean;
+};
+
+/** Wie buildSpecStatsByMinKeys, aber Zählung clear/unclear (Raid-Übersicht). */
+export function buildSpecAttendanceByMinKeys(
+  signups: MinSpecSignupAttendanceLike[],
+  minSpecsObj: Record<string, number> | null
+): Record<string, OverviewAttendanceSlice> {
+  const out: Record<string, OverviewAttendanceSlice> = {};
+  if (!minSpecsObj) return out;
+  const keys = Object.keys(minSpecsObj).filter((k) => {
+    const n = minSpecsObj[k];
+    return typeof n === 'number' && Number.isFinite(n) && n > 0;
+  });
+  for (const k of keys) {
+    out[k] = { clear: 0, unclear: 0 };
+  }
+  for (const s of signups) {
+    const spec = (s.signedSpec?.trim() || s.character?.mainSpec?.trim() || '').trim();
+    if (!spec) continue;
+    const bucket = signupAttendanceBucket(s);
+    if (!bucket) continue;
+    for (const k of keys) {
+      let match = false;
+      if (isMinSpecClassKey(k)) {
+        const cid = parseMinSpecClassKey(k);
+        if (cid && getSpecByDisplayName(spec)?.classId === cid) match = true;
+      } else if (spec === k.trim()) {
+        match = true;
+      }
+      if (match) out[k][bucket]++;
     }
   }
   return out;

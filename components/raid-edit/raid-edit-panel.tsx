@@ -169,8 +169,7 @@ export function RaidEditPanel({
 
   const [name, setName] = useState(raid.name);
   const [note, setNote] = useState(raid.note ?? '');
-  const [raidLeaderId, setRaidLeaderId] = useState(raid.raidLeaderId ?? '');
-  const [lootmasterId, setLootmasterId] = useState(raid.lootmasterId ?? '');
+  const [organizerDiscordId, setOrganizerDiscordId] = useState(raid.organizerDiscordId ?? '');
   const [minTanks, setMinTanks] = useState(raid.minTanks);
   const [minMelee, setMinMelee] = useState(raid.minMelee);
   const [minRange, setMinRange] = useState(raid.minRange);
@@ -187,13 +186,12 @@ export function RaidEditPanel({
   const [scheduledAtLocal, setScheduledAtLocal] = useState(() =>
     toDatetimeLocalValue(new Date(raid.scheduledAt))
   );
-  const [scheduledEndLocal, setScheduledEndLocal] = useState(() =>
-    toDatetimeLocalValue(
-      raid.scheduledEndAt
-        ? new Date(raid.scheduledEndAt)
-        : addMinutes(new Date(raid.scheduledAt), 30)
-    )
-  );
+  const [durationHours, setDurationHours] = useState(() => {
+    const s = new Date(raid.scheduledAt);
+    const e = raid.scheduledEndAt ? new Date(raid.scheduledEndAt) : addMinutes(s, 30);
+    const diffHours = (e.getTime() - s.getTime()) / (1000 * 60 * 60);
+    return Math.max(1, Math.min(10, diffHours));
+  });
   const [signupDatetimeLocal, setSignupDatetimeLocal] = useState(() =>
     toDatetimeLocalValue(parseDatetimeLocal(raid.signupUntil))
   );
@@ -216,7 +214,7 @@ export function RaidEditPanel({
   const [cancelBusy, setCancelBusy] = useState(false);
 
   const scheduledAtNew = useMemo(() => parseDatetimeLocal(scheduledAtLocal), [scheduledAtLocal]);
-  const scheduledEndAtNew = useMemo(() => parseDatetimeLocal(scheduledEndLocal), [scheduledEndLocal]);
+  const scheduledEndAtNew = useMemo(() => addMinutes(scheduledAtNew, durationHours * 60), [scheduledAtNew, durationHours]);
   const signupUntil = useMemo(
     () => parseDatetimeLocal(signupDatetimeLocal),
     [signupDatetimeLocal]
@@ -361,8 +359,7 @@ export function RaidEditPanel({
       const body: Record<string, unknown> = {
         name,
         note: note || null,
-        raidLeaderId: raidLeaderId || null,
-        lootmasterId: lootmasterId || null,
+        organizerDiscordId: organizerDiscordId || null,
         minTanks,
         minMelee,
         minRange,
@@ -604,30 +601,15 @@ export function RaidEditPanel({
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">{tPlanner('raidLeader')}</span>
+            <span className="text-muted-foreground">{tPlanner('organizer')}</span>
             <select
               className="rounded-md border border-input bg-background px-3 py-2"
-              value={raidLeaderId}
-              onChange={(e) => setRaidLeaderId(e.target.value)}
+              value={organizerDiscordId}
+              onChange={(e) => setOrganizerDiscordId(e.target.value)}
             >
-              <option value="">—</option>
+              <option value="">{tPlanner('organizerNone')}</option>
               {(bootstrap?.leaders ?? []).map((l) => (
-                <option key={l.userId} value={l.userId}>
-                  {l.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            <span className="text-muted-foreground">{tPlanner('lootmaster')}</span>
-            <select
-              className="rounded-md border border-input bg-background px-3 py-2"
-              value={lootmasterId}
-              onChange={(e) => setLootmasterId(e.target.value)}
-            >
-              <option value="">—</option>
-              {(bootstrap?.leaders ?? []).map((l) => (
-                <option key={l.userId} value={l.userId}>
+                <option key={l.discordId} value={l.discordId}>
                   {l.label}
                 </option>
               ))}
@@ -655,7 +637,7 @@ export function RaidEditPanel({
           </label>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="flex flex-wrap gap-2">
           {ROLE_ORDER.map((role) => {
             const val =
               role === 'Tank'
@@ -674,15 +656,15 @@ export function RaidEditPanel({
                     ? setMinRange
                     : setMinHealers;
             return (
-              <label key={role} className="flex flex-col gap-1 text-xs">
-                <span className="text-muted-foreground flex items-center gap-1">
-                  <RoleIcon role={role} size={16} />
+              <label key={role} className="rounded-lg border border-border bg-muted/20 px-3 py-2 flex items-center gap-3 flex-1 min-w-[120px]">
+                <span className="text-muted-foreground flex items-center gap-2 text-sm font-medium flex-1">
+                  <RoleIcon role={role} size={20} />
                   {role}
                 </span>
                 <input
                   type="number"
                   min={0}
-                  className="rounded-md border border-input bg-background px-2 py-1"
+                  className="w-14 shrink-0 rounded-md border border-input bg-background px-2 py-1 text-center text-sm tabular-nums"
                   value={val}
                   onChange={(e) => set(Number(e.target.value))}
                 />
@@ -692,11 +674,11 @@ export function RaidEditPanel({
         </div>
 
         <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
             <p className="text-sm font-medium">{tPlanner('minSpecs')}</p>
             <button
               type="button"
-              className="text-sm text-primary"
+              className="rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium hover:bg-muted/50"
               onClick={() =>
                 setMinSpecRows([
                   ...minSpecRows,
@@ -743,13 +725,18 @@ export function RaidEditPanel({
               />
             </label>
             <label className="flex flex-col gap-1 text-sm">
-              <span className="text-muted-foreground">{t('raidEnd')}</span>
-              <input
-                type="datetime-local"
+              <span className="text-muted-foreground">{tPlanner('duration')}</span>
+              <select
                 className="rounded-md border border-input bg-background px-3 py-2"
-                value={scheduledEndLocal}
-                onChange={(e) => setScheduledEndLocal(e.target.value)}
-              />
+                value={durationHours}
+                onChange={(e) => setDurationHours(Number(e.target.value))}
+              >
+                {[1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10].map((h) => (
+                  <option key={h} value={h}>
+                    {h} {h === 1 ? tPlanner('hour') : tPlanner('hours')}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
         </div>
