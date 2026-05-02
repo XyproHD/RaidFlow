@@ -997,14 +997,6 @@ export function DashboardClient({
                                   <span>{signupState.icon}</span>
                                 </button>
                                 <span className="tabular-nums shrink-0">{r.signupCount}/{r.maxPlayers}</span>
-                                {status ? (
-                                  <span
-                                    className="cursor-help shrink-0 text-base leading-none"
-                                    title={myStatusIconTooltip(r.status, r.mySignup)}
-                                  >
-                                    {status}
-                                  </span>
-                                ) : null}
                               </div>
                               {signupUntilOpen ? <div className="mt-0.5 text-[11px] text-muted-foreground">{signupUntilDateTimeLabel}</div> : null}
                               {noteOpen ? (
@@ -1047,40 +1039,50 @@ export function DashboardClient({
                               ) : null}
                             </div>
                           </div>
-                          {/* Signup action */}
-                          <div className="mt-1.5 flex items-center gap-1.5">
-                            {!r.mySignup ? (
-                              r.status === 'open' || r.status === 'announced' ? (
+                          {/* Mein Status row */}
+                          <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                            {r.mySignup ? (
+                              <>
+                                <span className="text-muted-foreground shrink-0">Mein Status:</span>
+                                <span
+                                  className="text-base leading-none cursor-help"
+                                  title={myStatusIconTooltip(r.status, r.mySignup)}
+                                >
+                                  {status}
+                                </span>
+                                <span className="flex-1" />
+                                {(r.status === 'open' || r.status === 'announced') ? (
+                                  <>
+                                    <Link
+                                      href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
+                                      className="inline-flex items-center justify-center rounded border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
+                                      aria-label={t('signupEdit')}
+                                      title={t('signupEdit')}
+                                    >
+                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                    </Link>
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
+                                      aria-label={t('signupWithdraw')}
+                                      title={t('signupWithdraw')}
+                                      onClick={() => void calendarWithdrawSignup(r)}
+                                    >
+                                      <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                  </>
+                                ) : null}
+                              </>
+                            ) : (
+                              (r.status === 'open' || r.status === 'announced') ? (
                                 <Link
                                   href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
                                   className="inline-flex items-center gap-1 rounded border border-primary/40 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
                                   aria-label={t('signupStart')}
                                   title={t('signupStart')}
                                 >
-                                  + {t('signupStart')}
+                                  {t('signupShort')}
                                 </Link>
-                              ) : null
-                            ) : (
-                              r.status === 'open' || r.status === 'announced' ? (
-                                <>
-                                  <Link
-                                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                                    className="inline-flex items-center justify-center rounded border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
-                                    aria-label={t('signupEdit')}
-                                    title={t('signupEdit')}
-                                  >
-                                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                  </Link>
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center justify-center rounded border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
-                                    aria-label={t('signupWithdraw')}
-                                    title={t('signupWithdraw')}
-                                    onClick={() => void calendarWithdrawSignup(r)}
-                                  >
-                                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                  </button>
-                                </>
                               ) : null
                             )}
                           </div>
