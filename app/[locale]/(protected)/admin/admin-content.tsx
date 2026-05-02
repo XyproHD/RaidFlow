@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 
@@ -16,6 +16,7 @@ type ConfigState = {
   statusMessage: string;
 };
 type AdminRow = { discordUserId: string; addedByDiscordId: string | null; createdAt: string };
+type DbProbeSample = { ms: number; at: string };
 
 export function AdminContent({ locale, isOwner }: { locale: string; isOwner: boolean }) {
   const t = useTranslations('admin');
@@ -37,6 +38,13 @@ export function AdminContent({ locale, isOwner }: { locale: string; isOwner: boo
   const [newAdminId, setNewAdminId] = useState('');
   const [deletingGuildId, setDeletingGuildId] = useState<string | null>(null);
   const [removingAdminId, setRemovingAdminId] = useState<string | null>(null);
+  const [dbProbeRunning, setDbProbeRunning] = useState(false);
+  const [dbProbeBusy, setDbProbeBusy] = useState(false);
+  const [dbProbeSamples, setDbProbeSamples] = useState<DbProbeSample[]>([]);
+  const [dbProbeError, setDbProbeError] = useState<string | null>(null);
+  const [dbProbeFailureCount, setDbProbeFailureCount] = useState(0);
+  const dbProbeTimerRef = useRef<number | null>(null);
+  const dbProbeAbortRef = useRef<AbortController | null>(null);
 
   const loadGuilds = useCallback(async () => {
     const res = await fetch('/api/admin/guilds');
@@ -193,6 +201,108 @@ export function AdminContent({ locale, isOwner }: { locale: string; isOwner: boo
     }
   };
 
+  const clearDbProbeTimer = useCallback(() => {
+    if (dbProbeTimerRef.current != null) {
+      window.clearTimeout(dbProbeTimerRef.current);
+      dbProbeTimerRef.current = null;
+    }
+  }, []);
+
+  const stopDbProbe = useCallback(() => {
+    setDbProbeRunning(false);
+    clearDbProbeTimer();
+    dbProbeAbortRef.current?.abort();
+    dbProbeAbortRef.current = null;
+    setDbProbeBusy(false);
+  }, [clearDbProbeTimer]);
+
+  const runDbProbeOnce = useCallback(async () => {
+    if (!isOwner) return;
+    dbProbeAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    dbProbeAbortRef.current = ctrl;
+    setDbProbeBusy(true);
+    try {
+      const res = await fetch('/api/admin/sysdiag/ping', {
+        method: 'GET',
+        cache: 'no-store',
+        signal: ctrl.signal,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body?.ok !== true || typeof body?.ms !== 'number') {
+        const err = typeof body?.error === 'string' ? body.error : await res.text();
+        setDbProbeFailureCount((v) => v + 1);
+        setDbProbeError(err || t('ownerDbProbeUnknownError'));
+        return;
+      }
+      setDbProbeSamples((prev) => [...prev, { ms: body.ms, at: body.at ?? new Date().toISOString() }]);
+      setDbProbeError(null);
+    } catch (e) {
+      if (ctrl.signal.aborted) return;
+      setDbProbeFailureCount((v) => v + 1);
+      setDbProbeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (dbProbeAbortRef.current === ctrl) dbProbeAbortRef.current = null;
+      setDbProbeBusy(false);
+    }
+  }, [isOwner, t]);
+
+  const startDbProbe = useCallback(() => {
+    if (!isOwner || dbProbeRunning) return;
+    setDbProbeSamples([]);
+    setDbProbeError(null);
+    setDbProbeFailureCount(0);
+    setDbProbeRunning(true);
+  }, [isOwner, dbProbeRunning]);
+
+  const resetDbProbe = useCallback(() => {
+    stopDbProbe();
+    setDbProbeSamples([]);
+    setDbProbeError(null);
+    setDbProbeFailureCount(0);
+  }, [stopDbProbe]);
+
+  useEffect(() => {
+    if (!dbProbeRunning || !isOwner) return;
+    let active = true;
+    const loop = async () => {
+      await runDbProbeOnce();
+      if (!active) return;
+      dbProbeTimerRef.current = window.setTimeout(loop, 1200);
+    };
+    void loop();
+    return () => {
+      active = false;
+      clearDbProbeTimer();
+      dbProbeAbortRef.current?.abort();
+      dbProbeAbortRef.current = null;
+      setDbProbeBusy(false);
+    };
+  }, [dbProbeRunning, isOwner, runDbProbeOnce, clearDbProbeTimer]);
+
+  useEffect(() => () => stopDbProbe(), [stopDbProbe]);
+
+  const dbProbeStats = useMemo(() => {
+    if (dbProbeSamples.length === 0) return null;
+    const values = dbProbeSamples.map((s) => s.ms);
+    const sorted = [...values].sort((a, b) => a - b);
+    const sum = values.reduce((acc, value) => acc + value, 0);
+    const percentile = (p: number) => {
+      const idx = Math.max(0, Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1));
+      return sorted[idx];
+    };
+    return {
+      count: values.length,
+      min: sorted[0],
+      max: sorted[sorted.length - 1],
+      avg: Math.round(sum / values.length),
+      p50: percentile(50),
+      p95: percentile(95),
+      last: values[values.length - 1],
+      lastAt: dbProbeSamples[dbProbeSamples.length - 1]?.at ?? null,
+    };
+  }, [dbProbeSamples]);
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -222,6 +332,96 @@ export function AdminContent({ locale, isOwner }: { locale: string; isOwner: boo
             {t('ownerDiagnosticsLink')}
           </Link>
         </p>
+      )}
+      {isOwner && (
+        <section className="space-y-3 rounded-lg border border-border p-4 bg-card/30">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">{t('ownerDbProbeTitle')}</h2>
+              <p className="text-sm text-muted-foreground">{t('ownerDbProbeDescription')}</p>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {dbProbeRunning ? t('ownerDbProbeRunning') : t('ownerDbProbeStopped')}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={startDbProbe}
+              disabled={dbProbeRunning}
+              className="px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              {t('ownerDbProbeStart')}
+            </button>
+            <button
+              type="button"
+              onClick={stopDbProbe}
+              disabled={!dbProbeRunning}
+              className="px-3 py-1.5 rounded-md border border-border text-sm font-medium hover:bg-accent disabled:opacity-50"
+            >
+              {t('ownerDbProbeStop')}
+            </button>
+            <button
+              type="button"
+              onClick={resetDbProbe}
+              disabled={dbProbeRunning || dbProbeBusy}
+              className="px-3 py-1.5 rounded-md border border-border text-sm font-medium hover:bg-accent disabled:opacity-50"
+            >
+              {t('ownerDbProbeReset')}
+            </button>
+          </div>
+
+          {dbProbeStats ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-sm">
+              <div className="rounded-md border border-border p-2">
+                <div className="text-xs text-muted-foreground">{t('ownerDbProbeSamples')}</div>
+                <div className="font-semibold">{dbProbeStats.count}</div>
+              </div>
+              <div className="rounded-md border border-border p-2">
+                <div className="text-xs text-muted-foreground">{t('ownerDbProbeLast')}</div>
+                <div className="font-semibold">{dbProbeStats.last} ms</div>
+              </div>
+              <div className="rounded-md border border-border p-2">
+                <div className="text-xs text-muted-foreground">{t('ownerDbProbeMin')}</div>
+                <div className="font-semibold">{dbProbeStats.min} ms</div>
+              </div>
+              <div className="rounded-md border border-border p-2">
+                <div className="text-xs text-muted-foreground">{t('ownerDbProbeAvg')}</div>
+                <div className="font-semibold">{dbProbeStats.avg} ms</div>
+              </div>
+              <div className="rounded-md border border-border p-2">
+                <div className="text-xs text-muted-foreground">{t('ownerDbProbeP50')}</div>
+                <div className="font-semibold">{dbProbeStats.p50} ms</div>
+              </div>
+              <div className="rounded-md border border-border p-2">
+                <div className="text-xs text-muted-foreground">{t('ownerDbProbeP95')}</div>
+                <div className="font-semibold">{dbProbeStats.p95} ms</div>
+              </div>
+              <div className="rounded-md border border-border p-2">
+                <div className="text-xs text-muted-foreground">{t('ownerDbProbeMax')}</div>
+                <div className="font-semibold">{dbProbeStats.max} ms</div>
+              </div>
+              <div className="rounded-md border border-border p-2">
+                <div className="text-xs text-muted-foreground">{t('ownerDbProbeErrors')}</div>
+                <div className="font-semibold">{dbProbeFailureCount}</div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">{t('ownerDbProbeNoSamples')}</p>
+          )}
+
+          {dbProbeStats?.lastAt && (
+            <p className="text-xs text-muted-foreground">
+              {t('ownerDbProbeLastAt')}: {new Date(dbProbeStats.lastAt).toLocaleString()}
+            </p>
+          )}
+          {dbProbeError && (
+            <p className="text-sm text-destructive" role="alert">
+              {t('ownerDbProbeLastError')}: {dbProbeError}
+            </p>
+          )}
+        </section>
       )}
       {error && (
         <p className="text-sm text-destructive" role="alert">
