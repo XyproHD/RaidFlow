@@ -357,7 +357,7 @@ export function DashboardClient({
     <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('title')}</h1>
 
-      <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+      <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border shadow-sm overflow-hidden bg-amber-500/[0.025] dark:bg-amber-500/[0.04]">
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border border-l-[3px] border-l-amber-400/60 bg-amber-500/10 dark:bg-amber-500/[0.07]">
           <h2 id="guild-memberships-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('guildMemberships')}
@@ -442,7 +442,7 @@ export function DashboardClient({
         )}
       </section>
 
-      <section aria-labelledby="my-stats-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+      <section aria-labelledby="my-stats-heading" className="rounded-xl border border-border shadow-sm overflow-hidden bg-blue-500/[0.025] dark:bg-blue-500/[0.04]">
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border border-l-[3px] border-l-blue-400/60 bg-blue-500/10 dark:bg-blue-500/[0.07]">
           <h2 id="my-stats-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('myStats')}
@@ -547,7 +547,7 @@ export function DashboardClient({
         />
       </section>
 
-      <section aria-labelledby="my-signups-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+      <section aria-labelledby="my-signups-heading" className="rounded-xl border border-border shadow-sm overflow-hidden bg-emerald-500/[0.025] dark:bg-emerald-500/[0.04]">
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border border-l-[3px] border-l-emerald-400/60 bg-emerald-500/10 dark:bg-emerald-500/[0.07]">
           <h2 id="my-signups-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('mySignups')}
@@ -557,7 +557,7 @@ export function DashboardClient({
           <p className="px-5 py-4 text-muted-foreground text-sm">{t('mySignupsEmpty')}</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[980px] w-full text-sm">
+            <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/30">
                 <tr className="text-left">
                   <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('scheduledAt')}</th>
@@ -648,14 +648,11 @@ export function DashboardClient({
                       </td>
                       <td className="px-4 py-3 align-top">
                         {statusIcon ? (
-                          <span className="text-xs text-muted-foreground">
-                            Meine Anmeldung:{' '}
-                            <span
-                              className="cursor-help text-base align-middle"
-                              title={myStatusIconTooltip(s.raidStatus, { id: 'x', leaderPlacement: s.leaderPlacement, setConfirmed: s.setConfirmed })}
-                            >
-                              {statusIcon}
-                            </span>
+                          <span
+                            className="cursor-help text-base"
+                            title={myStatusIconTooltip(s.raidStatus, { id: 'x', leaderPlacement: s.leaderPlacement, setConfirmed: s.setConfirmed })}
+                          >
+                            {statusIcon}
                           </span>
                         ) : null}
                       </td>
@@ -777,7 +774,7 @@ export function DashboardClient({
           )
         : null}
 
-      <section aria-labelledby="calendar-heading" className="rounded-xl border border-border shadow-sm overflow-hidden">
+      <section aria-labelledby="calendar-heading" className="rounded-xl border border-border shadow-sm overflow-hidden bg-violet-500/[0.025] dark:bg-violet-500/[0.04]">
         <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 border-b border-border border-l-[3px] border-l-violet-400/60 bg-violet-500/10 dark:bg-violet-500/[0.07]">
           <h2 id="calendar-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('calendar')}
@@ -861,17 +858,12 @@ export function DashboardClient({
                 >
                   &lt;
                 </button>
-                <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
+                <div className="px-2 text-xs text-muted-foreground min-w-[8rem] text-center">
                   {listRaids.length > 0 ? (
-                    <>
-                      {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(listRaids[0].scheduledAtIso))}
-                      {listRaids.length > 1 ? (
-                        <>
-                          {' '}–{' '}
-                          {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(new Date(listRaids[listRaids.length - 1].scheduledAtIso))}
-                        </>
-                      ) : null}
-                    </>
+                    <span>
+                      Raid {effectiveListStart + 1}–{effectiveListStart + listRaids.length}
+                      {allRaidsSorted.length > 0 ? <span className="opacity-60"> / {allRaidsSorted.length}</span> : null}
+                    </span>
                   ) : (
                     <span>Keine Raids</span>
                   )}
@@ -928,189 +920,173 @@ export function DashboardClient({
         </div>
 
         {calendarView === 'tiles' ? (
-        <div className="p-4 sm:p-5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 items-start">
-            {days.map((day) => {
-              const key = startOfDay(day).toISOString();
-              const raids = raidsByDay.get(key) ?? [];
-              const isToday = startOfDay(day).getTime() === today.getTime();
-              const isPast = startOfDay(day).getTime() < today.getTime();
-              return (
-                <div
-                  key={key}
-                  className={[
-                    'rounded-xl border bg-card p-3 shadow-sm',
-                    isToday ? 'border-primary/50 ring-1 ring-primary/20' : 'border-border',
-                    isPast ? 'opacity-55' : '',
-                  ].join(' ')}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="font-semibold text-foreground">
-                      {formatDayLabel(locale, day)} {isToday ? <span className="text-xs text-primary font-semibold ml-0.5">({t('todayShort')})</span> : null}
-                    </div>
-                    <div className="text-xs text-muted-foreground">{raids.length}</div>
+        <div className="divide-y-2 divide-border">
+          {days.map((day) => {
+            const key = startOfDay(day).toISOString();
+            const raids = raidsByDay.get(key) ?? [];
+            const isToday = startOfDay(day).getTime() === today.getTime();
+            const isPast = startOfDay(day).getTime() < today.getTime();
+            return (
+              <div key={key} className={cn(isPast && !isToday ? 'opacity-50' : '')}>
+                {/* Day header row */}
+                <div className={cn(
+                  'flex items-center gap-3 px-5 py-2.5',
+                  isToday ? 'bg-primary/[0.08]' : 'bg-muted/25'
+                )}>
+                  <div className={cn('font-semibold text-sm', isToday ? 'text-primary' : 'text-foreground')}>
+                    {formatDayLabel(locale, day)}
+                    {isToday ? <span className="ml-1.5 text-xs font-semibold text-primary">({t('todayShort')})</span> : null}
                   </div>
-                  <div className="mt-2 divide-y divide-border/50">
-                    {raids.length === 0 ? (
-                      <div className="text-sm text-muted-foreground">{t('calendarEmptyDay')}</div>
-                    ) : (
-                      raids.map((r) => {
-                        const status = myStatusIcon(r.status, r.mySignup);
-                        const noteOpen = expandedNoteRaidId === r.id;
-                        const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
-                        const signupUntilDateTimeLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
-                          new Date(r.signupUntilIso)
-                        );
-                        const signupState = signupIndicator(r.signupUntilIso, r.status);
-                        const signupUntilOpen = expandedSignupUntilRaidId === r.id;
-                        return (
-                          <div key={r.id} className="pt-2.5 pb-1">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <Link
-                                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}`}
-                                    className="font-medium text-foreground hover:text-primary transition-colors block truncate text-sm"
-                                    title={r.name}
-                                  >
-                                    {r.name}
-                                  </Link>
-                                  <span className="text-xs text-muted-foreground shrink-0">{timeLabel}</span>
-                                </div>
-                                <div className="text-xs text-muted-foreground truncate" title={`${r.dungeonName} • ${r.guildName}`}>
-                                  {r.dungeonName} • {r.guildName}
-                                </div>
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                  <span>Raidstatus: <span className="font-medium text-foreground/80">{raidStatusLabel(r.status)}</span></span>
+                  {raids.length > 0 ? (
+                    <span className="text-xs text-muted-foreground tabular-nums ml-auto">{raids.length}</span>
+                  ) : null}
+                </div>
+                {/* Raid rows */}
+                {raids.length === 0 ? (
+                  <div className="px-5 py-2 text-xs text-muted-foreground">{t('calendarEmptyDay')}</div>
+                ) : (
+                  <div className="divide-y divide-border/60">
+                    {raids.map((r) => {
+                      const status = myStatusIcon(r.status, r.mySignup);
+                      const noteOpen = expandedNoteRaidId === r.id;
+                      const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
+                      const signupUntilDateTimeLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
+                        new Date(r.signupUntilIso)
+                      );
+                      const signupState = signupIndicator(r.signupUntilIso, r.status);
+                      const signupUntilOpen = expandedSignupUntilRaidId === r.id;
+                      return (
+                        <div key={r.id} className="px-5 py-3 hover:bg-muted/10 transition-colors">
+                          <div className="flex items-start gap-3">
+                            <div className="flex-1 min-w-0 space-y-0.5">
+                              {/* Line 1: name · time · raidstatus */}
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                                <Link
+                                  href={`/${locale}/guild/${r.guildId}/raid/${r.id}`}
+                                  className="font-medium text-sm text-foreground hover:text-primary transition-colors"
+                                  title={r.name}
+                                >
+                                  {r.name}
+                                </Link>
+                                <span className="text-xs text-muted-foreground shrink-0">{timeLabel}</span>
+                                <span className="text-xs text-muted-foreground shrink-0">
+                                  Raidstatus: <span className="font-medium text-foreground/80">{raidStatusLabel(r.status)}</span>
                                   {r.announcedGroupCount != null ? (
-                                    <span> · {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}</span>
+                                    <span className="font-normal"> · {tRaidDetail('dashboardGroupCount', { n: r.announcedGroupCount })}</span>
                                   ) : null}
-                                </div>
-                                <div className="mt-1 text-xs text-muted-foreground">
-                                  <button
-                                    type="button"
-                                    className="inline-flex items-center gap-1 hover:text-foreground"
-                                    title={signupUntilDateTimeLabel}
-                                    onClick={() => setExpandedSignupUntilRaidId(signupUntilOpen ? null : r.id)}
-                                  >
-                                    <span>Anmeldung:</span>
-                                    <span>{signupState.icon}</span>
-                                  </button>
-                                  {signupUntilOpen ? <div className="mt-1 text-[11px]">{signupUntilDateTimeLabel}</div> : null}
-                                </div>
+                                </span>
                               </div>
-                              <div className="ml-auto flex items-center gap-2">
-                                {r.canEdit ? (
-                                  <button
-                                    type="button"
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors text-muted-foreground"
-                                    aria-label={t('actions')}
-                                    title={t('actions')}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      const pos = openMenuAtButton(e.currentTarget);
-                                      setOpenCalendarActionPos(pos);
-                                      setOpenCalendarActionRaidId(openCalendarActionRaidId === r.id ? null : r.id);
-                                      setOpenSignupMenuKey(null);
-                                      setOpenSignupMenuPos(null);
-                                      setOpenNewRaidMenuPos(null);
-                                    }}
-                                  >
-                                    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
-                                  </button>
-                                ) : null}
-                                {r.hasNote ? (
-                                  <button
-                                    type="button"
-                                    className="shrink-0 rounded-lg border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                                    onClick={() => setExpandedNoteRaidId(noteOpen ? null : r.id)}
-                                    aria-label={t('toggleNote')}
-                                    title={t('toggleNote')}
-                                  >
-                                    📒
-                                  </button>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            {noteOpen ? (
-                              <div className="mt-2 text-xs text-muted-foreground whitespace-pre-wrap">
-                                {r.note?.trim() ? r.note : t('noteHint')}
-                              </div>
-                            ) : null}
-
-                            <div className="mt-2.5 flex items-center justify-between gap-2 pt-2 border-t border-border/50">
-                              <div className="text-xs text-muted-foreground">
+                              {/* Line 2: dungeon · guild · anmeldung · count · my status */}
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                                <span className="shrink-0">{r.dungeonName} · {r.guildName}</span>
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center gap-0.5 hover:text-foreground transition-colors shrink-0"
+                                  title={signupUntilDateTimeLabel}
+                                  onClick={() => setExpandedSignupUntilRaidId(signupUntilOpen ? null : r.id)}
+                                >
+                                  <span>Anmeldung:</span>
+                                  <span>{signupState.icon}</span>
+                                </button>
+                                {signupUntilOpen ? <span className="text-[11px] shrink-0">{signupUntilDateTimeLabel}</span> : null}
+                                <span className="tabular-nums shrink-0">{r.signupCount}/{r.maxPlayers}</span>
                                 {status ? (
-                                  <span>
-                                    Meine Anmeldung:{' '}
-                                    <span
-                                      className="cursor-help text-base align-middle"
-                                      title={myStatusIconTooltip(r.status, r.mySignup)}
-                                    >
-                                      {status}
-                                    </span>
+                                  <span
+                                    className="cursor-help shrink-0"
+                                    title={myStatusIconTooltip(r.status, r.mySignup)}
+                                  >
+                                    <span className="text-base align-middle">{status}</span>
                                   </span>
                                 ) : null}
                               </div>
-                              <div className="flex items-center gap-1.5">
-                                {!r.mySignup ? (
-                                  r.status === 'open' || r.status === 'announced' ? (
+                              {noteOpen ? (
+                                <div className="mt-1.5 text-xs text-muted-foreground whitespace-pre-wrap bg-muted/30 rounded px-2 py-1.5">
+                                  {r.note?.trim() ? r.note : t('noteHint')}
+                                </div>
+                              ) : null}
+                            </div>
+                            {/* Action buttons */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {!r.mySignup ? (
+                                r.status === 'open' || r.status === 'announced' ? (
+                                  <Link
+                                    href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
+                                    className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
+                                    aria-label={t('signupStart')}
+                                    title={t('signupStart')}
+                                  >
+                                    + {t('signupStart')}
+                                  </Link>
+                                ) : null
+                              ) : (
+                                r.status === 'open' || r.status === 'announced' ? (
+                                  <>
                                     <Link
                                       href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                                      className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20 transition-colors"
-                                      aria-label={t('signupStart')}
-                                      title={t('signupStart')}
+                                      className="inline-flex items-center justify-center rounded-lg border border-border bg-card h-7 w-7 hover:bg-muted transition-colors text-muted-foreground"
+                                      aria-label={t('signupEdit')}
+                                      title={t('signupEdit')}
                                     >
-                                      + {t('signupStart')}
+                                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                     </Link>
-                                  ) : null
-                                ) : (
-                                  <>
-                                    {r.status === 'open' || r.status === 'announced' ? (
-                                      <>
-                                        <Link
-                                          href={`/${locale}/guild/${r.guildId}/raid/${r.id}?mode=signup`}
-                                          className="inline-flex items-center justify-center rounded-lg border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
-                                          aria-label={t('signupEdit')}
-                                          title={t('signupEdit')}
-                                        >
-                                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                        </Link>
-                                        <button
-                                          type="button"
-                                          className="inline-flex items-center justify-center rounded-lg border border-border bg-card h-6 w-6 hover:bg-muted transition-colors text-muted-foreground"
-                                          aria-label={t('signupWithdraw')}
-                                          title={t('signupWithdraw')}
-                                          onClick={() => void calendarWithdrawSignup(r)}
-                                        >
-                                          <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                        </button>
-                                      </>
-                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className="inline-flex items-center justify-center rounded-lg border border-border bg-card h-7 w-7 hover:bg-muted transition-colors text-muted-foreground"
+                                      aria-label={t('signupWithdraw')}
+                                      title={t('signupWithdraw')}
+                                      onClick={() => void calendarWithdrawSignup(r)}
+                                    >
+                                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
                                   </>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="mt-1.5 text-xs text-muted-foreground">
-                              <span className="tabular-nums">{r.signupCount}/{r.maxPlayers}</span> {t('signups')}
+                                ) : null
+                              )}
+                              {r.hasNote ? (
+                                <button
+                                  type="button"
+                                  className="inline-flex items-center justify-center h-7 w-7 rounded-lg border border-border bg-card hover:bg-muted transition-colors text-xs text-muted-foreground"
+                                  onClick={() => setExpandedNoteRaidId(noteOpen ? null : r.id)}
+                                  aria-label={t('toggleNote')}
+                                  title={t('toggleNote')}
+                                >
+                                  📒
+                                </button>
+                              ) : null}
+                              {r.canEdit ? (
+                                <button
+                                  type="button"
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors text-muted-foreground"
+                                  aria-label={t('actions')}
+                                  title={t('actions')}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const pos = openMenuAtButton(e.currentTarget);
+                                    setOpenCalendarActionPos(pos);
+                                    setOpenCalendarActionRaidId(openCalendarActionRaidId === r.id ? null : r.id);
+                                    setOpenSignupMenuKey(null);
+                                    setOpenSignupMenuPos(null);
+                                    setOpenNewRaidMenuPos(null);
+                                  }}
+                                >
+                                  <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                                </button>
+                              ) : null}
                             </div>
                           </div>
-                        );
-                      })
-                    )}
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                )}
+              </div>
+            );
+          })}
         </div>
         ) : listRaids.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-muted-foreground">Keine Raids in diesem Zeitraum</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="min-w-[980px] w-full text-sm">
+            <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/30">
                 <tr className="text-left">
                   <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('scheduledAt')}</th>
@@ -1180,14 +1156,11 @@ export function DashboardClient({
                       </td>
                       <td className="px-4 py-3">
                         {status ? (
-                          <span className="text-xs text-muted-foreground">
-                            Meine Anmeldung:{' '}
-                            <span
-                              className="cursor-help text-base align-middle"
-                              title={myStatusIconTooltip(r.status, r.mySignup)}
-                            >
-                              {status}
-                            </span>
+                          <span
+                            className="cursor-help text-base"
+                            title={myStatusIconTooltip(r.status, r.mySignup)}
+                          >
+                            {status}
                           </span>
                         ) : null}
                       </td>
