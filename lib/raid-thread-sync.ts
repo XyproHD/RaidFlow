@@ -130,7 +130,7 @@ export async function syncRaidThreadSummary(
     };
 
     const embed      = buildRaidEmbed(embedInput);
-    const components = [buildRaidActionButtons(raid.id, raid.guildId)];
+    const components = buildRaidActionButtons(raid.id, raid.guildId);
 
     // --- Nachricht bearbeiten ---
     if (raid.discordChannelMessageId) {

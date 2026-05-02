@@ -1436,6 +1436,15 @@ function getJoin2ActiveChar(flow) {
   return flow.chars.find(c => c.id === charId) ?? null;
 }
 
+async function deleteJoin2WizardReply(interaction, messageId) {
+  if (!messageId) return;
+  try {
+    await interaction.webhook.deleteMessage(messageId);
+  } catch {
+    // Ephemeral-Nachricht kann bereits weg sein oder nicht mehr abrufbar.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // WoW-Emoji-Hilfsfunktionen für den Bot
 // ---------------------------------------------------------------------------
@@ -1695,6 +1704,31 @@ async function handleRaidQuickjoin(interaction, raidId) {
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
+async function handleRaidDeclineButton(interaction, raidId) {
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  const raidPostMsg        = interaction.message;
+  const originalComponents = raidPostMsg?.components ?? [];
+  if (originalComponents.length) {
+    await disableRaidPostButtons(raidPostMsg).catch(() => {});
+  }
+
+  const { ok, json } = await callDiscordAction({
+    action: 'decline',
+    discordUserId: interaction.user.id,
+    raidId,
+  });
+
+  if (raidPostMsg && originalComponents.length) {
+    await raidPostMsg.edit({ components: originalComponents }).catch(() => {});
+  }
+
+  const outcome = ok
+    ? `🚫 ${json.message ?? 'Du bist als „nicht da“ markiert.'}`
+    : raidActionErrorText(json.error);
+  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
 async function handleRaidJoinButton(interaction, raidId, guildId) {
   // Raid-Post merken damit handleSubmitJoin die Buttons sperren/entsperren kann
   raidPostMessages.set(`${interaction.user.id}:${raidId}`, interaction.message);
@@ -1942,10 +1976,17 @@ async function handleRaidJoin2Button(interaction, raidId) {
     perChar: {},
     step2Index: 0,
     note: '',
+    replyMessageId: null,
   });
 
   const msg = await buildJoin2Step1Message(raidId, getJoin2Flow(interaction.user.id, raidId));
-  await interaction.editReply(msg).catch(() => {});
+  const reply = await interaction.editReply(msg).catch(() => null);
+  if (reply?.id) {
+    const current = getJoin2Flow(interaction.user.id, raidId);
+    if (current) {
+      setJoin2Flow(interaction.user.id, raidId, { ...current, replyMessageId: reply.id });
+    }
+  }
 }
 
 async function handleJoin2CharsSelect(interaction, raidId) {
@@ -2177,6 +2218,7 @@ async function handleJoin2NoteModal(interaction, raidId) {
 
   if (errors.length > 0) {
     setJoin2Flow(interaction.user.id, raidId, { ...flow, note });
+    await deleteJoin2WizardReply(interaction, flow.replyMessageId);
     await interaction.editReply({
       content: `⚠️ ${okCount} von ${selectedCharIds.length} Anmeldungen gespeichert.\n${errors.slice(0, 4).join('\n')}`,
       components: [],
@@ -2187,6 +2229,7 @@ async function handleJoin2NoteModal(interaction, raidId) {
 
   clearJoin2Flow(interaction.user.id, raidId);
   raidPostMessages.delete(`${interaction.user.id}:${raidId}`);
+  await deleteJoin2WizardReply(interaction, flow.replyMessageId);
   await interaction.editReply({
     content: `✅ ${okCount} Charakter${okCount === 1 ? '' : 'e'} erfolgreich angemeldet.`,
     components: [],
@@ -2652,6 +2695,7 @@ client.on('interactionCreate', async (interaction) => {
         const punc   = parts[4]; // für punc/editpunc
 
         if (action === 'qj')         { await handleRaidQuickjoin(interaction, raidId); return; }
+        if (action === 'decl')       { await handleRaidDeclineButton(interaction, raidId); return; }
         if (action === 'join')        { await handleRaidJoinButton(interaction, raidId, extra); return; }
         if (action === 'join2')       { await handleRaidJoin2Button(interaction, raidId); return; }
         if (action === 'edit')        { await handleRaidEditButton(interaction, raidId); return; }
