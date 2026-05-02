@@ -323,14 +323,14 @@ export async function POST(request: NextRequest) {
     if (!markerChar) {
       markerChar = (await prisma.rfCharacter.findFirst({
         where:   { userId: user.id, guildId: raid.guildId, isMain: true },
-        select:  { id: true, name: true, mainSpec: true },
+        select:  { id: true, name: true, mainSpec: true, isMain: true },
         orderBy: { updatedAt: 'desc' },
       })) ?? null;
     }
     if (!markerChar) {
       markerChar = await prisma.rfCharacter.findFirst({
         where:   { userId: user.id, guildId: raid.guildId },
-        select:  { id: true, name: true, mainSpec: true },
+        select:  { id: true, name: true, mainSpec: true, isMain: true },
         orderBy: { updatedAt: 'desc' },
       });
     }
