@@ -70,10 +70,10 @@
 @keyframes rf-feedback-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 hsl(214 36% 62% / 0.18);
+    box-shadow: 0 0 0 0 hsl(38 90% 58% / 0.22);
   }
   50% {
-    box-shadow: 0 0 0 10px hsl(214 36% 62% / 0);
+    box-shadow: 0 0 0 10px hsl(38 90% 58% / 0);
   }
 }
 
