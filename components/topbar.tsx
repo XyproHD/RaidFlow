@@ -68,6 +68,15 @@ export function Topbar({
 
   const closeBurger = useCallback(() => setBurgerOpen(false), []);
 
+  useEffect(() => {
+    if (!burgerOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeBurger();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [burgerOpen, closeBurger]);
+
   const needsGuildList = isLoggedIn && (isDashboard || isGuildsPage);
   useEffect(() => {
     if (!needsGuildList || userGuilds.length > 0) return;
@@ -206,164 +215,169 @@ export function Topbar({
 
           {/* Burger button (nur eingeloggt) */}
           {isLoggedIn && (
-            <button
-              type="button"
-              onClick={() => setBurgerOpen(true)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-              aria-label="Menü öffnen"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setBurgerOpen((o) => !o)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                aria-label={burgerOpen ? 'Menü schließen' : 'Menü öffnen'}
+                aria-expanded={burgerOpen}
+                aria-haspopup="menu"
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+
+              {burgerOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={closeBurger} aria-hidden />
+                  <div
+                    className="absolute right-0 top-full z-50 mt-1.5 w-[280px] rounded-xl border border-border bg-popover p-2 shadow-lg"
+                    role="menu"
+                    aria-label="Navigation"
+                  >
+                    <nav className="space-y-0.5">
+                      <Link
+                        href={`/${locale}/dashboard`}
+                        onClick={closeBurger}
+                        className={cn(
+                          'rounded-lg px-3 py-2.5 text-sm font-medium flex items-center gap-3 transition-colors min-h-[42px]',
+                          pathname?.includes('/dashboard')
+                            ? 'bg-accent text-foreground'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                        )}
+                      >
+                        <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                        </svg>
+                        Dashboard
+                      </Link>
+
+                      <Link
+                        href={`/${locale}/profile`}
+                        onClick={closeBurger}
+                        className={cn(
+                          'rounded-lg px-3 py-2.5 text-sm font-medium flex items-center gap-3 transition-colors min-h-[42px]',
+                          pathname?.includes('/profile')
+                            ? 'bg-accent text-foreground'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                        )}
+                      >
+                        <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        {t('myProfile')}
+                      </Link>
+
+                      {showGuildManagement && (
+                        <Link
+                          href={`/${locale}/guilds`}
+                          onClick={closeBurger}
+                          className={cn(
+                            'rounded-lg px-3 py-2.5 text-sm font-medium flex items-center gap-3 transition-colors min-h-[42px]',
+                            pathname?.includes('/guilds')
+                              ? 'bg-accent text-foreground'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                          )}
+                        >
+                          <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                          {t('guildManagement')}
+                        </Link>
+                      )}
+
+                      {discordBotInviteEnabled ? (
+                        <a
+                          href={botInviteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={closeBurger}
+                          className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent flex items-center gap-3 transition-colors min-h-[42px]"
+                        >
+                          <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                          </svg>
+                          {t('discordBotInvite')}
+                        </a>
+                      ) : (
+                        <span
+                          className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground/40 cursor-not-allowed flex items-center gap-3 min-h-[42px]"
+                          aria-disabled="true"
+                        >
+                          <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                          </svg>
+                          {t('discordBotInvite')}
+                        </span>
+                      )}
+
+                      {isAdmin && (
+                        <>
+                          <div className="my-1 h-px bg-border" />
+                          <Link
+                            href={`/${locale}/admin`}
+                            onClick={closeBurger}
+                            className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent flex items-center gap-3 transition-colors min-h-[42px]"
+                          >
+                            <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            {t('admin')}
+                          </Link>
+                        </>
+                      )}
+                    </nav>
+
+                    <div className="my-2 h-px bg-border" />
+
+                    <div className="flex flex-wrap gap-1.5 px-1 pb-1">
+                      <Link
+                        href="#"
+                        onClick={closeBurger}
+                        className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                      >
+                        Impressum
+                      </Link>
+                      <Link
+                        href="#"
+                        onClick={closeBurger}
+                        className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                      >
+                        Datenschutz
+                      </Link>
+                      <Link
+                        href="#"
+                        onClick={closeBurger}
+                        className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                      >
+                        Cookies
+                      </Link>
+                    </div>
+
+                    <div className="mt-1 border-t border-border pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          closeBurger();
+                          void signOut({ callbackUrl: `/${locale}` });
+                        }}
+                        className="w-full rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent flex items-center gap-3 transition-colors"
+                      >
+                        <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
+                        {t('logout')}
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       </header>
-
-      {/* Burger-Menü Sidebar */}
-      {isLoggedIn && burgerOpen && (
-        <>
-          <div
-            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px]"
-            onClick={closeBurger}
-            onKeyDown={(e) => e.key === 'Escape' && closeBurger()}
-            role="button"
-            tabIndex={0}
-            aria-label="Menü schließen"
-          />
-          <aside
-            className="fixed right-0 top-0 z-50 h-full w-64 border-l border-border bg-card shadow-2xl flex flex-col"
-            aria-modal="true"
-            aria-label="Navigation"
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between h-14 px-5 border-b border-border shrink-0">
-              <span className="text-sm font-semibold text-foreground">{tCommon('appName')}</span>
-              <button
-                type="button"
-                onClick={closeBurger}
-                className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-                aria-label="Menü schließen"
-              >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Navigation */}
-            <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
-              <Link
-                href={`/${locale}/dashboard`}
-                onClick={closeBurger}
-                className={cn(
-                  'rounded-lg px-3 py-2.5 text-sm font-medium flex items-center gap-3 transition-colors min-h-[42px]',
-                  pathname?.includes('/dashboard')
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                )}
-              >
-                <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                </svg>
-                Dashboard
-              </Link>
-
-              <Link
-                href={`/${locale}/profile`}
-                onClick={closeBurger}
-                className={cn(
-                  'rounded-lg px-3 py-2.5 text-sm font-medium flex items-center gap-3 transition-colors min-h-[42px]',
-                  pathname?.includes('/profile')
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                )}
-              >
-                <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                {t('myProfile')}
-              </Link>
-
-              {showGuildManagement && (
-                <Link
-                  href={`/${locale}/guilds`}
-                  onClick={closeBurger}
-                  className={cn(
-                    'rounded-lg px-3 py-2.5 text-sm font-medium flex items-center gap-3 transition-colors min-h-[42px]',
-                    pathname?.includes('/guilds')
-                      ? 'bg-accent text-foreground'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
-                  )}
-                >
-                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  {t('guildManagement')}
-                </Link>
-              )}
-
-              {discordBotInviteEnabled ? (
-                <a
-                  href={botInviteUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={closeBurger}
-                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent flex items-center gap-3 transition-colors min-h-[42px]"
-                >
-                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                  {t('discordBotInvite')}
-                </a>
-              ) : (
-                <span
-                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground/40 cursor-not-allowed flex items-center gap-3 min-h-[42px]"
-                  aria-disabled="true"
-                >
-                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                  {t('discordBotInvite')}
-                </span>
-              )}
-
-              {isAdmin && (
-                <>
-                  <div className="my-1 h-px bg-border" />
-                  <Link
-                    href={`/${locale}/admin`}
-                    onClick={closeBurger}
-                    className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent flex items-center gap-3 transition-colors min-h-[42px]"
-                  >
-                    <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    {t('admin')}
-                  </Link>
-                </>
-              )}
-            </nav>
-
-            {/* Footer: Logout */}
-            <div className="p-3 border-t border-border shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  closeBurger();
-                  void signOut({ callbackUrl: `/${locale}` });
-                }}
-                className="w-full rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent flex items-center gap-3 transition-colors"
-              >
-                <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                {t('logout')}
-              </button>
-            </div>
-          </aside>
-        </>
-      )}
     </>
   );
 }
