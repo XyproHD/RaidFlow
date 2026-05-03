@@ -1514,6 +1514,11 @@ function classEmojiMarkupFromSpec(spec, emojis) {
   return key ? (emojis?.[key] ?? '') : '';
 }
 
+function specEmojiMarkup(spec, emojis) {
+  const key = SPEC_EMOJI_KEY_BOT[spec?.trim() ?? ''];
+  return key ? (emojis?.[key] ?? '') : '';
+}
+
 /** Baut eine ActionRow mit Spec-Buttons (Buttons statt Dropdown). */
 async function buildSpecRow(rid, charNoDash, state, isEdit) {
   const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
@@ -2329,57 +2334,94 @@ function formatJoin3SpecLine(flow) {
 async function buildJoin3MainMessage(raidId, flow, errorHint) {
   const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
   const rid = raidId.replace(/-/g, '');
-  const noteShort = flow.note?.trim()
-    ? `"${flow.note.trim().slice(0, 40)}${flow.note.trim().length > 40 ? '…' : ''}"`
-    : 'keine';
+  const selectedChars = selectedJoin3Chars(flow);
+
+  // ── Char-Zeile: disabled Button mit Klassenemoji + Name(n) ──────────────
+  const charLabel = selectedChars.length === 0
+    ? '— kein Char gewählt —'
+    : selectedChars.map(c => c.name).join(' · ');
+  let charBtnEmoji = null;
+  if (selectedChars.length > 0) {
+    const firstSpec = flow.specsByCharId?.[selectedChars[0].id] ?? selectedChars[0].mainSpec;
+    const markup = classEmojiMarkupFromSpec(firstSpec, flow.emojis ?? {});
+    charBtnEmoji = markup ? parseDiscordEmoji(markup) : null;
+  }
+  const charDisplayBtn = new ButtonBuilder()
+    .setCustomId(`rf:j3cdisplay:${rid}`)
+    .setLabel(truncateDiscordLabel(charLabel, charBtnEmoji ? 77 : 80))
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(true);
+  if (charBtnEmoji) charDisplayBtn.setEmoji(charBtnEmoji);
+
+  // ── Spec-Zeile: disabled Button mit Spec-Emoji + Spec-Name(n) ───────────
+  const specLabel = selectedChars.length === 0
+    ? '—'
+    : selectedChars.map(c => flow.specsByCharId?.[c.id] ?? c.mainSpec).join(' · ');
+  let specBtnEmoji = null;
+  if (selectedChars.length > 0) {
+    const firstSpec = flow.specsByCharId?.[selectedChars[0].id] ?? selectedChars[0].mainSpec;
+    const markup = specEmojiMarkup(firstSpec, flow.emojis ?? {});
+    specBtnEmoji = markup ? parseDiscordEmoji(markup) : null;
+  }
+  const specDisplayBtn = new ButtonBuilder()
+    .setCustomId(`rf:j3sdisplay:${rid}`)
+    .setLabel(truncateDiscordLabel(specLabel, specBtnEmoji ? 77 : 80))
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(true);
+  if (specBtnEmoji) specDisplayBtn.setEmoji(specBtnEmoji);
+
+  // ── Sonstiges-Zusammenfassung im Content ────────────────────────────────
+  const miscParts = [];
+  if (flow.onlySignedSpec) miscParts.push('Nur Spec');
+  if (flow.forbidReserve)  miscParts.push('Reserve verboten');
+  if (flow.note?.trim())   miscParts.push('Notiz vorhanden');
+  const miscSummary = miscParts.length ? miscParts.join(' · ') : '—';
   const warn = errorHint ? `\n\n⚠️ ${errorHint}` : '';
 
+  // ── Dropdowns ────────────────────────────────────────────────────────────
   const typeSelect = new StringSelectMenuBuilder()
     .setCustomId(`rf:j3type:${rid}`)
     .setPlaceholder('Teilnahme wählen…')
-    .setMinValues(1)
-    .setMaxValues(1)
+    .setMinValues(1).setMaxValues(1)
     .addOptions([
-      { label: 'Bin da', value: 'normal', default: flow.type === 'normal' },
-      { label: 'Reserve', value: 'reserve', default: flow.type === 'reserve' },
-      { label: 'Unklar', value: 'uncertain', default: flow.type === 'uncertain' },
+      { label: '✅ Bin da',   value: 'normal',    default: flow.type === 'normal' },
+      { label: '🪑 Reserve',  value: 'reserve',   default: flow.type === 'reserve' },
+      { label: '❓ Unklar',   value: 'uncertain', default: flow.type === 'uncertain' },
     ]);
 
   const puncSelect = new StringSelectMenuBuilder()
     .setCustomId(`rf:j3punc:${rid}`)
     .setPlaceholder('Pünktlichkeit wählen…')
-    .setMinValues(1)
-    .setMaxValues(1)
+    .setMinValues(1).setMaxValues(1)
     .addOptions([
-      { label: 'Rechtzeitig', value: 'on_time', default: flow.punctuality === 'on_time' },
-      { label: 'Wird knapp', value: 'tight', default: flow.punctuality === 'tight' },
-      { label: 'Später', value: 'late', default: flow.punctuality === 'late' },
+      { label: '🟢 Rechtzeitig', value: 'on_time', default: flow.punctuality === 'on_time' },
+      { label: '🟡 Wird knapp',  value: 'tight',   default: flow.punctuality === 'tight' },
+      { label: '🕒 Später',      value: 'late',    default: flow.punctuality === 'late' },
     ]);
 
   return {
-    content: [
-      '**Am Raid anmelden:**',
-      '',
-      '**Anmeldeoptionen**',
-      `Name: ${formatJoin3CharLine(flow)}`,
-      `Klasse/Spec: ${formatJoin3SpecLine(flow)}`,
-      `Teilnahme: **${TYPE_LABELS[flow.type] ?? flow.type}**`,
-      `Pünktlichkeit: **${PUNC_LABELS[flow.punctuality] ?? flow.punctuality}**`,
-      `Sonstiges: Nur Spec **${flow.onlySignedSpec ? 'an' : 'aus'}**, Reserve verbieten **${flow.forbidReserve ? 'an' : 'aus'}**, Notiz: ${noteShort}`,
-      warn,
-    ].join('\n'),
+    content: `**Am Raid anmelden:**\n\n⚙️ **Anmeldeoptionen**\nSonstiges: ${miscSummary}${warn}`,
     components: [
-      new ActionRowBuilder().addComponents(typeSelect),
-      new ActionRowBuilder().addComponents(puncSelect),
+      // Zeile 1 – Char-Feld
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`rf:j3editchars:${rid}`).setLabel('✏️ Chars').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`rf:j3editspecs:${rid}`).setLabel('✏️ Klasse/Spec').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`rf:j3editmisc:${rid}`).setLabel('✏️ Sonstiges').setStyle(ButtonStyle.Secondary),
+        charDisplayBtn,
+        new ButtonBuilder().setCustomId(`rf:j3editchars:${rid}`).setEmoji('✏️').setLabel('Ändern').setStyle(ButtonStyle.Secondary),
       ),
+      // Zeile 2 – Klasse/Spec-Feld
+      new ActionRowBuilder().addComponents(
+        specDisplayBtn,
+        new ButtonBuilder().setCustomId(`rf:j3editspecs:${rid}`).setEmoji('✏️').setLabel('Ändern').setStyle(ButtonStyle.Secondary),
+      ),
+      // Zeile 3 – Teilnahme
+      new ActionRowBuilder().addComponents(typeSelect),
+      // Zeile 4 – Pünktlichkeit
+      new ActionRowBuilder().addComponents(puncSelect),
+      // Zeile 5 – Aktionsleiste
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`rf:j3save:${rid}`).setLabel('Speichern/Ändern').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`rf:j3cancel:${rid}`).setLabel('Abbrechen').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`rf:j3info:${rid}`).setLabel('Info').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`rf:j3editmisc:${rid}`).setEmoji('✏️').setLabel('Sonstiges').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`rf:j3info:${rid}`).setLabel('ℹ️ Info').setStyle(ButtonStyle.Primary),
       ),
     ],
     ephemeral: true,
@@ -2404,11 +2446,11 @@ async function buildJoin3CharsMessage(raidId, flow) {
       }))
     );
   return {
-    content: '**Am Raid anmelden:**\n\n**Chars bearbeiten**\nWähle alle Charaktere, die angemeldet werden sollen.',
+    content: '**Am Raid anmelden:**\n\n👤 **Chars bearbeiten**\nWähle alle Charaktere, die angemeldet werden sollen.',
     components: [
       new ActionRowBuilder().addComponents(charSelect),
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('Zurück').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('← Zurück').setStyle(ButtonStyle.Secondary),
       ),
     ],
     ephemeral: true,
@@ -2424,7 +2466,7 @@ async function buildJoin3SpecsMessage(raidId, flow) {
       content: '**Am Raid anmelden:**\n\n⚠️ Bitte zuerst mindestens einen Charakter auswählen.',
       components: [
         new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('Zurück').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('← Zurück').setStyle(ButtonStyle.Secondary),
         ),
       ],
       ephemeral: true,
@@ -2462,12 +2504,12 @@ async function buildJoin3SpecsMessage(raidId, flow) {
     );
 
   return {
-    content: `**Am Raid anmelden:**\n\n**Klasse/Spec bearbeiten**\nAktiv: **${activeChar.name}**`,
+    content: `**Am Raid anmelden:**\n\n⚔️ **Klasse/Spec bearbeiten**\nAktiv: **${activeChar.name}**`,
     components: [
       new ActionRowBuilder().addComponents(charSelect),
       new ActionRowBuilder().addComponents(specSelect),
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('Zurück').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('← Zurück').setStyle(ButtonStyle.Secondary),
       ),
     ],
     ephemeral: true,
@@ -2493,9 +2535,14 @@ async function buildJoin3MiscMessage(raidId, flow) {
       description: 'Nicht verfügbar bei Teilnahme „Reserve“',
     });
   }
+  const notePreview = flow.note?.trim()
+    ? `"${flow.note.trim().slice(0, 55)}${flow.note.trim().length > 55 ? '…' : ''}"`
+    : '— keine —';
+
   return {
-    content: `**Am Raid anmelden:**\n\n**Sonstiges bearbeiten**\nNotiz: ${flow.note?.trim() ? `"${flow.note.trim().slice(0, 120)}"` : 'keine'}`,
+    content: '**Am Raid anmelden:**\n\n📝 **Sonstiges bearbeiten**',
     components: [
+      // Optionen-Auswahl
       new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
           .setCustomId(`rf:j3misc:${rid}`)
@@ -2504,11 +2551,18 @@ async function buildJoin3MiscMessage(raidId, flow) {
           .setMaxValues(options.length)
           .addOptions(options)
       ),
+      // Notiz-Zeile: disabled Vorschau + Edit-Button
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`rf:j3opennote:${rid}`).setLabel('Notiz an Raidleader').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder()
+          .setCustomId(`rf:j3ndisplay:${rid}`)
+          .setLabel(truncateDiscordLabel(`Notiz: ${notePreview}`, 80))
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true),
+        new ButtonBuilder().setCustomId(`rf:j3opennote:${rid}`).setEmoji('✏️').setLabel('Bearbeiten').setStyle(ButtonStyle.Secondary),
       ),
+      // Zurück
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('Zurück').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('← Zurück').setStyle(ButtonStyle.Secondary),
       ),
     ],
     ephemeral: true,
