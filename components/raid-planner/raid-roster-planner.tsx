@@ -625,6 +625,71 @@ export function RaidRosterPlanner({
   const scheduledAt = useMemo(() => new Date(raid.scheduledAt), [raid.scheduledAt]);
   const scheduledEndAt = raid.scheduledEndAt ? new Date(raid.scheduledEndAt) : null;
   const raidTermin = formatRaidTerminLine(intlLocale, scheduledAt, scheduledEndAt);
+  const guildCharacterById = useMemo(
+    () => new Map(guildCharacters.map((c) => [c.id, c])),
+    [guildCharacters]
+  );
+
+  const resolveDiscordNameForSignup = useCallback(
+    (s: RosterPlannerSignup): string | null => {
+      const direct = s.discordName?.trim();
+      if (direct) return direct;
+
+      const cid = (s.characterId ?? '').trim();
+      if (cid) {
+        const fromCharacter = guildCharacterById.get(cid)?.guildDiscordDisplayName?.trim();
+        if (fromCharacter) return fromCharacter;
+      }
+
+      const uid = (s.userId ?? '').trim();
+      if (!uid) return null;
+
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid || !c.isMain) continue;
+        const d = c.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid) continue;
+        const d = c.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      for (const other of signups) {
+        if (other.id === s.id) continue;
+        if ((other.userId ?? '').trim() !== uid) continue;
+        const d = other.discordName?.trim();
+        if (d) return d;
+      }
+      return null;
+    },
+    [guildCharacterById, guildCharacters, signups]
+  );
+
+  const resolveGearScoreForSignup = useCallback(
+    (s: RosterPlannerSignup): number | null => {
+      if (typeof s.gearScore === 'number') return s.gearScore;
+
+      const cid = (s.characterId ?? '').trim();
+      if (cid) {
+        const g = guildCharacterById.get(cid)?.gearScore;
+        if (typeof g === 'number') return g;
+      }
+
+      const uid = (s.userId ?? '').trim();
+      if (!uid) return null;
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid) continue;
+        if (typeof c.gearScore === 'number') return c.gearScore;
+      }
+      for (const other of signups) {
+        if (other.id === s.id) continue;
+        if ((other.userId ?? '').trim() !== uid) continue;
+        if (typeof other.gearScore === 'number') return other.gearScore;
+      }
+      return null;
+    },
+    [guildCharacterById, guildCharacters, signups]
+  );
 
   const leaderLootUserIds = useMemo(() => {
     const ids = new Set<string>();
@@ -719,13 +784,13 @@ export function RaidRosterPlanner({
           p === 'on_time' ? t('punctualityOnTime') : p === 'tight' ? t('punctualityTight') : t('punctualityLate');
         return {
           id: s.id,
-          playerLabel: s.discordName?.trim() || t('signupAnonymous'),
+          playerLabel: resolveDiscordNameForSignup(s) || t('signupAnonymous'),
           charName: s.name,
           punctualityLabel: punctLabel,
           note: (s.note ?? '').trim(),
         };
       });
-  }, [signups, t]);
+  }, [resolveDiscordNameForSignup, signups, t]);
 
   const usedCharacterIds = useMemo(() => {
     const set = new Set<string>();
@@ -1198,6 +1263,8 @@ export function RaidRosterPlanner({
   function renderRow(s: RosterPlannerSignup, source: 'roster' | 'reserve' | 'pool', index?: number) {
     const isDragging = draggingId === s.id;
     const note = s.note?.trim() ?? '';
+    const displayDiscordName = resolveDiscordNameForSignup(s);
+    const displayGearScore = resolveGearScoreForSignup(s);
     const punct = punctualityOf(s);
     const punctLabel =
       punct === 'on_time' ? t('punctualityOnTime') : punct === 'tight' ? t('punctualityTight') : t('punctualityLate');
@@ -1243,8 +1310,8 @@ export function RaidRosterPlanner({
           ) : null}
         </span>
         <span className="ml-auto flex items-center gap-2">
-          <CharacterDiscordPill discordName={s.discordName} blink={blinkDiscordForIds.has(s.id)} />
-          <CharacterGearscorePill gearScore={s.gearScore} />
+          <CharacterDiscordPill discordName={displayDiscordName} blink={blinkDiscordForIds.has(s.id)} />
+          <CharacterGearscorePill gearScore={displayGearScore} />
           {note.length > 0 ? (
             <button
               type="button"
@@ -1265,7 +1332,7 @@ export function RaidRosterPlanner({
                       ? t('punctualityTight')
                       : t('punctualityLate');
                 setFloatingSignupNote({
-                  playerLabel: s.discordName?.trim() || t('signupAnonymous'),
+                  playerLabel: displayDiscordName || t('signupAnonymous'),
                   charName: s.name,
                   punctualityLabel: punctLbl,
                   note,
@@ -1289,6 +1356,40 @@ export function RaidRosterPlanner({
     if (usedCharacterIds.has(addSelected.id)) return;
     const note = `Gesetzt von Raidleader ${raidLeaderLabel}`;
     const id = `manual:${addSelected.id}`;
+    const fallbackDiscord = (() => {
+      const direct = addSelected.guildDiscordDisplayName?.trim();
+      if (direct) return direct;
+      const uid = addSelected.userId.trim();
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid || !c.isMain) continue;
+        const d = c.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid) continue;
+        const d = c.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      for (const s of signups) {
+        if ((s.userId ?? '').trim() !== uid) continue;
+        const d = s.discordName?.trim();
+        if (d) return d;
+      }
+      return null;
+    })();
+    const fallbackGearScore = (() => {
+      if (typeof addSelected.gearScore === 'number') return addSelected.gearScore;
+      const uid = addSelected.userId.trim();
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid) continue;
+        if (typeof c.gearScore === 'number') return c.gearScore;
+      }
+      for (const s of signups) {
+        if ((s.userId ?? '').trim() !== uid) continue;
+        if (typeof s.gearScore === 'number') return s.gearScore;
+      }
+      return null;
+    })();
     setSignups((prev) => {
       if (prev.some((x) => x.id === id || x.characterId === addSelected.id)) return prev;
       const row: RosterPlannerSignup = {
@@ -1310,8 +1411,8 @@ export function RaidRosterPlanner({
         isLate: false,
         punctuality: 'on_time',
         forbidReserve: false,
-        discordName: addSelected.guildDiscordDisplayName,
-        gearScore: addSelected.gearScore,
+        discordName: fallbackDiscord,
+        gearScore: fallbackGearScore,
         note,
         profileWeekFocus: null,
       };
@@ -2826,7 +2927,7 @@ export function RaidRosterPlanner({
                                     offSpec={c.offSpec}
                                     size={18}
                                     slashClassName="hidden"
-                                    offSpecWrapperBaseClassName=""
+                                    offSpecWrapperBaseClassName="inline-flex items-center align-middle"
                                     offSpecIconClassName="grayscale contrast-200 brightness-75"
                                   />
                                 </span>
