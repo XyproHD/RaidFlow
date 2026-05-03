@@ -1450,7 +1450,7 @@ async function deleteJoin2WizardReply(interaction, messageId) {
 // ---------------------------------------------------------------------------
 const SPEC_EMOJI_KEY_BOT = {
   'Holy Paladin':           'wow_holy_pala',
-  'Protection Paladin':     'wow_protection',
+  'Protection Paladin':     'wow_protection_pala',
   'Retribution Paladin':    'wow_retribution',
   'Holy Priest':            'wow_holy_priest',
   'Discipline Priest':      'wow_discipline',
@@ -1479,6 +1479,19 @@ const SPEC_EMOJI_KEY_BOT = {
   'Restoration Druid':      'wow_restoration',
 };
 
+const CLASS_EMOJI_KEY_BOT = {
+  Druid:   'wow_druid',
+  Hunter:  'wow_hunter',
+  Mage:    'wow_mage',
+  Paladin: 'wow_paladin',
+  Priest:  'wow_priest',
+  Rogue:   'wow_rogue',
+  Shaman:  'wow_shaman',
+  Warlock: 'wow_warlock',
+  Warrior: 'wow_warrior',
+  Monk:    'wow_monk',
+};
+
 /** Parst Discord-Emoji-Markup <:name:id> oder <a:name:id> zu einem Discord.js-Emoji-Objekt. */
 function parseDiscordEmoji(markup) {
   if (!markup || typeof markup !== 'string') return null;
@@ -1492,6 +1505,18 @@ function specEmojiObj(spec, emojis) {
   const key    = SPEC_EMOJI_KEY_BOT[spec?.trim() ?? ''];
   const markup = key ? emojis?.[key] : null;
   return markup ? parseDiscordEmoji(markup) : null;
+}
+
+function classEmojiMarkupFromSpec(spec, emojis) {
+  const parts = String(spec ?? '').trim().split(' ').filter(Boolean);
+  const className = parts[parts.length - 1] ?? '';
+  const key = CLASS_EMOJI_KEY_BOT[className];
+  return key ? (emojis?.[key] ?? '') : '';
+}
+
+function specEmojiMarkup(spec, emojis) {
+  const key = SPEC_EMOJI_KEY_BOT[spec?.trim() ?? ''];
+  return key ? (emojis?.[key] ?? '') : '';
 }
 
 /** Baut eine ActionRow mit Spec-Buttons (Buttons statt Dropdown). */
@@ -2237,6 +2262,540 @@ async function handleJoin2NoteModal(interaction, raidId) {
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
+// ---------------------------------------------------------------------------
+// Join 3 Flow (Anmelden-Übersicht mit Edit-Aktionen)
+// ---------------------------------------------------------------------------
+function j3Key(userId, raidId) { return `join3::${userId}::${raidId}`; }
+
+function getJoin3Flow(userId, raidId) {
+  const entry = joinFlowState.get(j3Key(userId, raidId));
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    joinFlowState.delete(j3Key(userId, raidId));
+    return null;
+  }
+  return entry.data;
+}
+
+function setJoin3Flow(userId, raidId, data) {
+  joinFlowState.set(j3Key(userId, raidId), { data, expiresAt: Date.now() + JOIN_TTL_MS });
+}
+
+function clearJoin3Flow(userId, raidId) {
+  joinFlowState.delete(j3Key(userId, raidId));
+}
+
+function selectedJoin3Chars(flow) {
+  const selected = new Set(flow.selectedCharIds ?? []);
+  return flow.chars.filter(c => selected.has(c.id));
+}
+
+function normalizeJoin3Flow(flow) {
+  const selectedCharIds = Array.isArray(flow.selectedCharIds) ? flow.selectedCharIds : [];
+  const selectedSet = new Set(selectedCharIds);
+  const specsByCharId = { ...(flow.specsByCharId ?? {}) };
+  for (const c of flow.chars) {
+    if (selectedSet.has(c.id)) {
+      specsByCharId[c.id] = specsByCharId[c.id] ?? c.mainSpec;
+    }
+  }
+  const type = flow.type === 'reserve' || flow.type === 'uncertain' ? flow.type : 'normal';
+  return {
+    ...flow,
+    type,
+    selectedCharIds,
+    specsByCharId,
+    forbidReserve: type === 'reserve' ? false : flow.forbidReserve === true,
+    onlySignedSpec: flow.onlySignedSpec === true,
+    punctuality: flow.punctuality === 'tight' || flow.punctuality === 'late' ? flow.punctuality : 'on_time',
+    note: flow.note ?? '',
+    view: flow.view ?? 'main',
+  };
+}
+
+function formatJoin3CharLine(flow) {
+  const rows = selectedJoin3Chars(flow).map(c => {
+    const spec = flow.specsByCharId?.[c.id] ?? c.mainSpec;
+    const cls = classEmojiMarkupFromSpec(spec, flow.emojis ?? {});
+    return `${cls ? `${cls} ` : ''}${c.name}`;
+  });
+  return rows.length ? rows.join('  ·  ') : '—';
+}
+
+function formatJoin3SpecLine(flow) {
+  const rows = selectedJoin3Chars(flow).map(c => {
+    const spec = flow.specsByCharId?.[c.id] ?? c.mainSpec;
+    const cls = classEmojiMarkupFromSpec(spec, flow.emojis ?? {});
+    return `${cls ? `${cls} ` : ''}${spec}`;
+  });
+  return rows.length ? rows.join('  ·  ') : '—';
+}
+
+async function buildJoin3MainMessage(raidId, flow, errorHint) {
+  const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+  const rid = raidId.replace(/-/g, '');
+  const selectedChars = selectedJoin3Chars(flow);
+
+  // ── Char-Zeile: disabled Button mit Klassenemoji + Name(n) ──────────────
+  const charLabel = selectedChars.length === 0
+    ? '— kein Char gewählt —'
+    : selectedChars.map(c => c.name).join(' · ');
+  let charBtnEmoji = null;
+  if (selectedChars.length > 0) {
+    const firstSpec = flow.specsByCharId?.[selectedChars[0].id] ?? selectedChars[0].mainSpec;
+    const markup = classEmojiMarkupFromSpec(firstSpec, flow.emojis ?? {});
+    charBtnEmoji = markup ? parseDiscordEmoji(markup) : null;
+  }
+  const charDisplayBtn = new ButtonBuilder()
+    .setCustomId(`rf:j3cdisplay:${rid}`)
+    .setLabel(truncateDiscordLabel(charLabel, charBtnEmoji ? 77 : 80))
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(true);
+  if (charBtnEmoji) charDisplayBtn.setEmoji(charBtnEmoji);
+
+  // ── Spec-Zeile: disabled Button mit Spec-Emoji + Spec-Name(n) ───────────
+  const specLabel = selectedChars.length === 0
+    ? '—'
+    : selectedChars.map(c => flow.specsByCharId?.[c.id] ?? c.mainSpec).join(' · ');
+  let specBtnEmoji = null;
+  if (selectedChars.length > 0) {
+    const firstSpec = flow.specsByCharId?.[selectedChars[0].id] ?? selectedChars[0].mainSpec;
+    const markup = specEmojiMarkup(firstSpec, flow.emojis ?? {});
+    specBtnEmoji = markup ? parseDiscordEmoji(markup) : null;
+  }
+  const specDisplayBtn = new ButtonBuilder()
+    .setCustomId(`rf:j3sdisplay:${rid}`)
+    .setLabel(truncateDiscordLabel(specLabel, specBtnEmoji ? 77 : 80))
+    .setStyle(ButtonStyle.Secondary)
+    .setDisabled(true);
+  if (specBtnEmoji) specDisplayBtn.setEmoji(specBtnEmoji);
+
+  // ── Sonstiges-Zusammenfassung im Content ────────────────────────────────
+  const miscParts = [];
+  if (flow.onlySignedSpec) miscParts.push('Nur Spec');
+  if (flow.forbidReserve)  miscParts.push('Reserve verboten');
+  if (flow.note?.trim())   miscParts.push('Notiz vorhanden');
+  const miscSummary = miscParts.length ? miscParts.join(' · ') : '—';
+  const warn = errorHint ? `\n\n⚠️ ${errorHint}` : '';
+
+  // ── Dropdowns ────────────────────────────────────────────────────────────
+  const typeSelect = new StringSelectMenuBuilder()
+    .setCustomId(`rf:j3type:${rid}`)
+    .setPlaceholder('Teilnahme wählen…')
+    .setMinValues(1).setMaxValues(1)
+    .addOptions([
+      { label: '✅ Bin da',   value: 'normal',    default: flow.type === 'normal' },
+      { label: '🪑 Reserve',  value: 'reserve',   default: flow.type === 'reserve' },
+      { label: '❓ Unklar',   value: 'uncertain', default: flow.type === 'uncertain' },
+    ]);
+
+  const puncSelect = new StringSelectMenuBuilder()
+    .setCustomId(`rf:j3punc:${rid}`)
+    .setPlaceholder('Pünktlichkeit wählen…')
+    .setMinValues(1).setMaxValues(1)
+    .addOptions([
+      { label: '🟢 Rechtzeitig', value: 'on_time', default: flow.punctuality === 'on_time' },
+      { label: '🟡 Wird knapp',  value: 'tight',   default: flow.punctuality === 'tight' },
+      { label: '🕒 Später',      value: 'late',    default: flow.punctuality === 'late' },
+    ]);
+
+  return {
+    content: `**Am Raid anmelden:**\n\n⚙️ **Anmeldeoptionen**\nSonstiges: ${miscSummary}${warn}`,
+    components: [
+      // Zeile 1 – Char-Feld
+      new ActionRowBuilder().addComponents(
+        charDisplayBtn,
+        new ButtonBuilder().setCustomId(`rf:j3editchars:${rid}`).setEmoji('✏️').setLabel('Ändern').setStyle(ButtonStyle.Secondary),
+      ),
+      // Zeile 2 – Klasse/Spec-Feld
+      new ActionRowBuilder().addComponents(
+        specDisplayBtn,
+        new ButtonBuilder().setCustomId(`rf:j3editspecs:${rid}`).setEmoji('✏️').setLabel('Ändern').setStyle(ButtonStyle.Secondary),
+      ),
+      // Zeile 3 – Teilnahme
+      new ActionRowBuilder().addComponents(typeSelect),
+      // Zeile 4 – Pünktlichkeit
+      new ActionRowBuilder().addComponents(puncSelect),
+      // Zeile 5 – Aktionsleiste
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`rf:j3save:${rid}`).setLabel('Speichern/Ändern').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`rf:j3cancel:${rid}`).setLabel('Abbrechen').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`rf:j3editmisc:${rid}`).setEmoji('✏️').setLabel('Sonstiges').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`rf:j3info:${rid}`).setLabel('ℹ️ Info').setStyle(ButtonStyle.Primary),
+      ),
+    ],
+    ephemeral: true,
+  };
+}
+
+async function buildJoin3CharsMessage(raidId, flow) {
+  const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+  const rid = raidId.replace(/-/g, '');
+  const selectedSet = new Set(flow.selectedCharIds ?? []);
+  const charSelect = new StringSelectMenuBuilder()
+    .setCustomId(`rf:j3chars:${rid}`)
+    .setPlaceholder('Charaktere wählen…')
+    .setMinValues(0)
+    .setMaxValues(Math.min(25, flow.chars.length))
+    .addOptions(
+      flow.chars.slice(0, 25).map(c => ({
+        label: truncateDiscordLabel(`${c.name} (${c.mainSpec})`, 100),
+        value: c.id,
+        description: c.isMain ? 'Hauptcharakter' : 'Twink',
+        default: selectedSet.has(c.id),
+      }))
+    );
+  return {
+    content: '**Am Raid anmelden:**\n\n👤 **Chars bearbeiten**\nWähle alle Charaktere, die angemeldet werden sollen.',
+    components: [
+      new ActionRowBuilder().addComponents(charSelect),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('← Zurück').setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+    ephemeral: true,
+  };
+}
+
+async function buildJoin3SpecsMessage(raidId, flow) {
+  const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+  const rid = raidId.replace(/-/g, '');
+  const selected = selectedJoin3Chars(flow);
+  if (selected.length === 0) {
+    return {
+      content: '**Am Raid anmelden:**\n\n⚠️ Bitte zuerst mindestens einen Charakter auswählen.',
+      components: [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('← Zurück').setStyle(ButtonStyle.Secondary),
+        ),
+      ],
+      ephemeral: true,
+    };
+  }
+  const activeCharId = selected.some(c => c.id === flow.specEditCharId) ? flow.specEditCharId : selected[0].id;
+  const activeChar = selected.find(c => c.id === activeCharId) ?? selected[0];
+  const specs = getUniqueSpecs(activeChar);
+  const selectedSpec = flow.specsByCharId?.[activeChar.id] ?? activeChar.mainSpec;
+
+  const charSelect = new StringSelectMenuBuilder()
+    .setCustomId(`rf:j3specchar:${rid}`)
+    .setPlaceholder('Charakter für Spec wählen…')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(
+      selected.slice(0, 25).map(c => ({
+        label: truncateDiscordLabel(c.name, 100),
+        value: c.id,
+        default: c.id === activeChar.id,
+      }))
+    );
+
+  const specSelect = new StringSelectMenuBuilder()
+    .setCustomId(`rf:j3spec:${rid}`)
+    .setPlaceholder('Spec wählen…')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(
+      specs.map(spec => ({
+        label: truncateDiscordLabel(spec, 100),
+        value: spec,
+        default: spec === selectedSpec,
+      }))
+    );
+
+  return {
+    content: `**Am Raid anmelden:**\n\n⚔️ **Klasse/Spec bearbeiten**\nAktiv: **${activeChar.name}**`,
+    components: [
+      new ActionRowBuilder().addComponents(charSelect),
+      new ActionRowBuilder().addComponents(specSelect),
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('← Zurück').setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+    ephemeral: true,
+  };
+}
+
+async function buildJoin3MiscMessage(raidId, flow) {
+  const { ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+  const rid = raidId.replace(/-/g, '');
+  const options = [
+    {
+      label: 'Nur ausgewählter Spec zulassen',
+      value: 'only_signed_spec',
+      default: flow.onlySignedSpec === true,
+      description: 'Char wird nur in der gewählten Spec berücksichtigt',
+    },
+  ];
+  if (flow.type !== 'reserve') {
+    options.push({
+      label: 'Reserve verbieten',
+      value: 'forbid_reserve',
+      default: flow.forbidReserve === true,
+      description: 'Nicht verfügbar bei Teilnahme „Reserve“',
+    });
+  }
+  const notePreview = flow.note?.trim()
+    ? `"${flow.note.trim().slice(0, 55)}${flow.note.trim().length > 55 ? '…' : ''}"`
+    : '— keine —';
+
+  return {
+    content: '**Am Raid anmelden:**\n\n📝 **Sonstiges bearbeiten**',
+    components: [
+      // Optionen-Auswahl
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId(`rf:j3misc:${rid}`)
+          .setPlaceholder('Optionen wählen…')
+          .setMinValues(0)
+          .setMaxValues(options.length)
+          .addOptions(options)
+      ),
+      // Notiz-Zeile: disabled Vorschau + Edit-Button
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`rf:j3ndisplay:${rid}`)
+          .setLabel(truncateDiscordLabel(`Notiz: ${notePreview}`, 80))
+          .setStyle(ButtonStyle.Secondary)
+          .setDisabled(true),
+        new ButtonBuilder().setCustomId(`rf:j3opennote:${rid}`).setEmoji('✏️').setLabel('Bearbeiten').setStyle(ButtonStyle.Secondary),
+      ),
+      // Zurück
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`rf:j3backmain:${rid}`).setLabel('← Zurück').setStyle(ButtonStyle.Secondary),
+      ),
+    ],
+    ephemeral: true,
+  };
+}
+
+async function renderJoin3(interaction, raidId, flow, errorHint) {
+  const norm = normalizeJoin3Flow(flow);
+  if (norm.view === 'chars') return interaction.update(await buildJoin3CharsMessage(raidId, norm)).catch(() => {});
+  if (norm.view === 'specs') return interaction.update(await buildJoin3SpecsMessage(raidId, norm)).catch(() => {});
+  if (norm.view === 'misc') return interaction.update(await buildJoin3MiscMessage(raidId, norm)).catch(() => {});
+  return interaction.update(await buildJoin3MainMessage(raidId, norm, errorHint)).catch(() => {});
+}
+
+async function handleRaidJoin3Button(interaction, raidId) {
+  raidPostMessages.set(`${interaction.user.id}:${raidId}`, interaction.message);
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  const { ok, json } = await getDiscordAction({
+    action: 'get-chars',
+    discordUserId: interaction.user.id,
+    raidId,
+  });
+  if (!ok || json.linked === false) {
+    await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+  const chars = Array.isArray(json.characters) ? json.characters : [];
+  if (chars.length === 0) {
+    await interaction.editReply({ content: raidActionErrorText('NO_CHARACTER') }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+  const main = chars.find(c => c.isMain) ?? chars[0];
+  setJoin3Flow(interaction.user.id, raidId, normalizeJoin3Flow({
+    chars,
+    emojis: json.discordEmojis ?? {},
+    selectedCharIds: main ? [main.id] : [],
+    specsByCharId: main ? { [main.id]: main.mainSpec } : {},
+    specEditCharId: main?.id ?? null,
+    type: 'normal',
+    punctuality: 'on_time',
+    onlySignedSpec: false,
+    forbidReserve: false,
+    note: '',
+    view: 'main',
+  }));
+  const flow = getJoin3Flow(interaction.user.id, raidId);
+  await interaction.editReply(await buildJoin3MainMessage(raidId, flow)).catch(() => {});
+}
+
+async function handleJoin3TypeSelect(interaction, raidId) {
+  const flow = getJoin3Flow(interaction.user.id, raidId);
+  if (!flow) return interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 3“ klicken.', ephemeral: true }).catch(() => {});
+  setJoin3Flow(interaction.user.id, raidId, normalizeJoin3Flow({ ...flow, type: interaction.values?.[0] ?? 'normal' }));
+  await renderJoin3(interaction, raidId, getJoin3Flow(interaction.user.id, raidId));
+}
+
+async function handleJoin3PuncSelect(interaction, raidId) {
+  const flow = getJoin3Flow(interaction.user.id, raidId);
+  if (!flow) return interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 3“ klicken.', ephemeral: true }).catch(() => {});
+  setJoin3Flow(interaction.user.id, raidId, normalizeJoin3Flow({ ...flow, punctuality: interaction.values?.[0] ?? 'on_time' }));
+  await renderJoin3(interaction, raidId, getJoin3Flow(interaction.user.id, raidId));
+}
+
+async function handleJoin3CharsSelect(interaction, raidId) {
+  const flow = getJoin3Flow(interaction.user.id, raidId);
+  if (!flow) return interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 3“ klicken.', ephemeral: true }).catch(() => {});
+  const selectedCharIds = Array.from(new Set(interaction.values ?? []));
+  setJoin3Flow(interaction.user.id, raidId, normalizeJoin3Flow({ ...flow, selectedCharIds }));
+  await renderJoin3(interaction, raidId, getJoin3Flow(interaction.user.id, raidId));
+}
+
+async function handleJoin3SpecCharSelect(interaction, raidId) {
+  const flow = getJoin3Flow(interaction.user.id, raidId);
+  if (!flow) return interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 3“ klicken.', ephemeral: true }).catch(() => {});
+  setJoin3Flow(interaction.user.id, raidId, normalizeJoin3Flow({ ...flow, specEditCharId: interaction.values?.[0] ?? null }));
+  await renderJoin3(interaction, raidId, getJoin3Flow(interaction.user.id, raidId));
+}
+
+async function handleJoin3SpecSelect(interaction, raidId) {
+  const flow = getJoin3Flow(interaction.user.id, raidId);
+  if (!flow) return interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 3“ klicken.', ephemeral: true }).catch(() => {});
+  const selected = selectedJoin3Chars(flow);
+  if (selected.length === 0) return interaction.reply({ content: '⚠️ Bitte zuerst Charaktere wählen.', ephemeral: true }).catch(() => {});
+  const activeCharId = selected.some(c => c.id === flow.specEditCharId) ? flow.specEditCharId : selected[0].id;
+  const spec = interaction.values?.[0];
+  if (!spec) return interaction.reply({ content: '⚠️ Ungültige Spec-Auswahl.', ephemeral: true }).catch(() => {});
+  setJoin3Flow(interaction.user.id, raidId, normalizeJoin3Flow({
+    ...flow,
+    specsByCharId: { ...(flow.specsByCharId ?? {}), [activeCharId]: spec },
+  }));
+  await renderJoin3(interaction, raidId, getJoin3Flow(interaction.user.id, raidId));
+}
+
+async function handleJoin3MiscSelect(interaction, raidId) {
+  const flow = getJoin3Flow(interaction.user.id, raidId);
+  if (!flow) return interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 3“ klicken.', ephemeral: true }).catch(() => {});
+  const values = new Set(interaction.values ?? []);
+  setJoin3Flow(interaction.user.id, raidId, normalizeJoin3Flow({
+    ...flow,
+    onlySignedSpec: values.has('only_signed_spec'),
+    forbidReserve: flow.type === 'reserve' ? false : values.has('forbid_reserve'),
+  }));
+  await renderJoin3(interaction, raidId, getJoin3Flow(interaction.user.id, raidId));
+}
+
+async function handleJoin3EditButton(interaction, raidId, view) {
+  const flow = getJoin3Flow(interaction.user.id, raidId);
+  if (!flow) return interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 3“ klicken.', ephemeral: true }).catch(() => {});
+  setJoin3Flow(interaction.user.id, raidId, normalizeJoin3Flow({ ...flow, view }));
+  await renderJoin3(interaction, raidId, getJoin3Flow(interaction.user.id, raidId));
+}
+
+async function handleJoin3Info(interaction) {
+  await interaction.reply({
+    ephemeral: true,
+    content: [
+      '**Anmelden 3 – Hilfe**',
+      '• Chars: Wähle einen oder mehrere Charaktere.',
+      '• Klasse/Spec: Spec je gewähltem Char ändern (Main Spec ist vorausgewählt).',
+      '• Teilnahme/Pünktlichkeit über Dropdowns setzen.',
+      '• Sonstiges: „Reserve verbieten“, „Nur ausgewählter Spec zulassen“ und Notiz an Raidleader.',
+      '• Regeln: Bei „Später“ ist eine Notiz Pflicht. Bei Teilnahme „Reserve“ wird „Reserve verbieten“ automatisch deaktiviert.',
+    ].join('\n'),
+  }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
+async function handleJoin3Cancel(interaction, raidId) {
+  clearJoin3Flow(interaction.user.id, raidId);
+  raidPostMessages.delete(`${interaction.user.id}:${raidId}`);
+  await interaction.update({ content: 'Abgebrochen.', components: [] }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
+async function handleJoin3OpenNoteModal(interaction, raidId) {
+  const flow = getJoin3Flow(interaction.user.id, raidId);
+  if (!flow) return interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 3“ klicken.', ephemeral: true }).catch(() => {});
+  const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+  const modal = new ModalBuilder()
+    .setCustomId(`rfm:j3note:${raidId.replace(/-/g, '')}`)
+    .setTitle('Anmelden 3 · Notiz');
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('note')
+        .setLabel('Nachricht an Raidleader')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(flow.punctuality === 'late')
+        .setValue(flow.note ?? '')
+        .setMaxLength(500)
+        .setPlaceholder(flow.punctuality === 'late' ? 'Bei „Später“ Verspätung angeben' : 'Optional')
+    )
+  );
+  await interaction.showModal(modal).catch(() => {});
+}
+
+async function handleJoin3NoteModal(interaction, raidId) {
+  const flow = getJoin3Flow(interaction.user.id, raidId);
+  if (!flow) return interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 3“ klicken.', ephemeral: true }).catch(() => {});
+  const note = interaction.fields.getTextInputValue('note').trim();
+  if (flow.punctuality === 'late' && !note) {
+    await interaction.reply({ content: '⚠️ Bei „Später“ ist eine Notiz Pflicht.', ephemeral: true }).catch(() => {});
+    return;
+  }
+  setJoin3Flow(interaction.user.id, raidId, normalizeJoin3Flow({ ...flow, note }));
+  await interaction.reply({ content: '📝 Notiz gespeichert.', ephemeral: true }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
+async function handleJoin3Save(interaction, raidId) {
+  const flow0 = getJoin3Flow(interaction.user.id, raidId);
+  if (!flow0) return interaction.reply({ content: '⚠️ Sitzung abgelaufen. Bitte erneut auf „Anmelden 3“ klicken.', ephemeral: true }).catch(() => {});
+  const flow = normalizeJoin3Flow(flow0);
+  if ((flow.selectedCharIds ?? []).length === 0) {
+    setJoin3Flow(interaction.user.id, raidId, { ...flow, view: 'main' });
+    const msg = await buildJoin3MainMessage(raidId, flow, 'Bitte mindestens einen Charakter auswählen.');
+    await interaction.update(msg).catch(() => {});
+    return;
+  }
+  if (flow.punctuality === 'late' && !flow.note?.trim()) {
+    setJoin3Flow(interaction.user.id, raidId, { ...flow, view: 'main' });
+    const msg = await buildJoin3MainMessage(raidId, flow, 'Bei „Später“ ist eine Notiz Pflicht.');
+    await interaction.update(msg).catch(() => {});
+    return;
+  }
+
+  await interaction.deferUpdate().catch(() => {});
+  const raidPostMsg = raidPostMessages.get(`${interaction.user.id}:${raidId}`) ?? null;
+  const raidPostComponents = raidPostMsg?.components ?? [];
+  if (raidPostMsg && raidPostComponents.length) {
+    await disableRaidPostButtons(raidPostMsg).catch(() => {});
+  }
+
+  const errors = [];
+  let okCount = 0;
+  for (const charId of flow.selectedCharIds) {
+    const char = flow.chars.find(c => c.id === charId);
+    if (!char) continue;
+    const { ok, json } = await callDiscordAction({
+      action: 'join',
+      discordUserId: interaction.user.id,
+      raidId,
+      characterId: charId,
+      type: flow.type,
+      signedSpec: flow.specsByCharId?.[charId] ?? char.mainSpec,
+      punctuality: flow.punctuality,
+      note: flow.note ?? '',
+      onlySignedSpec: flow.onlySignedSpec ?? false,
+      forbidReserve: flow.type === 'reserve' ? false : (flow.forbidReserve ?? false),
+    });
+    if (ok) okCount += 1;
+    else errors.push(`${char.name}: ${raidActionErrorText(json.error)}`);
+  }
+
+  if (raidPostMsg && raidPostComponents.length) {
+    await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
+  }
+
+  if (errors.length) {
+    setJoin3Flow(interaction.user.id, raidId, { ...flow, view: 'main' });
+    const msg = await buildJoin3MainMessage(raidId, flow, `Teilweise fehlgeschlagen (${okCount}/${flow.selectedCharIds.length}). ${errors[0]}`);
+    await interaction.editReply(msg).catch(() => {});
+    return;
+  }
+
+  clearJoin3Flow(interaction.user.id, raidId);
+  raidPostMessages.delete(`${interaction.user.id}:${raidId}`);
+  await interaction.editReply({ content: `✅ ${okCount} Charakter${okCount === 1 ? '' : 'e'} gespeichert.`, components: [] }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
 function loadEditFlowFromSignup(userId, raidId, signup, emojis) {
   const char = signup.character;
   setEditFlow(userId, raidId, {
@@ -2698,6 +3257,7 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'decl')       { await handleRaidDeclineButton(interaction, raidId); return; }
         if (action === 'join')        { await handleRaidJoinButton(interaction, raidId, extra); return; }
         if (action === 'join2')       { await handleRaidJoin2Button(interaction, raidId); return; }
+        if (action === 'join3')       { await handleRaidJoin3Button(interaction, raidId); return; }
         if (action === 'edit')        { await handleRaidEditButton(interaction, raidId); return; }
         if (action === 'unreg')       { await handleRaidUnregButton(interaction, raidId); return; }
         if (action === 'punc')        { await handlePuncButton(interaction, raidId, punc); return; }
@@ -2718,6 +3278,14 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'j2prev')      { await handleJoin2StepNav(interaction, raidId, 'prev'); return; }
         if (action === 'j2nextchar')  { await handleJoin2StepNav(interaction, raidId, 'next'); return; }
         if (action === 'j2open')      { await handleJoin2OpenNoteModal(interaction, raidId); return; }
+        if (action === 'j3editchars') { await handleJoin3EditButton(interaction, raidId, 'chars'); return; }
+        if (action === 'j3editspecs') { await handleJoin3EditButton(interaction, raidId, 'specs'); return; }
+        if (action === 'j3editmisc')  { await handleJoin3EditButton(interaction, raidId, 'misc'); return; }
+        if (action === 'j3backmain')  { await handleJoin3EditButton(interaction, raidId, 'main'); return; }
+        if (action === 'j3opennote')  { await handleJoin3OpenNoteModal(interaction, raidId); return; }
+        if (action === 'j3save')      { await handleJoin3Save(interaction, raidId); return; }
+        if (action === 'j3cancel')    { await handleJoin3Cancel(interaction, raidId); return; }
+        if (action === 'j3info')      { await handleJoin3Info(interaction); return; }
       } catch (e) {
         console.error('[RaidButton]', bid, e);
         await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
@@ -2760,6 +3328,72 @@ client.on('interactionCreate', async (interaction) => {
   // Select-Menüs (Setup-Flow + Raid-Aktionen)
   if (interaction.isStringSelectMenu()) {
     const customId = interaction.customId;
+    if (customId.startsWith('rf:j3type:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin3TypeSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join3TypeSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:j3punc:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin3PuncSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join3PuncSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:j3chars:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin3CharsSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join3CharsSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:j3specchar:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin3SpecCharSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join3SpecCharSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:j3spec:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin3SpecSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join3SpecSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:j3misc:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleJoin3MiscSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[Join3MiscSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
     if (customId.startsWith('rf:j2chars:')) {
       const parts = customId.split(':');
       const raidId = noDashToUuid(parts[2]);
@@ -2984,6 +3618,7 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'unreg')    { await handleRaidUnregModal(interaction, raidId); return; }
         if (action === 'joinnote') { await handleJoinNoteModal(interaction, raidId); return; }
         if (action === 'join2note') { await handleJoin2NoteModal(interaction, raidId); return; }
+        if (action === 'j3note') { await handleJoin3NoteModal(interaction, raidId); return; }
         if (action === 'editnote') { await handleEditNoteModal(interaction, raidId); return; }
       } catch (e) {
         console.error('[RaidModal]', customId, e);

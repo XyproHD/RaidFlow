@@ -487,13 +487,14 @@ export function buildRaidActionButtons(
         { type: 2, style: 3, label: 'Quickjoin',  emoji: { name: '⚡' }, custom_id: `rf:qj:${rid}:${gid}` },
         { type: 2, style: 1, label: 'Anmelden',   emoji: { name: '📋' }, custom_id: `rf:join:${rid}:${gid}` },
         { type: 2, style: 2, label: 'Anmelden 2', emoji: { name: '🧪' }, custom_id: `rf:join2:${rid}:${gid}` },
+        { type: 2, style: 2, label: 'Anmelden 3', emoji: { name: '⚙️' }, custom_id: `rf:join3:${rid}:${gid}` },
         { type: 2, style: 2, label: 'Bearbeiten', emoji: { name: '✏️' }, custom_id: `rf:edit:${rid}:${gid}` },
-        { type: 2, style: 4, label: 'Abmelden',   emoji: { name: '🚪' }, custom_id: `rf:unreg:${rid}:${gid}` },
       ],
     },
     {
       type: 1,
       components: [
+        { type: 2, style: 4, label: 'Abmelden',    emoji: { name: '🚪' }, custom_id: `rf:unreg:${rid}:${gid}` },
         { type: 2, style: 4, label: 'Bin nicht da', emoji: { name: '🚫' }, custom_id: `rf:decl:${rid}:${gid}` },
       ],
     },

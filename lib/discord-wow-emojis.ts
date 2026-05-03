@@ -9,7 +9,7 @@
 /** Spec-Anzeigename (mainSpec in DB) → Emoji-Key in discord_emojis */
 export const SPEC_EMOJI_KEY: Record<string, string> = {
   'Holy Paladin':            'wow_holy_pala',
-  'Protection Paladin':      'wow_protection',
+  'Protection Paladin':      'wow_protection_pala',
   'Retribution Paladin':     'wow_retribution',
   'Holy Priest':             'wow_holy_priest',
   'Discipline Priest':       'wow_discipline',
