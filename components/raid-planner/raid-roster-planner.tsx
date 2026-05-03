@@ -691,6 +691,52 @@ export function RaidRosterPlanner({
     [guildCharacterById, guildCharacters, signups]
   );
 
+  const resolveDiscordNameForCharacterOption = useCallback(
+    (c: GuildCharacterOption): string | null => {
+      const direct = c.guildDiscordDisplayName?.trim();
+      if (direct) return direct;
+
+      const uid = c.userId.trim();
+      if (!uid) return null;
+      for (const other of guildCharacters) {
+        if (other.userId.trim() !== uid || !other.isMain) continue;
+        const d = other.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      for (const other of guildCharacters) {
+        if (other.userId.trim() !== uid) continue;
+        const d = other.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      for (const s of signups) {
+        if ((s.userId ?? '').trim() !== uid) continue;
+        const d = s.discordName?.trim();
+        if (d) return d;
+      }
+      return null;
+    },
+    [guildCharacters, signups]
+  );
+
+  const resolveGearScoreForCharacterOption = useCallback(
+    (c: GuildCharacterOption): number | null => {
+      if (typeof c.gearScore === 'number') return c.gearScore;
+
+      const uid = c.userId.trim();
+      if (!uid) return null;
+      for (const other of guildCharacters) {
+        if (other.userId.trim() !== uid) continue;
+        if (typeof other.gearScore === 'number') return other.gearScore;
+      }
+      for (const s of signups) {
+        if ((s.userId ?? '').trim() !== uid) continue;
+        if (typeof s.gearScore === 'number') return s.gearScore;
+      }
+      return null;
+    },
+    [guildCharacters, signups]
+  );
+
   const leaderLootUserIds = useMemo(() => {
     const ids = new Set<string>();
     for (const c of guildCharacters) {
@@ -1356,40 +1402,8 @@ export function RaidRosterPlanner({
     if (usedCharacterIds.has(addSelected.id)) return;
     const note = `Gesetzt von Raidleader ${raidLeaderLabel}`;
     const id = `manual:${addSelected.id}`;
-    const fallbackDiscord = (() => {
-      const direct = addSelected.guildDiscordDisplayName?.trim();
-      if (direct) return direct;
-      const uid = addSelected.userId.trim();
-      for (const c of guildCharacters) {
-        if (c.userId.trim() !== uid || !c.isMain) continue;
-        const d = c.guildDiscordDisplayName?.trim();
-        if (d) return d;
-      }
-      for (const c of guildCharacters) {
-        if (c.userId.trim() !== uid) continue;
-        const d = c.guildDiscordDisplayName?.trim();
-        if (d) return d;
-      }
-      for (const s of signups) {
-        if ((s.userId ?? '').trim() !== uid) continue;
-        const d = s.discordName?.trim();
-        if (d) return d;
-      }
-      return null;
-    })();
-    const fallbackGearScore = (() => {
-      if (typeof addSelected.gearScore === 'number') return addSelected.gearScore;
-      const uid = addSelected.userId.trim();
-      for (const c of guildCharacters) {
-        if (c.userId.trim() !== uid) continue;
-        if (typeof c.gearScore === 'number') return c.gearScore;
-      }
-      for (const s of signups) {
-        if ((s.userId ?? '').trim() !== uid) continue;
-        if (typeof s.gearScore === 'number') return s.gearScore;
-      }
-      return null;
-    })();
+    const fallbackDiscord = resolveDiscordNameForCharacterOption(addSelected);
+    const fallbackGearScore = resolveGearScoreForCharacterOption(addSelected);
     setSignups((prev) => {
       if (prev.some((x) => x.id === id || x.characterId === addSelected.id)) return prev;
       const row: RosterPlannerSignup = {
@@ -2904,6 +2918,8 @@ export function RaidRosterPlanner({
                         <div className="divide-y divide-border">
                           {addCandidates.map((c) => {
                             const selected = addSelectedId === c.id;
+                            const displayDiscordName = resolveDiscordNameForCharacterOption(c);
+                            const displayGearScore = resolveGearScoreForCharacterOption(c);
                             return (
                               <button
                                 key={c.id}
@@ -2933,8 +2949,8 @@ export function RaidRosterPlanner({
                                 </span>
                                 <span className="font-medium truncate">{c.name}</span>
                                 <span className="ml-auto flex items-center gap-2">
-                                  <CharacterDiscordPill discordName={c.guildDiscordDisplayName} />
-                                  <CharacterGearscorePill gearScore={c.gearScore} />
+                                  <CharacterDiscordPill discordName={displayDiscordName} />
+                                  <CharacterGearscorePill gearScore={displayGearScore} />
                                 </span>
                               </button>
                             );
