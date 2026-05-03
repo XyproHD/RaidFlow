@@ -1450,7 +1450,7 @@ async function deleteJoin2WizardReply(interaction, messageId) {
 // ---------------------------------------------------------------------------
 const SPEC_EMOJI_KEY_BOT = {
   'Holy Paladin':           'wow_holy_pala',
-  'Protection Paladin':     'wow_protection',
+  'Protection Paladin':     'wow_protection_pala',
   'Retribution Paladin':    'wow_retribution',
   'Holy Priest':            'wow_holy_priest',
   'Discipline Priest':      'wow_discipline',
