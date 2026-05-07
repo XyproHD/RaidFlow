@@ -405,6 +405,7 @@ async function runGuildMemberRoleSync(guild) {
         pushMemberPermissionSync(guild.id, member.user.id, {
           roleIds: [...member.roles.cache.keys()],
           displayName: member.displayName ?? null,
+          existingUsersOnly: true,
         })
       )
     );

@@ -19,6 +19,7 @@ import { getMemberRoleIds } from '@/lib/discord-roles';
  * - displayName: string | null – optional Anzeigename im Server (Server-Nick o. ä.)
  * - fetchMemberFromDiscord: true → Rollen/Nick per Discord-API laden (ignoriert roleIds/displayName);
  *   nutzbar wenn der Bot noch kein Member-Event hatte (z. B. erste Interaktion ohne Webapp-Login).
+ * - existingUsersOnly: true → nur bereits bekannte rf_user synchronisieren; keine automatische User-Neuanlage.
  */
 export async function POST(request: Request) {
   if (!verifyBotSecret(request)) {
@@ -32,6 +33,7 @@ export async function POST(request: Request) {
     roleIds?: string[];
     displayName?: string | null;
     fetchMemberFromDiscord?: boolean;
+    existingUsersOnly?: boolean;
   };
   try {
     body = await request.json();
@@ -68,12 +70,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, skipped: true, reason: 'guild_not_registered' });
   }
 
-  const user = await prisma.rfUser.upsert({
-    where: { discordId: discordUserId },
-    create: { discordId: discordUserId },
-    update: { updatedAt: new Date() },
-    select: { id: true },
-  });
+  const existingUsersOnly = body.existingUsersOnly === true;
+  const user = existingUsersOnly
+    ? await prisma.rfUser.findUnique({
+        where: { discordId: discordUserId },
+        select: { id: true },
+      })
+    : await prisma.rfUser.upsert({
+        where: { discordId: discordUserId },
+        create: { discordId: discordUserId },
+        update: { updatedAt: new Date() },
+        select: { id: true },
+      });
+
+  if (!user) {
+    console.log(
+      JSON.stringify({
+        scope: 'RF_SYNC',
+        step: 'skipped',
+        reason: 'user_not_in_app',
+        discordGuildId,
+        discordUserId,
+        existingUsersOnly: true,
+      })
+    );
+    return NextResponse.json({ ok: true, skipped: true, reason: 'user_not_in_app' });
+  }
 
   const left = body.left === true;
   const fetchMemberFromDiscord = body.fetchMemberFromDiscord === true;
@@ -128,6 +150,7 @@ export async function POST(request: Request) {
         left,
         roleIdCount: roleIds.length,
         fetchMemberFromDiscord: fetchMemberFromDiscord && !left,
+        existingUsersOnly,
         membershipKnown: left ? true : membershipKnown,
       })
     );
