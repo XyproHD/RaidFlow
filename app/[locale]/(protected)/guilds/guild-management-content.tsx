@@ -30,6 +30,7 @@ type Member = {
   id: string;
   userId: string;
   discordId: string;
+  discordName?: string | null;
   raidGroupIds: string[];
   raidGroups: { id: string; name: string }[];
   joinedAt: string;
@@ -611,11 +612,14 @@ function RaidGroupsSection({
                     return (
                       <li key={m.id} className="rounded-lg border border-border bg-muted/30 p-3 flex flex-wrap items-center gap-2">
                         <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
+                          <span className="text-muted-foreground text-xs w-full truncate">
+                            {memberPrimaryDiscordLabel(m)}
+                          </span>
                           {visibleChars.length === 0 ? (
                             m.characters.length === 0 ? (
-                              <span className="text-muted-foreground text-sm">{memberPrimaryDiscordLabel(m)}</span>
+                              <span className="text-muted-foreground text-sm">—</span>
                             ) : (
-                              <span className="text-muted-foreground text-sm">{memberPrimaryDiscordLabel(m)}</span>
+                              <span className="text-muted-foreground text-sm">—</span>
                             )
                           ) : (
                             visibleChars.map((ch) => {
@@ -779,6 +783,8 @@ function sortCharsMainFirst(chars: GuildCharacter[]): GuildCharacter[] {
 }
 
 function memberPrimaryDiscordLabel(member: Member): string {
+  const fromApi = member.discordName?.trim();
+  if (fromApi) return fromApi;
   const withDiscordName = sortCharsMainFirst(member.characters).find((c) => c.guildDiscordDisplayName?.trim());
   return withDiscordName?.guildDiscordDisplayName?.trim() || member.discordId;
 }
@@ -885,6 +891,8 @@ function MembersSection({
     const q = filterQuery.trim().toLowerCase();
     if (q) {
       list = list.filter((m) => {
+        const memberDiscordName = memberPrimaryDiscordLabel(m).toLowerCase();
+        if (memberDiscordName.includes(q)) return true;
         if (m.discordId.toLowerCase().includes(q)) return true;
         return m.characters.some((c) => {
           if (c.name.toLowerCase().includes(q)) return true;
@@ -989,8 +997,11 @@ function MembersSection({
             >
               <div className="flex flex-col sm:flex-row sm:items-start gap-2">
                 <div className="flex-1 min-w-0 space-y-1.5">
+                  <span className="text-muted-foreground text-xs sm:text-sm block truncate">
+                    {memberPrimaryDiscordLabel(m)}
+                  </span>
                   {visibleChars.length === 0 ? (
-                    <span className="text-muted-foreground text-xs sm:text-sm">{memberPrimaryDiscordLabel(m)}</span>
+                    <span className="text-muted-foreground text-xs sm:text-sm">—</span>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {visibleChars.map((ch) => (

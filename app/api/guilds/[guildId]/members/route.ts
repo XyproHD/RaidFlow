@@ -60,6 +60,9 @@ export async function GET(
       id: m.id,
       userId: m.userId,
       discordId: m.user.discordId,
+      discordName:
+        m.user.characters.find((c) => c.guildDiscordDisplayName?.trim())?.guildDiscordDisplayName?.trim() ??
+        null,
       raidGroupIds: m.memberRaidGroups.map((rg) => rg.raidGroup.id),
       raidGroups: m.memberRaidGroups.map((rg) => ({
         id: rg.raidGroup.id,
