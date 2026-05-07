@@ -133,13 +133,24 @@ export async function GET(
     maxPlayers: d.maxPlayers,
   }));
 
+  const guildDiscordNameByUserId = new Map<string, string>();
+  for (const m of guildMembers) {
+    const named = m.user.characters.find((c) => c.guildDiscordDisplayName?.trim());
+    const discordName = named?.guildDiscordDisplayName?.trim();
+    if (discordName) {
+      guildDiscordNameByUserId.set(m.userId, discordName);
+    }
+  }
+
   const leaders = leaderUserGuilds.map((row) => {
+    const mappedDiscordName = guildDiscordNameByUserId.get(row.user.id);
     const chars = row.user.characters;
     const labelChar = chars.find((c) => c.guildDiscordDisplayName) ?? chars[0];
     const label =
+      mappedDiscordName ||
       labelChar?.guildDiscordDisplayName?.trim() ||
       labelChar?.name?.trim() ||
-      `User ${row.user.id.slice(0, 8)}…`;
+      row.user.discordId;
     return { userId: row.user.id, discordId: row.user.discordId, label };
   });
 

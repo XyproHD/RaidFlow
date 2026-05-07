@@ -35,11 +35,6 @@ const raidflowSlash = new SlashCommandBuilder()
     )
     .addSubcommand((sub) =>
       sub
-        .setName('home')
-        .setDescription('Profil-Dashboard: Charaktere anzeigen und in Discord anlegen')
-    )
-    .addSubcommand((sub) =>
-      sub
         .setName('help')
         .setDescription('Zeigt eine Übersicht aller RaidFlow-Befehle mit Beschreibung')
     )
@@ -58,6 +53,11 @@ const raidflowSlash = new SlashCommandBuilder()
             .setDescription('Name der Raidgruppe')
             .setRequired(true)
         )
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('sync')
+        .setDescription('Rollen und Mitglieder der RaidFlow-Gilde manuell synchronisieren')
     )
     .toJSON();
 

@@ -59,6 +59,8 @@ export type SyncRaidThreadSummaryOptions = {
    * zurückgesetzt werden.
    */
   embedOnly?: boolean;
+  /** Erlaubt Neu-Erstellung der Discord-Nachricht, falls keine Message-ID vorhanden ist oder Edit fehlschlägt. */
+  allowCreate?: boolean;
 };
 
 /**
@@ -160,13 +162,20 @@ export async function syncRaidThreadSummary(
         }
         return;
       } catch (e) {
-        console.warn('[syncRaidThreadSummary] edit failed, re-posting:', e);
-        // Nachricht existiert nicht mehr → neue erstellen
+        console.warn('[syncRaidThreadSummary] edit failed:', e);
+        if (!opts?.allowCreate) {
+          return;
+        }
+        // Nachricht existiert nicht mehr → optional neu erstellen
         await prisma.rfRaid.update({
           where: { id: raidId },
           data:  { discordChannelMessageId: null, discordThreadId: null },
         });
       }
+    }
+
+    if (!opts?.allowCreate) {
+      return;
     }
 
     // --- Neue Nachricht + Thread erstellen ---

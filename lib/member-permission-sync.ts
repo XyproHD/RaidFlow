@@ -90,12 +90,6 @@ export async function syncMemberPermissionsFromDiscordState(params: {
   const resolved = resolveRaidFlowRole(guild, roleIds);
 
   if (resolved) {
-    if (displayNameInGuild !== undefined) {
-      await prisma.rfCharacter.updateMany({
-        where: { userId, guildId: guild.id },
-        data: { guildDiscordDisplayName: displayNameInGuild },
-      });
-    }
     try {
       // Kern zuerst: Member + rf_user_guild in einer TX. Raidgruppen-Links separat, damit ein Fehler
       // dort nicht verhindert, dass rf_user_guild geschrieben wird (sonst leeres Dashboard trotz GM auf Discord).
@@ -110,7 +104,18 @@ export async function syncMemberPermissionsFromDiscordState(params: {
           create: { userId, guildId: guild.id, role: resolved.role },
           update: { role: resolved.role },
         });
+        // Bereits vorhandene, bisher unzugeordnete Charaktere dieser Gilde zuordnen.
+        await tx.rfCharacter.updateMany({
+          where: { userId, guildId: null },
+          data: { guildId: guild.id },
+        });
       });
+      if (displayNameInGuild !== undefined) {
+        await prisma.rfCharacter.updateMany({
+          where: { userId, guildId: guild.id },
+          data: { guildDiscordDisplayName: displayNameInGuild },
+        });
+      }
       const memberRow = await prisma.rfGuildMember.findUnique({
         where: { userId_guildId: { userId, guildId: guild.id } },
         select: { id: true },

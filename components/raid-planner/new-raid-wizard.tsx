@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -330,6 +330,7 @@ export function NewRaidWizard({
     return o;
   });
   const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>('all');
+  const dungeonPickerRef = useRef<HTMLDivElement>(null);
 
   const editable = mode === 'create' ? true : (initialRaid?.status === 'open');
 
@@ -338,14 +339,15 @@ export function NewRaidWizard({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setDungeonMenuOpen(false);
     };
-    const onDown = () => setDungeonMenuOpen(false);
+    const onDown = (e: MouseEvent) => {
+      if (dungeonPickerRef.current?.contains(e.target as Node)) return;
+      setDungeonMenuOpen(false);
+    };
     window.addEventListener('keydown', onKey);
     window.addEventListener('mousedown', onDown);
-    window.addEventListener('scroll', onDown, true);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('mousedown', onDown);
-      window.removeEventListener('scroll', onDown, true);
     };
   }, [dungeonMenuOpen]);
 
@@ -924,7 +926,7 @@ export function NewRaidWizard({
                 <span className="text-muted-foreground">
                   {t('dungeon')} <span className="text-destructive">*</span>
                 </span>
-                <div className="relative">
+                <div className="relative" ref={dungeonPickerRef}>
                   <button
                     type="button"
                     className="w-full rounded-md border border-input bg-background px-3 py-2 text-left text-sm hover:bg-muted/30"
