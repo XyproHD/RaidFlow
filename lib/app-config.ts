@@ -5,6 +5,7 @@
 
 import { cache } from 'react';
 import { prisma } from '@/lib/prisma';
+import { getGuildEmojis } from '@/lib/discord-guild-api';
 
 /** Feste Discord-ID des Application-Owners (immer Admin, nicht entfernbar). */
 export const OWNER_DISCORD_ID = '159383599001370625';
@@ -18,6 +19,8 @@ const KEY_DISCORD_BOT_INVITE_ENABLED = 'discord_bot_invite_enabled';
 const KEY_MAINTENANCE_MODE = 'maintenance_mode';
 const KEY_STATUS_MESSAGE = 'status_message';
 const KEY_DISCORD_EMOJIS = 'discord_emojis';
+const EXTERNAL_DISCORD_EMOJI_GUILD_ID = '1301090883789258752';
+const EXTERNAL_EMOJI_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export interface AppConfigState {
   ownerDiscordId: string | null;
@@ -70,6 +73,40 @@ function parseJsonStringRecord(value: string | null): Record<string, string> {
   }
 }
 
+type EmojiCacheState = {
+  expiresAt: number;
+  map: Record<string, string>;
+};
+
+let externalEmojiCache: EmojiCacheState | null = null;
+
+function toDiscordEmojiMarkup(name: string, id: string, animated: boolean): string {
+  return animated ? `<a:${name}:${id}>` : `<:${name}:${id}>`;
+}
+
+async function loadExternalDiscordEmojis(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (externalEmojiCache && externalEmojiCache.expiresAt > now) {
+    return externalEmojiCache.map;
+  }
+
+  try {
+    const emojis = await getGuildEmojis(EXTERNAL_DISCORD_EMOJI_GUILD_ID);
+    const map: Record<string, string> = {};
+    for (const emoji of emojis) {
+      const key = emoji.name?.trim();
+      if (!key) continue;
+      map[key] = toDiscordEmojiMarkup(key, emoji.id, emoji.animated === true);
+    }
+    externalEmojiCache = { map, expiresAt: now + EXTERNAL_EMOJI_CACHE_TTL_MS };
+    return map;
+  } catch {
+    // Externe Emoji-Guild optional: bei Fehlern bestehende Konfiguration weiterverwenden.
+    externalEmojiCache = { map: {}, expiresAt: now + EXTERNAL_EMOJI_CACHE_TTL_MS };
+    return {};
+  }
+}
+
 /** Lädt die komplette App-Config (Owner, Whitelist/Blacklist, Bot-Einladung, Wartungsmodus). */
 export const getAppConfig = cache(async (): Promise<AppConfigState> => {
   const keys = [
@@ -96,6 +133,8 @@ export const getAppConfig = cache(async (): Promise<AppConfigState> => {
   const maintenanceMode = byKey.get(KEY_MAINTENANCE_MODE) ?? null;
   const statusMessage = byKey.get(KEY_STATUS_MESSAGE) ?? null;
   const discordEmojisRaw = byKey.get(KEY_DISCORD_EMOJIS) ?? null;
+  const configuredDiscordEmojis = parseJsonStringRecord(discordEmojisRaw);
+  const externalDiscordEmojis = await loadExternalDiscordEmojis();
   return {
     ownerDiscordId: OWNER_DISCORD_ID,
     useWhitelist: useWhitelist === 'true',
@@ -105,7 +144,9 @@ export const getAppConfig = cache(async (): Promise<AppConfigState> => {
     discordBotInviteEnabled: discordBotInviteEnabled !== 'false',
     maintenanceMode: maintenanceMode === 'true',
     statusMessage: statusMessage ?? '',
-    discordEmojis: parseJsonStringRecord(discordEmojisRaw),
+    // Externe Emoji-Guild überschreibt gleichnamige Keys (z. B. wow_*), damit
+    // serverübergreifende Emoji-Nutzung konsistent funktioniert.
+    discordEmojis: { ...configuredDiscordEmojis, ...externalDiscordEmojis },
   };
 });
 

@@ -15,6 +15,12 @@ export interface DiscordChannel {
   parent_id: string | null;
 }
 
+export interface DiscordGuildEmoji {
+  id: string;
+  name: string;
+  animated?: boolean;
+}
+
 function getBotToken(): string | null {
   return process.env.DISCORD_BOT_TOKEN ?? null;
 }
@@ -128,6 +134,34 @@ export async function getGuildChannels(
 
   const data = (await res.json()) as DiscordChannel[];
   return data.filter((ch) => TEXT_CHANNEL_TYPES.includes(ch.type));
+}
+
+/**
+ * Liefert alle benutzerdefinierten Emojis einer Guild.
+ * Nützlich für zentrale Emoji-Guilds (externe Emojis in anderen Servern).
+ */
+export async function getGuildEmojis(
+  discordGuildId: string
+): Promise<DiscordGuildEmoji[]> {
+  const token = getBotToken();
+  if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+
+  const res = await fetch(
+    `${DISCORD_API_BASE}/guilds/${discordGuildId}/emojis`,
+    {
+      headers: { Authorization: `Bot ${token}` },
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Discord API emojis: ${res.status} ${text}`);
+  }
+
+  const data = (await res.json()) as Array<{ id?: string; name?: string; animated?: boolean }>;
+  return data
+    .filter((e): e is { id: string; name: string; animated?: boolean } => !!e?.id && !!e?.name)
+    .map((e) => ({ id: e.id, name: e.name, animated: e.animated === true }));
 }
 
 /**
