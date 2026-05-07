@@ -613,9 +613,9 @@ function RaidGroupsSection({
                         <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
                           {visibleChars.length === 0 ? (
                             m.characters.length === 0 ? (
-                              <span className="text-muted-foreground text-sm">{m.discordId}</span>
+                              <span className="text-muted-foreground text-sm">{memberPrimaryDiscordLabel(m)}</span>
                             ) : (
-                              <span className="text-muted-foreground text-sm">{m.discordId}</span>
+                              <span className="text-muted-foreground text-sm">{memberPrimaryDiscordLabel(m)}</span>
                             )
                           ) : (
                             visibleChars.map((ch) => {
@@ -776,6 +776,11 @@ function CharacterCard({
 
 function sortCharsMainFirst(chars: GuildCharacter[]): GuildCharacter[] {
   return [...chars].sort((a, b) => (a.isMain ? 0 : 1) - (b.isMain ? 0 : 1));
+}
+
+function memberPrimaryDiscordLabel(member: Member): string {
+  const withDiscordName = sortCharsMainFirst(member.characters).find((c) => c.guildDiscordDisplayName?.trim());
+  return withDiscordName?.guildDiscordDisplayName?.trim() || member.discordId;
 }
 
 function MembersSection({
@@ -985,7 +990,7 @@ function MembersSection({
               <div className="flex flex-col sm:flex-row sm:items-start gap-2">
                 <div className="flex-1 min-w-0 space-y-1.5">
                   {visibleChars.length === 0 ? (
-                    <span className="text-muted-foreground text-xs sm:text-sm">{m.discordId}</span>
+                    <span className="text-muted-foreground text-xs sm:text-sm">{memberPrimaryDiscordLabel(m)}</span>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {visibleChars.map((ch) => (

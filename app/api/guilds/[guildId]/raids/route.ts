@@ -269,7 +269,7 @@ export async function POST(
     });
     try {
       // syncRaidThreadSummary postet Embed in Channel + erstellt Thread + speichert IDs
-      await syncRaidThreadSummary(raid.id);
+      await syncRaidThreadSummary(raid.id, { allowCreate: true });
     } catch (e) {
       console.error('[POST raids] Discord post failed:', e);
       discordThreadWarning = 'discord_post_failed';

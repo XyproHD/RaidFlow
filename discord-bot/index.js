@@ -1,6 +1,6 @@
 /**
  * RaidFlow Discord-Bot
- * Slash-Commands: /raidflow help, /raidflow home, /raidflow setup (Rollen + Battle.net), /raidflow group <groupname>
+ * Slash-Commands: /raidflow help, /raidflow setup, /raidflow group <groupname>, /raidflow sync
  * App Home: Primary-Entry-Command „start“ (DM-Dashboard, analog Web-Profil).
  * Rechte: Nur Server-Owner oder ADMINISTRATOR oder MANAGE_GUILD.
  * Gateway: optional GuildMembers (privileged). Nur nutzen, wenn im Discord Developer Portal
@@ -33,7 +33,7 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
-import { handleAppHomeInteraction, sendAppHome } from './app-home.js';
+import { handleAppHomeInteraction } from './app-home.js';
 
 const DISCORD_ADMINISTRATOR = Number(PermissionFlagsBits.Administrator);
 const DISCORD_MANAGE_GUILD = Number(PermissionFlagsBits.ManageGuild);
@@ -54,6 +54,7 @@ const STANDARD_NAMES = {
 // State für mehrstufige Setup-Interaktionen (TTL 15 Min)
 const setupState = new Map();
 const STATE_TTL_MS = 15 * 60 * 1000;
+const SETUP_EPHEMERAL_TTL_MS = 20 * 1000;
 
 function stateKey(interaction) {
   return `${interaction.guildId}:${interaction.user.id}`;
@@ -77,6 +78,10 @@ function setState(interaction, data) {
 
 function clearState(interaction) {
   setupState.delete(stateKey(interaction));
+}
+
+function scheduleDeleteSetupReply(interaction) {
+  setTimeout(() => interaction.deleteReply().catch(() => {}), SETUP_EPHEMERAL_TTL_MS);
 }
 
 function hasSetupPermission(member) {
@@ -303,6 +308,13 @@ async function pushMemberPermissionSync(guildDiscordId, discordUserId, payload) 
     if (!res.ok || json?.skipped) {
       console.log('[RF_MEMBER_SYNC] response body:', text.slice(0, 900));
     }
+    return {
+      ok: res.ok,
+      skipped: json?.skipped === true,
+      status: res.status,
+      reason: json?.reason ?? null,
+      error: json?.error ?? null,
+    };
   } catch (e) {
     console.error(
       JSON.stringify({
@@ -313,6 +325,13 @@ async function pushMemberPermissionSync(guildDiscordId, discordUserId, payload) 
         error: String(e?.message || e),
       })
     );
+    return {
+      ok: false,
+      skipped: false,
+      status: 0,
+      reason: null,
+      error: String(e?.message || e),
+    };
   }
 }
 
@@ -367,6 +386,85 @@ async function syncRaidFlowMemberFromDiscord(discordGuildId, discordUserId) {
   }
 }
 
+function isRaidflowGuildLeadRole(role) {
+  return role === 'guildmaster' || role === 'raidleader';
+}
+
+async function runGuildMemberRoleSync(guild) {
+  const members = await guild.members.fetch();
+  const entries = [...members.values()];
+  let synced = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  const chunkSize = 20;
+  for (let i = 0; i < entries.length; i += chunkSize) {
+    const chunk = entries.slice(i, i + chunkSize);
+    const results = await Promise.all(
+      chunk.map((member) =>
+        pushMemberPermissionSync(guild.id, member.user.id, {
+          roleIds: [...member.roles.cache.keys()],
+          displayName: member.displayName ?? null,
+        })
+      )
+    );
+    for (const r of results) {
+      if (r.ok && !r.skipped) synced += 1;
+      else if (r.skipped) skipped += 1;
+      else failed += 1;
+    }
+  }
+
+  return { total: entries.length, synced, skipped, failed };
+}
+
+function formatSyncSummaryText(syncResult) {
+  return `Sync: ${syncResult.synced}/${syncResult.total} synchronisiert` +
+    `${syncResult.skipped ? `, ${syncResult.skipped} übersprungen` : ''}` +
+    `${syncResult.failed ? `, ${syncResult.failed} fehlgeschlagen` : ''}.`;
+}
+
+async function getRequesterRaidflowRole(interaction) {
+  const data = await getWebappJson('/api/bot/guild-check', {
+    discordGuildId: interaction.guild.id,
+    discordUserId: interaction.user.id,
+  });
+  return {
+    guildInDatabase: data.guildInDatabase === true,
+    minimumRolesConfigured: data?.rfGuild?.minimumRolesConfigured === true,
+    role: data?.user?.rfUserGuildRole ?? null,
+  };
+}
+
+async function runManualGuildSync(interaction) {
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  try {
+    const roleProbe = await getRequesterRaidflowRole(interaction);
+    if (!roleProbe.guildInDatabase || !roleProbe.minimumRolesConfigured) {
+      await interaction.editReply('Der Server ist noch nicht vollständig eingerichtet. Bitte zuerst `/raidflow setup` ausführen.').catch(() => {});
+      scheduleDeleteSetupReply(interaction);
+      return;
+    }
+    if (!isRaidflowGuildLeadRole(roleProbe.role)) {
+      await interaction.editReply('Keine Berechtigung: `/raidflow sync` ist nur für Gildenmeister oder Raidleader verfügbar.').catch(() => {});
+      scheduleDeleteSetupReply(interaction);
+      return;
+    }
+
+    await interaction.editReply('RaidFlow-Sync läuft…').catch(() => {});
+    const syncResult = await runGuildMemberRoleSync(interaction.guild);
+    await interaction
+      .editReply(`RaidFlow-Sync abgeschlossen. ${formatSyncSummaryText(syncResult)}`)
+      .catch(() => {});
+    scheduleDeleteSetupReply(interaction);
+  } catch (e) {
+    await interaction
+      .editReply(`RaidFlow-Sync fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`)
+      .catch(() => {});
+    scheduleDeleteSetupReply(interaction);
+  }
+}
+
 const homeApiDeps = () => ({
   getWebappJson,
   callWebapp,
@@ -408,11 +506,6 @@ function buildHelpContent() {
   return [
     '**RaidFlow – Befehle**',
     '',
-    '**`/raidflow home`** – Home-Übersicht (Embeds, icon-lastig):',
-    '• ✍️ **Deine Anmeldungen** + kurzer **Stats**-Block (mit Link zur Bearbeitung/Anmeldung)',
-    '• 🗓️ **Anstehende Raids** (Dungeon, Termin, Anmeldungen) mit Link zur Anmeldung; als Raidleader zusätzlich ⚙️ Edit / 🧩 Plan',
-    '• 🔗 Links: 📊 Dashboard, 👤 Profil, ➕ Neuer Raid (nur wenn möglich)',
-    '',
     '**App Home** – Wenn du RaidFlow als **Nutzer-App** installiert hast, öffnet die **Start**-Schaltfläche dieselbe Home-Übersicht in den Direktnachrichten (Primary Entry Point).',
     '',
     '**`/raidflow help`** – Zeigt diese Übersicht aller Befehle.',
@@ -421,14 +514,15 @@ function buildHelpContent() {
     '• **Standardrollen anlegen** – Der Bot erstellt die Rollen Gildenmeister, Raidleader und Raider.',
     '• **Bestehende Rollen zuordnen** – Du wählst für jede RaidFlow-Rolle eine bestehende Discord-Rolle oder lässt eine neue anlegen.',
     '• **Eigene Rollen anlegen** – Du gibst für jede RaidFlow-Rolle einen Namen ein; der Bot legt die Rollen auf dem Server an.',
-    '• **Battle.net-Gilde verknüpfen** – WoW-Version und **WoW-Server** wählen, dann Gildennamen (exakt wie im Spiel) – Verknüpfung speichern (nach vollständigem Rollen-Setup).',
-    'Ist der Server bereits eingerichtet, kannst du Rollen löschen und neu einrichten, einzelne Rollen ändern oder Battle.net bearbeiten.',
+    'Ist der Server bereits eingerichtet, kannst du Rollen löschen und neu einrichten oder einzelne Rollen ändern.',
     '',
     '**`/raidflow group <Groupname>`** – Raidgruppe anlegen. Erstellt eine Discord-Rolle `Raidflowgroup-<Name>` und verknüpft sie in der Webapp.',
     '',
+    '**`/raidflow sync`** – Manueller Rollen-/Mitglieder-Sync für die Gilde (nur Gildenmeister oder Raidleader).',
+    '',
     '**`/raidflow check`** – Status: Server in Webapp/DB, Mindestrollen, deine Discord-Rollen vs. Webapp-Zuordnung. **Für alle Server-Mitglieder.**',
     '',
-    '**`help`**, **`setup`**, **`group`** nur mit Setup-Recht (Owner / Administrator / Server verwalten). **`check`** kann jeder auf dem Server nutzen.',
+    '**`help`**, **`setup`**, **`group`** nur mit Setup-Recht (Owner / Administrator / Server verwalten). **`sync`** nur für Gildenmeister/Raidleader. **`check`** kann jeder auf dem Server nutzen.',
   ].join('\n');
 }
 
@@ -447,10 +541,6 @@ function buildReconfigureSelect() {
           .setLabel('Rollen ändern')
           .setDescription('Eine RaidFlow-Rolle umbenennen, zuweisen oder neu anlegen')
           .setValue('change'),
-        new StringSelectMenuOptionBuilder()
-          .setLabel('Battle.net-Gilde verknüpfen')
-          .setDescription('Realm + Blizzard-Gilde suchen und in RaidFlow speichern')
-          .setValue('bnet'),
         new StringSelectMenuOptionBuilder()
           .setLabel('Abbrechen')
           .setDescription('Setup beenden ohne Änderungen')
@@ -476,11 +566,7 @@ function buildSetupModeSelect() {
         new StringSelectMenuOptionBuilder()
           .setLabel('Eigene Rollen anlegen')
           .setDescription('Namen eingeben; der Bot legt die Rollen auf dem Server an')
-          .setValue('custom'),
-        new StringSelectMenuOptionBuilder()
-          .setLabel('Battle.net-Gilde verknüpfen')
-          .setDescription('Gleiche Verknüpfung wie in der Webapp (Realm + Gildensuche)')
-          .setValue('bnet')
+          .setValue('custom')
       )
   );
 }
@@ -824,6 +910,7 @@ async function runSetup(interaction) {
     if (res.ok) existingConfig = await res.json();
   } catch (e) {
     await interaction.editReply(`Fehler beim Prüfen der Konfiguration: ${e.message}`).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
     return;
   }
 
@@ -850,11 +937,7 @@ async function handleReconfigure(interaction, value) {
       content: 'Setup abgebrochen. Es wurden keine Änderungen vorgenommen.',
       components: [],
     });
-    return;
-  }
-
-  if (value === 'bnet') {
-    await beginBnetSetup(interaction);
+    scheduleDeleteSetupReply(interaction);
     return;
   }
 
@@ -1004,23 +1087,26 @@ async function applyGuildConfigAndFinish(interaction, roleIds, message) {
       discordRoleRaidleaderId: roleIds.raidleader,
       discordRoleRaiderId: roleIds.raider,
     });
+    const syncResult = await runGuildMemberRoleSync(interaction.guild);
     clearState(interaction);
-    await interaction.update({ content: message, components: [] }).catch(() => {});
+    await interaction
+      .editReply({
+        content: `${message}\n\n${formatSyncSummaryText(syncResult)}`,
+        components: [],
+      })
+      .catch(() => {});
+    scheduleDeleteSetupReply(interaction);
   } catch (e) {
-    await interaction.update({
+    await interaction.editReply({
       content: `Setup fehlgeschlagen: ${e.message}`,
       components: [],
     }).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
   }
 }
 
 async function handleSetupMode(interaction, value) {
   const guild = interaction.guild;
-
-  if (value === 'bnet') {
-    await beginBnetSetup(interaction);
-    return;
-  }
 
   if (value === 'standard') {
     await interaction.update({ content: 'Standardrollen werden erstellt…', components: [] }).catch(() => {});
@@ -1159,10 +1245,15 @@ async function handleModalExistingNewRole(interaction, raidFlowRole, name) {
         discordRoleRaidleaderId: roles.raidleader,
         discordRoleRaiderId: roles.raider,
       });
+      const syncResult = await runGuildMemberRoleSync(guild);
       clearState(interaction);
-      await interaction.editReply('RaidFlow-Setup abgeschlossen. Rollen wurden angelegt und zugeordnet.').catch(() => {});
+      await interaction
+        .editReply(`RaidFlow-Setup abgeschlossen. Rollen wurden angelegt und zugeordnet.\n\n${formatSyncSummaryText(syncResult)}`)
+        .catch(() => {});
+      scheduleDeleteSetupReply(interaction);
     } catch (e) {
       await interaction.editReply(`Fehler: ${e.message}`).catch(() => {});
+      scheduleDeleteSetupReply(interaction);
     }
     return;
   }
@@ -1186,6 +1277,7 @@ async function handleModalCustomRoles(interaction, names) {
     }
   } catch (e) {
     await interaction.reply({ content: `Fehler beim Anlegen der Rollen: ${e.message}`, ephemeral: true }).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
     return;
   }
   await interaction.reply({ content: 'Webapp wird aktualisiert…', ephemeral: true }).catch(() => {});
@@ -1197,12 +1289,17 @@ async function handleModalCustomRoles(interaction, names) {
       discordRoleRaidleaderId: created.raidleader,
       discordRoleRaiderId: created.raider,
     });
+    const syncResult = await runGuildMemberRoleSync(guild);
     clearState(interaction);
-    await interaction.editReply(
-      'RaidFlow-Setup abgeschlossen. Deine Rollen wurden auf dem Server angelegt und in der Webapp gespeichert.'
-    ).catch(() => {});
+    await interaction
+      .editReply(
+        `RaidFlow-Setup abgeschlossen. Deine Rollen wurden auf dem Server angelegt und in der Webapp gespeichert.\n\n${formatSyncSummaryText(syncResult)}`
+      )
+      .catch(() => {});
+    scheduleDeleteSetupReply(interaction);
   } catch (e) {
     await interaction.editReply(`Fehler: ${e.message}`).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
   }
 }
 
@@ -1214,22 +1311,26 @@ async function handleModalRename(interaction, roleKey, newName) {
   const currentId = cfg?.[roleIdKey];
   if (!currentId) {
     await interaction.reply({ content: 'Konfiguration nicht gefunden.', ephemeral: true }).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
     return;
   }
   const role = guild.roles.cache.get(currentId);
   if (!role) {
     await interaction.reply({ content: 'Rolle auf dem Server nicht gefunden.', ephemeral: true }).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
     return;
   }
   const trimmed = newName.trim();
   if (!trimmed) {
     await interaction.reply({ content: 'Bitte einen Namen angeben.', ephemeral: true }).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
     return;
   }
   try {
     await role.setName(trimmed, 'RaidFlow Setup – Umbenennung');
   } catch (e) {
     await interaction.reply({ content: `Umbenennung fehlgeschlagen: ${e.message}`, ephemeral: true }).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
     return;
   }
   const updated = { ...cfg, [roleIdKey]: currentId };
@@ -1244,8 +1345,10 @@ async function handleModalRename(interaction, roleKey, newName) {
     });
     clearState(interaction);
     await interaction.editReply(`Rolle wurde in „${trimmed}" umbenannt und die Konfiguration wurde gespeichert.`).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
   } catch (e) {
     await interaction.editReply(`Speichern fehlgeschlagen: ${e.message}`).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
   }
 }
 
@@ -1256,6 +1359,7 @@ async function handleModalNewForChange(interaction, roleKey, name) {
   const trimmed = name.trim();
   if (!trimmed) {
     await interaction.reply({ content: 'Bitte einen Rollennamen angeben.', ephemeral: true }).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
     return;
   }
   let role;
@@ -1263,6 +1367,7 @@ async function handleModalNewForChange(interaction, roleKey, name) {
     role = await guild.roles.create({ name: trimmed, reason: 'RaidFlow Setup' });
   } catch (e) {
     await interaction.reply({ content: `Rolle konnte nicht erstellt werden: ${e.message}`, ephemeral: true }).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
     return;
   }
   const roleIdKey = roleKey === 'guildmaster' ? 'discordRoleGuildmasterId' : roleKey === 'raidleader' ? 'discordRoleRaidleaderId' : 'discordRoleRaiderId';
@@ -1278,8 +1383,10 @@ async function handleModalNewForChange(interaction, roleKey, name) {
     });
     clearState(interaction);
     await interaction.editReply(`Neue Rolle „${trimmed}" wurde angelegt und für ${RAIDFLOW_LABELS[roleKey]} gespeichert.`).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
   } catch (e) {
     await interaction.editReply(`Speichern fehlgeschlagen: ${e.message}`).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
   }
 }
 
@@ -1301,8 +1408,10 @@ async function handleChangeAssign(interaction, roleKey, selectedRoleId) {
     clearState(interaction);
     const roleName = guild.roles.cache.get(selectedRoleId)?.name ?? selectedRoleId;
     await interaction.editReply(`Die Rolle „${roleName}" wurde für ${RAIDFLOW_LABELS[roleKey]} gespeichert.`).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
   } catch (e) {
     await interaction.editReply(`Fehler: ${e.message}`).catch(() => {});
+    scheduleDeleteSetupReply(interaction);
   }
 }
 
@@ -1359,7 +1468,7 @@ async function getDiscordAction(params) {
 
 function raidActionErrorText(err) {
   const map = {
-    NOT_LINKED:        '❌ Dein Discord-Konto ist noch nicht mit RaidFlow verknüpft. Nutze `/raidflow home` um dein Konto zu verbinden.',
+    NOT_LINKED:        '❌ Dein Discord-Konto ist noch nicht mit RaidFlow verknüpft. Nutze die RaidFlow-Startansicht (App Home), um dein Konto zu verbinden.',
     NO_CHARACTER:      '❌ Kein Charakter für diese Gilde gefunden. Bitte erst einen Charakter anlegen.',
     ALREADY_SIGNED_UP: '⚠️ Du bist bereits angemeldet.',
     SIGNUP_CLOSED:     '🔒 Die Anmeldung ist geschlossen oder der Raid nicht mehr offen.',
@@ -3297,10 +3406,6 @@ client.on('interactionCreate', async (interaction) => {
   // Help (nur Slash)
   if (interaction.isChatInputCommand() && interaction.commandName === 'raidflow') {
     const sub = interaction.options.getSubcommand();
-    if (sub === 'home') {
-      await sendAppHome(interaction, homeApiDeps());
-      return;
-    }
     if (sub === 'check') {
       if (!interaction.guild) {
         return interaction.reply({
@@ -3309,6 +3414,16 @@ client.on('interactionCreate', async (interaction) => {
         });
       }
       await runRaidflowCheck(interaction);
+      return;
+    }
+    if (sub === 'sync') {
+      if (!interaction.guild) {
+        return interaction.reply({
+          content: 'Dieser Befehl funktioniert nur auf einem Server (nicht in DMs).',
+          ephemeral: true,
+        });
+      }
+      await runManualGuildSync(interaction);
       return;
     }
     if (sub === 'help') {
