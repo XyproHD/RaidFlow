@@ -290,7 +290,14 @@
     "columnPunctuality": "Pünktlichkeit",
     "columnNote": "Notiz",
     "closeOverlay": "Schließen",
-    "leaderOptionCharMissing": "fehlt"
+    "leaderOptionCharMissing": "fehlt",
+    "exportNamesOpen": "Charakternamen exportieren",
+    "exportNamesEmpty": "Keine Charaktere in dieser Gruppe",
+    "exportNamesFormatGroup": "Trennzeichen",
+    "exportNamesFormatList": "Eine Zeile pro Name",
+    "exportNamesFormatComma": "Kommagetrennt",
+    "exportNamesFormatSemicolon": "Semikolon-getrennt",
+    "exportNamesCopy": "In Zwischenspeicher kopieren"
   },
   "raidEdit": {
     "sectionBasics": "Grunddaten & Termin",
