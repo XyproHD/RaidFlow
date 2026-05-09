@@ -82,6 +82,11 @@
 }
 
 /* Buy-me-a-Coffee Widget (bmc-btn-container kommt vom CDN-Script) */
+.rf-bmc-fab {
+  transform: scale(0.8);
+  transform-origin: left bottom;
+}
+
 @keyframes rf-bmc-wiggle {
   0%,
   88%,

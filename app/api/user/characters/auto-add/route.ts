@@ -49,9 +49,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ausgewaehlter Realm wurde nicht gefunden.' }, { status: 400 });
     }
 
+    let rosterGuildName: string | null = null;
+    if (body.guildId?.trim()) {
+      const g = await prisma.rfGuild.findUnique({
+        where: { id: body.guildId.trim() },
+        select: { battlenetGuildName: true },
+      });
+      rosterGuildName = g?.battlenetGuildName?.trim() ?? null;
+    }
+
     const fetched = await fetchClassicCharacterFromBattlenetByRealm(
       realmRowToBattlenetRealmArg(realm, body.appLocale),
-      name
+      name,
+      rosterGuildName ? { guildRosterFallbackGuildName: rosterGuildName } : undefined
     );
     const { profile: profileJson, mainSpec, characterName } = classicFetchResultToJson(fetched);
     const bnetCheck = assertBattlenetProfileForNewCharacter(profileJson);

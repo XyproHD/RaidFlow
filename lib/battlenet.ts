@@ -437,6 +437,167 @@ function resolveClassAndSpec(profile: BattlenetProfile, specializations: Battlen
   return { className, specName, classId, specId };
 }
 
+type BattlenetApiConfigRow = NonNullable<Awaited<ReturnType<typeof getBattlenetConfigForRegion>>>;
+
+export type FetchClassicCharacterFromBattlenetOptions = {
+  /**
+   * Bei 404 auf dem direkten Profil-Endpunkt: Gildenroster durchsuchen und Profil über `character.key.href` laden.
+   * Anzeigename der WoW-Gilde (wie in RaidFlow hinterlegt), nicht der URL-Slug.
+   */
+  guildRosterFallbackGuildName?: string | null;
+};
+
+function mapProfileToClassicFetchResult(
+  profile: BattlenetProfile,
+  specializations: BattlenetSpecializations | null,
+  realm: {
+    region: WowRegion;
+    namespace: string;
+    version: string;
+    slug: string;
+    name?: string;
+  },
+  realmSlug: string,
+  charName: string,
+  characterNameOriginal: string,
+  config: BattlenetApiConfigRow,
+  profileUrlForPersist: string
+) {
+  const resolved = resolveClassAndSpec(profile, specializations);
+
+  return {
+    configId: config.id,
+    region: realm.region,
+    wowVersion: wowVersionToInternal(realm.version),
+    realmSlug: profile.realm?.slug ?? realmSlug,
+    realmName: profile.realm?.name ?? realm.name ?? realmSlug,
+    characterName: profile.name ?? characterNameOriginal.trim(),
+    characterNameLower: charName,
+    battlenetCharacterId: profile.id ? BigInt(profile.id) : null,
+    level: profile.level ?? null,
+    raceName: profile.race?.name ?? null,
+    className: resolved.className ?? null,
+    activeSpecName: resolved.specName ?? null,
+    guildName: profile.guild?.name ?? null,
+    faction: profile.faction?.name ?? profile.faction?.type ?? null,
+    profileUrl: profileUrlForPersist,
+    rawProfile: {
+      profile,
+      specializations,
+    } as Prisma.InputJsonValue,
+    mainSpec: getSpecDisplayName(resolved.classId, resolved.specId),
+  };
+}
+
+/**
+ * Wenn das Profil unter realm+name 404 liefert, gleicher Char aber in GET …/guild/{realm}/{guild}/roster gelistet:
+ * Profil über `character.key.href` laden (liefert u. a. battlenetCharacterId).
+ */
+async function tryFetchClassicCharacterViaGuildRoster(
+  realm: {
+    region: WowRegion;
+    namespace: string;
+    version: string;
+    slug: string;
+    name?: string;
+  },
+  characterNameOriginal: string,
+  guildDisplayName: string,
+  accessToken: string,
+  apiBaseUrl: string,
+  config: BattlenetApiConfigRow
+) {
+  const charName = normalizeName(characterNameOriginal);
+  const realmSlug = realm.slug.trim().toLowerCase();
+  if (!realmSlug || !charName || !guildDisplayName.trim()) {
+    return null;
+  }
+
+  const { guildSlugCandidates } = await import('@/lib/battlenet-guild');
+  const profileNs = dynamicNamespaceToProfileNamespace(realm.namespace);
+  const slugCandidates = guildSlugCandidates(guildDisplayName);
+  if (slugCandidates.length === 0) return null;
+
+  for (const guildSlug of slugCandidates) {
+    let rosterUrl: string | null =
+      `${apiBaseUrl}${config.profileGuildPath}/${encodeURIComponent(realmSlug)}/${encodeURIComponent(guildSlug)}/roster?${profileQueryString(profileNs, config.locale)}`;
+
+    while (rosterUrl) {
+      const rosterRes = await fetch(rosterUrl, battlenetBearerInit(accessToken));
+      if (!rosterRes.ok) {
+        break;
+      }
+
+      let json: Record<string, unknown>;
+      try {
+        json = (await rosterRes.json()) as Record<string, unknown>;
+      } catch {
+        break;
+      }
+
+      const members = json.members;
+      if (Array.isArray(members)) {
+        for (const raw of members) {
+          if (!raw || typeof raw !== 'object') continue;
+          const m = raw as Record<string, unknown>;
+          const ch = m.character;
+          if (!ch || typeof ch !== 'object') continue;
+          const c = ch as Record<string, unknown>;
+          const n = typeof c.name === 'string' ? c.name : '';
+          if (normalizeName(n) !== charName) continue;
+
+          const keyObj = c.key && typeof c.key === 'object' ? (c.key as Record<string, unknown>) : null;
+          const href = typeof keyObj?.href === 'string' ? keyObj.href : null;
+          if (!href) continue;
+
+          try {
+            const profileUrl = new URL(href);
+            profileUrl.searchParams.set('locale', config.locale);
+            profileUrl.searchParams.delete('access_token');
+            const profileRes = await fetch(profileUrl.toString(), battlenetBearerInit(accessToken));
+            if (!profileRes.ok) continue;
+
+            const profile = (await profileRes.json()) as BattlenetProfile;
+            const specializations = await fetchSpecializations(
+              profile?._links?.specializations?.href,
+              config.locale,
+              accessToken
+            );
+            const selfHref =
+              profile._links?.self?.href && typeof profile._links.self.href === 'string'
+                ? profile._links.self.href.split('?')[0] ?? profileUrl.toString().split('?')[0]
+                : `${profileUrl.origin}${profileUrl.pathname}`;
+            return mapProfileToClassicFetchResult(
+              profile,
+              specializations,
+              realm,
+              realmSlug,
+              charName,
+              characterNameOriginal,
+              config,
+              selfHref
+            );
+          } catch {
+            /* nächster Treffer / Slug */
+          }
+        }
+      }
+
+      const links = json._links && typeof json._links === 'object' ? (json._links as Record<string, unknown>) : null;
+      const rawNext = links?.next;
+      const nextHref =
+        typeof rawNext === 'string'
+          ? rawNext
+          : rawNext && typeof rawNext === 'object'
+            ? (rawNext as Record<string, unknown>).href
+            : undefined;
+      rosterUrl = typeof nextHref === 'string' ? nextHref : null;
+    }
+  }
+
+  return null;
+}
+
 export async function fetchClassicCharacterFromBattlenetWithFilters(
   server: string,
   characterName: string,
@@ -516,7 +677,8 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
     slug: string;
     name?: string;
   },
-  characterName: string
+  characterName: string,
+  opts?: FetchClassicCharacterFromBattlenetOptions
 ) {
   const config = await getBattlenetConfigForRegion(realm.region);
   if (!config) {
@@ -550,6 +712,22 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
 
   const profileRes = await fetch(requestUrlFetch, battlenetBearerInit(accessToken));
   if (profileRes.status === 404) {
+    const fb = opts?.guildRosterFallbackGuildName?.trim();
+    if (fb) {
+      try {
+        const via = await tryFetchClassicCharacterViaGuildRoster(
+          realm,
+          characterName,
+          fb,
+          accessToken,
+          apiBaseUrl,
+          config
+        );
+        if (via) return via;
+      } catch {
+        /* Fallback fehlgeschlagen → unten 404 */
+      }
+    }
     throw new BattlenetCharacterRequestError('Charakter auf dem angegebenen Server nicht gefunden.', {
       requestUrl: requestUrlLog,
       httpStatus: 404,
@@ -569,30 +747,17 @@ export async function fetchClassicCharacterFromBattlenetByRealm(
       config.locale,
       accessToken
     );
-    const resolved = resolveClassAndSpec(profile, specializations);
 
-    return {
-      configId: config.id,
-      region: realm.region,
-      wowVersion: wowVersionToInternal(realm.version),
-      realmSlug: profile.realm?.slug ?? realmSlug,
-      realmName: profile.realm?.name ?? realm.name ?? realmSlug,
-      characterName: profile.name ?? characterName.trim(),
-      characterNameLower: charName,
-      battlenetCharacterId: profile.id ? BigInt(profile.id) : null,
-      level: profile.level ?? null,
-      raceName: profile.race?.name ?? null,
-      className: resolved.className ?? null,
-      activeSpecName: resolved.specName ?? null,
-      guildName: profile.guild?.name ?? null,
-      faction: profile.faction?.name ?? profile.faction?.type ?? null,
-      profileUrl: `${apiBaseUrl}${profilePath}`,
-      rawProfile: {
-        profile,
-        specializations,
-      } as Prisma.InputJsonValue,
-      mainSpec: getSpecDisplayName(resolved.classId, resolved.specId),
-    };
+    return mapProfileToClassicFetchResult(
+      profile,
+      specializations,
+      realm,
+      realmSlug,
+      charName,
+      characterName,
+      config,
+      `${apiBaseUrl}${profilePath}`
+    );
   } catch (e) {
     if (e instanceof BattlenetCharacterRequestError) throw e;
     const msg = e instanceof Error ? e.message : 'Unbekannter Fehler nach Battle.net Antwort.';
