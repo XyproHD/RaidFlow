@@ -55,7 +55,10 @@ export async function POST(
   }
 
   const { guildId } = await params;
-  const guild = await prisma.rfGuild.findFirst({ where: { id: guildId }, select: { id: true } });
+  const guild = await prisma.rfGuild.findFirst({
+    where: { id: guildId },
+    select: { id: true, battlenetGuildName: true },
+  });
   if (!guild) {
     return NextResponse.json({ error: 'Guild not found' }, { status: 404 });
   }
@@ -115,9 +118,11 @@ export async function POST(
       if (!realm) {
         return NextResponse.json({ error: 'Realm nicht gefunden.' }, { status: 404 });
       }
+      const rosterFb = guild.battlenetGuildName?.trim() ?? null;
       const fetched = await fetchClassicCharacterFromBattlenetByRealm(
         realmRowToBattlenetRealmArg(realm, appLocale),
-        characterNameForResolve
+        characterNameForResolve,
+        rosterFb ? { guildRosterFallbackGuildName: rosterFb } : undefined
       );
       const { characterName: resolvedName, mainSpec, profile } = classicFetchResultToJson(fetched);
       battlenetProfile = profile;

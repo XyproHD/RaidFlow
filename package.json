@@ -18,7 +18,8 @@
     "db:studio": "prisma studio",
     "db:reset": "node scripts/run-db-reset.js",
     "db:seed": "prisma db seed",
-    "db:sync:wowrealms": "node scripts/sync-wow-realms.js"
+    "db:sync:wowrealms": "node scripts/sync-wow-realms.js",
+    "test:bnet:jieshi": "node scripts/tmp-test-bnet-jieshi.mjs"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

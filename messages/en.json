@@ -290,7 +290,15 @@
     "columnPunctuality": "Punctuality",
     "columnNote": "Note",
     "closeOverlay": "Close",
-    "leaderOptionCharMissing": "missing"
+    "leaderOptionCharMissing": "missing",
+    "exportNamesOpen": "Export character names",
+    "exportNamesEmpty": "No characters in this group",
+    "exportNamesFormatGroup": "Separator",
+    "exportNamesFormatList": "One name per line",
+    "exportNamesFormatComma": "Comma-separated",
+    "exportNamesFormatSemicolon": "Semicolon-separated",
+    "exportNamesCopy": "Copy to clipboard",
+    "exportNamesPreview": "Preview — select and copy"
   },
   "raidEdit": {
     "sectionBasics": "Basics & schedule",

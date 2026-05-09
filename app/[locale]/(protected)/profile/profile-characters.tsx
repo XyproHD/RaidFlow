@@ -252,6 +252,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
           realmId: autoRealmId,
           name: name.trim(),
           appLocale: locale,
+          ...(guildId ? { guildId } : {}),
         }),
       });
       const text = await res.text();

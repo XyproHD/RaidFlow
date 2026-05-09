@@ -78,7 +78,7 @@ export function BuymeacoffeeFab() {
             href={BUYMEACOFFEE_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex min-h-[60px] min-w-[210px] items-center justify-center rounded-xl bg-[#FFDD00] px-6 font-serif text-xl text-black no-underline"
+            className="inline-flex min-h-12 min-w-[168px] items-center justify-center rounded-xl bg-[#FFDD00] px-5 font-serif text-lg text-black no-underline"
           >
             {BMC_TEXT}
           </a>

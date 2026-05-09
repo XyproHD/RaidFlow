@@ -25,6 +25,7 @@ import {
   type RaidOverviewSummaryProps,
 } from '@/components/raid-detail/raid-overview-summary';
 import { PlannerLeaderNotesCollapsible } from '@/components/raid-planner/planner-leader-notes-collapsible';
+import { GroupCharNamesExport } from '@/components/raid-planner/group-char-names-export';
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 import type { AnnounceRaidPayload } from '@/lib/raid-announce';
 
@@ -1972,6 +1973,10 @@ export function RaidRosterPlanner({
                 !!lmUid &&
                 group.rosterOrder.some((sid) => (byId.get(sid)?.userId ?? '').trim() === lmUid);
 
+              const groupCharNames = group.rosterOrder
+                .map((id) => byId.get(id)?.name?.trim())
+                .filter((n): n is string => !!n);
+
               return (
                 <div
                   key={`roster-group-${groupIndex}`}
@@ -1988,6 +1993,7 @@ export function RaidRosterPlanner({
                         <h2 className="text-sm font-semibold text-foreground">
                           {tRoster('groupTitle', { n: groupIndex + 1 })}
                         </h2>
+                        <GroupCharNamesExport names={groupCharNames} />
                         {plannerGroups.length > 1 ? (
                           <button
                             type="button"
