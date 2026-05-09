@@ -20,9 +20,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Missing discordUserId' }, { status: 400 });
   }
 
-  const baseUrl =
-    process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '');
+  // User-sichtbare Links müssen auf die öffentliche Webapp-URL (NEXTAUTH_URL)
+  // zeigen. VERCEL_URL ist die interne Deployment-URL und führt zu falschen
+  // Zielen bei Preview-/Branch-Deployments.
+  const baseUrl = process.env.NEXTAUTH_URL?.replace(/\/$/, '') || '';
   const locale = 'de'; // defaultLocale (siehe i18n/routing.ts)
   const now = new Date();
   const rangeEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);

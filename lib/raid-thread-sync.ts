@@ -24,9 +24,11 @@ import { getAppConfig } from '@/lib/app-config';
 // ---------------------------------------------------------------------------
 
 function getAppUrl(): string {
+  // User-sichtbare Links in Discord-Embeds müssen auf die öffentliche Webapp-URL
+  // (NEXTAUTH_URL) zeigen. WEBAPP_URL ist nur für Bot→Backend-Calls gedacht und
+  // kann auf eine interne/Preview-URL zeigen.
   return (
     process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
-    process.env.WEBAPP_URL?.replace(/\/$/, '') ||
     'http://localhost:3000'
   );
 }
