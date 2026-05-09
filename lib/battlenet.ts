@@ -458,6 +458,26 @@ function guildRosterMembersFromJson(json: Record<string, unknown>): unknown[] {
 }
 
 /**
+ * Gildenroster liefert `playable_class` häufig nur als `{ id, key }` ohne `name`
+ * (Profil 404/privacy — href hilft nicht). IDs = Blizzard Playable Class (Classic-Familie).
+ */
+const PLAYABLE_CLASS_ID_TO_ENGLISH_NAME: Record<number, string> = {
+  1: 'Warrior',
+  2: 'Paladin',
+  3: 'Hunter',
+  4: 'Rogue',
+  5: 'Priest',
+  6: 'Death Knight',
+  7: 'Shaman',
+  8: 'Mage',
+  9: 'Warlock',
+  10: 'Monk',
+  11: 'Druid',
+  12: 'Demon Hunter',
+  13: 'Evoker',
+};
+
+/**
  * Wenn das Profil über `character.key.href` nicht lesbar ist (403/404 bei Privacy),
  * liefert das Gildenroster oft trotzdem `playable_class`, `level`, `id`, `realm`.
  */
@@ -469,8 +489,13 @@ function buildBattlenetProfileFromRosterCharacter(
   let playableClassName: string | undefined;
   const pc = c.playable_class;
   if (pc && typeof pc === 'object') {
-    const nm = (pc as Record<string, unknown>).name;
-    if (typeof nm === 'string' && nm.trim()) playableClassName = nm.trim();
+    const pco = pc as Record<string, unknown>;
+    const nm = pco.name;
+    if (typeof nm === 'string' && nm.trim()) {
+      playableClassName = nm.trim();
+    } else if (typeof pco.id === 'number' && Number.isFinite(pco.id)) {
+      playableClassName = PLAYABLE_CLASS_ID_TO_ENGLISH_NAME[pco.id];
+    }
   }
   if (!playableClassName) return null;
 
