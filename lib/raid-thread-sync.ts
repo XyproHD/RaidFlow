@@ -18,6 +18,7 @@ import {
 } from '@/lib/discord-guild-api';
 import { buildRaidEmbed, buildRaidActionButtons } from '@/lib/raid-embed-builder';
 import { getAppConfig } from '@/lib/app-config';
+import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
@@ -223,11 +224,21 @@ export interface SignupChangeDetails {
   punctuality?:  string;
 }
 
+const ROLE_DE: Record<'Tank' | 'Healer' | 'Melee' | 'Range', string> = {
+  Tank: 'Tank',
+  Healer: 'Heiler',
+  Melee: 'Nahkampf',
+  Range: 'Fernkampf',
+};
+
 /**
  * Postet eine kurze Protokoll-Nachricht in den Raid-Thread wenn sich ein Spieler
  * anmeldet, abmeldet oder seine Anmeldung bearbeitet.
- * Protokoll wird gepostet, solange der Raid nicht abgesagt ist und ein Thread existiert
- * (unabhängig von signupVisibility — der Thread ist die Raid-Diskussion).
+ * Protokoll wird gepostet, solange der Raid nicht abgesagt ist und ein Thread existiert.
+ *
+ * Wenn die Teilnehmerliste noch nicht „öffentlich“ ist (wie im Embed: nur bei
+ * `signupVisibility === public` oder Status angekündigt/gesetzt), werden **keine**
+ * Charakter-Namen und keine Spec-Namen genannt — nur Rolle (Tank/…) bzw. Reserve/Unklar.
  */
 export async function postSignupChangeThreadNotice(
   raidId:  string,
@@ -237,12 +248,22 @@ export async function postSignupChangeThreadNotice(
   try {
     const raid = await prisma.rfRaid.findUnique({
       where:  { id: raidId },
-      select: { discordThreadId: true, status: true },
+      select: {
+        discordThreadId: true,
+        status: true,
+        signupVisibility: true,
+      },
     });
     if (!raid?.discordThreadId) return;
     if (raid.status === 'cancelled') return;
 
     const { createChannelMessage } = await import('@/lib/discord-guild-api');
+
+    /** Wie `buildRaidEmbed`: Liste nur bei public oder nach Ankündigung/Lock sichtbar. */
+    const listPublic =
+      raid.signupVisibility === 'public' ||
+      raid.status === 'announced' ||
+      raid.status === 'locked';
 
     const charName = details.characterName || '?';
     const specText = details.signedSpec ? ` · ${details.signedSpec}` : '';
@@ -254,13 +275,42 @@ export async function postSignupChangeThreadNotice(
                    : details.punctuality === 'late'  ? ' 🕐 Kommt später'
                    : '';
 
+    const roleKey = roleFromSpecDisplayName(details.signedSpec);
+    const roleDe  = roleKey ? ROLE_DE[roleKey] : null;
+
     let content: string;
-    if (action === 'signup') {
-      content = `✍️ **${charName}** hat sich angemeldet${specText}${typeText}${puncText}`;
-    } else if (action === 'unsignup') {
-      content = `🚪 **${charName}** hat sich abgemeldet`;
+    if (listPublic) {
+      if (action === 'signup') {
+        content = `✍️ **${charName}** hat sich angemeldet${specText}${typeText}${puncText}`;
+      } else if (action === 'unsignup') {
+        content = `🚪 **${charName}** hat sich abgemeldet`;
+      } else {
+        content = `✏️ **${charName}** hat die Anmeldung bearbeitet${specText}${typeText}${puncText}`;
+      }
     } else {
-      content = `✏️ **${charName}** hat die Anmeldung bearbeitet${specText}${typeText}${puncText}`;
+      const who = roleDe
+        ? `Ein **${roleDe}**`
+        : details.type === 'reserve'
+          ? 'Eine **Reserve**-Anmeldung'
+          : details.type === 'uncertain'
+            ? 'Eine **Unklar**-Anmeldung'
+            : 'Jemand';
+      /** Ohne Namen: Typ nur zusätzlich, wenn Rolle schon genannt (z. B. Tank + Reserve). */
+      let anonTypeSuffix = '';
+      if (roleDe) {
+        if (details.type === 'reserve') anonTypeSuffix = ' *(Reserve)*';
+        else if (details.type === 'uncertain') anonTypeSuffix = ' *(Unklar)*';
+        else if (details.type === 'declined') anonTypeSuffix = ' *(Nicht da)*';
+      } else if (details.type === 'declined') {
+        anonTypeSuffix = ' *(Nicht da)*';
+      }
+      if (action === 'signup') {
+        content = `✍️ ${who} hat sich angemeldet${anonTypeSuffix}${puncText}`;
+      } else if (action === 'unsignup') {
+        content = `🚪 ${who} hat sich abgemeldet`;
+      } else {
+        content = `✏️ ${who} hat die Anmeldung bearbeitet${anonTypeSuffix}${puncText}`;
+      }
     }
 
     await createChannelMessage(raid.discordThreadId, content.slice(0, 2000));
