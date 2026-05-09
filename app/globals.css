@@ -80,3 +80,29 @@
 .rf-feedback-fab {
   animation: rf-feedback-pulse 5s ease-in-out infinite;
 }
+
+/* Buy-me-a-Coffee Widget (bmc-btn-container kommt vom CDN-Script) */
+@keyframes rf-bmc-wiggle {
+  0%,
+  88%,
+  100% {
+    transform: rotate(0deg);
+  }
+  90% {
+    transform: rotate(-5deg);
+  }
+  92% {
+    transform: rotate(5deg);
+  }
+  94% {
+    transform: rotate(-3deg);
+  }
+  96% {
+    transform: rotate(3deg);
+  }
+}
+
+.rf-bmc-fab .bmc-btn-container {
+  transform-origin: center bottom;
+  animation: rf-bmc-wiggle 10s ease-in-out infinite;
+}

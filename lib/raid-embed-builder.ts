@@ -10,6 +10,7 @@ import {
 } from '@/lib/discord-wow-emojis';
 import type { AnnouncedGroupPayload } from '@/lib/raid-announce';
 import type { DiscordEmbed, DiscordMessageComponent } from '@/lib/discord-guild-api';
+import { BUYMEACOFFEE_URL } from '@/lib/support-links';
 
 // ---------------------------------------------------------------------------
 // Embed-Farben je Status
@@ -292,7 +293,9 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
   const dashUrl = `${base}/${locale}/dashboard`;
   const raidUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}`;
   const planUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}/plan`;
-  const linksMarkdown = `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl})`;
+  const linksMarkdown =
+    `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl}) · ` +
+    `[Kaffeespende](${BUYMEACOFFEE_URL})`;
 
   const publicNotePlain = input.publicNote?.trim()
     ? plainTextForDiscord(input.publicNote.trim(), 3900)
