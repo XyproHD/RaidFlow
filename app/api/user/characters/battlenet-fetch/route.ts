@@ -48,17 +48,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ausgewaehlter Realm wurde nicht gefunden.' }, { status: 400 });
     }
 
+    const userGuilds = await getGuildsForUserCached(userId, discordId);
+    const allowedGuildIds = new Set(userGuilds.map((g) => g.id));
+
+    async function battlenetGuildDisplayNameForGuildRow(id: string): Promise<string | null> {
+      const g = await prisma.rfGuild.findUnique({
+        where: { id },
+        select: { battlenetGuildName: true },
+      });
+      return g?.battlenetGuildName?.trim() ?? null;
+    }
+
     let guildRosterFallbackName: string | null = null;
     const rawGuildId = typeof body.guildId === 'string' ? body.guildId.trim() : '';
-    if (rawGuildId) {
-      const userGuilds = await getGuildsForUserCached(userId, discordId);
-      const allowed = new Set(userGuilds.map((g) => g.id));
-      if (allowed.has(rawGuildId)) {
-        const g = await prisma.rfGuild.findUnique({
-          where: { id: rawGuildId },
-          select: { battlenetGuildName: true },
-        });
-        guildRosterFallbackName = g?.battlenetGuildName?.trim() ?? null;
+    if (rawGuildId && allowedGuildIds.has(rawGuildId)) {
+      guildRosterFallbackName = await battlenetGuildDisplayNameForGuildRow(rawGuildId);
+    }
+    /** Nur eine Discord-Gilde: Fallback auch ohne explizite Auswahl (sonst kein Roster-Sync). */
+    if (!guildRosterFallbackName && userGuilds.length === 1) {
+      const onlyId = userGuilds[0]?.id;
+      if (onlyId && allowedGuildIds.has(onlyId)) {
+        guildRosterFallbackName = await battlenetGuildDisplayNameForGuildRow(onlyId);
       }
     }
 
