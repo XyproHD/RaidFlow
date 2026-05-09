@@ -297,7 +297,8 @@
     "exportNamesFormatList": "Eine Zeile pro Name",
     "exportNamesFormatComma": "Kommagetrennt",
     "exportNamesFormatSemicolon": "Semikolon-getrennt",
-    "exportNamesCopy": "In Zwischenspeicher kopieren"
+    "exportNamesCopy": "In Zwischenspeicher kopieren",
+    "exportNamesPreview": "Vorschau — Text markieren und kopieren"
   },
   "raidEdit": {
     "sectionBasics": "Grunddaten & Termin",

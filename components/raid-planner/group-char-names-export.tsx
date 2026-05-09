@@ -115,7 +115,7 @@ export function GroupCharNamesExport({ names }: { names: string[] }) {
                 onClick={() => setOpen(false)}
               />
               <div
-                className="relative w-full max-w-[min(100%,280px)] rounded-lg border border-border/80 bg-background/95 p-2.5 shadow-lg backdrop-blur-sm"
+                className="relative w-full max-w-[min(100%,340px)] rounded-lg border border-border/80 bg-background/95 p-2.5 shadow-lg backdrop-blur-sm"
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <div className="flex items-stretch gap-1.5">
@@ -187,6 +187,19 @@ export function GroupCharNamesExport({ names }: { names: string[] }) {
                     {copied ? <IconCheck className="h-4 w-4" /> : <IconClipboard className="h-4 w-4" />}
                   </button>
                 </div>
+                <textarea
+                  readOnly
+                  spellCheck={false}
+                  value={empty ? '' : text}
+                  aria-label={t('exportNamesPreview')}
+                  title={t('exportNamesPreview')}
+                  className={cn(
+                    'mt-2 w-full resize-y rounded-md border border-border/60 bg-muted/10 px-2 py-1.5',
+                    'font-mono text-xs leading-snug text-foreground',
+                    'min-h-[5rem] max-h-[min(42vh,15rem)] overflow-auto whitespace-pre-wrap break-words',
+                    'outline-none focus-visible:ring-1 focus-visible:ring-ring'
+                  )}
+                />
               </div>
             </div>,
             document.body

@@ -297,7 +297,8 @@
     "exportNamesFormatList": "One name per line",
     "exportNamesFormatComma": "Comma-separated",
     "exportNamesFormatSemicolon": "Semicolon-separated",
-    "exportNamesCopy": "Copy to clipboard"
+    "exportNamesCopy": "Copy to clipboard",
+    "exportNamesPreview": "Preview — select and copy"
   },
   "raidEdit": {
     "sectionBasics": "Basics & schedule",
