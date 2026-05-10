@@ -28,6 +28,7 @@ import { PlannerLeaderNotesCollapsible } from '@/components/raid-planner/planner
 import { GroupCharNamesExport } from '@/components/raid-planner/group-char-names-export';
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 import type { AnnounceRaidPayload } from '@/lib/raid-announce';
+import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
 const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
@@ -266,10 +267,6 @@ function attendanceRowVariant(s: RosterPlannerSignup): 'default' | 'uncertain' |
   return 'default';
 }
 
-function reserveSignupIdsFrom(signups: RosterPlannerSignup[]): string[] {
-  return signups.filter((s) => typeNorm(s.signupType) === 'reserve').map((s) => s.id);
-}
-
 function punctualityOf(s: RosterPlannerSignup): PlannerPunctuality {
   const p = s.punctuality;
   if (p === 'tight' || p === 'late' || p === 'on_time') return p;
@@ -358,18 +355,12 @@ export function RaidRosterPlanner({
   const orderStorageKey = useMemo(() => `rf:raidPlannerOrder:${raidId}`, [raidId]);
   useEffect(() => {
     setSignups(initialSignups);
-    setReserveOrder((prev) => {
-      const want = reserveSignupIdsFrom(initialSignups);
-      const wantSet = new Set(want);
-      const next: string[] = [];
-      for (const id of prev) {
-        if (wantSet.has(id)) next.push(id);
-      }
-      for (const id of want) {
-        if (!next.includes(id)) next.push(id);
-      }
-      return next;
-    });
+    setReserveOrder((prev) =>
+      orderedReserveSignupIdsForDisplay(
+        prev,
+        initialSignups.map((s) => ({ id: s.id, type: s.signupType }))
+      )
+    );
   }, [initialSignups]);
 
   const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
@@ -381,7 +372,12 @@ export function RaidRosterPlanner({
       lootmasterUserId: null,
     },
   ]);
-  const [reserveOrder, setReserveOrder] = useState<string[]>(() => reserveSignupIdsFrom(initialSignups));
+  const [reserveOrder, setReserveOrder] = useState<string[]>(() =>
+    orderedReserveSignupIdsForDisplay(
+      null,
+      initialSignups.map((s) => ({ id: s.id, type: s.signupType }))
+    )
+  );
 
   function safeJsonParse<T>(raw: string | null): T | null {
     if (!raw) return null;
@@ -484,7 +480,6 @@ export function RaidRosterPlanner({
           else if (p === 'substitute') nextReserve.push(id);
         }
         nextRoster = nextRoster.filter((id) => placementOf(id) === 'confirmed');
-        nextReserve = nextReserve.filter((id) => placementOf(id) === 'substitute');
         nextGroups = [
           {
             rosterOrder: nextRoster,
@@ -493,16 +488,6 @@ export function RaidRosterPlanner({
           },
         ];
       }
-
-      nextReserve = nextReserve.filter((id) => placementOf(id) === 'substitute');
-
-      const placedRoster = new Set(allRosterIds(nextGroups));
-      for (const id of ids) {
-        if (placedRoster.has(id) || nextReserve.includes(id)) continue;
-        const p = placementOf(id);
-        if (p === 'substitute') nextReserve.push(id);
-      }
-      nextReserve = nextReserve.filter((id) => placementOf(id) === 'substitute');
 
       nextGroups = dedupeRosterIdsAcrossGroups(
         nextGroups.map((g) => ({
@@ -525,6 +510,13 @@ export function RaidRosterPlanner({
         );
         nextGroups = dedupeRosterIdsAcrossGroups(nextGroups);
       }
+
+      const rosterSetFinal = new Set(allRosterIds(nextGroups));
+      nextReserve = nextReserve.filter((id) => !rosterSetFinal.has(id));
+      nextReserve = orderedReserveSignupIdsForDisplay(
+        nextReserve.length > 0 ? nextReserve : null,
+        rows.map((r) => ({ id: r.id, type: r.signupType }))
+      ).filter((id) => !rosterSetFinal.has(id));
 
       setPlannerGroups(nextGroups);
       setReserveOrder(nextReserve);
@@ -817,10 +809,22 @@ export function RaidRosterPlanner({
     [byId, guildCharacters, signups, t, tRoster]
   );
 
+  const signupRowsForReserveOrder = useMemo(
+    () => signups.map((s) => ({ id: s.id, type: s.signupType })),
+    [signups]
+  );
+
+  /** Wie Raid-Detail / Embed: Reserve inkl. Anmeldetyp „Reserve“, ohne Teilnehmer im Roster. */
+  const reserveBenchOrderedIds = useMemo(() => {
+    const ord = orderedReserveSignupIdsForDisplay(reserveOrder, signupRowsForReserveOrder);
+    const roster = new Set(allRosterIds(plannerGroups));
+    return ord.filter((id) => !roster.has(id));
+  }, [reserveOrder, signupRowsForReserveOrder, plannerGroups]);
+
   const poolIds = useMemo(() => {
-    const placed = new Set([...allRosterIds(plannerGroups), ...reserveOrder]);
+    const placed = new Set([...allRosterIds(plannerGroups), ...reserveBenchOrderedIds]);
     return signups.map((s) => s.id).filter((id) => !placed.has(id));
-  }, [signups, plannerGroups, reserveOrder]);
+  }, [signups, plannerGroups, reserveBenchOrderedIds]);
 
   const signupsWithNotesList = useMemo(() => {
     return signups
@@ -930,14 +934,14 @@ export function RaidRosterPlanner({
   );
 
   const filteredReserveIds = useMemo(() => {
-    return reserveOrder.filter((id) => {
+    return reserveBenchOrderedIds.filter((id) => {
       const s = byId.get(id);
       if (!s) return false;
       return (
         passesCharFilters(s) && passesPunctuality(s) && passesAttendanceFilter(s)
       );
     });
-  }, [reserveOrder, byId, passesCharFilters, passesPunctuality, passesAttendanceFilter]);
+  }, [reserveBenchOrderedIds, byId, passesCharFilters, passesPunctuality, passesAttendanceFilter]);
 
   const poolIdsToRoleMap = useCallback((ids: string[]) => {
     const m = new Map<TbcRole, string[]>();
@@ -1457,6 +1461,13 @@ export function RaidRosterPlanner({
     setSaveError(null);
     try {
       const rosterFlat = allRosterIds(plannerGroups);
+      const rosterSetForPlacement = new Set(rosterFlat);
+      const reserveBenchForPlacement = orderedReserveSignupIdsForDisplay(
+        reserveOrder,
+        signups.map((s) => ({ id: s.id, type: s.signupType }))
+      ).filter((id) => !rosterSetForPlacement.has(id));
+      const reservePlacementSet = new Set(reserveBenchForPlacement);
+
       for (const rid of rosterFlat) {
         const row = byId.get(rid);
         const uid = (row?.userId ?? '').trim();
@@ -1470,7 +1481,7 @@ export function RaidRosterPlanner({
 
       const placementForId = (id: string): 'signup' | 'substitute' | 'confirmed' => {
         if (rosterFlat.includes(id)) return 'confirmed';
-        if (reserveOrder.includes(id)) return 'substitute';
+        if (reservePlacementSet.has(id)) return 'substitute';
         return 'signup';
       };
 
@@ -1553,8 +1564,15 @@ export function RaidRosterPlanner({
         snapshotReserve = reserveOrder.map((id) => map.get(id) ?? id);
         setSignups(snapshotSignups);
         setPlannerGroups(snapshotGroups);
-        setReserveOrder(snapshotReserve);
       }
+
+      const snapRosterFlat = allRosterIds(snapshotGroups);
+      const snapRosterSet = new Set(snapRosterFlat);
+      snapshotReserve = orderedReserveSignupIdsForDisplay(
+        snapshotReserve,
+        snapshotSignups.map((s) => ({ id: s.id, type: s.signupType }))
+      ).filter((id) => !snapRosterSet.has(id));
+      setReserveOrder(snapshotReserve);
 
       const notesToSave = sanitizePlannerLeaderHtml(leaderNotesHtml);
       if (canEditRaid) {
@@ -1667,6 +1685,12 @@ export function RaidRosterPlanner({
     setSaving(true);
     setSaveError(null);
     try {
+      const rosterSetAnnounce = new Set(rosterFlat);
+      const reserveOrderPayload = orderedReserveSignupIdsForDisplay(
+        reserveOrder,
+        signups.map((s) => ({ id: s.id, type: s.signupType }))
+      ).filter((id) => !rosterSetAnnounce.has(id));
+
       const res = await fetch(
         `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
         {
@@ -1679,7 +1703,7 @@ export function RaidRosterPlanner({
               raidLeaderUserId: g.raidLeaderUserId,
               lootmasterUserId: g.lootmasterUserId,
             })),
-            reserveOrder,
+            reserveOrder: reserveOrderPayload,
           }),
         }
       );
@@ -2166,10 +2190,10 @@ export function RaidRosterPlanner({
                     </div>
                   );
                 })}
-                {filteredReserveIds.length === 0 && reserveOrder.length > 0 ? (
+                {filteredReserveIds.length === 0 && reserveBenchOrderedIds.length > 0 ? (
                   <p className="text-sm text-muted-foreground px-1 py-2">{tRoster('reserveFilteredEmpty')}</p>
                 ) : null}
-                {reserveOrder.length === 0 ? (
+                {reserveBenchOrderedIds.length === 0 ? (
                   <p className="text-sm text-muted-foreground px-1 py-2">{tRoster('reserveEmpty')}</p>
                 ) : null}
               </div>
