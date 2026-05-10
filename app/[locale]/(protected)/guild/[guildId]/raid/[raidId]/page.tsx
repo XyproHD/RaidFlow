@@ -121,8 +121,12 @@ export default async function RaidDetailPage(props: {
       setConfirmed: s.setConfirmed,
     }));
 
+  const draftPlannerParsed = parseStoredAnnouncedPlannerJson(
+    (raid as unknown as { draftPlannerGroupsJson?: unknown }).draftPlannerGroupsJson
+  );
+
   let announcedLayout: AnnouncedLayoutProps | null = null;
-  if (raid.status === 'announced') {
+  if (raid.status === 'announced' || raid.status === 'locked') {
     const raw = (raid as unknown as { announcedPlannerGroupsJson?: unknown }).announcedPlannerGroupsJson;
     const parsed = parseStoredAnnouncedPlannerJson(raw);
     if (parsed) {
@@ -162,6 +166,13 @@ export default async function RaidDetailPage(props: {
       };
     }
   }
+
+  const plannerReserveOrder: string[] | null =
+    raid.status === 'open'
+      ? draftPlannerParsed?.reserveOrder ?? null
+      : announcedLayout
+        ? announcedLayout.reserveOrder
+        : null;
 
   const raidForView = {
     ...raid,
@@ -211,6 +222,7 @@ export default async function RaidDetailPage(props: {
         mySignups={mySignupsSerialized}
         initialSignupOpen={mode === 'signup' && canSignup}
         announcedLayout={announcedLayout}
+        plannerReserveOrder={plannerReserveOrder}
       />
     </div>
   );

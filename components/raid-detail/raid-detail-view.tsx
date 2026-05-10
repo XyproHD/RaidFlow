@@ -33,6 +33,7 @@ import {
 import type { RaidSignupPhase, RaidSignupSelfSnapshot } from '@/lib/raid-detail-shared';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 import { normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
+import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 
@@ -223,6 +224,7 @@ export function RaidDetailView({
   mySignups,
   initialSignupOpen,
   announcedLayout,
+  plannerReserveOrder,
 }: {
   locale: string;
   guildId: string;
@@ -241,6 +243,11 @@ export function RaidDetailView({
   mySignups: MySignupSerialized[];
   initialSignupOpen: boolean;
   announcedLayout: AnnouncedLayoutProps | null;
+  /**
+   * Reserve-Reihenfolge wie im gespeicherten Planer/Draft oder nach Ankündigung;
+   * null → nur neue Reserve-Anmeldungen nach Anmeldedatum.
+   */
+  plannerReserveOrder: string[] | null;
 }) {
   const t = useTranslations('raidDetail');
   const tRoster = useTranslations('raidRosterPlanner');
@@ -300,8 +307,34 @@ export function RaidDetailView({
   const signupById = useMemo(() => new Map(raid.signups.map((s) => [s.id, s])), [raid.signups]);
 
   const rows: AnmeldungRow[] = visibleSignups
-    .filter((s) => signupTypeNorm(s.type) !== 'declined')
+    .filter((s) => {
+      const tn = signupTypeNorm(s.type);
+      return tn !== 'declined' && tn !== 'reserve';
+    })
     .map(raidSignupToAnmeldungRow);
+
+  const reserveRows: AnmeldungRow[] = useMemo(() => {
+    const byId = new Map(visibleSignups.map((s) => [s.id, s]));
+    const orderedIds = orderedReserveSignupIdsForDisplay(
+      plannerReserveOrder,
+      visibleSignups.map((s) => ({ id: s.id, type: s.type }))
+    );
+    return orderedIds
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .map((s) => raidSignupToAnmeldungRow(s!));
+  }, [plannerReserveOrder, visibleSignups]);
+
+  /** Veröffentlichter Stand: gleiche Reserve-Logik wie „Reserve Kader“, ohne Spieler aus den Gruppen-Rostern. */
+  const publishedReserveOrderedIds = useMemo(() => {
+    if (!announcedLayout) return [];
+    const rosterSet = new Set(announcedLayout.groupMeta.flatMap((g) => g.rosterOrder));
+    return orderedReserveSignupIdsForDisplay(
+      announcedLayout.reserveOrder,
+      visibleSignups.map((s) => ({ id: s.id, type: s.type }))
+    ).filter((id) => !rosterSet.has(id));
+  }, [announcedLayout, visibleSignups]);
+
   const absagenRows: AnmeldungRow[] = visibleSignups
     .filter((s) => signupTypeNorm(s.type) === 'declined')
     .map(raidSignupToAnmeldungRow);
@@ -518,7 +551,7 @@ export function RaidDetailView({
         </div>
       </section>
 
-      {raid.status === 'announced' && announcedLayout ? (
+      {(raid.status === 'announced' || raid.status === 'locked') && announcedLayout ? (
         <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
           <div className="border-b border-border bg-muted/20 px-4 py-3">
             <h2 className="text-sm font-semibold text-foreground">{t('sectionPublishedRoster')}</h2>
@@ -570,11 +603,11 @@ export function RaidDetailView({
             ))}
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-foreground">{t('publishedReserveHeading')}</h3>
-              {announcedLayout.reserveOrder.length === 0 ? (
+              {publishedReserveOrderedIds.length === 0 ? (
                 <p className="text-sm text-muted-foreground">—</p>
               ) : (
                 <ul className="flex flex-col gap-2">
-                  {announcedLayout.reserveOrder.map((sid) => {
+                  {publishedReserveOrderedIds.map((sid) => {
                     const s = signupById.get(sid);
                     if (!s) {
                       return (
@@ -803,6 +836,18 @@ export function RaidDetailView({
             <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
           ) : null}
           <RaidAnmeldungen rows={rows} canEdit={canEdit} />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
+        <div className="border-b border-border bg-muted/20 px-4 py-3">
+          <h2 className="text-sm font-semibold text-foreground">{t('signupsReserveHeading')}</h2>
+        </div>
+        <div className="p-4 space-y-2">
+          {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
+            <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
+          ) : null}
+          <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} />
         </div>
       </section>
 

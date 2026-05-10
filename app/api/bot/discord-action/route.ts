@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
 
   const raid = await prisma.rfRaid.findUnique({
     where:  { id: raidId },
-    select: { id: true, guildId: true, signupUntil: true },
+    select: { id: true, guildId: true, signupUntil: true, status: true },
   });
   if (!raid) {
     return NextResponse.json({ error: 'Raid not found' }, { status: 404 });
@@ -62,6 +62,8 @@ export async function GET(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ linked: false }, { status: 200 });
   }
+
+  const signupPhase = computeRaidSignupPhase(raid);
 
   if (action === 'get-signup') {
     const [rawSignups, appCfg] = await Promise.all([
@@ -84,7 +86,13 @@ export async function GET(request: NextRequest) {
         ? { id: s.character.id, name: s.character.name, mainSpec: s.character.mainSpec, offSpec: s.character.offSpec, isMain: s.character.isMain }
         : null,
     }));
-    return NextResponse.json({ linked: true, signups, discordEmojis, signupUntil: raid.signupUntil.toISOString() });
+    return NextResponse.json({
+      linked: true,
+      signups,
+      discordEmojis,
+      signupUntil: raid.signupUntil.toISOString(),
+      signupPhase,
+    });
   }
 
   if (action === 'get-chars') {
@@ -97,7 +105,13 @@ export async function GET(request: NextRequest) {
       }),
       getAppConfig().catch(() => null),
     ]);
-    return NextResponse.json({ linked: true, guildId: raid.guildId, characters: chars, discordEmojis: appCfg?.discordEmojis ?? {} });
+    return NextResponse.json({
+      linked: true,
+      guildId: raid.guildId,
+      characters: chars,
+      discordEmojis: appCfg?.discordEmojis ?? {},
+      signupPhase,
+    });
   }
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 });

@@ -236,6 +236,8 @@ model RfRaid {
   plannerLeaderNotesHtml  String?   @map("planner_leader_notes_html") @db.Text
   /// Discord-User-ID (Snowflake) des Organisators; Anzeige über Gilden-Discord-Name des verknüpften RaidFlow-Users
   organizerDiscordId      String?   @map("organizer_discord_id")
+  /// Entwurf Planer bei Status „offen“: Gruppen + Reserve-Reihenfolge (gleiche Struktur wie announcedPlannerGroupsJson)
+  draftPlannerGroupsJson     Json?   @map("draft_planner_groups_json")
   /// Nach „Raid ankündigen“: Gruppen (Reihenfolge Gesetzt), Reserve-Reihenfolge, RL/LM userIds pro Gruppe (JSON)
   announcedPlannerGroupsJson Json?   @map("announced_planner_groups_json")
   maxPlayers              Int       @map("max_players")
