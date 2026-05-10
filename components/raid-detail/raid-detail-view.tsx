@@ -300,7 +300,13 @@ export function RaidDetailView({
   const signupById = useMemo(() => new Map(raid.signups.map((s) => [s.id, s])), [raid.signups]);
 
   const rows: AnmeldungRow[] = visibleSignups
-    .filter((s) => signupTypeNorm(s.type) !== 'declined')
+    .filter((s) => {
+      const tn = signupTypeNorm(s.type);
+      return tn !== 'declined' && tn !== 'reserve';
+    })
+    .map(raidSignupToAnmeldungRow);
+  const reserveRows: AnmeldungRow[] = visibleSignups
+    .filter((s) => signupTypeNorm(s.type) === 'reserve')
     .map(raidSignupToAnmeldungRow);
   const absagenRows: AnmeldungRow[] = visibleSignups
     .filter((s) => signupTypeNorm(s.type) === 'declined')
@@ -803,6 +809,18 @@ export function RaidDetailView({
             <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
           ) : null}
           <RaidAnmeldungen rows={rows} canEdit={canEdit} />
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
+        <div className="border-b border-border bg-muted/20 px-4 py-3">
+          <h2 className="text-sm font-semibold text-foreground">{t('signupsReserveHeading')}</h2>
+        </div>
+        <div className="p-4 space-y-2">
+          {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
+            <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
+          ) : null}
+          <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} />
         </div>
       </section>
 
