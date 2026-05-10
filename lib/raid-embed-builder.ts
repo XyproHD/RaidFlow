@@ -9,6 +9,7 @@ import {
   getRoleEmoji,
 } from '@/lib/discord-wow-emojis';
 import type { AnnouncedGroupPayload } from '@/lib/raid-announce';
+import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import type { DiscordEmbed, DiscordMessageComponent } from '@/lib/discord-guild-api';
 import { BUYMEACOFFEE_URL } from '@/lib/support-links';
 
@@ -73,6 +74,8 @@ export type RaidEmbedInput = {
   signupVisibility: string;
   signups: RaidEmbedSignup[];
   announcedGroupsJson?: unknown;
+  /** Reserve-Reihenfolge aus rf_raid.draft_planner_groups_json (nur bei nicht angekündigtem Raid). */
+  draftPlannerReserveOrder?: string[] | null;
   discordEmojis?: Record<string, string>;
   /** Öffentliche Raid-Notiz (rf_raid.note), nicht Planer-HTML */
   publicNote?: string | null;
@@ -285,6 +288,17 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
 
   const announcedGroups = parseStoredGroups(announcedGroupsJson);
 
+  const signupByIdForReserve = new Map(signups.map(s => [s.id, s]));
+  const openReserveOrdered: RaidEmbedSignup[] =
+    !isAnnounced
+      ? orderedReserveSignupIdsForDisplay(
+          input.draftPlannerReserveOrder ?? null,
+          signups.map(s => ({ id: s.id, type: s.type })),
+        )
+          .map(id => signupByIdForReserve.get(id))
+          .filter((s): s is RaidEmbedSignup => !!s)
+      : [];
+
   // --- Basisdaten ---
   const title = `⚔️ ${raidName} — ${dungeonNames.join(' + ')}`.slice(0, 256);
   const color = embedColor(status, signupUntil);
@@ -306,7 +320,6 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
 
   // Zählung & Rollen-Verteilung (früh berechnet, für Zusammenfassung + Spielerliste)
   const mainSignups    = signups.filter(s => s.type !== 'reserve' && s.type !== 'declined');
-  const reserveSignups = signups.filter(s => s.type === 'reserve');
   const uniquePlayers  = new Set(mainSignups.map(s => s.userId)).size;
 
   const groupCount = announcedGroups?.groups.length ?? 1;
@@ -414,46 +427,48 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
       });
     }
 
-  } else if (isRevealed && mainSignups.length > 0) {
+  } else if (isRevealed && (mainSignups.length > 0 || openReserveOrdered.length > 0)) {
     // -----------------------------------------------------------------------
     // Offen: Rollen-Ansicht (inline = 2-spaltig für bessere Übersicht)
     // -----------------------------------------------------------------------
-    for (const { key, label } of ROLE_DEFS) {
-      const group = byRole[key];
-      if (!group?.length) continue;
-      const roleEmoji = getRoleEmoji(key, discordEmojis);
-      fields.push({
-        name:  `${roleEmoji} ${label} (${group.length})`.trim(),
-        value: truncateLines(group.map(s => playerLine(s, discordEmojis))),
-        inline: true,
-      });
-    }
+    if (mainSignups.length > 0) {
+      for (const { key, label } of ROLE_DEFS) {
+        const group = byRole[key];
+        if (!group?.length) continue;
+        const roleEmoji = getRoleEmoji(key, discordEmojis);
+        fields.push({
+          name:  `${roleEmoji} ${label} (${group.length})`.trim(),
+          value: truncateLines(group.map(s => playerLine(s, discordEmojis))),
+          inline: true,
+        });
+      }
 
-    if (byRole['?'].length > 0) {
-      fields.push({
-        name:  `❓ Unbekannte Rolle (${byRole['?'].length})`,
-        value: truncateLines(byRole['?'].map(s => playerLine(s, discordEmojis))),
-        inline: false,
-      });
+      if (byRole['?'].length > 0) {
+        fields.push({
+          name:  `❓ Unbekannte Rolle (${byRole['?'].length})`,
+          value: truncateLines(byRole['?'].map(s => playerLine(s, discordEmojis))),
+          inline: false,
+        });
+      }
     }
-  // Visueller Trenner (leeres Feld = nativer Abstandshalter)
-  fields.push({ name: '\u200b', value: '\u200b', inline: false });
+    // Visueller Trenner (leeres Feld = nativer Abstandshalter)
+    fields.push({ name: '\u200b', value: '\u200b', inline: false });
 
     fields.push({
-      name:  `Reserve (${reserveSignups.length})`,
-      value: reserveSignups.length > 0
-        ? truncateLines(reserveSignups.map(s => playerLine(s, discordEmojis)))
+      name:  `Reserve (${openReserveOrdered.length})`,
+      value: openReserveOrdered.length > 0
+        ? truncateLines(openReserveOrdered.map(s => playerLine(s, discordEmojis)))
         : '*Keine Reserve*',
       inline: false,
     });
 
   } else if (!isRevealed) {
-    const hint = reserveSignups.length > 0
-      ? `*Anmeldungen nicht öffentlich · ${reserveSignups.length} auf Reserve*`
+    const hint = openReserveOrdered.length > 0
+      ? `*Anmeldungen nicht öffentlich · ${openReserveOrdered.length} in der Reserve-Reihenfolge*`
       : '*Anmeldungen nicht öffentlich*';
     fields.push({ name: '\u200b', value: hint, inline: false });
     fields.push({
-      name:  `Reserve (${reserveSignups.length})`,
+      name:  `Reserve (${openReserveOrdered.length})`,
       value: '*nicht öffentlich*',
       inline: false,
     });

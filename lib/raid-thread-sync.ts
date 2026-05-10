@@ -19,6 +19,7 @@ import {
 import { buildRaidEmbed, buildRaidActionButtons } from '@/lib/raid-embed-builder';
 import { getAppConfig } from '@/lib/app-config';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
+import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
@@ -101,6 +102,11 @@ export async function syncRaidThreadSummary(
     const appConfig = await getAppConfig().catch(() => null);
     const discordEmojis = appConfig?.discordEmojis ?? {};
 
+    const draftPlannerReserveOrder =
+      parseStoredAnnouncedPlannerJson(
+        (raid as { draftPlannerGroupsJson?: unknown }).draftPlannerGroupsJson
+      )?.reserveOrder ?? null;
+
     const embedInput = {
       raidId:             raid.id,
       guildId:            raid.guildId,
@@ -117,6 +123,7 @@ export async function syncRaidThreadSummary(
       minHealers:         raid.minHealers,
       signupVisibility:   raid.signupVisibility,
       announcedGroupsJson: raid.announcedPlannerGroupsJson,
+      draftPlannerReserveOrder,
       discordEmojis,
       signups: raid.signups.map(s => ({
         id:              s.id,

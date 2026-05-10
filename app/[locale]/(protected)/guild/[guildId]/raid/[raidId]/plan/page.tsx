@@ -88,11 +88,15 @@ export default async function RaidPlanPage(props: {
   const { raid } = ctx;
   const canEditRaid = raid.status === 'open' || raid.status === 'announced';
   const persistedServerPlannerOrder =
-    raid.status === 'announced'
+    raid.status === 'open'
       ? parseStoredAnnouncedPlannerJson(
-          (raid as unknown as { announcedPlannerGroupsJson?: unknown }).announcedPlannerGroupsJson
+          (raid as unknown as { draftPlannerGroupsJson?: unknown }).draftPlannerGroupsJson
         )
-      : null;
+      : raid.status === 'announced' || raid.status === 'locked'
+        ? parseStoredAnnouncedPlannerJson(
+            (raid as unknown as { announcedPlannerGroupsJson?: unknown }).announcedPlannerGroupsJson
+          )
+        : null;
 
   const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
 

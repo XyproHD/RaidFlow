@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 export type AnnouncedGroupPayload = {
   rosterOrder: string[];
@@ -181,6 +181,7 @@ export async function executeRaidAnnounceTransaction(args: {
         data: {
           status: 'announced',
           announcedPlannerGroupsJson: announceLayoutToStoredJson(payload),
+          draftPlannerGroupsJson:     Prisma.DbNull,
         },
       });
     },

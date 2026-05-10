@@ -1558,17 +1558,14 @@ export function RaidRosterPlanner({
 
       const notesToSave = sanitizePlannerLeaderHtml(leaderNotesHtml);
       if (canEditRaid) {
-        const announcedPlannerGroupsJson =
-          raidStatus === 'announced'
-            ? {
-                groups: snapshotGroups.map((g) => ({
-                  rosterOrder: g.rosterOrder,
-                  raidLeaderUserId: g.raidLeaderUserId,
-                  lootmasterUserId: g.lootmasterUserId,
-                })),
-                reserveOrder: snapshotReserve,
-              }
-            : undefined;
+        const plannerLayoutPayload = {
+          groups: snapshotGroups.map((g) => ({
+            rosterOrder: g.rosterOrder,
+            raidLeaderUserId: g.raidLeaderUserId,
+            lootmasterUserId: g.lootmasterUserId,
+          })),
+          reserveOrder: snapshotReserve,
+        };
         const resRaid = await fetch(
           `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
           {
@@ -1576,9 +1573,8 @@ export function RaidRosterPlanner({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               plannerLeaderNotesHtml: notesToSave || null,
-              ...(announcedPlannerGroupsJson !== undefined
-                ? { announcedPlannerGroupsJson }
-                : {}),
+              ...(raidStatus === 'open' ? { draftPlannerGroupsJson: plannerLayoutPayload } : {}),
+              ...(raidStatus === 'announced' ? { announcedPlannerGroupsJson: plannerLayoutPayload } : {}),
             }),
           }
         );

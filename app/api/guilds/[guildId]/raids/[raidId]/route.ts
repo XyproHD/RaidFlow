@@ -266,6 +266,14 @@ export async function PATCH(
     | Prisma.InputJsonValue
     | Prisma.NullableJsonNullValueInput
     | undefined = undefined;
+  let draftPlannerGroupsJsonUpdate:
+    | Prisma.InputJsonValue
+    | Prisma.NullableJsonNullValueInput
+    | undefined = undefined;
+
+  if (resetSignups) {
+    draftPlannerGroupsJsonUpdate = Prisma.DbNull;
+  }
   if (resetSignups && raid.status === 'announced') {
     announcedPlannerGroupsJsonUpdate = Prisma.DbNull;
   } else if (
@@ -292,6 +300,35 @@ export async function PATCH(
         return NextResponse.json({ error: idCheck.error }, { status: idCheck.status });
       }
       announcedPlannerGroupsJsonUpdate = announceLayoutToStoredJson(parsed.data);
+    }
+  }
+
+  if (
+    !resetSignups &&
+    raid.status === 'open' &&
+    body.draftPlannerGroupsJson !== undefined
+  ) {
+    const raw = body.draftPlannerGroupsJson;
+    if (raw !== null && (typeof raw !== 'object' || Array.isArray(raw))) {
+      return NextResponse.json({ error: 'Invalid draftPlannerGroupsJson' }, { status: 400 });
+    }
+    if (raw !== null) {
+      const parsed = parseAnnounceRaidPayload(raw as Record<string, unknown>);
+      if (!parsed.ok) {
+        return NextResponse.json({ error: parsed.error }, { status: parsed.status });
+      }
+      const knownRows = await prisma.rfRaidSignup.findMany({
+        where: { raidId },
+        select: { id: true },
+      });
+      const known = new Set(knownRows.map((r) => r.id));
+      const idCheck = validateAnnouncePayloadAgainstKnownIds(parsed.data, known);
+      if (!idCheck.ok) {
+        return NextResponse.json({ error: idCheck.error }, { status: idCheck.status });
+      }
+      draftPlannerGroupsJsonUpdate = announceLayoutToStoredJson(parsed.data);
+    } else {
+      draftPlannerGroupsJsonUpdate = Prisma.DbNull;
     }
   }
 
@@ -390,6 +427,9 @@ export async function PATCH(
     signupVisibility,
     ...(announcedPlannerGroupsJsonUpdate !== undefined
       ? { announcedPlannerGroupsJson: announcedPlannerGroupsJsonUpdate }
+      : {}),
+    ...(draftPlannerGroupsJsonUpdate !== undefined
+      ? { draftPlannerGroupsJson: draftPlannerGroupsJsonUpdate }
       : {}),
   };
 

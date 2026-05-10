@@ -33,6 +33,7 @@ import {
 import type { RaidSignupPhase, RaidSignupSelfSnapshot } from '@/lib/raid-detail-shared';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 import { normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
+import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 
@@ -223,6 +224,7 @@ export function RaidDetailView({
   mySignups,
   initialSignupOpen,
   announcedLayout,
+  plannerReserveOrder,
 }: {
   locale: string;
   guildId: string;
@@ -241,6 +243,11 @@ export function RaidDetailView({
   mySignups: MySignupSerialized[];
   initialSignupOpen: boolean;
   announcedLayout: AnnouncedLayoutProps | null;
+  /**
+   * Reserve-Reihenfolge wie im gespeicherten Planer/Draft oder nach Ankündigung;
+   * null → nur neue Reserve-Anmeldungen nach Anmeldedatum.
+   */
+  plannerReserveOrder: string[] | null;
 }) {
   const t = useTranslations('raidDetail');
   const tRoster = useTranslations('raidRosterPlanner');
@@ -305,9 +312,18 @@ export function RaidDetailView({
       return tn !== 'declined' && tn !== 'reserve';
     })
     .map(raidSignupToAnmeldungRow);
-  const reserveRows: AnmeldungRow[] = visibleSignups
-    .filter((s) => signupTypeNorm(s.type) === 'reserve')
-    .map(raidSignupToAnmeldungRow);
+
+  const reserveRows: AnmeldungRow[] = useMemo(() => {
+    const byId = new Map(visibleSignups.map((s) => [s.id, s]));
+    const orderedIds = orderedReserveSignupIdsForDisplay(
+      plannerReserveOrder,
+      visibleSignups.map((s) => ({ id: s.id, type: s.type }))
+    );
+    return orderedIds
+      .map((id) => byId.get(id))
+      .filter(Boolean)
+      .map((s) => raidSignupToAnmeldungRow(s!));
+  }, [plannerReserveOrder, visibleSignups]);
   const absagenRows: AnmeldungRow[] = visibleSignups
     .filter((s) => signupTypeNorm(s.type) === 'declined')
     .map(raidSignupToAnmeldungRow);
@@ -524,7 +540,7 @@ export function RaidDetailView({
         </div>
       </section>
 
-      {raid.status === 'announced' && announcedLayout ? (
+      {(raid.status === 'announced' || raid.status === 'locked') && announcedLayout ? (
         <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
           <div className="border-b border-border bg-muted/20 px-4 py-3">
             <h2 className="text-sm font-semibold text-foreground">{t('sectionPublishedRoster')}</h2>
