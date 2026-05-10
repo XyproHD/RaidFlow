@@ -324,6 +324,17 @@ export function RaidDetailView({
       .filter(Boolean)
       .map((s) => raidSignupToAnmeldungRow(s!));
   }, [plannerReserveOrder, visibleSignups]);
+
+  /** Veröffentlichter Stand: gleiche Reserve-Logik wie „Reserve Kader“, ohne Spieler aus den Gruppen-Rostern. */
+  const publishedReserveOrderedIds = useMemo(() => {
+    if (!announcedLayout) return [];
+    const rosterSet = new Set(announcedLayout.groupMeta.flatMap((g) => g.rosterOrder));
+    return orderedReserveSignupIdsForDisplay(
+      announcedLayout.reserveOrder,
+      visibleSignups.map((s) => ({ id: s.id, type: s.type }))
+    ).filter((id) => !rosterSet.has(id));
+  }, [announcedLayout, visibleSignups]);
+
   const absagenRows: AnmeldungRow[] = visibleSignups
     .filter((s) => signupTypeNorm(s.type) === 'declined')
     .map(raidSignupToAnmeldungRow);
@@ -592,11 +603,11 @@ export function RaidDetailView({
             ))}
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-foreground">{t('publishedReserveHeading')}</h3>
-              {announcedLayout.reserveOrder.length === 0 ? (
+              {publishedReserveOrderedIds.length === 0 ? (
                 <p className="text-sm text-muted-foreground">—</p>
               ) : (
                 <ul className="flex flex-col gap-2">
-                  {announcedLayout.reserveOrder.map((sid) => {
+                  {publishedReserveOrderedIds.map((sid) => {
                     const s = signupById.get(sid);
                     if (!s) {
                       return (

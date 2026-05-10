@@ -412,11 +412,15 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
 
     // Visueller Trenner (leeres Feld = nativer Abstandshalter)
     fields.push({ name: '\u200b', value: '\u200b', inline: false });
-    // Reserve
-    
+    // Reserve (gespeicherte Reihenfolge + neue Reserve-Anmeldungen, ohne Roster-Plätze)
     {
+      const rosterSet = new Set(announcedGroups.groups.flatMap(g => g.rosterOrder));
+      const reserveIds = orderedReserveSignupIdsForDisplay(
+        announcedGroups.reserveOrder,
+        signups.map(s => ({ id: s.id, type: s.type })),
+      ).filter(id => !rosterSet.has(id));
       const signupById2 = new Map(signups.map(s => [s.id, s]));
-      const resLines = announcedGroups.reserveOrder
+      const resLines = reserveIds
         .map(id => signupById2.get(id))
         .filter((s): s is RaidEmbedSignup => !!s)
         .map(s => playerLine(s, discordEmojis));
