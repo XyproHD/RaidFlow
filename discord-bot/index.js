@@ -1831,6 +1831,17 @@ async function disableRaidPostButtons(message) {
   await message.edit({ components: disabledRows });
 }
 
+async function restoreRaidPostComponents(message, originalComponents) {
+  if (message && originalComponents?.length) {
+    await message.edit({ components: originalComponents }).catch(() => {});
+  }
+}
+
+/** Ephemer während Webapp-Call — verhindert Doppelklicks auf den Wizard. */
+const MSG_LOADING_JOIN_SUBMIT = '⏳ Anmeldung wird gesendet …';
+const MSG_LOADING_EDIT_SUBMIT = '⏳ Änderungen werden gesendet …';
+const MSG_LOADING_JOIN2_BATCH = '⏳ Anmeldungen werden gesendet …';
+
 /**
  * Speichert die Raid-Post-Nachricht für spätere Button-Verwaltung (Join/Edit-Flow).
  * Schlüssel: `${userId}:${raidId}`
@@ -1895,11 +1906,17 @@ async function handleRaidDeclineButton(interaction, raidId) {
 async function handleRaidJoinButton(interaction, raidId, guildId) {
   // Raid-Post merken damit handleSubmitJoin die Buttons sperren/entsperren kann
   raidPostMessages.set(`${interaction.user.id}:${raidId}`, interaction.message);
+  const raidPostMsg = interaction.message;
+  const raidPostOrig = raidPostMsg?.components ?? [];
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  if (raidPostMsg && raidPostOrig.length) {
+    await disableRaidPostButtons(raidPostMsg).catch(() => {});
+  }
   const { ok, json } = await getDiscordAction({
     action: 'get-chars', discordUserId: interaction.user.id, raidId,
   });
   if (!ok || json.linked === false) {
+    await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
     await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
@@ -1908,10 +1925,12 @@ async function handleRaidJoinButton(interaction, raidId, guildId) {
   const emojis      = json.discordEmojis ?? {};
   const signupPhase = json.signupPhase ?? 'full';
   if (chars.length === 0) {
+    await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
     await interaction.editReply({ content: raidActionErrorText('NO_CHARACTER') }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
+  await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
   if (chars.length === 1) {
     const c = chars[0];
     const initialType = signupPhase === 'reserve_only' ? 'reserve' : 'normal';
@@ -2123,7 +2142,12 @@ async function buildJoin2Step2Message(raidId, flow, errorHint) {
 
 async function handleRaidJoin2Button(interaction, raidId) {
   raidPostMessages.set(`${interaction.user.id}:${raidId}`, interaction.message);
+  const raidPostMsg = interaction.message;
+  const raidPostOrig = raidPostMsg?.components ?? [];
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  if (raidPostMsg && raidPostOrig.length) {
+    await disableRaidPostButtons(raidPostMsg).catch(() => {});
+  }
 
   const { ok, json } = await getDiscordAction({
     action: 'get-chars',
@@ -2132,6 +2156,7 @@ async function handleRaidJoin2Button(interaction, raidId) {
   });
 
   if (!ok || json.linked === false) {
+    await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
     await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
@@ -2139,10 +2164,13 @@ async function handleRaidJoin2Button(interaction, raidId) {
 
   const chars = Array.isArray(json.characters) ? json.characters : [];
   if (chars.length === 0) {
+    await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
     await interaction.editReply({ content: raidActionErrorText('NO_CHARACTER') }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
+
+  await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
 
   const signupPhase = json.signupPhase ?? 'full';
   setJoin2Flow(interaction.user.id, raidId, {
@@ -2358,6 +2386,8 @@ async function handleJoin2NoteModal(interaction, raidId) {
   }
 
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  await interaction.editReply({ content: MSG_LOADING_JOIN2_BATCH, components: [] }).catch(() => {});
+
   const raidPostMsg = raidPostMessages.get(`${interaction.user.id}:${raidId}`) ?? null;
   const raidPostComponents = raidPostMsg?.components ?? [];
   if (raidPostMsg && raidPostComponents.length) {
@@ -2435,11 +2465,17 @@ function loadEditFlowFromSignup(userId, raidId, signup, emojis, signupPhase = 'f
 async function handleRaidEditButton(interaction, raidId) {
   // Raid-Post merken damit handleSubmitEdit die Buttons sperren/entsperren kann
   raidPostMessages.set(`${interaction.user.id}:${raidId}`, interaction.message);
+  const raidPostMsg = interaction.message;
+  const raidPostOrig = raidPostMsg?.components ?? [];
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  if (raidPostMsg && raidPostOrig.length) {
+    await disableRaidPostButtons(raidPostMsg).catch(() => {});
+  }
   const { ok, json } = await getDiscordAction({
     action: 'get-signup', discordUserId: interaction.user.id, raidId,
   });
   if (!ok || json.linked === false) {
+    await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
     await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
@@ -2447,10 +2483,12 @@ async function handleRaidEditButton(interaction, raidId) {
   const signups = Array.isArray(json.signups) ? json.signups : [];
   const signupPhase = json.signupPhase ?? 'full';
   if (signups.length === 0) {
+    await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
     await interaction.editReply({ content: '⚠️ Du hast keine aktive Anmeldung zum Bearbeiten.' }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
+  await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
   const emojis = json.discordEmojis ?? {};
   if (signups.length === 1) {
     loadEditFlowFromSignup(interaction.user.id, raidId, signups[0], emojis, signupPhase);
@@ -2687,6 +2725,7 @@ async function handleSubmitJoin(interaction, raidId, charId) {
     return;
   }
   await interaction.deferUpdate().catch(() => {});
+  await interaction.editReply({ content: MSG_LOADING_JOIN_SUBMIT, components: [] }).catch(() => {});
 
   const raidPostMsg        = raidPostMessages.get(`${interaction.user.id}:${raidId}`) ?? null;
   const raidPostComponents = raidPostMsg?.components ?? [];
@@ -2735,6 +2774,7 @@ async function handleSubmitEdit(interaction, raidId) {
     return;
   }
   await interaction.deferUpdate().catch(() => {});
+  await interaction.editReply({ content: MSG_LOADING_EDIT_SUBMIT, components: [] }).catch(() => {});
 
   const raidPostMsg        = raidPostMessages.get(`${interaction.user.id}:${raidId}`) ?? null;
   const raidPostComponents = raidPostMsg?.components ?? [];
