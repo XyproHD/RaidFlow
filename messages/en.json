@@ -88,6 +88,15 @@
     "todayShort": "today",
     "signupOpenUntil": "Signup open until"
   },
+  "raidCancelDm": {
+    "overlayTitle": "Cancel raid — Discord message",
+    "overlayHint": "This text is sent as a direct message to every signed-up Discord user. You may edit it (**bold**, *italic*, `code` as in Discord).",
+    "editorLabel": "Message (Markdown)",
+    "previewLabel": "Preview (Discord-like)",
+    "resetDefault": "Restore default",
+    "cancel": "Cancel",
+    "confirm": "Cancel raid & send"
+  },
   "raidDetail": {
     "backDashboard": "Back to dashboard",
     "modeView": "View",
@@ -128,10 +137,12 @@
     "signupType_uncertain": "Unclear",
     "signupType_reserve": "Reserve",
     "signupType_declined": "Not coming",
+    "signupType_raidCancelled": "Cancelled",
     "raidStatus_open": "Open",
     "raidStatus_announced": "Announced",
     "raidStatus_locked": "Locked",
     "raidStatus_cancelled": "Cancelled",
+    "raidStatus_completed": "Completed",
     "sectionPublishedRoster": "Published roster",
     "publishedGroupTitle": "Group {n}",
     "publishedReserveHeading": "Bench",
@@ -191,6 +202,7 @@
     "raidLeaderMenu": "Raid actions",
     "mySignupMenu": "Signup",
     "menuPlan": "Plan",
+    "menuCompleteRaid": "Complete raid",
     "planComingSoon": "Coming soon.",
     "menuCancelRaid": "Cancel raid",
     "menuDeleteRaid": "Delete raid",
@@ -258,6 +270,7 @@
     "poolEmpty": "All signups are placed on the left.",
     "poolFilteredEmpty": "No signups match the current filters.",
     "addHint": "Pick exactly one character or cancel.",
+    "specLockHint": "Signed spec only",
     "noResults": "No results.",
     "filterPunctuality": "Punctuality",
     "filterAttendance": "Attendance",
@@ -736,6 +749,28 @@
     "yes": "Yes",
     "no": "No",
     "footerHint": "Secrets are never shown in full; only length and a short masked preview. Fix issues using Vercel/hosting env and Discord Developer Portal."
+  },
+  "raidComplete": {
+    "title": "Complete raid",
+    "backToRaid": "Back to raid",
+    "weightLabel": "Attendance",
+    "weightHint": "0–1 in steps of 0.1 (0 = no statistic entry)",
+    "groupTitle": "Group {n}",
+    "addPlayer": "Add player",
+    "searchPlaceholder": "Search character…",
+    "pickSpec": "Choose spec",
+    "removeFromGroup": "Remove from group",
+    "submit": "Complete raid",
+    "submitting": "Saving…",
+    "duplicateSignup": "The same signup appears in more than one group.",
+    "missingSignup": "Signup not found (reload the page).",
+    "addError": "Could not add player.",
+    "submitError": "Could not complete raid.",
+    "confirmSubmit": "Really complete this raid? The Discord post will be removed and attendance values will be saved.",
+    "emptyRosterHint": "No one in the groups yet — use “Add player” to add guild characters.",
+    "noGuildChars": "No guild characters loaded.",
+    "alreadyInRoster": "This character is already in the groups.",
+    "specUpdateError": "Could not save spec change."
   },
   "maintenance": {
     "title": "Maintenance mode"

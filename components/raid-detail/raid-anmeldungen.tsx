@@ -53,11 +53,13 @@ function SignupTableBlock({
   canSeeNotes,
   openNoteId,
   setOpenNoteId,
+  raidStatus,
 }: {
   rows: AnmeldungRow[];
   canSeeNotes: boolean;
   openNoteId: string | null;
   setOpenNoteId: (id: string | null) => void;
+  raidStatus: string;
 }) {
   const [left, right] = useMemo(() => splitTwoColumns(rows), [rows]);
 
@@ -73,6 +75,7 @@ function SignupTableBlock({
             <RaidDetailSignupTableRow
               key={r.id}
               row={r}
+              raidStatus={raidStatus}
               extras={{
                 punctuality,
                 classId,
@@ -105,10 +108,12 @@ function SignupTableBlock({
 export function RaidAnmeldungen({
   rows,
   canEdit,
+  raidStatus,
 }: {
   rows: AnmeldungRow[];
   /** Nur Raidleader sehen Teilnehmer-Notizen. */
   canEdit: boolean;
+  raidStatus: string;
 }) {
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
 
@@ -150,6 +155,7 @@ export function RaidAnmeldungen({
               canSeeNotes={canSeeNotes}
               openNoteId={openNoteId}
               setOpenNoteId={setOpenNoteId}
+              raidStatus={raidStatus}
             />
           </section>
         );
@@ -172,6 +178,7 @@ export function RaidAnmeldungen({
             canSeeNotes={canSeeNotes}
             openNoteId={openNoteId}
             setOpenNoteId={setOpenNoteId}
+            raidStatus={raidStatus}
           />
         </section>
       ) : null}

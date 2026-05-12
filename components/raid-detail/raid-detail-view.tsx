@@ -36,6 +36,8 @@ import { normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
+import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
+import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
 
 export type AnnouncedLayoutProps = {
   groupMeta: {
@@ -111,7 +113,17 @@ function signupTypeNorm(v: string) {
 }
 
 /** Bin da / Unklar / Reserve / Nicht da — Icon nach Pünktlichkeit, Erklärung im title. */
-function signupAttendanceKindMeta(signup: { type: string }, t: (key: string) => string): { sym: string; title: string } {
+function signupAttendanceKindMeta(
+  signup: { type: string },
+  raidStatus: string,
+  t: (key: string) => string
+): { sym: string; title: string } {
+  if (raidStatus === 'cancelled') {
+    return { sym: '✕', title: t('signupType_raidCancelled') };
+  }
+  if (raidStatus === 'completed') {
+    return { sym: '✓', title: t('raidStatus_completed') };
+  }
   const tn = signupTypeNorm(signup.type);
   if (tn === 'declined') return { sym: '✕', title: t('signupType_declined') };
   if (tn === 'uncertain') return { sym: '?', title: t('signupType_uncertain') };
@@ -125,6 +137,12 @@ function myPlacementStatusMeta(
   raidStatus: string,
   t: (key: string) => string
 ): { sym: string; title: string } {
+  if (raidStatus === 'cancelled') {
+    return { sym: '✕', title: t('myPlacement_absage') };
+  }
+  if (raidStatus === 'completed') {
+    return { sym: '✓', title: t('raidStatus_completed') };
+  }
   const planned = raidStatus === 'announced' || raidStatus === 'locked';
   if (!planned) {
     return { sym: '○', title: t('myPlacement_nochNicht') };
@@ -147,7 +165,7 @@ function signupIndicator(
   signupUntilIso: string,
   raidStatus: string
 ): { icon: '🟢' | '🟡' | '🔴'; isClosed: boolean } {
-  if (raidStatus === 'announced' || raidStatus === 'locked') {
+  if (raidStatus === 'announced' || raidStatus === 'locked' || raidStatus === 'completed' || raidStatus === 'cancelled') {
     return { icon: '🔴', isClosed: true };
   }
   const remainingMs = new Date(signupUntilIso).getTime() - Date.now();
@@ -205,6 +223,7 @@ function raidStatusLabel(t: ReturnType<typeof useTranslations>, status: string):
   if (status === 'announced') return t('raidStatus_announced');
   if (status === 'locked') return t('raidStatus_locked');
   if (status === 'cancelled') return t('raidStatus_cancelled');
+  if (status === 'completed') return t('raidStatus_completed');
   return status;
 }
 
@@ -218,6 +237,7 @@ export function RaidDetailView({
   organizerLabel,
   canEdit,
   canEditRaid,
+  canCompleteRaid,
   canSignup,
   signupPhase,
   characters,
@@ -237,6 +257,7 @@ export function RaidDetailView({
   organizerLabel: string | null;
   canEdit: boolean;
   canEditRaid: boolean;
+  canCompleteRaid: boolean;
   canSignup: boolean;
   signupPhase: RaidSignupPhase;
   characters: RaidDetailCharacter[];
@@ -253,6 +274,7 @@ export function RaidDetailView({
   const tRoster = useTranslations('raidRosterPlanner');
   const tDash = useTranslations('dashboard');
   const tEdit = useTranslations('raidEdit');
+  const tCancelDm = useTranslations('raidCancelDm');
   const tProfile = useTranslations('profile');
   const router = useRouter();
   const intlLocale = useLocale();
@@ -270,6 +292,8 @@ export function RaidDetailView({
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const [withdrawReason, setWithdrawReason] = useState('');
   const [withdrawTargetCharacterId, setWithdrawTargetCharacterId] = useState<string | null>(null);
+  const [cancelDmOpen, setCancelDmOpen] = useState(false);
+  const [cancelDmBusy, setCancelDmBusy] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -279,6 +303,7 @@ export function RaidDetailView({
         setMySignupRowMenu(null);
         setMyNoteExpandedId(null);
         setWithdrawDialogOpen(false);
+        setCancelDmOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -288,6 +313,17 @@ export function RaidDetailView({
   const scheduledAt = useMemo(() => new Date(raid.scheduledAt), [raid.scheduledAt]);
   const scheduledEndAt = raid.scheduledEndAt ? new Date(raid.scheduledEndAt) : null;
   const signupUntil = useMemo(() => new Date(raid.signupUntil), [raid.signupUntil]);
+
+  const defaultCancelDmText = useMemo(
+    () =>
+      formatDefaultRaidCancelDmDe({
+        guildName: raid.guild.name,
+        raidName: raid.name,
+        dungeonLine: dungeonLabel,
+        scheduledAt: scheduledAt,
+      }),
+    [raid.guild.name, raid.name, dungeonLabel, scheduledAt]
+  );
 
   const raidTermin = formatRaidTerminLine(intlLocale, scheduledAt, scheduledEndAt);
 
@@ -381,17 +417,25 @@ export function RaidDetailView({
   const signupState = signupIndicator(raid.signupUntil, raid.status);
   const hasMySignup = mySignups.length > 0;
 
-  async function doCancelRaid() {
-    if (!window.confirm(tEdit('cancelConfirm'))) return;
-    const res = await fetch(`/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'cancel' }),
-    });
-    if (!res.ok) return;
-    setLeaderMenuOpen(false);
-    router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
-    router.refresh();
+  async function submitRaidCancel(discordMessage: string) {
+    setCancelDmBusy(true);
+    try {
+      const res = await fetch(
+        `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'cancel', cancelDiscordMessage: discordMessage }),
+        }
+      );
+      if (!res.ok) return;
+      setCancelDmOpen(false);
+      setLeaderMenuOpen(false);
+      router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
+      router.refresh();
+    } finally {
+      setCancelDmBusy(false);
+    }
   }
 
   async function doDeleteRaid() {
@@ -593,6 +637,7 @@ export function RaidDetailView({
                             row={raidSignupToAnmeldungRow(s)}
                             canEdit={false}
                             showTypeLabel={false}
+                            raidStatus={raid.status}
                           />
                         </li>
                       );
@@ -622,6 +667,7 @@ export function RaidDetailView({
                           row={raidSignupToAnmeldungRow(s)}
                           canEdit={false}
                           showTypeLabel
+                          raidStatus={raid.status}
                         />
                       </li>
                     );
@@ -641,6 +687,7 @@ export function RaidDetailView({
                           row={raidSignupToAnmeldungRow(s)}
                           canEdit={false}
                           showTypeLabel
+                          raidStatus={raid.status}
                         />
                       </li>
                     ))}
@@ -695,7 +742,7 @@ export function RaidDetailView({
                       const showRowMenu = raid.status === 'open' || raid.status === 'announced';
                       const noteLine = signup.note?.trim() ?? '';
                       const hasNote = noteLine.length > 0;
-                      const attKind = signupAttendanceKindMeta(signup, t);
+                      const attKind = signupAttendanceKindMeta(signup, raid.status, t);
                       const placement = myPlacementStatusMeta(signup, raid.status, t);
 
                       return (
@@ -835,7 +882,7 @@ export function RaidDetailView({
           {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
             <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
           ) : null}
-          <RaidAnmeldungen rows={rows} canEdit={canEdit} />
+          <RaidAnmeldungen rows={rows} canEdit={canEdit} raidStatus={raid.status} />
         </div>
       </section>
 
@@ -847,7 +894,7 @@ export function RaidDetailView({
           {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
             <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
           ) : null}
-          <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} />
+          <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} raidStatus={raid.status} />
         </div>
       </section>
 
@@ -859,7 +906,7 @@ export function RaidDetailView({
           {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
             <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
           ) : null}
-          <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} />
+          <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} raidStatus={raid.status} />
         </div>
       </section>
 
@@ -875,38 +922,54 @@ export function RaidDetailView({
                 style={{ top: leaderMenuPos.top, left: leaderMenuPos.left }}
                 onMouseDown={(e) => e.stopPropagation()}
               >
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
-                  onClick={() => {
-                    setLeaderMenuOpen(false);
-                    router.push(`/${locale}/guild/${guildId}/raid/${raidId}/plan`);
-                  }}
-                >
-                  📅 {t('menuPlan')}
-                </button>
-                <button
-                  type="button"
-                  disabled={!canEditRaid}
-                  title={!canEditRaid ? t('raidEditClosed') : undefined}
-                  className={cn(
-                    'w-full text-left px-3 py-2.5 text-sm hover:bg-muted',
-                    !canEditRaid && 'opacity-50 cursor-not-allowed'
-                  )}
-                  onClick={() => {
-                    setLeaderMenuOpen(false);
-                    if (canEditRaid) router.push(`/${locale}/guild/${guildId}/raid/${raidId}/edit`);
-                  }}
-                >
-                  ✏️ {t('modeEdit')}
-                </button>
+                {raid.status !== 'cancelled' && raid.status !== 'completed' ? (
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
+                    onClick={() => {
+                      setLeaderMenuOpen(false);
+                      router.push(`/${locale}/guild/${guildId}/raid/${raidId}/plan`);
+                    }}
+                  >
+                    📅 {t('menuPlan')}
+                  </button>
+                ) : null}
+                {canCompleteRaid ? (
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
+                    onClick={() => {
+                      setLeaderMenuOpen(false);
+                      router.push(`/${locale}/guild/${guildId}/raid/${raidId}/complete`);
+                    }}
+                  >
+                    {t('menuCompleteRaid')}
+                  </button>
+                ) : null}
+                {raid.status !== 'cancelled' && raid.status !== 'completed' ? (
+                  <button
+                    type="button"
+                    disabled={!canEditRaid}
+                    title={!canEditRaid ? t('raidEditClosed') : undefined}
+                    className={cn(
+                      'w-full text-left px-3 py-2.5 text-sm hover:bg-muted',
+                      !canEditRaid && 'opacity-50 cursor-not-allowed'
+                    )}
+                    onClick={() => {
+                      setLeaderMenuOpen(false);
+                      if (canEditRaid) router.push(`/${locale}/guild/${guildId}/raid/${raidId}/edit`);
+                    }}
+                  >
+                    ✏️ {t('modeEdit')}
+                  </button>
+                ) : null}
                 {raid.status === 'open' || raid.status === 'announced' ? (
                   <button
                     type="button"
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
                     onClick={() => {
                       setLeaderMenuOpen(false);
-                      void doCancelRaid();
+                      setCancelDmOpen(true);
                     }}
                   >
                     🚫 {t('menuCancelRaid')}
@@ -1014,6 +1077,21 @@ export function RaidDetailView({
             document.body
           )
         : null}
+
+      <RaidCancelDiscordOverlay
+        open={cancelDmOpen}
+        defaultMessage={defaultCancelDmText}
+        onClose={() => !cancelDmBusy && setCancelDmOpen(false)}
+        onConfirm={submitRaidCancel}
+        busy={cancelDmBusy}
+        title={tCancelDm('overlayTitle')}
+        hintMarkdown={tCancelDm('overlayHint')}
+        editorLabel={tCancelDm('editorLabel')}
+        previewLabel={tCancelDm('previewLabel')}
+        resetLabel={tCancelDm('resetDefault')}
+        cancelLabel={tCancelDm('cancel')}
+        confirmLabel={tCancelDm('confirm')}
+      />
 
       {withdrawDialogOpen
         ? createPortal(

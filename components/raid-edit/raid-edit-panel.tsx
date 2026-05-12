@@ -43,6 +43,7 @@ type PoolMember = {
 };
 
 type Bootstrap = {
+  guildName: string;
   dungeons: { id: string; name: string; maxPlayers: number }[];
   raidGroups: { id: string; name: string }[];
   leaders: { userId: string; discordId: string; label: string }[];
@@ -469,20 +470,19 @@ export function RaidEditPanel({
             <ClassIcon classId={classId} size={20} title={main} />
           </span>
         ) : null}
-        <CharacterSpecIconsInline mainSpec={specShow} size={20} slashClassName="hidden" offSpec={null} />
+        <span className="inline-flex items-center gap-0.5 shrink-0">
+          <CharacterSpecIconsInline mainSpec={specShow} size={20} slashClassName="hidden" offSpec={null} />
+          {s.onlySignedSpec ? (
+            <span className="text-sm leading-none shrink-0" title={tDetail('badgeOnlySignedSpec')} aria-label={tDetail('badgeOnlySignedSpec')}>
+              🔒
+            </span>
+          ) : null}
+        </span>
         {s.isLate ? <span title={t('late')}>⏱</span> : null}
         <span className="font-medium truncate max-w-[9rem]">{ch?.name ?? '—'}</span>
         <span className="text-muted-foreground text-xs whitespace-nowrap">
           ({stats.dungeon}/{stats.total})
         </span>
-        {s.onlySignedSpec && (
-          <span
-            className="text-[10px] sm:text-xs rounded border border-amber-600/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 px-1 py-0.5 shrink-0 max-w-[7rem] truncate"
-            title={tDetail('badgeOnlySignedSpec')}
-          >
-            {tDetail('badgeOnlySignedSpec')}
-          </span>
-        )}
         {s.forbidReserve && (
           <span
             className="text-[10px] sm:text-xs rounded border border-muted-foreground/40 bg-muted/60 px-1 py-0.5 shrink-0 max-w-[7rem] truncate"

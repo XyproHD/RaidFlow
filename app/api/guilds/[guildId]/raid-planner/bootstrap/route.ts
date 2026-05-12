@@ -29,7 +29,7 @@ export async function GET(
 
   const guild = await prisma.rfGuild.findUnique({
     where: { id: guildId },
-    select: { id: true },
+    select: { id: true, name: true },
   });
   if (!guild) {
     return NextResponse.json({ error: 'Guild not found' }, { status: 404 });
@@ -228,6 +228,7 @@ export async function GET(
   });
 
   return NextResponse.json({
+    guildName: guild.name,
     dungeons,
     raidGroups,
     allowedChannels,

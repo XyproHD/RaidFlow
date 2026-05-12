@@ -62,7 +62,10 @@ export async function PATCH(
     where: { id: raidId, guildId },
     select: { status: true },
   });
-  if (!raid || (raid.status !== 'open' && raid.status !== 'announced')) {
+  if (!raid || raid.status === 'completed' || raid.status === 'cancelled') {
+    return NextResponse.json({ error: 'Raid is not open for planning' }, { status: 403 });
+  }
+  if (raid.status !== 'open' && raid.status !== 'announced' && raid.status !== 'locked') {
     return NextResponse.json({ error: 'Raid is not open for planning' }, { status: 403 });
   }
 

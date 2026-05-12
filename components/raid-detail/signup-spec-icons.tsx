@@ -10,18 +10,19 @@ type CharSpecs = {
 
 /**
  * Zwei Spec-Icons: angemeldeter Spec farbig, der andere ausgegraut.
- * Raidleader + onlySignedSpec + zwei Specs: über dem ausgegrauten Icon roter Filter.
+ * Bei Spec-Lock: 🔒 neben dem angemeldeten Spec-Icon.
  */
 export function SignupSpecIcons({
   character,
   signedSpec,
   onlySignedSpec,
-  viewerIsRaidLeader,
+  specLockTitle,
 }: {
   character: CharSpecs | null;
   signedSpec: string | null;
   onlySignedSpec: boolean;
-  viewerIsRaidLeader: boolean;
+  /** title/aria für das 🔒 (z. B. badgeOnlySignedSpec) */
+  specLockTitle: string;
 }) {
   const signed =
     signedSpec?.trim() || character?.mainSpec?.trim() || '';
@@ -36,18 +37,16 @@ export function SignupSpecIcons({
   const renderSpec = (spec: string) => {
     const isSigned = spec === signed;
     const gray = !isSigned;
-    const redOverlay = viewerIsRaidLeader && onlySignedSpec && gray && !!off;
 
     return (
-      <span key={spec} className="relative inline-flex shrink-0 rounded-sm">
+      <span key={spec} className="relative inline-flex items-center gap-0.5 shrink-0 rounded-sm">
         <span className={cn(gray && 'grayscale opacity-[0.85]')}>
           <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={22} slashClassName="hidden" />
         </span>
-        {redOverlay ? (
-          <span
-            className="pointer-events-none absolute inset-0 rounded-sm bg-red-500/35 mix-blend-multiply"
-            aria-hidden
-          />
+        {isSigned && onlySignedSpec ? (
+          <span className="text-sm leading-none shrink-0" title={specLockTitle} aria-label={specLockTitle}>
+            🔒
+          </span>
         ) : null}
       </span>
     );

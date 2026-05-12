@@ -59,7 +59,12 @@ export function filterSignupsVisibleToViewer<T extends { userId: string }>(
   if (signupVisibility === 'public' || canEdit) {
     return signups;
   }
-  if (raidStatus === 'locked' || raidStatus === 'announced') {
+  if (
+    raidStatus === 'locked' ||
+    raidStatus === 'announced' ||
+    raidStatus === 'cancelled' ||
+    raidStatus === 'completed'
+  ) {
     return signups;
   }
   return signups.filter((s) => s.userId === viewerUserId);

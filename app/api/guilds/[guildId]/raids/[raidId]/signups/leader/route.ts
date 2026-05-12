@@ -71,7 +71,10 @@ export async function POST(
   if (!raid) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
-  if (raid.status !== 'open' && raid.status !== 'announced') {
+  if (raid.status === 'completed' || raid.status === 'cancelled') {
+    return NextResponse.json({ error: 'Raid is not open for planning' }, { status: 403 });
+  }
+  if (raid.status !== 'open' && raid.status !== 'announced' && raid.status !== 'locked') {
     return NextResponse.json({ error: 'Raid is not open for planning' }, { status: 403 });
   }
 
@@ -100,7 +103,7 @@ export async function POST(
   });
 
   let typeForDb = typeNorm;
-  if (raid.status === 'announced') {
+  if (raid.status === 'announced' || raid.status === 'locked') {
     if (leaderPlacement === 'confirmed') {
       typeForDb = 'normal';
     } else {

@@ -29,6 +29,8 @@ import { GroupCharNamesExport } from '@/components/raid-planner/group-char-names
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 import type { AnnounceRaidPayload } from '@/lib/raid-announce';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
+import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
+import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
 
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
 const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
@@ -338,8 +340,20 @@ export function RaidRosterPlanner({
   const tRoster = useTranslations('raidRosterPlanner');
   const tPlanner = useTranslations('raidPlanner');
   const tProfile = useTranslations('profile');
+  const tCancelDm = useTranslations('raidCancelDm');
   const router = useRouter();
   const intlLocale = useLocale();
+
+  const defaultCancelDmText = useMemo(
+    () =>
+      formatDefaultRaidCancelDmDe({
+        guildName: raid.guildName,
+        raidName: raid.name,
+        dungeonLine: raid.dungeonLabel,
+        scheduledAt: new Date(raid.scheduledAt),
+      }),
+    [raid.guildName, raid.name, raid.dungeonLabel, raid.scheduledAt]
+  );
 
   const [signups, setSignups] = useState<RosterPlannerSignup[]>(() => initialSignups);
   const [saving, setSaving] = useState(false);
@@ -568,6 +582,8 @@ export function RaidRosterPlanner({
 
   const [leaderMenuOpen, setLeaderMenuOpen] = useState(false);
   const [leaderMenuPos, setLeaderMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [cancelDmOpen, setCancelDmOpen] = useState(false);
+  const [cancelDmBusy, setCancelDmBusy] = useState(false);
 
   type FloatingSignupNoteState = {
     playerLabel: string;
@@ -1249,7 +1265,6 @@ export function RaidRosterPlanner({
     const renderOne = (spec: string) => {
       const isSigned = spec === signed;
       const gray = !isSigned;
-      const redOverlay = !!s.onlySignedSpec && gray && hasOff;
       const showOverrideRing = isSigned && isOverrideActive;
 
       return (
@@ -1269,7 +1284,7 @@ export function RaidRosterPlanner({
             );
           }}
           className={cn(
-            'relative inline-flex shrink-0 rounded-sm',
+            'relative inline-flex items-center gap-0.5 shrink-0 rounded-sm',
             canSwitch && !isSigned ? 'cursor-pointer' : 'cursor-default',
             showOverrideRing && 'ring-2 ring-green-600/70 dark:ring-green-500/70 ring-offset-1 ring-offset-background'
           )}
@@ -1278,11 +1293,14 @@ export function RaidRosterPlanner({
           <span className={cn(gray && 'grayscale opacity-[0.85]')}>
             <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={22} slashClassName="hidden" />
           </span>
-          {redOverlay ? (
+          {isSigned && s.onlySignedSpec ? (
             <span
-              className="pointer-events-none absolute inset-0 rounded-sm bg-red-500/35 mix-blend-multiply"
-              aria-hidden
-            />
+              className="text-sm leading-none shrink-0"
+              title={tRoster('specLockHint')}
+              aria-label={tRoster('specLockHint')}
+            >
+              🔒
+            </span>
           ) : null}
         </button>
       );
@@ -1442,17 +1460,22 @@ export function RaidRosterPlanner({
     setAddSelectedId(null);
   }
 
-  async function doCancelRaid() {
-    if (!window.confirm(tEdit('cancelConfirm'))) return;
-    const res = await fetch(`/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'cancel' }),
-    });
-    if (!res.ok) return;
-    setLeaderMenuOpen(false);
-    router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
-    router.refresh();
+  async function submitRaidCancelFromOverlay(discordMessage: string) {
+    setCancelDmBusy(true);
+    try {
+      const res = await fetch(`/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel', cancelDiscordMessage: discordMessage }),
+      });
+      if (!res.ok) return;
+      setCancelDmOpen(false);
+      setLeaderMenuOpen(false);
+      router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
+      router.refresh();
+    } finally {
+      setCancelDmBusy(false);
+    }
   }
 
   async function doSaveDraft() {
@@ -1927,8 +1950,8 @@ export function RaidRosterPlanner({
 
             <button
               type="button"
-              onClick={() => void doCancelRaid()}
-              disabled={saving}
+              onClick={() => setCancelDmOpen(true)}
+              disabled={saving || !defaultCancelDmText}
               className={cn(
                 'rounded-md border px-3 py-2 text-sm font-medium transition-colors',
                 'border-red-600/60 text-red-700 hover:bg-red-50',
@@ -2668,6 +2691,20 @@ export function RaidRosterPlanner({
                 >
                   {tRoster('menuRaidView')}
                 </button>
+                {raidStatus !== 'cancelled' &&
+                raidStatus !== 'completed' &&
+                (raidStatus === 'open' || raidStatus === 'announced' || raidStatus === 'locked') ? (
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
+                    onClick={() => {
+                      setLeaderMenuOpen(false);
+                      router.push(`/${locale}/guild/${guildId}/raid/${raidId}/complete`);
+                    }}
+                  >
+                    {t('menuCompleteRaid')}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   disabled={!canEditRaid}
@@ -2688,7 +2725,7 @@ export function RaidRosterPlanner({
                   className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
                   onClick={() => {
                     setLeaderMenuOpen(false);
-                    void doCancelRaid();
+                    setCancelDmOpen(true);
                   }}
                 >
                   🚫 {t('menuCancelRaid')}
@@ -3012,6 +3049,20 @@ export function RaidRosterPlanner({
             document.body
           )
         : null}
+      <RaidCancelDiscordOverlay
+        open={cancelDmOpen}
+        defaultMessage={defaultCancelDmText}
+        onClose={() => !cancelDmBusy && setCancelDmOpen(false)}
+        onConfirm={submitRaidCancelFromOverlay}
+        busy={cancelDmBusy}
+        title={tCancelDm('overlayTitle')}
+        hintMarkdown={tCancelDm('overlayHint')}
+        editorLabel={tCancelDm('editorLabel')}
+        previewLabel={tCancelDm('previewLabel')}
+        resetLabel={tCancelDm('resetDefault')}
+        cancelLabel={tCancelDm('cancel')}
+        confirmLabel={tCancelDm('confirm')}
+      />
     </div>
   );
 }

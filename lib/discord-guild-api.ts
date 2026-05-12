@@ -417,6 +417,33 @@ export async function deleteChannelMessage(
 }
 
 /**
+ * Öffnet einen DM-Kanal zwischen Bot und Nutzer (gemeinsamer Guild genügt).
+ * POST /users/@me/channels
+ */
+export async function createUserDmChannel(recipientDiscordUserId: string): Promise<string> {
+  const token = getBotToken();
+  if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+
+  const res = await fetch(`${DISCORD_API_BASE}/users/@me/channels`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ recipient_id: recipientDiscordUserId }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Discord API create DM: ${res.status} ${text}`);
+  }
+
+  const data = (await res.json()) as { id?: string };
+  if (!data.id) throw new Error('Discord API create DM: missing channel id');
+  return data.id;
+}
+
+/**
  * Erstellt einen öffentlichen Thread aus einer bestehenden Nachricht.
  * POST /channels/{channel.id}/messages/{message.id}/threads
  */

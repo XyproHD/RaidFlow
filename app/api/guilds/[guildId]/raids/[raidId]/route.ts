@@ -11,6 +11,7 @@ import {
   parseAnnounceRaidPayload,
   validateAnnouncePayloadAgainstKnownIds,
 } from '@/lib/raid-announce';
+import { RAID_CANCEL_DM_MAX_LENGTH } from '@/lib/raid-cancel-message';
 
 /**
  * PATCH /api/guilds/[guildId]/raids/[raidId]
@@ -45,11 +46,101 @@ export async function PATCH(
     if (raid.status !== 'open' && raid.status !== 'announced') {
       return NextResponse.json({ error: 'Raid cannot be cancelled' }, { status: 400 });
     }
-    await prisma.rfRaid.update({
-      where: { id: raidId },
-      data: { status: 'cancelled' },
+
+    let cancelDiscordMessage: string | undefined;
+    if (body.cancelDiscordMessage !== undefined && body.cancelDiscordMessage !== null) {
+      if (typeof body.cancelDiscordMessage !== 'string') {
+        return NextResponse.json({ error: 'Invalid cancelDiscordMessage' }, { status: 400 });
+      }
+      const t = body.cancelDiscordMessage.trim();
+      if (t.length > RAID_CANCEL_DM_MAX_LENGTH) {
+        return NextResponse.json(
+          { error: `cancelDiscordMessage exceeds ${RAID_CANCEL_DM_MAX_LENGTH} characters` },
+          { status: 400 }
+        );
+      }
+      if (t.length > 0) cancelDiscordMessage = t;
+    }
+
+    const payload = await prisma.rfRaid.findFirst({
+      where: { id: raidId, guildId },
+      include: {
+        guild: { select: { name: true } },
+        dungeon: { select: { name: true } },
+        signups: { include: { user: { select: { discordId: true } } } },
+      },
     });
-    await syncRaidThreadSummary(raidId);
+    if (!payload) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    const signupDiscordIds = [
+      ...new Set(
+        payload.signups
+          .map((s) => s.user?.discordId?.trim())
+          .filter((id): id is string => !!id && id.length > 0),
+      ),
+    ];
+
+    const dungeonNames: string[] = [payload.dungeon.name];
+    if (Array.isArray(payload.dungeonIds) && payload.dungeonIds.length > 1) {
+      const extraIds = (payload.dungeonIds as string[]).filter((id) => id !== payload.dungeonId);
+      if (extraIds.length > 0) {
+        const extras = await prisma.rfDungeon.findMany({
+          where: { id: { in: extraIds } },
+          select: { name: true },
+        });
+        dungeonNames.push(...extras.map((d) => d.name));
+      }
+    }
+    const dungeonLine = dungeonNames.join(' + ');
+
+    await prisma.$transaction([
+      prisma.rfRaid.update({
+        where: { id: raidId },
+        data: { status: 'cancelled' },
+      }),
+      prisma.rfRaidSignup.updateMany({
+        where: { raidId },
+        data: {
+          type: 'declined',
+          onlySignedSpec: false,
+          forbidReserve: false,
+          isLate: false,
+          punctuality: 'on_time',
+          leaderPlacement: 'signup',
+          setConfirmed: false,
+        },
+      }),
+    ]);
+
+    if (payload.discordChannelId && payload.discordChannelMessageId) {
+      try {
+        const { deleteChannelMessage } = await import('@/lib/discord-guild-api');
+        await deleteChannelMessage(payload.discordChannelId, payload.discordChannelMessageId);
+      } catch (e) {
+        console.error('[PATCH raid cancel] Discord message delete failed:', e);
+      }
+      try {
+        await prisma.rfRaid.update({
+          where: { id: raidId },
+          data: { discordChannelMessageId: null, discordThreadId: null },
+        });
+      } catch (e) {
+        console.error('[PATCH raid cancel] clear discord ids failed:', e);
+      }
+    }
+
+    const { sendRaidCancellationDirectMessages } = await import('@/lib/raid-cancel-notify');
+    await sendRaidCancellationDirectMessages({
+      discordUserIds: signupDiscordIds,
+      guildName: payload.guild.name,
+      raidName: payload.name,
+      dungeonLine,
+      scheduledAt: payload.scheduledAt,
+      messageOverride: cancelDiscordMessage,
+    }).catch((e) => console.error('[PATCH raid cancel] DMs:', e));
+
     return NextResponse.json({ ok: true, status: 'cancelled' });
   }
 

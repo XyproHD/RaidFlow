@@ -41,6 +41,8 @@ import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge'
 import { BattlenetLogo } from '@/components/battlenet-logo';
 import { CharacterSpecIconsInline } from '@/components/character-display-parts';
 import { MinSpecRequirementRow } from '@/components/raid-planner/min-spec-requirement-row';
+import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
+import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
 
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
 /** i18n keys under `raidPlanner` für Klassen-Filter-Buttons */
@@ -89,6 +91,7 @@ function poolCharacterClassId(c: PoolCharacter): string | null {
 }
 
 type Bootstrap = {
+  guildName: string;
   dungeons: { id: string; name: string; maxPlayers: number }[];
   raidGroups: { id: string; name: string }[];
   allowedChannels: { id: string; discordChannelId: string; name: string | null }[];
@@ -208,6 +211,7 @@ export function NewRaidWizard({
   const t = useTranslations('raidPlanner');
   const tEdit = useTranslations('raidEdit');
   const tDetail = useTranslations('raidDetail');
+  const tCancelDm = useTranslations('raidCancelDm');
   const tProfile = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
@@ -226,6 +230,8 @@ export function NewRaidWizard({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [resetAck, setResetAck] = useState(false);
+  const [cancelDmOpen, setCancelDmOpen] = useState(false);
+  const [cancelDmBusy, setCancelDmBusy] = useState(false);
 
   const [data, setData] = useState<Bootstrap | null>(null);
 
@@ -371,6 +377,25 @@ export function NewRaidWizard({
     const last = rangeSlotStrings[rangeSlotStrings.length - 1] ?? '19:00';
     return addMinutes(raidSlotToLocalDate(scheduledDate, last), 30);
   }, [scheduledDate, rangeSlotStrings]);
+
+  const dungeonLineWizard = useMemo(() => {
+    if (!data) return '';
+    return dungeonIds
+      .map((id) => data.dungeons.find((d) => d.id === id)?.name)
+      .filter((n): n is string => !!n && n.length > 0)
+      .join(' + ');
+  }, [data, dungeonIds]);
+
+  const defaultCancelDmText = useMemo(() => {
+    const gn = data?.guildName?.trim();
+    if (!gn) return '';
+    return formatDefaultRaidCancelDmDe({
+      guildName: gn,
+      raidName: name.trim() || 'Raid',
+      dungeonLine: dungeonLineWizard.trim() || '—',
+      scheduledAt,
+    });
+  }, [data?.guildName, name, dungeonLineWizard, scheduledAt]);
 
   const isEdit = mode === 'edit' && !!raidId && !!initialRaid;
   const initialDungeonIds = useMemo(() => {
@@ -813,21 +838,21 @@ export function NewRaidWizard({
     }
   };
 
-  const doCancelRaid = async () => {
+  const submitRaidCancelFromOverlay = async (discordMessage: string) => {
     if (!isEdit || !raidId) return;
-    if (!window.confirm(tEdit('cancelConfirm'))) return;
-    setSaving(true);
+    setCancelDmBusy(true);
     try {
       const res = await fetch(`/api/guilds/${guildId}/raids/${raidId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cancel' }),
+        body: JSON.stringify({ action: 'cancel', cancelDiscordMessage: discordMessage }),
       });
       if (!res.ok) return;
+      setCancelDmOpen(false);
       router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
       router.refresh();
     } finally {
-      setSaving(false);
+      setCancelDmBusy(false);
     }
   };
 
@@ -898,9 +923,9 @@ export function NewRaidWizard({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={saving || !editable}
+              disabled={saving || !editable || !defaultCancelDmText}
               className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
-              onClick={() => void doCancelRaid()}
+              onClick={() => setCancelDmOpen(true)}
             >
               🚫 {tEdit('cancelRaid')}
             </button>
@@ -1254,6 +1279,20 @@ export function NewRaidWizard({
                 {t('cancel')}
               </Link>
             )}
+            {isEdit &&
+            initialRaid &&
+            initialRaid.status !== 'cancelled' &&
+            initialRaid.status !== 'completed' &&
+            (initialRaid.status === 'open' ||
+              initialRaid.status === 'announced' ||
+              initialRaid.status === 'locked') ? (
+              <Link
+                href={`/${locale}/guild/${guildId}/raid/${raidId}/complete`}
+                className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+              >
+                {tDetail('menuCompleteRaid')}
+              </Link>
+            ) : null}
             <button
               type="button"
               disabled={saving || (requiresReset && !resetAck) || !editable}
@@ -1266,9 +1305,9 @@ export function NewRaidWizard({
               <>
                 <button
                   type="button"
-                  disabled={saving || !editable}
+                  disabled={saving || !editable || !defaultCancelDmText}
                   className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  onClick={() => void doCancelRaid()}
+                  onClick={() => setCancelDmOpen(true)}
                 >
                   🚫 {tEdit('cancelRaid')}
                 </button>
@@ -1666,6 +1705,20 @@ export function NewRaidWizard({
             document.body
           )
         : null}
+      <RaidCancelDiscordOverlay
+        open={cancelDmOpen && isEdit}
+        defaultMessage={defaultCancelDmText}
+        onClose={() => !cancelDmBusy && setCancelDmOpen(false)}
+        onConfirm={submitRaidCancelFromOverlay}
+        busy={cancelDmBusy}
+        title={tCancelDm('overlayTitle')}
+        hintMarkdown={tCancelDm('overlayHint')}
+        editorLabel={tCancelDm('editorLabel')}
+        previewLabel={tCancelDm('previewLabel')}
+        resetLabel={tCancelDm('resetDefault')}
+        cancelLabel={tCancelDm('cancel')}
+        confirmLabel={tCancelDm('confirm')}
+      />
     </div>
   );
 }
