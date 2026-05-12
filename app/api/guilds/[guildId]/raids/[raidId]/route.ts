@@ -108,6 +108,8 @@ export async function PATCH(
           forbidReserve: false,
           isLate: false,
           punctuality: 'on_time',
+          leaderPlacement: 'signup',
+          setConfirmed: false,
         },
       }),
     ]);
