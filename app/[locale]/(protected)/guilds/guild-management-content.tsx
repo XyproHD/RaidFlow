@@ -806,6 +806,7 @@ function MembersSection({
   const [showTwinks, setShowTwinks] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
   const [filterRaidGroupId, setFilterRaidGroupId] = useState<string>('all');
+  const [discordNamesSyncing, setDiscordNamesSyncing] = useState(false);
   const [assigning, setAssigning] = useState<string | null>(null);
   const [popupMemberId, setPopupMemberId] = useState<string | null>(null);
   const [popupSelectedIds, setPopupSelectedIds] = useState<Set<string>>(new Set());
@@ -846,6 +847,51 @@ function MembersSection({
   const openPopup = (m: Member) => {
     setPopupMemberId(m.id);
     setPopupSelectedIds(new Set(m.raidGroupIds));
+  };
+
+  const handleSyncDiscordNames = async () => {
+    if (discordNamesSyncing) return;
+    setDiscordNamesSyncing(true);
+    try {
+      const res = await fetch(`/api/guilds/${guildId}/members/sync-discord-names`, { method: 'POST' });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        detail?: string;
+        result?: {
+          total: number;
+          charactersUpdated: number;
+          skippedUnknownMembership: number;
+          notInDiscordGuild: number;
+          skippedNoGuildCharacters: number;
+          membersWithNameApplied: number;
+        };
+      };
+      if (!res.ok) {
+        if (res.status === 503 && data.error === 'Discord bot token not configured') {
+          throw new Error(t('discordNamesSyncNoBotToken'));
+        }
+        throw new Error(data.detail || data.error || res.statusText);
+      }
+      const r = data.result;
+      await onUpdate();
+      onSaved();
+      if (r) {
+        alert(
+          t('discordNamesSyncDone', {
+            chars: r.charactersUpdated,
+            named: r.membersWithNameApplied,
+            total: r.total,
+            unk: r.skippedUnknownMembership,
+            gone: r.notInDiscordGuild,
+            noChar: r.skippedNoGuildCharacters,
+          })
+        );
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : t('discordNamesSyncError'));
+    } finally {
+      setDiscordNamesSyncing(false);
+    }
   };
 
   const toggleGroupInPopup = (groupId: string) => {
@@ -981,6 +1027,17 @@ function MembersSection({
             />
           </button>
           <span className="text-sm text-muted-foreground">{showTwinks ? t('showTwinksOn') : t('showTwinksOff')}</span>
+        </div>
+        <div className="flex items-end sm:ml-auto">
+          <button
+            type="button"
+            onClick={() => void handleSyncDiscordNames()}
+            disabled={discordNamesSyncing}
+            title={t('discordNamesSyncHint')}
+            className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap"
+          >
+            {discordNamesSyncing ? t('discordNamesSyncRunning') : t('discordNamesSync')}
+          </button>
         </div>
       </div>
       {members.length > 0 && filteredMembers.length === 0 && (

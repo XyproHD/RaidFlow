@@ -91,6 +91,11 @@ function toDiscordEmojiMarkup(name: string, id: string, animated: boolean): stri
   return animated ? `<a:${name}:${id}>` : `<:${name}:${id}>`;
 }
 
+/** Feste Defaults für einzelne Keys, falls externe Emoji-Guild / rf_app_config sie nicht liefern (z. B. wow_rogue). */
+const BUILTIN_DISCORD_EMOJI_DEFAULTS: Record<string, string> = {
+  wow_rogue: toDiscordEmojiMarkup('wow_rogue', '1503807724754833542', false),
+};
+
 async function loadExternalDiscordEmojis(): Promise<Record<string, string>> {
   const now = Date.now();
   if (externalEmojiCache && externalEmojiCache.expiresAt > now) {
@@ -156,7 +161,11 @@ export const getAppConfig = cache(async (): Promise<AppConfigState> => {
     ownerWebFullAccess: ownerWebFullAccess === 'true',
     // Externe Emoji-Guild überschreibt gleichnamige Keys (z. B. wow_*), damit
     // serverübergreifende Emoji-Nutzung konsistent funktioniert.
-    discordEmojis: { ...configuredDiscordEmojis, ...externalDiscordEmojis },
+    discordEmojis: {
+      ...BUILTIN_DISCORD_EMOJI_DEFAULTS,
+      ...configuredDiscordEmojis,
+      ...externalDiscordEmojis,
+    },
   };
 });
 

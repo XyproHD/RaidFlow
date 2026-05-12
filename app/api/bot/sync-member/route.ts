@@ -16,7 +16,7 @@ import { getMemberRoleIds } from '@/lib/discord-roles';
  * - discordGuildId, discordUserId (Snowflake-Strings)
  * - left: true → Mitglied hat den Server verlassen (bekannte Leave-Info)
  * - roleIds: string[] – Discord-Rollen-IDs (bei left ignorieren)
- * - displayName: string | null – optional Anzeigename im Server (Server-Nick o. ä.)
+ * - displayName: string | null – optional Anzeigename im Server (nur wenn Key gesetzt; fehlender Key = Namen in DB nicht ändern)
  * - fetchMemberFromDiscord: true → Rollen/Nick per Discord-API laden (ignoriert roleIds/displayName);
  *   nutzbar wenn der Bot noch kein Member-Event hatte (z. B. erste Interaktion ohne Webapp-Login).
  * - existingUsersOnly: true → nur bereits bekannte rf_user synchronisieren; keine automatische User-Neuanlage.
@@ -99,18 +99,15 @@ export async function POST(request: Request) {
 
   const left = body.left === true;
   const fetchMemberFromDiscord = body.fetchMemberFromDiscord === true;
+  const displayNameProvided = Object.prototype.hasOwnProperty.call(body, 'displayName');
 
   let membershipKnown = true;
   let inGuild = true;
   let roleIds: string[] = Array.isArray(body.roleIds)
     ? body.roleIds.filter((id): id is string => typeof id === 'string' && id.length > 0)
     : [];
-  let displayNameInGuild: string | null =
-    body.displayName === null || body.displayName === undefined
-      ? null
-      : typeof body.displayName === 'string'
-        ? body.displayName.trim() || null
-        : null;
+  /** undefined = rf_character.guild_discord_display_name nicht anfassen (Bot-Payload ohne displayName). */
+  let displayNameInGuild: string | null | undefined = undefined;
 
   if (!left && fetchMemberFromDiscord) {
     const fromApi = await getMemberRoleIds(discordGuildId, discordUserId);
@@ -118,6 +115,13 @@ export async function POST(request: Request) {
     inGuild = fromApi.inGuild;
     roleIds = fromApi.roleIds;
     displayNameInGuild = fromApi.displayNameInGuild;
+  } else if (!left && displayNameProvided) {
+    displayNameInGuild =
+      body.displayName === null
+        ? null
+        : typeof body.displayName === 'string'
+          ? body.displayName.trim() || null
+          : null;
   }
 
   try {
