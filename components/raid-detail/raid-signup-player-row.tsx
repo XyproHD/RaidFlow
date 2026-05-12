@@ -33,7 +33,8 @@ function classIdForChar(mainSpec: string): string | null {
   return getSpecByDisplayName(mainSpec)?.classId ?? null;
 }
 
-function typeLabel(t: (key: string) => string, type: string) {
+function typeLabel(t: (key: string) => string, type: string, raidStatus?: string) {
+  if (raidStatus === 'cancelled') return t('signupType_raidCancelled');
   const n = type === 'main' ? 'normal' : type;
   if (n === 'normal') return t('signupType_verfugbar');
   if (n === 'uncertain') return t('signupType_uncertain');
@@ -51,6 +52,7 @@ export function RaidSignupPlayerRow({
   noteExpanded,
   onToggleNote,
   showTypeLabel = true,
+  raidStatus,
 }: {
   row: AnmeldungRow;
   canEdit: boolean;
@@ -59,6 +61,8 @@ export function RaidSignupPlayerRow({
   onToggleNote?: () => void;
   /** In kompakten Listen (z. B. veröffentlichter Stand) optional ausblenden. */
   showTypeLabel?: boolean;
+  /** z. B. für Absage-Label wenn der Raid abgesagt wurde */
+  raidStatus?: string;
 }) {
   const t = useTranslations('raidDetail');
   const tProfile = useTranslations('profile');
@@ -95,7 +99,7 @@ export function RaidSignupPlayerRow({
           character={s.character}
           signedSpec={s.signedSpec}
           onlySignedSpec={!!s.onlySignedSpec}
-          viewerIsRaidLeader={canEdit}
+          specLockTitle={t('badgeOnlySignedSpec')}
         />
         {s.isLate && (
           <span className="text-base shrink-0" title={t('lateCheckbox')}>
@@ -108,19 +112,11 @@ export function RaidSignupPlayerRow({
           className="font-medium text-foreground min-w-0 truncate"
         />
         {showTypeLabel ? (
-          <span className="text-sm text-muted-foreground shrink-0">{typeLabel(t, s.type)}</span>
+          <span className="text-sm text-muted-foreground shrink-0">{typeLabel(t, s.type, raidStatus)}</span>
         ) : null}
         {s.leaderMarkedTeilnehmer && (
           <span className="text-xs rounded bg-primary/15 text-primary px-1.5 py-0.5 shrink-0">
             {t('badgeTeilnehmer')}
-          </span>
-        )}
-        {s.onlySignedSpec && (
-          <span
-            className="text-xs rounded border border-amber-600/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 shrink-0 max-w-[9rem] truncate"
-            title={t('badgeOnlySignedSpec')}
-          >
-            {t('badgeOnlySignedSpec')}
           </span>
         )}
         {s.forbidReserve && (

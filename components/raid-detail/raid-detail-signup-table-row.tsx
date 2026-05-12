@@ -19,7 +19,8 @@ function typeNorm(v: string) {
   return v === 'main' ? 'normal' : v;
 }
 
-function attendanceRowVariant(s: AnmeldungRow): 'default' | 'uncertain' | 'declined' {
+function attendanceRowVariant(s: AnmeldungRow, raidStatus: string): 'default' | 'uncertain' | 'declined' {
+  if (raidStatus === 'cancelled') return 'declined';
   const tn = typeNorm(s.type);
   if (tn === 'uncertain') return 'uncertain';
   if (tn === 'declined') return 'declined';
@@ -38,16 +39,18 @@ export function RaidDetailSignupTableRow({
   canSeeNotes,
   noteExpanded,
   onToggleNote,
+  raidStatus = '',
 }: {
   row: AnmeldungRow;
   extras: DetailSignupTableRowExtras;
   canSeeNotes: boolean;
   noteExpanded?: boolean;
   onToggleNote?: () => void;
+  raidStatus?: string;
 }) {
   const t = useTranslations('raidDetail');
   const tProfile = useTranslations('profile');
-  const att = attendanceRowVariant(row);
+  const att = attendanceRowVariant(row, raidStatus);
   const main = row.character?.mainSpec?.trim() ?? '';
   const off = row.character?.offSpec?.trim() ?? '';
   const signed = (row.signedSpec?.trim() || main || '').trim();
@@ -78,26 +81,29 @@ export function RaidDetailSignupTableRow({
               />
             ) : null}
             {extras.classId ? <ClassIcon classId={extras.classId} size={22} title={main || undefined} /> : null}
-            <CharacterSpecIconsInline
-              mainSpec={signed || main || '—'}
-              offSpec={off || null}
-              size={20}
-              slashClassName="hidden"
-              offSpecWrapperClassName="grayscale contrast-90 inline-flex"
-              offSpecIconClassName="opacity-90"
-            />
+            <span className="inline-flex items-center gap-0.5 shrink-0">
+              <CharacterSpecIconsInline
+                mainSpec={signed || main || '—'}
+                offSpec={off || null}
+                size={20}
+                slashClassName="hidden"
+                offSpecWrapperClassName="grayscale contrast-90 inline-flex"
+                offSpecIconClassName="opacity-90"
+              />
+              {row.onlySignedSpec ? (
+                <span
+                  className="text-sm leading-none shrink-0"
+                  title={t('badgeOnlySignedSpec')}
+                  aria-label={t('badgeOnlySignedSpec')}
+                >
+                  🔒
+                </span>
+              ) : null}
+            </span>
             <span className="font-medium text-foreground truncate">{row.character?.name ?? t('signupAnonymous')}</span>
             {row.leaderMarkedTeilnehmer ? (
               <span className="text-xs rounded bg-primary/15 text-primary px-1.5 py-0.5 shrink-0">
                 {t('badgeTeilnehmer')}
-              </span>
-            ) : null}
-            {row.onlySignedSpec ? (
-              <span
-                className="text-xs rounded border border-amber-600/40 bg-amber-500/10 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 shrink-0 max-w-[9rem] truncate"
-                title={t('badgeOnlySignedSpec')}
-              >
-                {t('badgeOnlySignedSpec')}
               </span>
             ) : null}
             {!row.leaderAllowsReserve && !row.forbidReserve ? (

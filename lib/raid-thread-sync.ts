@@ -82,6 +82,27 @@ export async function syncRaidThreadSummary(
     const raid = await loadRaidForSync(raidId);
     if (!raid?.discordChannelId) return;
 
+    /** Abgesagt: Embed entfernen, keine erneute Synchronisation. */
+    if (raid.status === 'cancelled') {
+      if (raid.discordChannelMessageId) {
+        try {
+          const { deleteChannelMessage } = await import('@/lib/discord-guild-api');
+          await deleteChannelMessage(raid.discordChannelId, raid.discordChannelMessageId);
+        } catch (e) {
+          console.warn('[syncRaidThreadSummary] cancelled raid message delete failed:', e);
+        }
+        try {
+          await prisma.rfRaid.update({
+            where: { id: raidId },
+            data: { discordChannelMessageId: null, discordThreadId: null },
+          });
+        } catch (e) {
+          console.warn('[syncRaidThreadSummary] cancelled raid clear discord ids failed:', e);
+        }
+      }
+      return;
+    }
+
     const dungeonNames: string[] = [];
     // Primärer Dungeon immer an erster Stelle
     dungeonNames.push(raid.dungeon.name);

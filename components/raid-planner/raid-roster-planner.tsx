@@ -1249,7 +1249,6 @@ export function RaidRosterPlanner({
     const renderOne = (spec: string) => {
       const isSigned = spec === signed;
       const gray = !isSigned;
-      const redOverlay = !!s.onlySignedSpec && gray && hasOff;
       const showOverrideRing = isSigned && isOverrideActive;
 
       return (
@@ -1269,7 +1268,7 @@ export function RaidRosterPlanner({
             );
           }}
           className={cn(
-            'relative inline-flex shrink-0 rounded-sm',
+            'relative inline-flex items-center gap-0.5 shrink-0 rounded-sm',
             canSwitch && !isSigned ? 'cursor-pointer' : 'cursor-default',
             showOverrideRing && 'ring-2 ring-green-600/70 dark:ring-green-500/70 ring-offset-1 ring-offset-background'
           )}
@@ -1278,11 +1277,14 @@ export function RaidRosterPlanner({
           <span className={cn(gray && 'grayscale opacity-[0.85]')}>
             <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={22} slashClassName="hidden" />
           </span>
-          {redOverlay ? (
+          {isSigned && s.onlySignedSpec ? (
             <span
-              className="pointer-events-none absolute inset-0 rounded-sm bg-red-500/35 mix-blend-multiply"
-              aria-hidden
-            />
+              className="text-sm leading-none shrink-0"
+              title={tRoster('specLockHint')}
+              aria-label={tRoster('specLockHint')}
+            >
+              🔒
+            </span>
           ) : null}
         </button>
       );

@@ -111,7 +111,14 @@ function signupTypeNorm(v: string) {
 }
 
 /** Bin da / Unklar / Reserve / Nicht da — Icon nach Pünktlichkeit, Erklärung im title. */
-function signupAttendanceKindMeta(signup: { type: string }, t: (key: string) => string): { sym: string; title: string } {
+function signupAttendanceKindMeta(
+  signup: { type: string },
+  raidStatus: string,
+  t: (key: string) => string
+): { sym: string; title: string } {
+  if (raidStatus === 'cancelled') {
+    return { sym: '✕', title: t('signupType_raidCancelled') };
+  }
   const tn = signupTypeNorm(signup.type);
   if (tn === 'declined') return { sym: '✕', title: t('signupType_declined') };
   if (tn === 'uncertain') return { sym: '?', title: t('signupType_uncertain') };
@@ -125,6 +132,9 @@ function myPlacementStatusMeta(
   raidStatus: string,
   t: (key: string) => string
 ): { sym: string; title: string } {
+  if (raidStatus === 'cancelled') {
+    return { sym: '✕', title: t('myPlacement_absage') };
+  }
   const planned = raidStatus === 'announced' || raidStatus === 'locked';
   if (!planned) {
     return { sym: '○', title: t('myPlacement_nochNicht') };
@@ -593,6 +603,7 @@ export function RaidDetailView({
                             row={raidSignupToAnmeldungRow(s)}
                             canEdit={false}
                             showTypeLabel={false}
+                            raidStatus={raid.status}
                           />
                         </li>
                       );
@@ -622,6 +633,7 @@ export function RaidDetailView({
                           row={raidSignupToAnmeldungRow(s)}
                           canEdit={false}
                           showTypeLabel
+                          raidStatus={raid.status}
                         />
                       </li>
                     );
@@ -641,6 +653,7 @@ export function RaidDetailView({
                           row={raidSignupToAnmeldungRow(s)}
                           canEdit={false}
                           showTypeLabel
+                          raidStatus={raid.status}
                         />
                       </li>
                     ))}
@@ -695,7 +708,7 @@ export function RaidDetailView({
                       const showRowMenu = raid.status === 'open' || raid.status === 'announced';
                       const noteLine = signup.note?.trim() ?? '';
                       const hasNote = noteLine.length > 0;
-                      const attKind = signupAttendanceKindMeta(signup, t);
+                      const attKind = signupAttendanceKindMeta(signup, raid.status, t);
                       const placement = myPlacementStatusMeta(signup, raid.status, t);
 
                       return (
@@ -835,7 +848,7 @@ export function RaidDetailView({
           {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
             <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
           ) : null}
-          <RaidAnmeldungen rows={rows} canEdit={canEdit} />
+          <RaidAnmeldungen rows={rows} canEdit={canEdit} raidStatus={raid.status} />
         </div>
       </section>
 
@@ -847,7 +860,7 @@ export function RaidDetailView({
           {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
             <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
           ) : null}
-          <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} />
+          <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} raidStatus={raid.status} />
         </div>
       </section>
 
@@ -859,7 +872,7 @@ export function RaidDetailView({
           {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
             <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
           ) : null}
-          <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} />
+          <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} raidStatus={raid.status} />
         </div>
       </section>
 

@@ -263,7 +263,10 @@ export async function findManyRaidSignupsForDashboard(
 
   const where = {
     userId,
-    raid: { scheduledAt: { gte: now, lte: rangeEnd } },
+    raid: {
+      scheduledAt: { gte: now, lte: rangeEnd },
+      status: { not: 'cancelled' },
+    },
   };
   const orderBy = { raid: { scheduledAt: 'asc' as const } };
 
