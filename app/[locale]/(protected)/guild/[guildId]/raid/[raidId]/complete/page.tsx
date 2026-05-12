@@ -6,6 +6,7 @@ import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getRaidDetailContext } from '@/lib/raid-detail-access';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
+import { normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
 import { getSpecByDisplayName, type TbcRole } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { prisma } from '@/lib/prisma';
@@ -87,18 +88,33 @@ export default async function RaidCompletePage(props: {
 
   const initialSignups: RaidCompleteSignupRow[] = raid.signups.map((s) => {
     const ch = s.character;
-    const mainSpec = (ch?.mainSpec || s.signedSpec || '—').trim() || '—';
-    const classId = getSpecByDisplayName(mainSpec)?.classId ?? null;
+    const mainSpec = (ch?.mainSpec || '—').trim() || '—';
+    const offSpec = ch?.offSpec?.trim() ? ch.offSpec : null;
+    const eff = (s.signedSpec?.trim() || mainSpec).trim();
+    const classId = getSpecByDisplayName(eff)?.classId ?? getSpecByDisplayName(mainSpec)?.classId ?? null;
+    const punctRaw = normalizeSignupPunctuality(s.punctuality, s.isLate);
+    const punctuality: 'on_time' | 'tight' | 'late' =
+      punctRaw === 'tight' || punctRaw === 'late' || punctRaw === 'on_time' ? punctRaw : 'on_time';
     return {
       id: s.id,
       userId: s.userId,
       characterId: ch?.id ?? null,
       name: ch?.name?.trim() || t('signupAnonymous'),
       mainSpec,
+      offSpec,
       classId,
       signedSpec: s.signedSpec,
+      originalSignedSpec: mainSpec,
+      onlySignedSpec: s.onlySignedSpec,
       isMain: !!ch?.isMain,
       guildDiscordDisplayName: ch?.guildDiscordDisplayName ?? null,
+      role: (roleFromSpecDisplayName(eff) ?? 'Melee') as TbcRole,
+      signupType: s.type,
+      punctuality,
+      isLate: s.isLate,
+      forbidReserve: s.forbidReserve,
+      note: s.note,
+      gearScore: ch?.gearScore ?? null,
     };
   });
 

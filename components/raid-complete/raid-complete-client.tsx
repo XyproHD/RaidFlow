@@ -1,14 +1,24 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { formatRaidTerminLine } from '@/lib/format-raid-termin';
+import { getSpecByDisplayName, type TbcRole } from '@/lib/wow-tbc-classes';
+import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { ClassIcon } from '@/components/class-icon';
+import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
-import { CharacterSpecIconsInline } from '@/components/character-display-parts';
+import {
+  CharacterDiscordPill,
+  CharacterForbidReserveBadge,
+  CharacterGearscorePill,
+  CharacterSignupPunctualityMark,
+  CharacterSpecIconsInline,
+} from '@/components/character-display-parts';
 import type { GuildCharacterOption } from '@/components/raid-planner/raid-roster-planner';
 import { normalizeParticipationWeight } from '@/lib/raid-participation-weight';
 
@@ -18,10 +28,20 @@ export type RaidCompleteSignupRow = {
   characterId: string | null;
   name: string;
   mainSpec: string;
+  offSpec: string | null;
   classId: string | null;
   signedSpec: string | null;
+  originalSignedSpec: string | null;
+  onlySignedSpec: boolean;
   isMain: boolean;
   guildDiscordDisplayName: string | null;
+  role: TbcRole;
+  signupType: string;
+  punctuality: 'on_time' | 'tight' | 'late';
+  isLate: boolean;
+  forbidReserve: boolean;
+  note: string | null;
+  gearScore: number | null;
 };
 
 type RaidHeader = {
@@ -32,6 +52,23 @@ type RaidHeader = {
   dungeonLabel: string;
   maxPlayers: number;
 };
+
+function typeNorm(v: string) {
+  return v === 'main' ? 'normal' : v;
+}
+
+function attendanceRowVariant(s: RaidCompleteSignupRow): 'default' | 'uncertain' | 'declined' {
+  const tn = typeNorm(s.signupType);
+  if (tn === 'uncertain') return 'uncertain';
+  if (tn === 'declined') return 'declined';
+  return 'default';
+}
+
+function punctualityOf(s: RaidCompleteSignupRow): 'on_time' | 'tight' | 'late' {
+  const p = s.punctuality;
+  if (p === 'tight' || p === 'late' || p === 'on_time') return p;
+  return s.isLate ? 'late' : 'on_time';
+}
 
 function cloneGroups(groups: string[][]): string[][] {
   return groups.map((g) => [...g]);
@@ -45,6 +82,10 @@ function buildInitialWeights(groups: string[][]): Record<string, number> {
     }
   }
   return w;
+}
+
+function effectiveSignedSpec(s: RaidCompleteSignupRow): string {
+  return (s.signedSpec?.trim() || s.originalSignedSpec?.trim() || s.mainSpec.trim()).trim();
 }
 
 export function RaidCompleteClient({
@@ -67,6 +108,7 @@ export function RaidCompleteClient({
   const t = useTranslations('raidComplete');
   const tRoster = useTranslations('raidRosterPlanner');
   const tDetail = useTranslations('raidDetail');
+  const tPlanner = useTranslations('raidPlanner');
   const tProfile = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
@@ -82,11 +124,11 @@ export function RaidCompleteClient({
   const [addOpen, setAddOpen] = useState(false);
   const [addGroupIndex, setAddGroupIndex] = useState(0);
   const [addQuery, setAddQuery] = useState('');
-  const [pickChar, setPickChar] = useState<GuildCharacterOption | null>(null);
-  const [pickSpec, setPickSpec] = useState<string | null>(null);
+  const [addSelectedId, setAddSelectedId] = useState<string | null>(null);
   const [addBusy, setAddBusy] = useState(false);
   const [submitBusy, setSubmitBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [specPatchingId, setSpecPatchingId] = useState<string | null>(null);
 
   const raidTermin = useMemo(() => {
     const start = new Date(raid.scheduledAt);
@@ -94,11 +136,131 @@ export function RaidCompleteClient({
     return formatRaidTerminLine(locale, start, end);
   }, [raid.scheduledAt, raid.scheduledEndAt, locale]);
 
-  const filteredGuildChars = useMemo(() => {
+  const guildCharacterById = useMemo(
+    () => new Map(guildCharacters.map((c) => [c.id, c])),
+    [guildCharacters]
+  );
+
+  const resolveDiscordNameForRow = useCallback(
+    (s: RaidCompleteSignupRow): string | null => {
+      const direct = s.guildDiscordDisplayName?.trim();
+      if (direct) return direct;
+      const cid = (s.characterId ?? '').trim();
+      if (cid) {
+        const fromCharacter = guildCharacterById.get(cid)?.guildDiscordDisplayName?.trim();
+        if (fromCharacter) return fromCharacter;
+      }
+      const uid = (s.userId ?? '').trim();
+      if (!uid) return null;
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid || !c.isMain) continue;
+        const d = c.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid) continue;
+        const d = c.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      for (const row of Object.values(signupRows)) {
+        if (row.userId.trim() !== uid) continue;
+        const d = row.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      return null;
+    },
+    [guildCharacterById, guildCharacters, signupRows]
+  );
+
+  const resolveGearScoreForRow = useCallback(
+    (s: RaidCompleteSignupRow): number | null => {
+      if (typeof s.gearScore === 'number') return s.gearScore;
+      const cid = (s.characterId ?? '').trim();
+      if (cid) {
+        const g = guildCharacterById.get(cid)?.gearScore;
+        if (typeof g === 'number') return g;
+      }
+      const uid = (s.userId ?? '').trim();
+      if (!uid) return null;
+      for (const c of guildCharacters) {
+        if (c.userId.trim() !== uid) continue;
+        if (typeof c.gearScore === 'number') return c.gearScore;
+      }
+      for (const row of Object.values(signupRows)) {
+        if (row.userId.trim() !== uid) continue;
+        if (typeof row.gearScore === 'number') return row.gearScore;
+      }
+      return null;
+    },
+    [guildCharacterById, guildCharacters, signupRows]
+  );
+
+  const resolveDiscordNameForCharacterOption = useCallback(
+    (c: GuildCharacterOption): string | null => {
+      const direct = c.guildDiscordDisplayName?.trim();
+      if (direct) return direct;
+      const uid = c.userId.trim();
+      if (!uid) return null;
+      for (const other of guildCharacters) {
+        if (other.userId.trim() !== uid || !other.isMain) continue;
+        const d = other.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      for (const other of guildCharacters) {
+        if (other.userId.trim() !== uid) continue;
+        const d = other.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      for (const row of Object.values(signupRows)) {
+        if (row.userId.trim() !== uid) continue;
+        const d = row.guildDiscordDisplayName?.trim();
+        if (d) return d;
+      }
+      return null;
+    },
+    [guildCharacters, signupRows]
+  );
+
+  const resolveGearScoreForCharacterOption = useCallback(
+    (c: GuildCharacterOption): number | null => {
+      if (typeof c.gearScore === 'number') return c.gearScore;
+      const uid = c.userId.trim();
+      if (!uid) return null;
+      for (const other of guildCharacters) {
+        if (other.userId.trim() !== uid) continue;
+        if (typeof other.gearScore === 'number') return other.gearScore;
+      }
+      for (const row of Object.values(signupRows)) {
+        if (row.userId.trim() !== uid) continue;
+        if (typeof row.gearScore === 'number') return row.gearScore;
+      }
+      return null;
+    },
+    [guildCharacters, signupRows]
+  );
+
+  const usedCharacterIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const id of groups.flat()) {
+      const cid = signupRows[id]?.characterId?.trim();
+      if (cid) set.add(cid);
+    }
+    return set;
+  }, [groups, signupRows]);
+
+  const addCandidates = useMemo(() => {
     const q = addQuery.trim().toLowerCase();
-    if (!q) return guildCharacters;
-    return guildCharacters.filter((c) => c.name.toLowerCase().includes(q));
-  }, [addQuery, guildCharacters]);
+    const all = guildCharacters.filter((c) => !usedCharacterIds.has(c.id));
+    if (!q) return all.slice(0, 50);
+    return all
+      .filter((c) => c.name.toLowerCase().includes(q))
+      .slice(0, 50);
+  }, [addQuery, guildCharacters, usedCharacterIds]);
+
+  const addSelected = useMemo(
+    () => (addSelectedId ? guildCharacters.find((c) => c.id === addSelectedId) ?? null : null),
+    [addSelectedId, guildCharacters]
+  );
 
   function setWeightFor(id: string, raw: string) {
     const w = normalizeParticipationWeight(raw);
@@ -115,62 +277,177 @@ export function RaidCompleteClient({
   function openAdd(groupIndex: number) {
     setAddGroupIndex(groupIndex);
     setAddQuery('');
-    setPickChar(null);
-    setPickSpec(null);
+    setAddSelectedId(null);
     setAddOpen(true);
     setFormError(null);
   }
 
-  async function confirmAddFromGuild() {
-    if (!pickChar || !pickSpec) return;
-    const flat = groups.flat();
-    if (flat.some((id) => signupRows[id]?.characterId === pickChar.id)) {
+  async function patchSignedSpec(signupId: string, spec: string) {
+    setSpecPatchingId(signupId);
+    setFormError(null);
+    try {
+      const res = await fetch(
+        `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups/${encodeURIComponent(signupId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ signedSpec: spec.trim() }),
+        }
+      );
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(j.error || t('specUpdateError'));
+      }
+      const nextRole = (roleFromSpecDisplayName(spec) ?? 'Melee') as TbcRole;
+      const classId = getSpecByDisplayName(spec)?.classId ?? signupRows[signupId]?.classId ?? null;
+      setSignupRows((prev) => {
+        const cur = prev[signupId];
+        if (!cur) return prev;
+        return {
+          ...prev,
+          [signupId]: {
+            ...cur,
+            signedSpec: spec.trim(),
+            role: nextRole,
+            classId,
+          },
+        };
+      });
+      router.refresh();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : t('specUpdateError'));
+    } finally {
+      setSpecPatchingId(null);
+    }
+  }
+
+  function renderSpecIcons(s: RaidCompleteSignupRow, interactive: boolean) {
+    const main = s.mainSpec.trim();
+    const off = (s.offSpec ?? '').trim();
+    const signed = effectiveSignedSpec(s);
+    const hasOff = !!off;
+    const canSwitch = interactive && hasOff && !s.onlySignedSpec && specPatchingId !== s.id;
+    const isOverrideActive =
+      !!s.signedSpec?.trim() &&
+      !!s.originalSignedSpec?.trim() &&
+      s.signedSpec!.trim() !== s.originalSignedSpec!.trim();
+
+    const renderOne = (spec: string) => {
+      const isSigned = spec === signed;
+      const gray = !isSigned;
+      const showOverrideRing = isSigned && isOverrideActive;
+
+      return (
+        <button
+          key={spec}
+          type="button"
+          disabled={!canSwitch || isSigned}
+          onClick={() => {
+            if (!canSwitch) return;
+            if (spec === signed) return;
+            void patchSignedSpec(s.id, spec);
+          }}
+          className={cn(
+            'relative inline-flex items-center gap-0.5 shrink-0 rounded-sm',
+            canSwitch && !isSigned ? 'cursor-pointer' : 'cursor-default',
+            showOverrideRing && 'ring-2 ring-green-600/70 dark:ring-green-500/70 ring-offset-1 ring-offset-background'
+          )}
+          title={spec}
+        >
+          <span className={cn(gray && 'grayscale opacity-[0.85]')}>
+            <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={22} slashClassName="hidden" />
+          </span>
+          {isSigned && s.onlySignedSpec ? (
+            <span
+              className="text-sm leading-none shrink-0"
+              title={tRoster('specLockHint')}
+              aria-label={tRoster('specLockHint')}
+            >
+              🔒
+            </span>
+          ) : null}
+        </button>
+      );
+    };
+
+    if (!hasOff) {
+      return <span className="inline-flex items-center gap-1">{renderOne(main)}</span>;
+    }
+    return (
+      <span className="inline-flex items-center gap-1">
+        {renderOne(main)}
+        {renderOne(off)}
+      </span>
+    );
+  }
+
+  async function addManualSignup() {
+    if (!addSelected) return;
+    if (usedCharacterIds.has(addSelected.id)) {
       setFormError(t('alreadyInRoster'));
       return;
     }
     setAddBusy(true);
     setFormError(null);
     try {
+      const signedSpecStart = addSelected.mainSpec.trim();
       const res = await fetch(
         `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups/leader`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            targetUserId: pickChar.userId,
-            characterId: pickChar.id,
+            targetUserId: addSelected.userId,
+            characterId: addSelected.id,
             type: 'normal',
-            signedSpec: pickSpec,
+            signedSpec: signedSpecStart,
             leaderPlacement: 'confirmed',
           }),
         }
       );
       const j = (await res.json().catch(() => ({}))) as {
-        signup?: { id: string; userId: string; characterId: string | null; signedSpec: string | null };
+        signup?: {
+          id: string;
+          userId: string;
+          characterId: string | null;
+          signedSpec: string | null;
+        };
       };
       if (!res.ok || !j.signup?.id) {
         throw new Error((j as { error?: string }).error || t('addError'));
       }
       const su = j.signup;
-      const name = pickChar.name;
-      const mainSpec = pickChar.mainSpec;
+      const eff = (su.signedSpec?.trim() || signedSpecStart).trim();
       const row: RaidCompleteSignupRow = {
         id: su.id,
         userId: su.userId,
         characterId: su.characterId,
-        name,
-        mainSpec,
-        classId: pickChar.classId,
-        signedSpec: su.signedSpec ?? pickSpec,
-        isMain: pickChar.isMain,
-        guildDiscordDisplayName: pickChar.guildDiscordDisplayName,
+        name: addSelected.name,
+        mainSpec: addSelected.mainSpec,
+        offSpec: addSelected.offSpec,
+        classId: getSpecByDisplayName(eff)?.classId ?? addSelected.classId,
+        signedSpec: su.signedSpec ?? signedSpecStart,
+        originalSignedSpec: addSelected.mainSpec.trim(),
+        onlySignedSpec: false,
+        isMain: addSelected.isMain,
+        guildDiscordDisplayName: addSelected.guildDiscordDisplayName,
+        role: (roleFromSpecDisplayName(eff) ?? addSelected.role) as TbcRole,
+        signupType: 'normal',
+        punctuality: 'on_time',
+        isLate: false,
+        forbidReserve: false,
+        note: null,
+        gearScore:
+          typeof addSelected.gearScore === 'number'
+            ? addSelected.gearScore
+            : resolveGearScoreForCharacterOption(addSelected),
       };
       setSignupRows((prev) => ({ ...prev, [row.id]: row }));
       setWeights((prev) => ({ ...prev, [row.id]: 1 }));
       setGroups((prev) => prev.map((g, i) => (i === addGroupIndex ? [...g, row.id] : g)));
       setAddOpen(false);
-      setPickChar(null);
-      setPickSpec(null);
+      setAddQuery('');
+      setAddSelectedId(null);
       router.refresh();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : t('addError'));
@@ -273,28 +550,49 @@ export function RaidCompleteClient({
                   className="text-xs rounded-md border border-border px-2 py-1 hover:bg-muted"
                   onClick={() => openAdd(gi)}
                 >
-                  ➕ {t('addPlayer')}
+                  ➕ {tPlanner('addPlayer')}
                 </button>
               </div>
-              <ul className="divide-y divide-border">
+              <div role="list" className="p-3 space-y-2">
                 {g.length === 0 ? (
-                  <li className="px-3 py-4 text-sm text-muted-foreground text-center">{tRoster('rosterEmpty')}</li>
+                  <p className="text-sm text-muted-foreground text-center py-4">{tRoster('rosterEmpty')}</p>
                 ) : (
-                  g.map((signupId) => {
+                  g.map((signupId, rosterIdx) => {
                     const s = signupRows[signupId];
                     if (!s) {
                       return (
-                        <li key={signupId} className="px-3 py-2 text-sm text-destructive">
+                        <div key={signupId} className="px-3 py-2 text-sm text-destructive">
                           {signupId}
-                        </li>
+                        </div>
                       );
                     }
-                    const specShow = (s.signedSpec?.trim() || s.mainSpec || '—').trim();
+                    const displayDiscordName = resolveDiscordNameForRow(s);
+                    const displayGearScore = resolveGearScoreForRow(s);
+                    const punct = punctualityOf(s);
+                    const punctLabel =
+                      punct === 'on_time'
+                        ? tDetail('punctualityOnTime')
+                        : punct === 'tight'
+                          ? tDetail('punctualityTight')
+                          : tDetail('punctualityLate');
+                    const attVariant = attendanceRowVariant(s);
+                    const note = s.note?.trim() ?? '';
                     return (
-                      <li
+                      <div
                         key={signupId}
-                        className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-sm"
+                        role="listitem"
+                        className={cn(
+                          'flex flex-wrap items-center gap-2 rounded-lg border bg-background px-2 py-1.5 text-sm',
+                          attVariant === 'default' && 'border-border',
+                          attVariant === 'uncertain' && 'border-red-400/60 dark:border-red-700/55',
+                          attVariant === 'declined' &&
+                            'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40'
+                        )}
                       >
+                        <span className="tabular-nums text-muted-foreground w-10 shrink-0 font-medium inline-flex items-center gap-1">
+                          <span className="w-6 text-right">{rosterIdx + 1}.</span>
+                          <RoleIcon role={s.role} size={16} />
+                        </span>
                         <CharacterMainStar
                           isMain={!!s.isMain}
                           titleMain={tProfile('mainLabel')}
@@ -302,35 +600,51 @@ export function RaidCompleteClient({
                           sizePx={16}
                         />
                         {s.classId ? <ClassIcon classId={s.classId} size={22} /> : null}
-                        <CharacterSpecIconsInline mainSpec={specShow} size={20} slashClassName="hidden" offSpec={null} />
-                        <span className="font-medium truncate min-w-0 flex-1">{s.name}</span>
-                        <span className="text-xs text-muted-foreground truncate max-w-[10rem]">
-                          {s.guildDiscordDisplayName ?? ''}
+                        {renderSpecIcons(s, true)}
+                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <span className="font-medium truncate">{s.name}</span>
+                          <CharacterSignupPunctualityMark kind={punct} label={punctLabel} />
+                          {s.forbidReserve ? (
+                            <CharacterForbidReserveBadge title={tDetail('conditionForbidReserve')} pulse={false} />
+                          ) : null}
                         </span>
-                        <label className="flex items-center gap-2 shrink-0">
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">{t('weightLabel')}</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={1}
-                            step={0.1}
-                            className="w-20 rounded-md border border-input bg-background px-2 py-1 text-sm tabular-nums"
-                            value={weights[signupId] ?? 1}
-                            onChange={(e) => setWeightFor(signupId, e.target.value)}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className="text-xs text-destructive hover:underline shrink-0"
-                          onClick={() => removeFromGroup(gi, signupId)}
-                        >
-                          {t('removeFromGroup')}
-                        </button>
-                      </li>
+                        <span className="ml-auto flex flex-wrap items-center gap-2">
+                          <CharacterDiscordPill discordName={displayDiscordName} blink={false} />
+                          <CharacterGearscorePill gearScore={displayGearScore} />
+                          {note.length > 0 ? (
+                            <span
+                              className="shrink-0 text-base leading-none opacity-80"
+                              title={note}
+                              aria-label={tDetail('participantNotiz')}
+                            >
+                              📒
+                            </span>
+                          ) : null}
+                          <label className="flex items-center gap-1.5 shrink-0 text-xs text-muted-foreground">
+                            <span className="whitespace-nowrap">{t('weightLabel')}</span>
+                            <input
+                              type="number"
+                              min={0}
+                              max={1}
+                              step={0.1}
+                              className="w-16 rounded-md border border-input bg-background px-1.5 py-0.5 text-xs tabular-nums"
+                              value={weights[signupId] ?? 1}
+                              onChange={(e) => setWeightFor(signupId, e.target.value)}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="text-xs text-destructive hover:underline shrink-0"
+                            onClick={() => removeFromGroup(gi, signupId)}
+                          >
+                            {t('removeFromGroup')}
+                          </button>
+                        </span>
+                      </div>
                     );
                   })
                 )}
-              </ul>
+              </div>
             </div>
           ))}
 
@@ -348,128 +662,125 @@ export function RaidCompleteClient({
         </div>
       </div>
 
-      {addOpen ? (
-        <div
-          className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-black/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setAddOpen(false);
-          }}
-        >
-          <div
-            className="my-6 w-full max-w-lg rounded-xl border border-border bg-background shadow-xl"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-              <h2 className="text-base font-semibold">{t('addPlayer')}</h2>
-              <button
-                type="button"
-                className="rounded-md border border-border px-2 py-1 text-sm hover:bg-muted"
-                onClick={() => setAddOpen(false)}
-              >
-                {tDetail('withdrawReasonCancel')}
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              {!pickChar ? (
-                <>
-                  <input
-                    type="search"
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    placeholder={t('searchPlaceholder')}
-                    value={addQuery}
-                    onChange={(e) => setAddQuery(e.target.value)}
-                  />
-                  <div className="max-h-[min(50vh,360px)] overflow-y-auto rounded-md border border-border divide-y divide-border">
-                    {filteredGuildChars.length === 0 ? (
-                      <p className="p-3 text-sm text-muted-foreground">{t('noGuildChars')}</p>
-                    ) : (
-                      filteredGuildChars.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-                          onClick={() => {
-                            setPickChar(c);
-                            if (c.offSpec?.trim()) {
-                              setPickSpec(null);
-                            } else {
-                              setPickSpec(c.mainSpec.trim());
-                            }
-                          }}
-                        >
-                          {c.classId ? <ClassIcon classId={c.classId} size={20} /> : null}
-                          <span className="font-medium">{c.name}</span>
-                          <span className="text-xs text-muted-foreground truncate">{c.mainSpec}</span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-3">
-                  <p className="text-sm">
-                    <span className="font-medium">{pickChar.name}</span>
-                  </p>
-                  {pickChar.offSpec?.trim() ? (
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">{t('pickSpec')}</p>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          className={cn(
-                            'rounded-md border px-3 py-1.5 text-sm',
-                            pickSpec === pickChar.mainSpec.trim()
-                              ? 'border-primary bg-primary/10'
-                              : 'border-border hover:bg-muted'
-                          )}
-                          onClick={() => setPickSpec(pickChar.mainSpec.trim())}
-                        >
-                          {pickChar.mainSpec}
-                        </button>
-                        <button
-                          type="button"
-                          className={cn(
-                            'rounded-md border px-3 py-1.5 text-sm',
-                            pickSpec === pickChar.offSpec!.trim()
-                              ? 'border-primary bg-primary/10'
-                              : 'border-border hover:bg-muted'
-                          )}
-                          onClick={() => setPickSpec(pickChar.offSpec!.trim())}
-                        >
-                          {pickChar.offSpec}
-                        </button>
-                      </div>
+      {addOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-[1200]">
+              <div
+                className="absolute inset-0 bg-black/50"
+                onMouseDown={() => setAddOpen(false)}
+                role="button"
+                tabIndex={0}
+                aria-label="Close"
+              />
+              <div className="absolute inset-0 flex items-start justify-center p-4 sm:p-6">
+                <div
+                  className="w-full max-w-lg rounded-xl border border-border bg-background shadow-xl overflow-hidden"
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  <div className="border-b border-border bg-muted/20 px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground">{tPlanner('addPlayer')}</p>
+                      <p className="text-xs text-muted-foreground">{tRoster('addHint')}</p>
                     </div>
-                  ) : null}
-                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
-                      onClick={() => {
-                        setPickChar(null);
-                        setPickSpec(null);
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0"
+                      onClick={() => setAddOpen(false)}
+                      aria-label={tPlanner('cancel')}
+                      title={tPlanner('cancel')}
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="p-4 space-y-3">
+                    <input
+                      value={addQuery}
+                      onChange={(e) => {
+                        setAddQuery(e.target.value);
+                        setAddSelectedId(null);
                       }}
-                    >
-                      {tDetail('withdrawReasonCancel')}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={addBusy || !pickSpec}
-                      className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm disabled:opacity-50"
-                      onClick={() => void confirmAddFromGuild()}
-                    >
-                      {addBusy ? '…' : tDetail('signupSubmit')}
-                    </button>
+                      placeholder={tPlanner('pickChar')}
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                      autoFocus
+                    />
+
+                    <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
+                      {addCandidates.length === 0 ? (
+                        <p className="p-3 text-sm text-muted-foreground">{tRoster('noResults')}</p>
+                      ) : (
+                        <div className="divide-y divide-border">
+                          {addCandidates.map((c) => {
+                            const selected = addSelectedId === c.id;
+                            const displayDiscordName = resolveDiscordNameForCharacterOption(c);
+                            const displayGearScore = resolveGearScoreForCharacterOption(c);
+                            return (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => setAddSelectedId(c.id)}
+                                className={cn(
+                                  'w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2',
+                                  selected && 'bg-primary/10'
+                                )}
+                              >
+                                <CharacterMainStar
+                                  isMain={!!c.isMain}
+                                  titleMain={tProfile('mainLabel')}
+                                  titleAlt={tProfile('altLabel')}
+                                  sizePx={14}
+                                />
+                                {c.classId ? <ClassIcon classId={c.classId} size={18} /> : null}
+                                <span className="flex items-center gap-1.5">
+                                  <CharacterSpecIconsInline
+                                    mainSpec={c.mainSpec}
+                                    offSpec={c.offSpec}
+                                    size={18}
+                                    slashClassName="hidden"
+                                    offSpecWrapperBaseClassName="inline-flex items-center align-middle"
+                                    offSpecIconClassName="grayscale contrast-200 brightness-75"
+                                  />
+                                </span>
+                                <span className="font-medium truncate">{c.name}</span>
+                                <span className="ml-auto flex items-center gap-2">
+                                  <CharacterDiscordPill discordName={displayDiscordName} />
+                                  <CharacterGearscorePill gearScore={displayGearScore} />
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        className="rounded-md border border-border bg-background px-3 py-2 text-sm hover:bg-muted"
+                        onClick={() => setAddOpen(false)}
+                      >
+                        {tPlanner('cancel')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!addSelected || addBusy}
+                        className={cn(
+                          'rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground',
+                          (!addSelected || addBusy) && 'opacity-50 cursor-not-allowed'
+                        )}
+                        onClick={() => void addManualSignup()}
+                      >
+                        {addBusy ? '…' : tPlanner('add')}
+                      </button>
+                    </div>
+                    {formError ? <p className="text-destructive text-sm">{formError}</p> : null}
                   </div>
                 </div>
-              )}
-              {formError ? <p className="text-destructive text-sm">{formError}</p> : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }
