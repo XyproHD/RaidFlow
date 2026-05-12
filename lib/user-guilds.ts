@@ -8,6 +8,7 @@
 import { cache } from 'react';
 import { prisma } from '@/lib/prisma';
 import { getAppConfig, isGuildAllowed } from '@/lib/app-config';
+import { applyOwnerWebFullAccessToRole } from '@/lib/owner-web-permission-override';
 
 /** RaidFlow-Rolle oder nur Discord-Mitglied ohne RaidFlow-Rolle. */
 export type UserGuildRole = 'guildmaster' | 'raidleader' | 'raider' | 'member';
@@ -50,6 +51,11 @@ export interface RaidQueryWindow {
   to?: Date;
 }
 
+/** Bot-Routen setzen `skipOwnerWebFullAccess: true`, damit der App-Owner keine künstlichen Rechte über Bot-APIs erhält. */
+export type GuildsForUserOptions = {
+  skipOwnerWebFullAccess?: boolean;
+};
+
 /** Gleiche Sichtbarkeit wie in getRaidsForUser: Raider-Rolle, ggf. Raidgruppe oder Leitung. */
 export function userGuildCanSeeRaid(
   guildInfo: UserGuildInfo,
@@ -73,7 +79,11 @@ export function userGuildCanEditRaids(guildInfo: UserGuildInfo): boolean {
  * Gilden des Users **nur aus der Datenbank** (kein Discord-Roundtrip).
  * Filtert nach App-Config (Whitelist/Blacklist). Sortiert nach Gildenname.
  */
-export async function getGuildsForUserFromDb(userId: string): Promise<UserGuildInfo[]> {
+export async function getGuildsForUserFromDb(
+  userId: string,
+  discordId?: string | null,
+  options?: GuildsForUserOptions
+): Promise<UserGuildInfo[]> {
   const [config, userGuildRows] = await Promise.all([
     getAppConfig(),
     prisma.rfUserGuild.findMany({
@@ -111,11 +121,17 @@ export async function getGuildsForUserFromDb(userId: string): Promise<UserGuildI
     const member = memberByGuildId.get(guild.id);
     const raidGroupIds = member?.memberRaidGroups.map((rg) => rg.raidGroupId) ?? [];
 
+    const dbRole = ug.role as UserGuildRole;
+    const role =
+      options?.skipOwnerWebFullAccess === true
+        ? dbRole
+        : applyOwnerWebFullAccessToRole(dbRole, discordId ?? null, config);
+
     result.push({
       id: guild.id,
       name: guild.name,
       discordGuildId: guild.discordGuildId,
-      role: ug.role as UserGuildRole,
+      role,
       raidGroupIds,
       battlenetRealmId: guild.battlenetRealmId,
       battlenetGuildId: guild.battlenetGuildId?.toString() ?? null,
@@ -141,9 +157,10 @@ export async function getGuildsForUserFromDb(userId: string): Promise<UserGuildI
  */
 export async function getGuildsForUser(
   userId: string,
-  _discordId?: string | null
+  discordId?: string | null,
+  options?: GuildsForUserOptions
 ): Promise<UserGuildInfo[]> {
-  return getGuildsForUserFromDb(userId);
+  return getGuildsForUserFromDb(userId, discordId, options);
 }
 
 /**

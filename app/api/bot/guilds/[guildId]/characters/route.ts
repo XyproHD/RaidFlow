@@ -79,7 +79,9 @@ export async function POST(
   }
 
   const userId = await ensureUserIdForDiscordId(discordUserId);
-  const userGuilds = await getGuildsForUser(userId, discordUserId);
+  const userGuilds = await getGuildsForUser(userId, discordUserId, {
+    skipOwnerWebFullAccess: true,
+  });
   const allowedGuildIds = new Set(userGuilds.map((g) => g.id));
 
   if (userGuilds.length > 0) {

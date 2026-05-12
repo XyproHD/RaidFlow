@@ -18,6 +18,7 @@ const KEY_SERVER_BLACKLIST = 'server_blacklist';
 const KEY_DISCORD_BOT_INVITE_ENABLED = 'discord_bot_invite_enabled';
 const KEY_MAINTENANCE_MODE = 'maintenance_mode';
 const KEY_STATUS_MESSAGE = 'status_message';
+const KEY_OWNER_WEB_FULL_ACCESS = 'owner_web_full_access';
 const KEY_DISCORD_EMOJIS = 'discord_emojis';
 const EXTERNAL_DISCORD_EMOJI_GUILD_ID = '1301090883789258752';
 const EXTERNAL_EMOJI_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -31,6 +32,11 @@ export interface AppConfigState {
   discordBotInviteEnabled: boolean;
   maintenanceMode: boolean;
   statusMessage: string;
+  /**
+   * Wenn true: App-Owner (ownerDiscordId) erhält in der Web-App pro Gilde effektiv Gildenmeister-Rechte,
+   * sofern mindestens Raider — nur Session/API, nicht der Discord-Bot.
+   */
+  ownerWebFullAccess: boolean;
   /** Discord Emoji-Markup (z. B. "<:wow_tank:123>") für Bot-UI (UseExternalEmojis). */
   discordEmojis: Record<string, string>;
 }
@@ -45,6 +51,7 @@ export const DEFAULT_APP_CONFIG_STATE: AppConfigState = {
   discordBotInviteEnabled: true,
   maintenanceMode: false,
   statusMessage: '',
+  ownerWebFullAccess: false,
   discordEmojis: {},
 };
 
@@ -118,6 +125,7 @@ export const getAppConfig = cache(async (): Promise<AppConfigState> => {
     KEY_DISCORD_BOT_INVITE_ENABLED,
     KEY_MAINTENANCE_MODE,
     KEY_STATUS_MESSAGE,
+    KEY_OWNER_WEB_FULL_ACCESS,
     KEY_DISCORD_EMOJIS,
   ] as const;
   const rows = await prisma.rfAppConfig.findMany({
@@ -132,6 +140,7 @@ export const getAppConfig = cache(async (): Promise<AppConfigState> => {
   const discordBotInviteEnabled = byKey.get(KEY_DISCORD_BOT_INVITE_ENABLED) ?? null;
   const maintenanceMode = byKey.get(KEY_MAINTENANCE_MODE) ?? null;
   const statusMessage = byKey.get(KEY_STATUS_MESSAGE) ?? null;
+  const ownerWebFullAccess = byKey.get(KEY_OWNER_WEB_FULL_ACCESS) ?? null;
   const discordEmojisRaw = byKey.get(KEY_DISCORD_EMOJIS) ?? null;
   const configuredDiscordEmojis = parseJsonStringRecord(discordEmojisRaw);
   const externalDiscordEmojis = await loadExternalDiscordEmojis();
@@ -144,6 +153,7 @@ export const getAppConfig = cache(async (): Promise<AppConfigState> => {
     discordBotInviteEnabled: discordBotInviteEnabled !== 'false',
     maintenanceMode: maintenanceMode === 'true',
     statusMessage: statusMessage ?? '',
+    ownerWebFullAccess: ownerWebFullAccess === 'true',
     // Externe Emoji-Guild überschreibt gleichnamige Keys (z. B. wow_*), damit
     // serverübergreifende Emoji-Nutzung konsistent funktioniert.
     discordEmojis: { ...configuredDiscordEmojis, ...externalDiscordEmojis },
@@ -235,15 +245,18 @@ export async function setAdminFeatureFlags(updates: {
   discordBotInviteEnabled?: boolean;
   maintenanceMode?: boolean;
   statusMessage?: string;
+  ownerWebFullAccess?: boolean;
 }): Promise<AppConfigState> {
   const config = await getAppConfig();
   let discordBotInviteEnabled = config.discordBotInviteEnabled;
   let maintenanceMode = config.maintenanceMode;
   let statusMessage = config.statusMessage;
+  let ownerWebFullAccess = config.ownerWebFullAccess;
 
   if (updates.discordBotInviteEnabled !== undefined) discordBotInviteEnabled = updates.discordBotInviteEnabled;
   if (updates.maintenanceMode !== undefined) maintenanceMode = updates.maintenanceMode;
   if (updates.statusMessage !== undefined) statusMessage = updates.statusMessage;
+  if (updates.ownerWebFullAccess !== undefined) ownerWebFullAccess = updates.ownerWebFullAccess;
 
   const tx = [
     prisma.rfAppConfig.upsert({
@@ -260,6 +273,11 @@ export async function setAdminFeatureFlags(updates: {
       where: { key: KEY_STATUS_MESSAGE },
       create: { key: KEY_STATUS_MESSAGE, value: statusMessage },
       update: { value: statusMessage },
+    }),
+    prisma.rfAppConfig.upsert({
+      where: { key: KEY_OWNER_WEB_FULL_ACCESS },
+      create: { key: KEY_OWNER_WEB_FULL_ACCESS, value: String(ownerWebFullAccess) },
+      update: { value: String(ownerWebFullAccess) },
     }),
   ];
   await prisma.$transaction(tx);

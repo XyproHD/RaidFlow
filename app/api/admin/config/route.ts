@@ -29,6 +29,7 @@ export async function GET() {
     discordBotInviteEnabled: config.discordBotInviteEnabled,
     maintenanceMode: config.maintenanceMode,
     statusMessage: config.statusMessage,
+    ownerWebFullAccess: config.ownerWebFullAccess,
   });
 }
 
@@ -45,6 +46,7 @@ export async function PATCH(request: NextRequest) {
     discordBotInviteEnabled?: boolean;
     maintenanceMode?: boolean;
     statusMessage?: string;
+    ownerWebFullAccess?: boolean;
   };
   try {
     body = await request.json();
@@ -60,6 +62,7 @@ export async function PATCH(request: NextRequest) {
   if (typeof body.discordBotInviteEnabled === 'boolean') featureUpdates.discordBotInviteEnabled = body.discordBotInviteEnabled;
   if (typeof body.maintenanceMode === 'boolean') featureUpdates.maintenanceMode = body.maintenanceMode;
   if (typeof body.statusMessage === 'string') featureUpdates.statusMessage = body.statusMessage;
+  if (typeof body.ownerWebFullAccess === 'boolean') featureUpdates.ownerWebFullAccess = body.ownerWebFullAccess;
 
   let config = await getAppConfig();
   if (Object.keys(wbUpdates).length > 0) config = await setWhitelistBlacklist(wbUpdates);
@@ -73,5 +76,6 @@ export async function PATCH(request: NextRequest) {
     discordBotInviteEnabled: config.discordBotInviteEnabled,
     maintenanceMode: config.maintenanceMode,
     statusMessage: config.statusMessage,
+    ownerWebFullAccess: config.ownerWebFullAccess,
   });
 }

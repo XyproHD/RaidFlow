@@ -14,6 +14,7 @@ type ConfigState = {
   discordBotInviteEnabled: boolean;
   maintenanceMode: boolean;
   statusMessage: string;
+  ownerWebFullAccess?: boolean;
 };
 type AdminRow = { discordUserId: string; addedByDiscordId: string | null; createdAt: string };
 type DbProbeSample = { ms: number; at: string };
@@ -35,6 +36,7 @@ export function AdminContent({ locale, isOwner }: { locale: string; isOwner: boo
   const [configDiscordBotInviteEnabled, setConfigDiscordBotInviteEnabled] = useState(true);
   const [configMaintenanceMode, setConfigMaintenanceMode] = useState(false);
   const [configStatusMessage, setConfigStatusMessage] = useState('');
+  const [configOwnerWebFullAccess, setConfigOwnerWebFullAccess] = useState(false);
   const [newAdminId, setNewAdminId] = useState('');
   const [deletingGuildId, setDeletingGuildId] = useState<string | null>(null);
   const [removingAdminId, setRemovingAdminId] = useState<string | null>(null);
@@ -65,6 +67,7 @@ export function AdminContent({ locale, isOwner }: { locale: string; isOwner: boo
     setConfigDiscordBotInviteEnabled(data.discordBotInviteEnabled !== false);
     setConfigMaintenanceMode(data.maintenanceMode ?? false);
     setConfigStatusMessage(data.statusMessage ?? '');
+    setConfigOwnerWebFullAccess(data.ownerWebFullAccess === true);
   }, []);
 
   const loadAdmins = useCallback(async () => {
@@ -135,6 +138,7 @@ export function AdminContent({ locale, isOwner }: { locale: string; isOwner: boo
         discordBotInviteEnabled: configDiscordBotInviteEnabled,
         maintenanceMode: configMaintenanceMode,
         statusMessage: configStatusMessage,
+        ownerWebFullAccess: configOwnerWebFullAccess,
       }),
     });
     if (!res.ok) {
@@ -580,6 +584,27 @@ export function AdminContent({ locale, isOwner }: { locale: string; isOwner: boo
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
         </div>
+        <button
+          type="button"
+          onClick={handleSaveFeatures}
+          className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:opacity-90"
+        >
+          {t('saveConfig')}
+        </button>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold text-foreground">{t('ownerWebFullAccessSection')}</h2>
+        <p className="text-sm text-muted-foreground">{t('ownerWebFullAccessDescription')}</p>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={configOwnerWebFullAccess}
+            onChange={(e) => setConfigOwnerWebFullAccess(e.target.checked)}
+            className="rounded border-border"
+          />
+          <span className="text-sm">{t('ownerWebFullAccessEnabled')}</span>
+        </label>
         <button
           type="button"
           onClick={handleSaveFeatures}
