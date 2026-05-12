@@ -2702,7 +2702,7 @@ export function RaidRosterPlanner({
                       router.push(`/${locale}/guild/${guildId}/raid/${raidId}/complete`);
                     }}
                   >
-                    ✅ {t('menuCompleteRaid')}
+                    {t('menuCompleteRaid')}
                   </button>
                 ) : null}
                 <button

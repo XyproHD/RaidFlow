@@ -1290,7 +1290,7 @@ export function NewRaidWizard({
                 href={`/${locale}/guild/${guildId}/raid/${raidId}/complete`}
                 className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
               >
-                ✅ {tDetail('menuCompleteRaid')}
+                {tDetail('menuCompleteRaid')}
               </Link>
             ) : null}
             <button

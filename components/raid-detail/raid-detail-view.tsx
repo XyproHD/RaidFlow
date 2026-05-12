@@ -165,7 +165,7 @@ function signupIndicator(
   signupUntilIso: string,
   raidStatus: string
 ): { icon: '🟢' | '🟡' | '🔴'; isClosed: boolean } {
-  if (raidStatus === 'announced' || raidStatus === 'locked' || raidStatus === 'completed') {
+  if (raidStatus === 'announced' || raidStatus === 'locked' || raidStatus === 'completed' || raidStatus === 'cancelled') {
     return { icon: '🔴', isClosed: true };
   }
   const remainingMs = new Date(signupUntilIso).getTime() - Date.now();
@@ -943,7 +943,7 @@ export function RaidDetailView({
                       router.push(`/${locale}/guild/${guildId}/raid/${raidId}/complete`);
                     }}
                   >
-                    ✅ {t('menuCompleteRaid')}
+                    {t('menuCompleteRaid')}
                   </button>
                 ) : null}
                 {raid.status !== 'cancelled' && raid.status !== 'completed' ? (
