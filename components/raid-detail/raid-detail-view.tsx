@@ -36,6 +36,8 @@ import { normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
+import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
+import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
 
 export type AnnouncedLayoutProps = {
   groupMeta: {
@@ -272,6 +274,7 @@ export function RaidDetailView({
   const tRoster = useTranslations('raidRosterPlanner');
   const tDash = useTranslations('dashboard');
   const tEdit = useTranslations('raidEdit');
+  const tCancelDm = useTranslations('raidCancelDm');
   const tProfile = useTranslations('profile');
   const router = useRouter();
   const intlLocale = useLocale();
@@ -289,6 +292,8 @@ export function RaidDetailView({
   const [withdrawDialogOpen, setWithdrawDialogOpen] = useState(false);
   const [withdrawReason, setWithdrawReason] = useState('');
   const [withdrawTargetCharacterId, setWithdrawTargetCharacterId] = useState<string | null>(null);
+  const [cancelDmOpen, setCancelDmOpen] = useState(false);
+  const [cancelDmBusy, setCancelDmBusy] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -298,6 +303,7 @@ export function RaidDetailView({
         setMySignupRowMenu(null);
         setMyNoteExpandedId(null);
         setWithdrawDialogOpen(false);
+        setCancelDmOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -307,6 +313,17 @@ export function RaidDetailView({
   const scheduledAt = useMemo(() => new Date(raid.scheduledAt), [raid.scheduledAt]);
   const scheduledEndAt = raid.scheduledEndAt ? new Date(raid.scheduledEndAt) : null;
   const signupUntil = useMemo(() => new Date(raid.signupUntil), [raid.signupUntil]);
+
+  const defaultCancelDmText = useMemo(
+    () =>
+      formatDefaultRaidCancelDmDe({
+        guildName: raid.guild.name,
+        raidName: raid.name,
+        dungeonLine: dungeonLabel,
+        scheduledAt: scheduledAt,
+      }),
+    [raid.guild.name, raid.name, dungeonLabel, scheduledAt]
+  );
 
   const raidTermin = formatRaidTerminLine(intlLocale, scheduledAt, scheduledEndAt);
 
@@ -400,17 +417,25 @@ export function RaidDetailView({
   const signupState = signupIndicator(raid.signupUntil, raid.status);
   const hasMySignup = mySignups.length > 0;
 
-  async function doCancelRaid() {
-    if (!window.confirm(tEdit('cancelConfirm'))) return;
-    const res = await fetch(`/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'cancel' }),
-    });
-    if (!res.ok) return;
-    setLeaderMenuOpen(false);
-    router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
-    router.refresh();
+  async function submitRaidCancel(discordMessage: string) {
+    setCancelDmBusy(true);
+    try {
+      const res = await fetch(
+        `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'cancel', cancelDiscordMessage: discordMessage }),
+        }
+      );
+      if (!res.ok) return;
+      setCancelDmOpen(false);
+      setLeaderMenuOpen(false);
+      router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
+      router.refresh();
+    } finally {
+      setCancelDmBusy(false);
+    }
   }
 
   async function doDeleteRaid() {
@@ -944,7 +969,7 @@ export function RaidDetailView({
                     className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
                     onClick={() => {
                       setLeaderMenuOpen(false);
-                      void doCancelRaid();
+                      setCancelDmOpen(true);
                     }}
                   >
                     🚫 {t('menuCancelRaid')}
@@ -1052,6 +1077,21 @@ export function RaidDetailView({
             document.body
           )
         : null}
+
+      <RaidCancelDiscordOverlay
+        open={cancelDmOpen}
+        defaultMessage={defaultCancelDmText}
+        onClose={() => !cancelDmBusy && setCancelDmOpen(false)}
+        onConfirm={submitRaidCancel}
+        busy={cancelDmBusy}
+        title={tCancelDm('overlayTitle')}
+        hintMarkdown={tCancelDm('overlayHint')}
+        editorLabel={tCancelDm('editorLabel')}
+        previewLabel={tCancelDm('previewLabel')}
+        resetLabel={tCancelDm('resetDefault')}
+        cancelLabel={tCancelDm('cancel')}
+        confirmLabel={tCancelDm('confirm')}
+      />
 
       {withdrawDialogOpen
         ? createPortal(

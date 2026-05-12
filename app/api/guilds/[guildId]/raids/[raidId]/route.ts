@@ -11,6 +11,7 @@ import {
   parseAnnounceRaidPayload,
   validateAnnouncePayloadAgainstKnownIds,
 } from '@/lib/raid-announce';
+import { RAID_CANCEL_DM_MAX_LENGTH } from '@/lib/raid-cancel-message';
 
 /**
  * PATCH /api/guilds/[guildId]/raids/[raidId]
@@ -44,6 +45,21 @@ export async function PATCH(
   if (action === 'cancel') {
     if (raid.status !== 'open' && raid.status !== 'announced') {
       return NextResponse.json({ error: 'Raid cannot be cancelled' }, { status: 400 });
+    }
+
+    let cancelDiscordMessage: string | undefined;
+    if (body.cancelDiscordMessage !== undefined && body.cancelDiscordMessage !== null) {
+      if (typeof body.cancelDiscordMessage !== 'string') {
+        return NextResponse.json({ error: 'Invalid cancelDiscordMessage' }, { status: 400 });
+      }
+      const t = body.cancelDiscordMessage.trim();
+      if (t.length > RAID_CANCEL_DM_MAX_LENGTH) {
+        return NextResponse.json(
+          { error: `cancelDiscordMessage exceeds ${RAID_CANCEL_DM_MAX_LENGTH} characters` },
+          { status: 400 }
+        );
+      }
+      if (t.length > 0) cancelDiscordMessage = t;
     }
 
     const payload = await prisma.rfRaid.findFirst({
@@ -120,6 +136,7 @@ export async function PATCH(
       raidName: payload.name,
       dungeonLine,
       scheduledAt: payload.scheduledAt,
+      messageOverride: cancelDiscordMessage,
     }).catch((e) => console.error('[PATCH raid cancel] DMs:', e));
 
     return NextResponse.json({ ok: true, status: 'cancelled' });

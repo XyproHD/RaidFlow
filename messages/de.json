@@ -88,6 +88,15 @@
     "todayShort": "heut",
     "signupOpenUntil": "Anmeldung offen bis"
   },
+  "raidCancelDm": {
+    "overlayTitle": "Raid absagen — Discord-Nachricht",
+    "overlayHint": "Dieser Text wird per Direktnachricht an alle angemeldeten Discord-Nutzer gesendet. Du kannst ihn anpassen (**fett**, *kursiv*, `Code` wie in Discord).",
+    "editorLabel": "Nachricht (Markdown)",
+    "previewLabel": "Vorschau (wie in Discord)",
+    "resetDefault": "Standard wiederherstellen",
+    "cancel": "Abbrechen",
+    "confirm": "Raid absagen & senden"
+  },
   "raidDetail": {
     "backDashboard": "Zum Dashboard",
     "modeView": "Anzeigen",
@@ -760,7 +769,8 @@
     "confirmSubmit": "Raid wirklich abschließen? Discord-Beitrag wird entfernt; Teilnahmewerte werden gespeichert.",
     "emptyRosterHint": "Noch niemand in den Gruppen — über „Spieler hinzufügen“ Charaktere der Gilde eintragen.",
     "noGuildChars": "Keine Gilden-Charaktere geladen.",
-    "alreadyInRoster": "Dieser Charakter ist bereits in den Gruppen."
+    "alreadyInRoster": "Dieser Charakter ist bereits in den Gruppen.",
+    "specUpdateError": "Spec konnte nicht gespeichert werden."
   },
   "maintenance": {
     "title": "Wartungsmodus"

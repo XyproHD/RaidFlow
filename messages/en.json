@@ -88,6 +88,15 @@
     "todayShort": "today",
     "signupOpenUntil": "Signup open until"
   },
+  "raidCancelDm": {
+    "overlayTitle": "Cancel raid — Discord message",
+    "overlayHint": "This text is sent as a direct message to every signed-up Discord user. You may edit it (**bold**, *italic*, `code` as in Discord).",
+    "editorLabel": "Message (Markdown)",
+    "previewLabel": "Preview (Discord-like)",
+    "resetDefault": "Restore default",
+    "cancel": "Cancel",
+    "confirm": "Cancel raid & send"
+  },
   "raidDetail": {
     "backDashboard": "Back to dashboard",
     "modeView": "View",
@@ -760,7 +769,8 @@
     "confirmSubmit": "Really complete this raid? The Discord post will be removed and attendance values will be saved.",
     "emptyRosterHint": "No one in the groups yet — use “Add player” to add guild characters.",
     "noGuildChars": "No guild characters loaded.",
-    "alreadyInRoster": "This character is already in the groups."
+    "alreadyInRoster": "This character is already in the groups.",
+    "specUpdateError": "Could not save spec change."
   },
   "maintenance": {
     "title": "Maintenance mode"

@@ -43,6 +43,7 @@ type PoolMember = {
 };
 
 type Bootstrap = {
+  guildName: string;
   dungeons: { id: string; name: string; maxPlayers: number }[];
   raidGroups: { id: string; name: string }[];
   leaders: { userId: string; discordId: string; label: string }[];

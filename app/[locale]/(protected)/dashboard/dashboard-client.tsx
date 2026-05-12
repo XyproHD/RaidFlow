@@ -14,6 +14,8 @@ import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge'
 import { BattlenetLogo } from '@/components/battlenet-logo';
 import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
 import { cn } from '@/lib/utils';
+import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
+import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
 
 export type DashboardGuild = {
   id: string;
@@ -184,6 +186,7 @@ export function DashboardClient({
 }) {
   const t = useTranslations('dashboard');
   const tRaidDetail = useTranslations('raidDetail');
+  const tCancelDm = useTranslations('raidCancelDm');
   const raidStatusLabel = (st: string) => {
     if (st === 'open') return tRaidDetail('raidStatus_open');
     if (st === 'announced') return tRaidDetail('raidStatus_announced');
@@ -234,6 +237,12 @@ export function DashboardClient({
   const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => startOfDay(new Date()));
   const [listCount, setListCount] = useState(5);
   const [listStartIdx, setListStartIdx] = useState<number | null>(null);
+  const [cancelDmPayload, setCancelDmPayload] = useState<{
+    guildId: string;
+    raidId: string;
+    defaultMessage: string;
+  } | null>(null);
+  const [cancelDmBusy, setCancelDmBusy] = useState(false);
 
   const today = useMemo(() => startOfDay(new Date()), []);
   const rangeStart = useMemo(() => startOfDay(addDays(calendarAnchor, -1)), [calendarAnchor]);
@@ -254,6 +263,26 @@ export function DashboardClient({
     setOpenCalendarActionRaidId(null);
     setOpenCalendarActionPos(null);
   };
+
+  async function submitCalendarRaidCancel(message: string) {
+    if (!cancelDmPayload) return;
+    setCancelDmBusy(true);
+    try {
+      const res = await fetch(
+        `/api/guilds/${encodeURIComponent(cancelDmPayload.guildId)}/raids/${encodeURIComponent(cancelDmPayload.raidId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'cancel', cancelDiscordMessage: message }),
+        }
+      );
+      if (!res.ok) return;
+      setCancelDmPayload(null);
+      router.refresh();
+    } finally {
+      setCancelDmBusy(false);
+    }
+  }
 
   async function handleCharSetMain(id: string) {
     await fetch(`/api/user/characters/${id}`, {
@@ -1268,6 +1297,20 @@ export function DashboardClient({
                           >
                             {tRaidDetail('menuPlan')}
                           </button>
+                          {raid.canEdit &&
+                          raid.status !== 'cancelled' &&
+                          raid.status !== 'completed' &&
+                          (raid.status === 'open' ||
+                            raid.status === 'announced' ||
+                            raid.status === 'locked') ? (
+                            <Link
+                              href={`/${locale}/guild/${raid.guildId}/raid/${raid.id}/complete`}
+                              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
+                              onClick={() => closeAllMenus()}
+                            >
+                              ✅ {tRaidDetail('menuCompleteRaid')}
+                            </Link>
+                          ) : null}
                           <Link
                             href={`/${locale}/guild/${raid.guildId}/raid/${raid.id}?mode=edit`}
                             className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
@@ -1279,17 +1322,19 @@ export function DashboardClient({
                             <button
                               type="button"
                               className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
-                              onClick={async () => {
-                                await fetch(
-                                  `/api/guilds/${encodeURIComponent(raid.guildId)}/raids/${encodeURIComponent(raid.id)}`,
-                                  {
-                                    method: 'PATCH',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ action: 'cancel' }),
-                                  }
-                                );
+                              onClick={() => {
+                                const defaultMessage = formatDefaultRaidCancelDmDe({
+                                  guildName: raid.guildName,
+                                  raidName: raid.name,
+                                  dungeonLine: raid.dungeonName,
+                                  scheduledAt: new Date(raid.scheduledAtIso),
+                                });
+                                setCancelDmPayload({
+                                  guildId: raid.guildId,
+                                  raidId: raid.id,
+                                  defaultMessage,
+                                });
                                 closeAllMenus();
-                                router.refresh();
                               }}
                             >
                               Raid absagen
@@ -1356,6 +1401,20 @@ export function DashboardClient({
             document.body
           )
         : null}
+      <RaidCancelDiscordOverlay
+        open={!!cancelDmPayload}
+        defaultMessage={cancelDmPayload?.defaultMessage ?? ''}
+        onClose={() => !cancelDmBusy && setCancelDmPayload(null)}
+        onConfirm={submitCalendarRaidCancel}
+        busy={cancelDmBusy}
+        title={tCancelDm('overlayTitle')}
+        hintMarkdown={tCancelDm('overlayHint')}
+        editorLabel={tCancelDm('editorLabel')}
+        previewLabel={tCancelDm('previewLabel')}
+        resetLabel={tCancelDm('resetDefault')}
+        cancelLabel={tCancelDm('cancel')}
+        confirmLabel={tCancelDm('confirm')}
+      />
     </div>
   );
 }
