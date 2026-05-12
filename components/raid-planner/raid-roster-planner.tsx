@@ -2670,6 +2670,20 @@ export function RaidRosterPlanner({
                 >
                   {tRoster('menuRaidView')}
                 </button>
+                {raidStatus !== 'cancelled' &&
+                raidStatus !== 'completed' &&
+                (raidStatus === 'open' || raidStatus === 'announced' || raidStatus === 'locked') ? (
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted"
+                    onClick={() => {
+                      setLeaderMenuOpen(false);
+                      router.push(`/${locale}/guild/${guildId}/raid/${raidId}/complete`);
+                    }}
+                  >
+                    ✅ {t('menuCompleteRaid')}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   disabled={!canEditRaid}

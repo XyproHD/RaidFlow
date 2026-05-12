@@ -82,8 +82,8 @@ export async function syncRaidThreadSummary(
     const raid = await loadRaidForSync(raidId);
     if (!raid?.discordChannelId) return;
 
-    /** Abgesagt: Embed entfernen, keine erneute Synchronisation. */
-    if (raid.status === 'cancelled') {
+    /** Abgesagt oder abgeschlossen: Embed entfernen, keine erneute Synchronisation. */
+    if (raid.status === 'cancelled' || raid.status === 'completed') {
       if (raid.discordChannelMessageId) {
         try {
           const { deleteChannelMessage } = await import('@/lib/discord-guild-api');
@@ -283,7 +283,7 @@ export async function postSignupChangeThreadNotice(
       },
     });
     if (!raid?.discordThreadId) return;
-    if (raid.status === 'cancelled') return;
+    if (raid.status === 'cancelled' || raid.status === 'completed') return;
 
     const { createChannelMessage } = await import('@/lib/discord-guild-api');
 

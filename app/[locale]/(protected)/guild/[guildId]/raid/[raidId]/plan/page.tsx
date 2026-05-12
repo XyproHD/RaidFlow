@@ -86,6 +86,10 @@ export default async function RaidPlanPage(props: {
   }
 
   const { raid } = ctx;
+  if (raid.status === 'completed' || raid.status === 'cancelled') {
+    redirect(`/${locale}/guild/${guildId}/raid/${raidId}`);
+  }
+
   const canEditRaid = raid.status === 'open' || raid.status === 'announced';
   const persistedServerPlannerOrder =
     raid.status === 'open'

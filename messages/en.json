@@ -133,6 +133,7 @@
     "raidStatus_announced": "Announced",
     "raidStatus_locked": "Locked",
     "raidStatus_cancelled": "Cancelled",
+    "raidStatus_completed": "Completed",
     "sectionPublishedRoster": "Published roster",
     "publishedGroupTitle": "Group {n}",
     "publishedReserveHeading": "Bench",
@@ -192,6 +193,7 @@
     "raidLeaderMenu": "Raid actions",
     "mySignupMenu": "Signup",
     "menuPlan": "Plan",
+    "menuCompleteRaid": "Complete raid",
     "planComingSoon": "Coming soon.",
     "menuCancelRaid": "Cancel raid",
     "menuDeleteRaid": "Delete raid",
@@ -738,6 +740,27 @@
     "yes": "Yes",
     "no": "No",
     "footerHint": "Secrets are never shown in full; only length and a short masked preview. Fix issues using Vercel/hosting env and Discord Developer Portal."
+  },
+  "raidComplete": {
+    "title": "Complete raid",
+    "backToRaid": "Back to raid",
+    "weightLabel": "Attendance",
+    "weightHint": "0–1 in steps of 0.1 (0 = no statistic entry)",
+    "groupTitle": "Group {n}",
+    "addPlayer": "Add player",
+    "searchPlaceholder": "Search character…",
+    "pickSpec": "Choose spec",
+    "removeFromGroup": "Remove from group",
+    "submit": "Complete raid",
+    "submitting": "Saving…",
+    "duplicateSignup": "The same signup appears in more than one group.",
+    "missingSignup": "Signup not found (reload the page).",
+    "addError": "Could not add player.",
+    "submitError": "Could not complete raid.",
+    "confirmSubmit": "Really complete this raid? The Discord post will be removed and attendance values will be saved.",
+    "emptyRosterHint": "No one in the groups yet — use “Add player” to add guild characters.",
+    "noGuildChars": "No guild characters loaded.",
+    "alreadyInRoster": "This character is already in the groups."
   },
   "maintenance": {
     "title": "Maintenance mode"

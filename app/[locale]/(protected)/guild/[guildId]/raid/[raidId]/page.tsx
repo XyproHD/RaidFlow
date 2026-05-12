@@ -61,6 +61,11 @@ export default async function RaidDetailPage(props: {
   const { raid, canEdit, canSignup, signupPhase } = ctx;
   const base = `/${locale}/guild/${guildId}/raid/${raidId}`;
   const canEditRaid = canEdit && raid.status === 'open';
+  const canCompleteRaid =
+    canEdit &&
+    raid.status !== 'cancelled' &&
+    raid.status !== 'completed' &&
+    (raid.status === 'open' || raid.status === 'announced' || raid.status === 'locked');
 
   if (mode === 'edit' && canEdit) {
     redirect(`/${locale}/guild/${guildId}/raid/${raidId}/edit`);
@@ -216,6 +221,7 @@ export default async function RaidDetailPage(props: {
         organizerLabel={organizerLabel}
         canEdit={canEdit}
         canEditRaid={canEditRaid}
+        canCompleteRaid={canCompleteRaid}
         canSignup={canSignup}
         signupPhase={signupPhase}
         characters={characters}

@@ -188,8 +188,9 @@ export function DashboardClient({
     if (st === 'open') return tRaidDetail('raidStatus_open');
     if (st === 'announced') return tRaidDetail('raidStatus_announced');
     if (st === 'locked') return tRaidDetail('raidStatus_locked');
-    if (st === 'cancelled') return tRaidDetail('raidStatus_cancelled');
-    return st;
+  if (st === 'cancelled') return tRaidDetail('raidStatus_cancelled');
+  if (st === 'completed') return tRaidDetail('raidStatus_completed');
+  return st;
   };
 
   const WITHDRAW_REASON_MIN = 10;

@@ -1254,6 +1254,20 @@ export function NewRaidWizard({
                 {t('cancel')}
               </Link>
             )}
+            {isEdit &&
+            initialRaid &&
+            initialRaid.status !== 'cancelled' &&
+            initialRaid.status !== 'completed' &&
+            (initialRaid.status === 'open' ||
+              initialRaid.status === 'announced' ||
+              initialRaid.status === 'locked') ? (
+              <Link
+                href={`/${locale}/guild/${guildId}/raid/${raidId}/complete`}
+                className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+              >
+                ✅ {tDetail('menuCompleteRaid')}
+              </Link>
+            ) : null}
             <button
               type="button"
               disabled={saving || (requiresReset && !resetAck) || !editable}

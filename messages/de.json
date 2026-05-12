@@ -133,6 +133,7 @@
     "raidStatus_announced": "Angekündigt",
     "raidStatus_locked": "Gesetzt",
     "raidStatus_cancelled": "Abgesagt",
+    "raidStatus_completed": "Abgeschlossen",
     "sectionPublishedRoster": "Veröffentlichter Stand",
     "publishedGroupTitle": "Gruppe {n}",
     "publishedReserveHeading": "Reserve",
@@ -192,6 +193,7 @@
     "raidLeaderMenu": "Raid-Aktionen",
     "mySignupMenu": "Anmeldung",
     "menuPlan": "Planen",
+    "menuCompleteRaid": "Raid abschließen",
     "planComingSoon": "Funktion folgt.",
     "menuCancelRaid": "Absagen",
     "menuDeleteRaid": "Löschen",
@@ -738,6 +740,27 @@
     "yes": "Ja",
     "no": "Nein",
     "footerHint": "Secrets werden nie vollständig angezeigt; nur Länge und eine kurze Maskierung. Anpassungen über Vercel/Hosting-Env und Discord Developer Portal."
+  },
+  "raidComplete": {
+    "title": "Raid abschließen",
+    "backToRaid": "Zurück zum Raid",
+    "weightLabel": "Teilnahme",
+    "weightHint": "0–1 in 0,1er-Schritten (0 = kein Eintrag in der Statistik)",
+    "groupTitle": "Gruppe {n}",
+    "addPlayer": "Spieler hinzufügen",
+    "searchPlaceholder": "Charakter suchen …",
+    "pickSpec": "Spec wählen",
+    "removeFromGroup": "Aus Gruppe entfernen",
+    "submit": "Raid abschließen",
+    "submitting": "Wird gespeichert …",
+    "duplicateSignup": "Dieselbe Anmeldung steht in mehreren Gruppen.",
+    "missingSignup": "Anmeldung nicht gefunden (Seite neu laden).",
+    "addError": "Spieler konnte nicht hinzugefügt werden.",
+    "submitError": "Raid konnte nicht abgeschlossen werden.",
+    "confirmSubmit": "Raid wirklich abschließen? Discord-Beitrag wird entfernt; Teilnahmewerte werden gespeichert.",
+    "emptyRosterHint": "Noch niemand in den Gruppen — über „Spieler hinzufügen“ Charaktere der Gilde eintragen.",
+    "noGuildChars": "Keine Gilden-Charaktere geladen.",
+    "alreadyInRoster": "Dieser Charakter ist bereits in den Gruppen."
   },
   "maintenance": {
     "title": "Wartungsmodus"
