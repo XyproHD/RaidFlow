@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
-import { prisma } from '@/lib/prisma';
+import { getEffectiveWebUserGuildRole } from '@/lib/owner-web-permission-override';
 
 export interface RaidPlannerAuthResult {
   userId: string;
@@ -22,11 +22,9 @@ export async function requireRaidPlannerForGuild(
   );
   if (!userId) return null;
 
-  const ug = await prisma.rfUserGuild.findUnique({
-    where: { userId_guildId: { userId, guildId } },
-  });
-  if (!ug) return null;
-  if (ug.role !== 'raidleader' && ug.role !== 'guildmaster') return null;
+  const effective = await getEffectiveWebUserGuildRole(userId, guildId);
+  if (!effective) return null;
+  if (effective !== 'raidleader' && effective !== 'guildmaster') return null;
 
   return { userId, guildId };
 }
