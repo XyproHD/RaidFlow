@@ -174,20 +174,152 @@ function plainTextForDiscord(raw: string, maxLen: number): string {
   return t;
 }
 
-function truncateLines(lines: string[], maxChars = 1000): string {
-  let value = '';
-  let count = 0;
-  for (const line of lines) {
-    const next = value ? `${value}\n${line}` : line;
-    if (next.length > maxChars) {
-      const remaining = lines.length - count;
-      if (remaining > 0) value += `\n*… +${remaining} weitere*`;
+const DISCORD_EMBED_MAX_FIELDS = 25;
+const DISCORD_EMBED_MAX_COUNT = 10;
+const DISCORD_FIELD_VALUE_SAFE = 1010;
+
+/** Verteilt Embed-Felder auf mehrere Embeds bei Discord-Limits (25 Felder, max. 10 Embeds pro Nachricht). */
+class RaidEmbedFieldPacker {
+  readonly embeds: DiscordEmbed[] = [];
+
+  constructor(first: Pick<DiscordEmbed, 'title' | 'description' | 'color'>) {
+    this.embeds.push({
+      title: first.title,
+      ...(first.description ? { description: first.description } : {}),
+      color: first.color,
+      fields: [],
+    });
+  }
+
+  push(field: { name: string; value: string; inline?: boolean }): void {
+    let last = this.embeds[this.embeds.length - 1]!;
+    let fields = last.fields ?? [];
+
+    if (fields.length >= DISCORD_EMBED_MAX_FIELDS) {
+      if (this.embeds.length >= DISCORD_EMBED_MAX_COUNT) {
+        const tail = '\n*… Rest in RaidFlow.*';
+        const lf = fields[fields.length - 1];
+        if (lf && !lf.value.includes('Rest in RaidFlow')) {
+          lf.value = `${lf.value}${tail}`.slice(0, 1024);
+        }
+        return;
+      }
+      const seedTitle = this.embeds[0].title ?? 'Raid';
+      const nextTitle = `${String(seedTitle).slice(0, 200)} · Fortsetzung ${this.embeds.length + 1}`.slice(
+        0,
+        256
+      );
+      this.embeds.push({
+        title: nextTitle,
+        color: this.embeds[0].color,
+        fields: [],
+      });
+      last = this.embeds[this.embeds.length - 1]!;
+      fields = last.fields ?? [];
+    }
+
+    fields.push({
+      name: field.name.slice(0, 256),
+      value: field.value.slice(0, 1024),
+      ...(field.inline !== undefined ? { inline: field.inline } : {}),
+    });
+    last.fields = fields;
+  }
+
+  finalizeLinks(linksMarkdown: string): void {
+    this.push({ name: '\u200b', value: '\u200b', inline: false });
+    this.push({
+      name: '🔗',
+      value: linksMarkdown.slice(0, 1024),
+      inline: false,
+    });
+  }
+}
+
+/** Mehrere volle Breite-Felder (kein „+ n weitere“), jeweils bis ~DISCORD_FIELD_VALUE_SAFE Zeichen. */
+function appendLinesFullWidthChunks(packer: RaidEmbedFieldPacker, nameBase: string, lines: string[]): void {
+  if (lines.length === 0) return;
+  const CHUNK = DISCORD_FIELD_VALUE_SAFE;
+  let part = 0;
+  let i = 0;
+  while (i < lines.length) {
+    const chunk: string[] = [];
+    let len = 0;
+    while (i < lines.length) {
+      const line = lines[i]!;
+      const add = chunk.length ? 1 + line.length : line.length;
+      if (len + add > CHUNK && chunk.length > 0) break;
+      if (len + add > CHUNK && chunk.length === 0) {
+        chunk.push(`${line.slice(0, Math.max(1, CHUNK - 1))}…`);
+        i++;
+        break;
+      }
+      chunk.push(line);
+      len += add;
+      i++;
+    }
+    part += 1;
+    const name = part === 1 ? nameBase.slice(0, 256) : `${nameBase} (${part})`.slice(0, 256);
+    packer.push({ name, value: chunk.join('\n').slice(0, 1024), inline: false });
+  }
+}
+
+/** 2–3 Spalten als nebeneinanderliegende `inline`-Felder; mehrere Zeilen-Batches bei langen Listen. */
+function appendLinesInColumnFields(
+  packer: RaidEmbedFieldPacker,
+  baseTitle: string,
+  lines: string[],
+  columnCount: 2 | 3
+): void {
+  if (lines.length === 0) return;
+  let batch = 0;
+  let idx = 0;
+  while (idx < lines.length) {
+    const cols: string[][] = Array.from({ length: columnCount }, () => []);
+    let madeProgress = false;
+
+    while (idx < lines.length) {
+      let bestCol = 0;
+      let minLen = Infinity;
+      for (let c = 0; c < columnCount; c++) {
+        const cell = cols[c].join('\n');
+        const len = cell.length;
+        if (len < minLen) {
+          minLen = len;
+          bestCol = c;
+        }
+      }
+      const line = lines[idx]!;
+      const colJoin = cols[bestCol].join('\n');
+      const candidate = colJoin ? `${colJoin}\n${line}` : line;
+      if (candidate.length <= DISCORD_FIELD_VALUE_SAFE) {
+        cols[bestCol].push(line);
+        idx++;
+        madeProgress = true;
+        continue;
+      }
+      if (cols[bestCol].length === 0) {
+        cols[bestCol].push(`${line.slice(0, Math.max(1, DISCORD_FIELD_VALUE_SAFE - 1))}…`);
+        idx++;
+        madeProgress = true;
+        continue;
+      }
       break;
     }
-    value = next;
-    count++;
+
+    const title =
+      batch === 0 ? baseTitle.slice(0, 256) : `${baseTitle} (${batch + 1})`.slice(0, 256);
+    for (let c = 0; c < columnCount; c++) {
+      const v = cols[c].join('\n') || '\u200b';
+      packer.push({
+        name: c === 0 ? title : '\u200b',
+        value: v.slice(0, 1024),
+        inline: true,
+      });
+    }
+    batch++;
+    if (!madeProgress && idx < lines.length) idx++;
   }
-  return value;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,7 +403,7 @@ function groupRoleSummaryLine(
 // Embed-Builder
 // ---------------------------------------------------------------------------
 
-export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
+export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
   const {
     raidId, guildId, raidName, dungeonNames, scheduledAt, signupUntil,
     status, maxPlayers, signupVisibility, signups, announcedGroupsJson,
@@ -299,7 +431,6 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
           .filter((s): s is RaidEmbedSignup => !!s)
       : [];
 
-  // --- Basisdaten ---
   const title = `⚔️ ${raidName} — ${dungeonNames.join(' + ')}`.slice(0, 256);
   const color = embedColor(status, signupUntil);
 
@@ -318,7 +449,12 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     ? `ℹ️ ${publicNotePlain}`.slice(0, 4096)
     : undefined;
 
-  // Zählung & Rollen-Verteilung (früh berechnet, für Zusammenfassung + Spielerliste)
+  const packer = new RaidEmbedFieldPacker({
+    title,
+    ...(description ? { description } : {}),
+    color,
+  });
+
   const mainSignups    = signups.filter(s => s.type !== 'reserve' && s.type !== 'declined');
   const uniquePlayers  = new Set(mainSignups.map(s => s.userId)).size;
 
@@ -335,7 +471,6 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     (byRole[role ?? '?'] ??= []).push(s);
   }
 
-  // --- Stammdaten: zwei parallele Inline-Felder ---
   const labelCol = [
     '📅 **Termin**',
     '🗓️ **Anmeldung bis**',
@@ -349,70 +484,71 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
     anmeldungenValue,
   ].join('\n');
 
-  const fields: NonNullable<DiscordEmbed['fields']> = [
-    { name: '\u200b', value: labelCol, inline: true },
-    { name: '\u200b', value: valueCol, inline: true },
-  ];
+  packer.push({ name: '\u200b', value: labelCol, inline: true });
+  packer.push({ name: '\u200b', value: valueCol, inline: true });
 
-  // --- Zusammenfassung je Rolle (ANSI) + Klasse (wenn Anmeldungen sichtbar) ---
   if (isRevealed && mainSignups.length > 0) {
     const mins      = { Tank: minTanks, Melee: minMelee, Range: minRange, Healer: minHealers };
     const roleLine  = roleSummaryLine(byRole, mins, discordEmojis);
     const classLine = classCountLine(mainSignups, discordEmojis);
     const summaryValue = classLine ? `${roleLine}\n${classLine}` : roleLine;
-    fields.push({ name: '\u200b', value: summaryValue, inline: false });
+    packer.push({ name: '\u200b', value: summaryValue, inline: false });
   }
 
-  // Visueller Trenner (leeres Feld = nativer Abstandshalter)
-  fields.push({ name: '\u200b', value: '\u200b', inline: false });
+  packer.push({ name: '\u200b', value: '\u200b', inline: false });
 
   if (isAnnounced && announcedGroups && announcedGroups.groups.length > 0) {
-    // -----------------------------------------------------------------------
-    // Angekündigt / Abgeschlossen: Gruppen-Ansicht
-    // -----------------------------------------------------------------------
     const signupById   = new Map(signups.map(s => [s.id, s]));
     const signupByUser = new Map(signups.map(s => [s.userId, s]));
 
     for (let gi = 0; gi < announcedGroups.groups.length; gi++) {
       if (gi > 0) {
-        fields.push({ name: '\u200b', value: '\u200b', inline: false });
+        packer.push({ name: '\u200b', value: '\u200b', inline: false });
       }
 
       const group = announcedGroups.groups[gi];
-      const lines: string[] = [];
+      const headerLines: string[] = [];
 
-      // Lead/Loot-Header mit Klartext-Labels
       const leadSignup = group.raidLeaderUserId ? signupByUser.get(group.raidLeaderUserId) : null;
       const lootSignup = group.lootmasterUserId ? signupByUser.get(group.lootmasterUserId) : null;
       const headerParts: string[] = [];
       if (leadSignup?.characterName) headerParts.push(`👑 Raidleader: **${leadSignup.characterName}**`);
       if (lootSignup?.characterName) headerParts.push(`💰 Lootmeister: **${lootSignup.characterName}**`);
       if (headerParts.length > 0) {
-        lines.push(headerParts.join('  ·  '));
+        headerLines.push(headerParts.join('  ·  '));
       }
 
-      // Rollen-Verteilung der Gruppe
-      lines.push(groupRoleSummaryLine(group.rosterOrder, signupById, discordEmojis));
+      headerLines.push(groupRoleSummaryLine(group.rosterOrder, signupById, discordEmojis));
+      headerLines.push('▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬');
 
-      // Trenner vor Spielerliste (U+25AC BLACK RECTANGLE)
-      lines.push('▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬');
-
+      const playerLines: string[] = [];
       for (const signupId of group.rosterOrder) {
         const s = signupById.get(signupId);
         if (!s) continue;
-        lines.push(playerLine(s, discordEmojis));
+        playerLines.push(playerLine(s, discordEmojis));
       }
 
-      fields.push({
-        name:  `Gruppe ${gi + 1}`,
-        value: lines.length > 0 ? truncateLines(lines) : '*leer*',
+      const headerValue =
+        headerLines.length > 0 ? headerLines.join('\n').slice(0, 1024) : '*leer*';
+      packer.push({
+        name: `Gruppe ${gi + 1}`,
+        value: headerValue,
         inline: false,
       });
+
+      if (playerLines.length > 0) {
+        appendLinesInColumnFields(
+          packer,
+          `Gruppe ${gi + 1} · Kader`,
+          playerLines,
+          3
+        );
+      } else {
+        packer.push({ name: '\u200b', value: '*Keine Spieler im Kader.*', inline: false });
+      }
     }
 
-    // Visueller Trenner (leeres Feld = nativer Abstandshalter)
-    fields.push({ name: '\u200b', value: '\u200b', inline: false });
-    // Reserve (gespeicherte Reihenfolge + neue Reserve-Anmeldungen, ohne Roster-Plätze)
+    packer.push({ name: '\u200b', value: '\u200b', inline: false });
     {
       const rosterSet = new Set(announcedGroups.groups.flatMap(g => g.rosterOrder));
       const reserveIds = orderedReserveSignupIdsForDisplay(
@@ -424,72 +560,66 @@ export function buildRaidEmbed(input: RaidEmbedInput): DiscordEmbed {
         .map(id => signupById2.get(id))
         .filter((s): s is RaidEmbedSignup => !!s)
         .map(s => playerLine(s, discordEmojis));
-      fields.push({
-        name:  `Reserve (${resLines.length})`,
-        value: resLines.length > 0 ? truncateLines(resLines) : '*Keine Reserve*',
-        inline: false,
-      });
+      const resTitle = `Reserve (${resLines.length})`;
+      if (resLines.length > 0) {
+        appendLinesInColumnFields(packer, resTitle, resLines, 3);
+      } else {
+        packer.push({ name: resTitle, value: '*Keine Reserve*', inline: false });
+      }
     }
-
   } else if (isRevealed && (mainSignups.length > 0 || openReserveOrdered.length > 0)) {
-    // -----------------------------------------------------------------------
-    // Offen: Rollen-Ansicht (inline = 2-spaltig für bessere Übersicht)
-    // -----------------------------------------------------------------------
     if (mainSignups.length > 0) {
       for (const { key, label } of ROLE_DEFS) {
         const group = byRole[key];
         if (!group?.length) continue;
         const roleEmoji = getRoleEmoji(key, discordEmojis);
-        fields.push({
-          name:  `${roleEmoji} ${label} (${group.length})`.trim(),
-          value: truncateLines(group.map(s => playerLine(s, discordEmojis))),
-          inline: true,
-        });
+        const nameBase = `${roleEmoji} ${label} (${group.length})`.trim();
+        appendLinesFullWidthChunks(
+          packer,
+          nameBase,
+          group.map(s => playerLine(s, discordEmojis)),
+        );
       }
 
       if (byRole['?'].length > 0) {
-        fields.push({
-          name:  `❓ Unbekannte Rolle (${byRole['?'].length})`,
-          value: truncateLines(byRole['?'].map(s => playerLine(s, discordEmojis))),
-          inline: false,
-        });
+        appendLinesFullWidthChunks(
+          packer,
+          `❓ Unbekannte Rolle (${byRole['?'].length})`,
+          byRole['?'].map(s => playerLine(s, discordEmojis)),
+        );
       }
     }
-    // Visueller Trenner (leeres Feld = nativer Abstandshalter)
-    fields.push({ name: '\u200b', value: '\u200b', inline: false });
+    packer.push({ name: '\u200b', value: '\u200b', inline: false });
 
-    fields.push({
-      name:  `Reserve (${openReserveOrdered.length})`,
-      value: openReserveOrdered.length > 0
-        ? truncateLines(openReserveOrdered.map(s => playerLine(s, discordEmojis)))
-        : '*Keine Reserve*',
-      inline: false,
-    });
-
+    const resTitle = `Reserve (${openReserveOrdered.length})`;
+    if (openReserveOrdered.length > 0) {
+      appendLinesInColumnFields(
+        packer,
+        resTitle,
+        openReserveOrdered.map(s => playerLine(s, discordEmojis)),
+        3,
+      );
+    } else {
+      packer.push({ name: resTitle, value: '*Keine Reserve*', inline: false });
+    }
   } else if (!isRevealed) {
     const hint = openReserveOrdered.length > 0
       ? `*Anmeldungen nicht öffentlich · ${openReserveOrdered.length} in der Reserve-Reihenfolge*`
       : '*Anmeldungen nicht öffentlich*';
-    fields.push({ name: '\u200b', value: hint, inline: false });
-    fields.push({
+    packer.push({ name: '\u200b', value: hint, inline: false });
+    packer.push({
       name:  `Reserve (${openReserveOrdered.length})`,
       value: '*nicht öffentlich*',
       inline: false,
     });
   } else {
-    fields.push({ name: '\u200b', value: '*Noch keine Anmeldungen.*', inline: false });
-    fields.push({ name: 'Reserve (0)', value: '*Keine Reserve*', inline: false });
+    packer.push({ name: '\u200b', value: '*Noch keine Anmeldungen.*', inline: false });
+    packer.push({ name: 'Reserve (0)', value: '*Keine Reserve*', inline: false });
   }
-  // Visueller Trenner (leeres Feld = nativer Abstandshalter)
-  fields.push({ name: '\u200b', value: '\u200b', inline: false });
 
-  fields.push({
-    name:   '🔗',
-    value:  linksMarkdown.slice(0, 1024),
-    inline: false,
-  });
+  packer.finalizeLinks(linksMarkdown);
 
-  return { title, ...(description ? { description } : {}), color, fields };
+  return packer.embeds;
 }
 
 // ---------------------------------------------------------------------------

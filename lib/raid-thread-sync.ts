@@ -16,7 +16,7 @@ import {
   createThreadFromMessage,
   editChannelMessageFull,
 } from '@/lib/discord-guild-api';
-import { buildRaidEmbed, buildRaidActionButtons } from '@/lib/raid-embed-builder';
+import { buildRaidEmbeds, buildRaidActionButtons } from '@/lib/raid-embed-builder';
 import { getAppConfig } from '@/lib/app-config';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
@@ -162,7 +162,7 @@ export async function syncRaidThreadSummary(
       locale: 'de',
     };
 
-    const embed      = buildRaidEmbed(embedInput);
+    const embeds     = buildRaidEmbeds(embedInput);
     const components = buildRaidActionButtons(raid.id, raid.guildId);
 
     // --- Nachricht bearbeiten ---
@@ -172,8 +172,8 @@ export async function syncRaidThreadSummary(
           raid.discordChannelId,
           raid.discordChannelMessageId,
           opts?.embedOnly
-            ? { embeds: [embed] }
-            : { embeds: [embed], components },
+            ? { embeds: embeds }
+            : { embeds: embeds, components },
         );
         // Thread nachholen wenn er fehlt (z. B. Ersterstellung fehlgeschlagen)
         if (!raid.discordThreadId) {
@@ -211,7 +211,7 @@ export async function syncRaidThreadSummary(
 
     // --- Neue Nachricht + Thread erstellen ---
     const { messageId } = await createChannelMessageFull(raid.discordChannelId, {
-      embeds:     [embed],
+      embeds:     embeds,
       components,
     });
 
@@ -287,7 +287,7 @@ export async function postSignupChangeThreadNotice(
 
     const { createChannelMessage } = await import('@/lib/discord-guild-api');
 
-    /** Wie `buildRaidEmbed`: Liste nur bei public oder nach Ankündigung/Lock sichtbar. */
+    /** Wie `buildRaidEmbeds`: Liste nur bei public oder nach Ankündigung/Lock sichtbar. */
     const listPublic =
       raid.signupVisibility === 'public' ||
       raid.status === 'announced' ||
@@ -344,6 +344,80 @@ export async function postSignupChangeThreadNotice(
     await createChannelMessage(raid.discordThreadId, content.slice(0, 2000));
   } catch (e) {
     console.error('[postSignupChangeThreadNotice]', raidId, e);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Raid angekündigt — Thread-Hinweis mit Kader-Mentions
+// ---------------------------------------------------------------------------
+
+async function postRaidAnnounceThreadChunks(threadId: string, fullText: string): Promise<void> {
+  const { createChannelMessage } = await import('@/lib/discord-guild-api');
+  const max = 1990;
+  let remaining = fullText.trim();
+  if (!remaining) return;
+  while (remaining.length > 0) {
+    if (remaining.length <= max) {
+      await createChannelMessage(threadId, remaining);
+      break;
+    }
+    let cut = remaining.lastIndexOf(' ', max);
+    if (cut < 120) cut = max;
+    const part = remaining.slice(0, cut).trimEnd();
+    await createChannelMessage(threadId, part);
+    remaining = remaining.slice(cut).trimStart();
+  }
+}
+
+/** Thread-Nachricht nach Veröffentlichung (Ankündigung): Kader mit Discord-Mentions. */
+export async function postRaidAnnouncedThreadNotice(raidId: string): Promise<void> {
+  try {
+    const raid = await prisma.rfRaid.findUnique({
+      where: { id: raidId },
+      select: {
+        discordThreadId: true,
+        name: true,
+        status: true,
+        announcedPlannerGroupsJson: true,
+        dungeon: { select: { name: true } },
+      },
+    });
+    if (!raid?.discordThreadId) return;
+    if (raid.status !== 'announced' && raid.status !== 'locked') return;
+
+    const layout = parseStoredAnnouncedPlannerJson(raid.announcedPlannerGroupsJson);
+    if (!layout) return;
+
+    const rosterIds = layout.groups.flatMap((g) => g.rosterOrder);
+    if (rosterIds.length === 0) return;
+
+    const signups = await prisma.rfRaidSignup.findMany({
+      where: { id: { in: rosterIds } },
+      select: {
+        id: true,
+        user: { select: { discordId: true } },
+        character: { select: { name: true } },
+      },
+    });
+    const byId = new Map(signups.map((s) => [s.id, s]));
+    const mentions: string[] = [];
+    for (const id of rosterIds) {
+      const s = byId.get(id);
+      if (!s) continue;
+      const charName = s.character?.name?.trim() || 'Spieler';
+      const did = s.user?.discordId?.trim();
+      if (did) mentions.push(`**${charName}** <@${did}>`);
+      else mentions.push(`**${charName}**`);
+    }
+    if (mentions.length === 0) return;
+
+    const intro =
+      `📢 **Raid angekündigt** — ${raid.dungeon.name} / **${raid.name}**\n\n` +
+      `Im Kader gesetzt (${mentions.length}):\n\n`;
+    const body = mentions.join(' ');
+    await postRaidAnnounceThreadChunks(raid.discordThreadId, intro + body);
+  } catch (e) {
+    console.error('[postRaidAnnouncedThreadNotice]', raidId, e);
   }
 }
 
