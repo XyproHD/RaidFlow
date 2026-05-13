@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
-import { syncRaidThreadSummary, postRaidLockedThreadNotice } from '@/lib/raid-thread-sync';
+import { syncRaidThreadSummary, postRaidLockedThreadNotice, postRaidAnnouncedThreadNotice } from '@/lib/raid-thread-sync';
 import { parseMinSpecsPayload } from '@/lib/min-spec-keys';
 import {
   announceLayoutToStoredJson,
@@ -176,6 +176,9 @@ export async function PATCH(
       return NextResponse.json({ error: exec.error }, { status: exec.status });
     }
     await syncRaidThreadSummary(raidId, { allowCreate: true });
+    await postRaidAnnouncedThreadNotice(raidId).catch((e) =>
+      console.error('[PATCH raid announce] thread notice:', e)
+    );
     return NextResponse.json({ ok: true, status: 'announced' });
   }
 
