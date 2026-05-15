@@ -9,6 +9,10 @@ import {
   setConfirmedForPlacement,
   type LeaderPlacement,
 } from '@/lib/raid-leader-placement';
+import {
+  resolveAnnouncedSignupType,
+  setConfirmedForAnnouncedPlacement,
+} from '@/lib/raid-announce';
 
 function validateSignedSpec(
   signedSpec: string,
@@ -93,8 +97,6 @@ export async function POST(
     return NextResponse.json({ error: 'signedSpec must match main or off spec' }, { status: 400 });
   }
 
-  const setConfirmed = setConfirmedForPlacement(leaderPlacement);
-
   // Allow multiple signups per user (e.g. main + twink). We treat (raidId,userId,characterId) as the identity here:
   // - If a signup for this character already exists, update it.
   // - Otherwise create a new signup row.
@@ -103,18 +105,23 @@ export async function POST(
   });
 
   let typeForDb = typeNorm;
+  let setConfirmed = setConfirmedForPlacement(leaderPlacement);
+
   if (raid.status === 'announced' || raid.status === 'locked') {
-    if (leaderPlacement === 'confirmed') {
-      typeForDb = 'normal';
-    } else {
-      if (existing?.forbidReserve) {
-        return NextResponse.json(
-          { error: 'Reserve is forbidden by signup condition' },
-          { status: 400 }
-        );
-      }
-      typeForDb = 'reserve';
+    if (leaderPlacement !== 'confirmed' && (existing?.forbidReserve ?? false)) {
+      return NextResponse.json(
+        { error: 'Reserve is forbidden by signup condition' },
+        { status: 400 }
+      );
     }
+    typeForDb = resolveAnnouncedSignupType({
+      currentType: existing?.type ?? typeNorm,
+      forbidReserve: existing?.forbidReserve ?? false,
+      leaderPlacement,
+    });
+    setConfirmed = setConfirmedForAnnouncedPlacement(leaderPlacement, typeForDb);
+  } else {
+    setConfirmed = setConfirmedForPlacement(leaderPlacement);
   }
 
   if (existing) {

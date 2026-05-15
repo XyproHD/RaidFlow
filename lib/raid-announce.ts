@@ -1,5 +1,12 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
+import type { LeaderPlacement } from '@/lib/raid-leader-placement';
+import {
+  isPreservedAttendanceSignupType,
+  normalizeSignupType,
+  signupTypeNorm,
+  type RaidSignupType,
+} from '@/lib/raid-signup-constants';
 export type AnnouncedGroupPayload = {
   rosterOrder: string[];
   raidLeaderUserId: string | null;
@@ -93,24 +100,58 @@ export function parseStoredAnnouncedPlannerJson(raw: unknown): AnnounceRaidPaylo
 
 export type AnnounceSignupRow = {
   id: string;
+  type: string;
   forbidReserve: boolean;
 };
+
+export function leaderPlacementFromAnnounceLayout(
+  signupId: string,
+  payload: AnnounceRaidPayload
+): LeaderPlacement {
+  const onRoster = payload.groups.some((g) => g.rosterOrder.includes(signupId));
+  if (onRoster) return 'confirmed';
+  if (payload.reserveOrder.includes(signupId)) return 'substitute';
+  return 'signup';
+}
+
+/** Typ nach Ankündigung/Planer-Layout — „uncertain“/„declined“ bleiben erhalten. */
+export function resolveAnnouncedSignupType(params: {
+  currentType: string;
+  forbidReserve: boolean;
+  leaderPlacement: LeaderPlacement;
+}): RaidSignupType {
+  if (params.forbidReserve) return 'declined';
+  if (isPreservedAttendanceSignupType(params.currentType)) {
+    return (normalizeSignupType(params.currentType) ??
+      signupTypeNorm(params.currentType)) as RaidSignupType;
+  }
+  if (params.leaderPlacement === 'confirmed') return 'normal';
+  return 'reserve';
+}
+
+export function setConfirmedForAnnouncedPlacement(
+  leaderPlacement: LeaderPlacement,
+  resolvedType: string
+): boolean {
+  if (isPreservedAttendanceSignupType(resolvedType)) return false;
+  return leaderPlacement === 'confirmed';
+}
 
 export function buildAnnounceSignupUpdate(
   row: AnnounceSignupRow,
   payload: AnnounceRaidPayload
 ): { type: string; leaderPlacement: string; setConfirmed: boolean } {
-  if (row.forbidReserve) {
-    return { type: 'declined', leaderPlacement: 'signup', setConfirmed: false };
-  }
-  const rosterFlat = payload.groups.flatMap((g) => g.rosterOrder);
-  if (rosterFlat.includes(row.id)) {
-    return { type: 'normal', leaderPlacement: 'confirmed', setConfirmed: true };
-  }
-  if (payload.reserveOrder.includes(row.id)) {
-    return { type: 'reserve', leaderPlacement: 'substitute', setConfirmed: false };
-  }
-  return { type: 'reserve', leaderPlacement: 'substitute', setConfirmed: false };
+  const leaderPlacement = leaderPlacementFromAnnounceLayout(row.id, payload);
+  const type = resolveAnnouncedSignupType({
+    currentType: row.type,
+    forbidReserve: row.forbidReserve,
+    leaderPlacement,
+  });
+  return {
+    type,
+    leaderPlacement,
+    setConfirmed: setConfirmedForAnnouncedPlacement(leaderPlacement, type),
+  };
 }
 
 /** DB-Feld `rf_raid.announced_planner_groups_json` (gleiche Struktur wie Announce-Payload ohne `action`). */
@@ -163,7 +204,7 @@ export async function executeRaidAnnounceTransaction(args: {
     async (tx) => {
       for (const prev of signupRows) {
         const next = buildAnnounceSignupUpdate(
-          { id: prev.id, forbidReserve: prev.forbidReserve },
+          { id: prev.id, type: prev.type, forbidReserve: prev.forbidReserve },
           payload
         );
         await tx.rfRaidSignup.update({
@@ -190,7 +231,7 @@ export async function executeRaidAnnounceTransaction(args: {
 
   for (const prev of signupRows) {
     const next = buildAnnounceSignupUpdate(
-      { id: prev.id, forbidReserve: prev.forbidReserve },
+      { id: prev.id, type: prev.type, forbidReserve: prev.forbidReserve },
       payload
     );
     const prevSnap = snapshotSignup(prev as unknown as Record<string, unknown>);

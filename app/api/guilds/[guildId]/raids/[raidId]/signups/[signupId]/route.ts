@@ -8,6 +8,10 @@ import {
   setConfirmedForPlacement,
   type LeaderPlacement,
 } from '@/lib/raid-leader-placement';
+import {
+  resolveAnnouncedSignupType,
+  setConfirmedForAnnouncedPlacement,
+} from '@/lib/raid-announce';
 
 function validateSignedSpec(
   signedSpec: string,
@@ -140,21 +144,22 @@ export async function PATCH(
     }
   }
 
-  const setConfirmed = setConfirmedForPlacement(leaderPlacement);
-
   let nextType = signup.type;
+  let setConfirmed = setConfirmedForPlacement(leaderPlacement);
+
   if (raid.status === 'announced') {
-    if (leaderPlacement === 'confirmed') {
-      nextType = 'normal';
-    } else {
-      if (signup.forbidReserve) {
-        return NextResponse.json(
-          { error: 'Reserve is forbidden by signup condition' },
-          { status: 400 }
-        );
-      }
-      nextType = 'reserve';
+    if (leaderPlacement !== 'confirmed' && signup.forbidReserve) {
+      return NextResponse.json(
+        { error: 'Reserve is forbidden by signup condition' },
+        { status: 400 }
+      );
     }
+    nextType = resolveAnnouncedSignupType({
+      currentType: signup.type,
+      forbidReserve: signup.forbidReserve,
+      leaderPlacement,
+    });
+    setConfirmed = setConfirmedForAnnouncedPlacement(leaderPlacement, nextType);
   }
 
   const updated = await prisma.rfRaidSignup.update({
