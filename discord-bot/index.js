@@ -1595,7 +1595,7 @@ const SPEC_EMOJI_KEY_BOT = {
   'Balance Druid':          'wow_balance',
   'Feral Druid':            'wow_feral',
   'Feral (DPS) Druid':      'wow_feral',
-  'Restoration Druid':      'wow_restoration',
+  'Restoration Druid':      'wow_restoration_druid',
 };
 
 const CLASS_EMOJI_KEY_BOT = {
