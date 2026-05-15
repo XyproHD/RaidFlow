@@ -51,7 +51,7 @@ const SPEC_KEY_BY_DISPLAY = {
   'Balance Druid': 'wow_balance',
   'Feral Druid': 'wow_feral',
   'Feral (DPS) Druid': 'wow_feral',
-  'Restoration Druid': 'wow_restoration',
+  'Restoration Druid': 'wow_restoration_druid',
 };
 
 const ROLE_KEY_BY_SPEC_KEY = {
@@ -62,6 +62,7 @@ const ROLE_KEY_BY_SPEC_KEY = {
   wow_demonology: 'wow_range',
   wow_destruction: 'wow_range',
   wow_restoration: 'wow_heal',
+  wow_restoration_druid: 'wow_heal',
   wow_enhancement: 'wow_melee',
   wow_elemental: 'wow_range',
   wow_assassination: 'wow_melee',

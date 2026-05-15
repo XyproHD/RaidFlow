@@ -35,7 +35,7 @@ export const SPEC_EMOJI_KEY: Record<string, string> = {
   'Balance Druid':           'wow_balance',
   'Feral Druid':             'wow_feral',
   'Feral (DPS) Druid':       'wow_feral',
-  'Restoration Druid':       'wow_restoration',
+  'Restoration Druid':       'wow_restoration_druid',
   // Mists of Pandaria
   'Brewmaster Monk':         'wow_tank',
   'Mistweaver Monk':         'wow_heal',

@@ -94,6 +94,8 @@ function toDiscordEmojiMarkup(name: string, id: string, animated: boolean): stri
 /** Feste Defaults für einzelne Keys, falls externe Emoji-Guild / rf_app_config sie nicht liefern (z. B. wow_rogue). */
 const BUILTIN_DISCORD_EMOJI_DEFAULTS: Record<string, string> = {
   wow_rogue: toDiscordEmojiMarkup('wow_rogue', '1503807724754833542', false),
+  wow_restoration: toDiscordEmojiMarkup('wow_restoration', '1491802260022366439', false),
+  wow_restoration_druid: toDiscordEmojiMarkup('wow_restoration_druid', '1504851583421251704', false),
 };
 
 async function loadExternalDiscordEmojis(): Promise<Record<string, string>> {
