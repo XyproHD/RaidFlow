@@ -927,7 +927,7 @@ export function NewRaidWizard({
               className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
               onClick={() => setCancelDmOpen(true)}
             >
-              🚫 {tEdit('cancelRaid')}
+              {tEdit('cancelRaid')}
             </button>
             <button
               type="button"
@@ -935,7 +935,7 @@ export function NewRaidWizard({
               className="rounded-md border border-destructive bg-destructive/10 text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
               onClick={() => void doDeleteRaid()}
             >
-              🗑️ {tDetail('menuDeleteRaid')}
+              {tDetail('menuDeleteRaid')}
             </button>
           </div>
         </section>
@@ -1309,7 +1309,7 @@ export function NewRaidWizard({
                   className="rounded-md border border-destructive text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
                   onClick={() => setCancelDmOpen(true)}
                 >
-                  🚫 {tEdit('cancelRaid')}
+                  {tEdit('cancelRaid')}
                 </button>
                 <button
                   type="button"
@@ -1317,7 +1317,7 @@ export function NewRaidWizard({
                   className="rounded-md border border-destructive bg-destructive/10 text-destructive px-4 py-2 text-sm font-medium disabled:opacity-50"
                   onClick={() => void doDeleteRaid()}
                 >
-                  🗑️ {tDetail('menuDeleteRaid')}
+                  {tDetail('menuDeleteRaid')}
                 </button>
               </>
             ) : null}

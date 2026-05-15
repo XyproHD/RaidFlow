@@ -15,6 +15,17 @@ export function isRaidSignupType(s: string): s is RaidSignupType {
   return normalizeSignupType(s) !== null;
 }
 
+/** Legacy DB-Wert `main` → `normal`. */
+export function signupTypeNorm(raw: string): string {
+  return raw === 'main' ? 'normal' : raw;
+}
+
+/** „Unklar“ / „Nicht da“ — bei Ankündigung/Speichern nicht durch Reserve ersetzen. */
+export function isPreservedAttendanceSignupType(raw: string): boolean {
+  const t = signupTypeNorm(raw);
+  return t === 'uncertain' || t === 'declined';
+}
+
 export const RAID_SIGNUP_PUNCTUALITY = ['on_time', 'tight', 'late'] as const;
 export type RaidSignupPunctuality = (typeof RAID_SIGNUP_PUNCTUALITY)[number];
 

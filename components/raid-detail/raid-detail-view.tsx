@@ -931,7 +931,7 @@ export function RaidDetailView({
                       router.push(`/${locale}/guild/${guildId}/raid/${raidId}/plan`);
                     }}
                   >
-                    📅 {t('menuPlan')}
+                    {t('menuPlan')}
                   </button>
                 ) : null}
                 {canCompleteRaid ? (
@@ -960,7 +960,7 @@ export function RaidDetailView({
                       if (canEditRaid) router.push(`/${locale}/guild/${guildId}/raid/${raidId}/edit`);
                     }}
                   >
-                    ✏️ {t('modeEdit')}
+                    {t('modeEdit')}
                   </button>
                 ) : null}
                 {raid.status === 'open' || raid.status === 'announced' ? (
@@ -972,7 +972,7 @@ export function RaidDetailView({
                       setCancelDmOpen(true);
                     }}
                   >
-                    🚫 {t('menuCancelRaid')}
+                    {t('menuCancelRaid')}
                   </button>
                 ) : null}
                 <button
@@ -983,7 +983,7 @@ export function RaidDetailView({
                     void doDeleteRaid();
                   }}
                 >
-                  🗑️ {t('menuDeleteRaid')}
+                  {t('menuDeleteRaid')}
                 </button>
               </div>
             </>,
@@ -1017,7 +1017,7 @@ export function RaidDetailView({
                             setShowSignup(true);
                           }}
                         >
-                          ⚙️ {t('signupEditMenu')}
+                          {t('signupEditMenu')}
                         </button>
                       ) : null}
                       {raid.status === 'open' || raid.status === 'announced' ? (
@@ -1027,7 +1027,7 @@ export function RaidDetailView({
                           className="w-full text-left px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 disabled:opacity-50"
                           onClick={() => void beginWithdrawForSignup(menuSignup)}
                         >
-                          ➖ {t('withdraw')}
+                          {t('withdraw')}
                         </button>
                       ) : null}
                     </>

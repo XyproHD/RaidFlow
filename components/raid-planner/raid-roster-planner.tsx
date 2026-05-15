@@ -2718,7 +2718,7 @@ export function RaidRosterPlanner({
                     if (canEditRaid) router.push(`/${locale}/guild/${guildId}/raid/${raidId}/edit`);
                   }}
                 >
-                  ✏️ {t('modeEdit')}
+                  {t('modeEdit')}
                 </button>
                 <button
                   type="button"
@@ -2728,7 +2728,7 @@ export function RaidRosterPlanner({
                     setCancelDmOpen(true);
                   }}
                 >
-                  🚫 {t('menuCancelRaid')}
+                  {t('menuCancelRaid')}
                 </button>
                 <button
                   type="button"
@@ -2738,7 +2738,7 @@ export function RaidRosterPlanner({
                     void doDeleteRaid();
                   }}
                 >
-                  🗑️ {t('menuDeleteRaid')}
+                  {t('menuDeleteRaid')}
                 </button>
               </div>
             </>,
