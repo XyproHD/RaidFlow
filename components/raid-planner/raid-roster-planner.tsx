@@ -459,7 +459,7 @@ export function RaidRosterPlanner({
           : null;
       const stored: StoredPlanner | null =
         storedFromServer ??
-        (typeof window !== 'undefined'
+        (raidStatus === 'open' && typeof window !== 'undefined'
           ? safeJsonParse<StoredPlanner>(window.localStorage.getItem(orderStorageKey))
           : null);
       const storedRoster =
@@ -596,7 +596,13 @@ export function RaidRosterPlanner({
         leaderNotesHtml: initialPlannerLeaderNotesHtml ?? '',
       });
     },
-    [orderStorageKey, initialPlannerLeaderNotesHtml, persistedServerPlannerOrder, raid.maxPlayers]
+    [
+      orderStorageKey,
+      initialPlannerLeaderNotesHtml,
+      persistedServerPlannerOrder,
+      raid.maxPlayers,
+      raidStatus,
+    ]
   );
 
   useEffect(() => {
@@ -680,7 +686,8 @@ export function RaidRosterPlanner({
     }[]
   >([]);
   const [comparisonListLoading, setComparisonListLoading] = useState(false);
-  const [comparisonAfter, setComparisonAfter] = useState<string | null>(null);
+  const [comparisonCursorBefore, setComparisonCursorBefore] = useState<string | null>(null);
+  const [comparisonCursorAfter, setComparisonCursorAfter] = useState<string | null>(null);
   const [comparisonHasOlder, setComparisonHasOlder] = useState(false);
   const [comparisonHasNewer, setComparisonHasNewer] = useState(false);
   const [comparisonTodayStart, setComparisonTodayStart] = useState<string | null>(null);
@@ -711,7 +718,8 @@ export function RaidRosterPlanner({
           hasNewer: boolean;
         };
         setComparisonList(data.raids);
-        setComparisonAfter(data.cursors.nextAfter);
+        setComparisonCursorBefore(data.cursors.prevBefore);
+        setComparisonCursorAfter(data.cursors.nextAfter);
         setComparisonHasOlder(data.hasOlder);
         setComparisonHasNewer(data.hasNewer);
         setComparisonTodayStart(data.cursors.todayStart);
@@ -2949,7 +2957,7 @@ export function RaidRosterPlanner({
                   disabled={comparisonListLoading || !comparisonHasOlder}
                   onClick={() => {
                     const before =
-                      comparisonList[0]?.scheduledAt ??
+                      comparisonCursorBefore ??
                       comparisonTodayStart ??
                       new Date().toISOString();
                     void loadComparisonRaids({ before });
@@ -2962,10 +2970,10 @@ export function RaidRosterPlanner({
                   type="button"
                   disabled={comparisonListLoading || !comparisonHasNewer}
                   onClick={() => {
-                    const lastIso = comparisonList[comparisonList.length - 1]?.scheduledAt;
-                    const after = lastIso
-                      ? new Date(new Date(lastIso).getTime() + 1).toISOString()
-                      : (comparisonAfter ?? comparisonTodayStart ?? new Date().toISOString());
+                    const after =
+                      comparisonCursorAfter ??
+                      comparisonTodayStart ??
+                      new Date().toISOString();
                     void loadComparisonRaids({ after });
                   }}
                   className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"

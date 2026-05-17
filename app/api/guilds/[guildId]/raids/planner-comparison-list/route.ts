@@ -21,9 +21,16 @@ function berlinDayStartUtc(fromIso: string | null): Date {
   return new Date(`${y}-${m}-${d}T00:00:00+02:00`);
 }
 
+function raidBaseWhere(guildId: string, excludeRaidId: string | null) {
+  return {
+    guildId,
+    ...(excludeRaidId ? { id: { not: excludeRaidId } } : {}),
+  };
+}
+
 /**
  * GET — Raids für Vergleichsraid-Auswahl (paginiert ab „heute“ Berlin).
- * Query: excludeRaidId, after (ISO, exclusive lower bound), before (ISO, exclusive upper bound für Rückwärts-Seite)
+ * Query: excludeRaidId, after (ISO, Fenster ab), before (ISO, Fenster davor)
  */
 export async function GET(
   request: NextRequest,
@@ -40,14 +47,14 @@ export async function GET(
   const locale = searchParams.get('locale')?.trim() || 'de';
 
   const todayStart = berlinDayStartUtc(null);
-  const after = afterRaw ? new Date(afterRaw) : todayStart;
+  const after = afterRaw ? new Date(afterRaw) : null;
   const before = beforeRaw ? new Date(beforeRaw) : null;
+  const baseWhere = raidBaseWhere(guildId, excludeRaidId);
 
   if (before && !Number.isNaN(before.getTime())) {
     const rows = await prisma.rfRaid.findMany({
       where: {
-        guildId,
-        ...(excludeRaidId ? { id: { not: excludeRaidId } } : {}),
+        ...baseWhere,
         scheduledAt: { lt: before },
       },
       orderBy: { scheduledAt: 'desc' },
@@ -72,28 +79,44 @@ export async function GET(
       status: r.status,
       dungeonLabel: r.dungeon.names[0]?.name ?? r.dungeon.name,
     }));
-    const prevBefore =
-      raids.length > 0 ? raids[0]!.scheduledAt : before.toISOString();
-    const nextAfter =
-      raids.length > 0 ? raids[raids.length - 1]!.scheduledAt : before.toISOString();
+
+    const firstAt = raids[0]?.scheduledAt ? new Date(raids[0].scheduledAt) : null;
+    const lastAt = raids[raids.length - 1]?.scheduledAt
+      ? new Date(raids[raids.length - 1]!.scheduledAt)
+      : null;
+
+    const [olderCount, newerCount] = await Promise.all([
+      firstAt
+        ? prisma.rfRaid.count({
+            where: { ...baseWhere, scheduledAt: { lt: firstAt } },
+          })
+        : Promise.resolve(0),
+      lastAt
+        ? prisma.rfRaid.count({
+            where: { ...baseWhere, scheduledAt: { gt: lastAt, lt: before } },
+          })
+        : Promise.resolve(0),
+    ]);
+
     return NextResponse.json({
       raids,
       pageSize: PAGE_SIZE,
       cursors: {
-        prevBefore,
-        nextAfter,
+        prevBefore: firstAt?.toISOString() ?? before.toISOString(),
+        nextAfter: lastAt
+          ? new Date(lastAt.getTime() + 1).toISOString()
+          : before.toISOString(),
         todayStart: todayStart.toISOString(),
       },
-      hasOlder: raids.length === PAGE_SIZE,
-      hasNewer: before.getTime() > todayStart.getTime() + 1,
+      hasOlder: olderCount > 0,
+      hasNewer: newerCount > 0,
     });
   }
 
-  const lower = Number.isNaN(after.getTime()) ? todayStart : after;
+  const lower = after && !Number.isNaN(after.getTime()) ? after : todayStart;
   const rows = await prisma.rfRaid.findMany({
     where: {
-      guildId,
-      ...(excludeRaidId ? { id: { not: excludeRaidId } } : {}),
+      ...baseWhere,
       scheduledAt: { gte: lower },
     },
     orderBy: { scheduledAt: 'asc' },
@@ -120,16 +143,32 @@ export async function GET(
     dungeonLabel: r.dungeon.names[0]?.name ?? r.dungeon.name,
   }));
 
-  const last = raids[raids.length - 1];
+  const lastAt = raids[raids.length - 1]?.scheduledAt
+    ? new Date(raids[raids.length - 1]!.scheduledAt)
+    : null;
+
+  const [olderCount, newerCount] = await Promise.all([
+    prisma.rfRaid.count({
+      where: { ...baseWhere, scheduledAt: { lt: lower } },
+    }),
+    lastAt
+      ? prisma.rfRaid.count({
+          where: { ...baseWhere, scheduledAt: { gt: lastAt } },
+        })
+      : Promise.resolve(0),
+  ]);
+
   return NextResponse.json({
     raids,
     pageSize: PAGE_SIZE,
     cursors: {
       prevBefore: lower.toISOString(),
-      nextAfter: last ? last.scheduledAt : lower.toISOString(),
+      nextAfter: lastAt
+        ? new Date(lastAt.getTime() + 1).toISOString()
+        : lower.toISOString(),
       todayStart: todayStart.toISOString(),
     },
-    hasOlder: lower.getTime() > todayStart.getTime(),
-    hasNewer: raids.length === PAGE_SIZE,
+    hasOlder: olderCount > 0,
+    hasNewer: newerCount > 0,
   });
 }
