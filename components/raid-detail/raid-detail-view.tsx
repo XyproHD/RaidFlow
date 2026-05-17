@@ -619,7 +619,7 @@ export function RaidDetailView({
                   ) : null}
                 </div>
                 {(meta.partySlots ?? []).length > 0
-                  ? meta.partySlots.map((row, pi) => {
+                  ? (meta.partySlots ?? []).map((row, pi) => {
                       const ids = row.filter((sid) => !!sid?.trim());
                       return (
                         <div key={`pub-party-${gi}-${pi}`} className="space-y-1.5">
