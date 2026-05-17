@@ -17,18 +17,20 @@ export function SignupSpecIcons({
   signedSpec,
   onlySignedSpec,
   specLockTitle,
+  size = 22,
 }: {
   character: CharSpecs | null;
   signedSpec: string | null;
   onlySignedSpec: boolean;
   /** title/aria für das 🔒 (z. B. badgeOnlySignedSpec) */
   specLockTitle: string;
+  size?: number;
 }) {
   const signed =
     signedSpec?.trim() || character?.mainSpec?.trim() || '';
 
   if (!character) {
-    return signed ? <CharacterSpecIconsInline mainSpec={signed} offSpec={null} size={22} slashClassName="hidden" /> : null;
+    return signed ? <CharacterSpecIconsInline mainSpec={signed} offSpec={null} size={size} slashClassName="hidden" /> : null;
   }
 
   const main = character.mainSpec.trim();
@@ -41,7 +43,7 @@ export function SignupSpecIcons({
     return (
       <span key={spec} className="relative inline-flex items-center gap-0.5 shrink-0 rounded-sm">
         <span className={cn(gray && 'grayscale opacity-[0.85]')}>
-          <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={22} slashClassName="hidden" />
+          <CharacterSpecIconsInline mainSpec={spec} offSpec={null} size={size} slashClassName="hidden" />
         </span>
         {isSigned && onlySignedSpec ? (
           <span className="text-sm leading-none shrink-0" title={specLockTitle} aria-label={specLockTitle}>

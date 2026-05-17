@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
+import { parsePartySlotsFromStored, syncPartySlotsForGroup } from '@/lib/planner-party-slots';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import type { LeaderPlacement } from '@/lib/raid-leader-placement';
 import {
@@ -11,6 +12,8 @@ export type AnnouncedGroupPayload = {
   rosterOrder: string[];
   raidLeaderUserId: string | null;
   lootmasterUserId: string | null;
+  /** 5er-Gruppen: je Slot bis zu 5 Signup-IDs (Subset des Kaders). */
+  partySlots?: string[][];
 };
 
 export type AnnounceRaidPayload = {
@@ -50,10 +53,12 @@ export function parseAnnounceRaidPayload(body: Record<string, unknown>): Announc
       .filter(Boolean);
     const rl = asTrimmedString(o.raidLeaderUserId);
     const lm = asTrimmedString(o.lootmasterUserId);
+    const partySlots = parsePartySlotsFromStored(o.partySlots);
     groups.push({
       rosterOrder,
       raidLeaderUserId: rl,
       lootmasterUserId: lm,
+      ...(partySlots ? { partySlots } : {}),
     });
   }
 
@@ -157,11 +162,18 @@ export function buildAnnounceSignupUpdate(
 /** DB-Feld `rf_raid.announced_planner_groups_json` (gleiche Struktur wie Announce-Payload ohne `action`). */
 export function announceLayoutToStoredJson(payload: AnnounceRaidPayload): Prisma.InputJsonValue {
   return {
-    groups: payload.groups.map((g) => ({
-      rosterOrder: g.rosterOrder,
-      raidLeaderUserId: g.raidLeaderUserId,
-      lootmasterUserId: g.lootmasterUserId,
-    })),
+    groups: payload.groups.map((g) => {
+      const partySlots = syncPartySlotsForGroup({
+        rosterOrder: g.rosterOrder,
+        partySlots: g.partySlots,
+      });
+      return {
+        rosterOrder: g.rosterOrder,
+        raidLeaderUserId: g.raidLeaderUserId,
+        lootmasterUserId: g.lootmasterUserId,
+        partySlots,
+      };
+    }),
     reserveOrder: payload.reserveOrder,
   };
 }

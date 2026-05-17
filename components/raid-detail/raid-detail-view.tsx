@@ -20,9 +20,9 @@ import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge'
 import { BattlenetLogo } from '@/components/battlenet-logo';
 import {
   CharacterNameWithDiscordInline,
-  CharacterSpecIconsInline,
   CharacterSignupPunctualityMark,
 } from '@/components/character-display-parts';
+import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { RaidAnmeldungen, type AnmeldungRow } from '@/components/raid-detail/raid-anmeldungen';
 import { RaidSignupPlayerRow } from '@/components/raid-detail/raid-signup-player-row';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
@@ -38,10 +38,12 @@ import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
 import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
+import { PublishedPartyBlocks } from '@/components/raid-planner/published-party-blocks';
 
 export type AnnouncedLayoutProps = {
   groupMeta: {
     rosterOrder: string[];
+    partySlots?: string[][];
     raidLeaderLabel: string | null;
     lootmasterLabel: string | null;
   }[];
@@ -644,6 +646,17 @@ export function RaidDetailView({
                     })}
                   </ul>
                 )}
+                {meta.partySlots && meta.partySlots.length > 0 ? (
+                  <PublishedPartyBlocks
+                    partySlots={meta.partySlots}
+                    partyTitle={(n) => t('publishedPartyTitle', { n })}
+                    resolveName={(sid) => {
+                      const s = signupById.get(sid);
+                      return s?.character?.name?.trim() ?? null;
+                    }}
+                    className="pt-2"
+                  />
+                ) : null}
               </div>
             ))}
             <div className="space-y-2">
@@ -755,14 +768,24 @@ export function RaidDetailView({
                                   {derivedClassId ? (
                                     <ClassIcon classId={derivedClassId} size={22} title={specForIcon ?? undefined} />
                                   ) : null}
-                                  {specForIcon ? (
-                                    <CharacterSpecIconsInline
-                                      mainSpec={specForIcon}
-                                      offSpec={myChar?.offSpec ?? null}
+                                  {myChar ? (
+                                    <SignupSpecIcons
+                                      character={{
+                                        mainSpec: myChar.mainSpec,
+                                        offSpec: myChar.offSpec ?? null,
+                                      }}
+                                      signedSpec={signup.signedSpec}
+                                      onlySignedSpec={!!signup.onlySignedSpec}
+                                      specLockTitle={t('badgeOnlySignedSpec')}
                                       size={20}
-                                      slashClassName="hidden"
-                                      offSpecWrapperClassName="grayscale contrast-90 inline-flex"
-                                      offSpecIconClassName="opacity-90"
+                                    />
+                                  ) : specForIcon ? (
+                                    <SignupSpecIcons
+                                      character={null}
+                                      signedSpec={specForIcon}
+                                      onlySignedSpec={!!signup.onlySignedSpec}
+                                      specLockTitle={t('badgeOnlySignedSpec')}
+                                      size={20}
                                     />
                                   ) : null}
                                 </span>

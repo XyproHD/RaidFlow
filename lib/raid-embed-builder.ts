@@ -9,6 +9,7 @@ import {
   getRoleEmoji,
 } from '@/lib/discord-wow-emojis';
 import type { AnnouncedGroupPayload } from '@/lib/raid-announce';
+import { PLANNER_PARTY_SIZE } from '@/lib/planner-party-slots';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import type { DiscordEmbed, DiscordMessageComponent } from '@/lib/discord-guild-api';
 import { BUYMEACOFFEE_URL } from '@/lib/support-links';
@@ -381,6 +382,27 @@ function classCountLine(
 /**
  * Kompakte Rollen-Verteilung für eine einzelne Gruppe (Unicode-Emojis).
  */
+function partyGroupLines(
+  group: AnnouncedGroupPayload,
+  signupById: Map<string, RaidEmbedSignup>,
+  emojis: Record<string, string>
+): string[] {
+  const slots = group.partySlots ?? [];
+  const out: string[] = [];
+  for (let pi = 0; pi < slots.length; pi++) {
+    const row = slots[pi] ?? [];
+    if (!row.some((id) => signupById.has(id))) continue;
+    const cells: string[] = [];
+    for (let c = 0; c < PLANNER_PARTY_SIZE; c++) {
+      const id = row[c];
+      const s = id ? signupById.get(id) : null;
+      cells.push(s ? playerLine(s, emojis) : '·');
+    }
+    out.push(`**5er ${pi + 1}:** ${cells.join(' · ')}`);
+  }
+  return out;
+}
+
 function groupRoleSummaryLine(
   signupIds: string[],
   signupById: Map<string, RaidEmbedSignup>,
@@ -545,6 +567,11 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
         );
       } else {
         packer.push({ name: '\u200b', value: '*Keine Spieler im Kader.*', inline: false });
+      }
+
+      const partyLines = partyGroupLines(group, signupById, discordEmojis);
+      if (partyLines.length > 0) {
+        appendLinesInColumnFields(packer, `Gruppe ${gi + 1} · 5er`, partyLines, 1);
       }
     }
 
