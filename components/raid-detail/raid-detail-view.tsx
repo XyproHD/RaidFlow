@@ -20,9 +20,9 @@ import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge'
 import { BattlenetLogo } from '@/components/battlenet-logo';
 import {
   CharacterNameWithDiscordInline,
-  CharacterSpecIconsInline,
   CharacterSignupPunctualityMark,
 } from '@/components/character-display-parts';
+import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { RaidAnmeldungen, type AnmeldungRow } from '@/components/raid-detail/raid-anmeldungen';
 import { RaidSignupPlayerRow } from '@/components/raid-detail/raid-signup-player-row';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
@@ -38,10 +38,10 @@ import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
 import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
-
 export type AnnouncedLayoutProps = {
   groupMeta: {
     rosterOrder: string[];
+    partySlots?: string[][];
     raidLeaderLabel: string | null;
     lootmasterLabel: string | null;
   }[];
@@ -618,32 +618,47 @@ export function RaidDetailView({
                     </p>
                   ) : null}
                 </div>
-                {meta.rosterOrder.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">—</p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {meta.rosterOrder.map((sid) => {
-                      const s = signupById.get(sid);
-                      if (!s) {
-                        return (
-                          <li key={sid} className="text-sm text-muted-foreground">
-                            {t('signupAnonymous')}
-                          </li>
-                        );
-                      }
+                {(meta.partySlots ?? []).length > 0
+                  ? (meta.partySlots ?? []).map((row, pi) => {
+                      const ids = row.filter((sid) => !!sid?.trim());
                       return (
-                        <li key={sid} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
-                          <RaidSignupPlayerRow
-                            row={raidSignupToAnmeldungRow(s)}
-                            canEdit={false}
-                            showTypeLabel={false}
-                            raidStatus={raid.status}
-                          />
-                        </li>
+                        <div key={`pub-party-${gi}-${pi}`} className="space-y-1.5">
+                          <p className="text-[11px] font-medium text-muted-foreground">
+                            {t('publishedPartyTitle', { n: pi + 1 })}
+                          </p>
+                          {ids.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">—</p>
+                          ) : (
+                            <ul className="flex flex-col gap-2">
+                              {ids.map((sid) => {
+                                const s = signupById.get(sid);
+                                if (!s) {
+                                  return (
+                                    <li key={sid} className="text-sm text-muted-foreground">
+                                      {t('signupAnonymous')}
+                                    </li>
+                                  );
+                                }
+                                return (
+                                  <li
+                                    key={sid}
+                                    className="rounded-lg border border-border bg-card shadow-sm overflow-hidden"
+                                  >
+                                    <RaidSignupPlayerRow
+                                      row={raidSignupToAnmeldungRow(s)}
+                                      canEdit={false}
+                                      showTypeLabel={false}
+                                      raidStatus={raid.status}
+                                    />
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                        </div>
                       );
-                    })}
-                  </ul>
-                )}
+                    })
+                  : null}
               </div>
             ))}
             <div className="space-y-2">
@@ -755,14 +770,24 @@ export function RaidDetailView({
                                   {derivedClassId ? (
                                     <ClassIcon classId={derivedClassId} size={22} title={specForIcon ?? undefined} />
                                   ) : null}
-                                  {specForIcon ? (
-                                    <CharacterSpecIconsInline
-                                      mainSpec={specForIcon}
-                                      offSpec={myChar?.offSpec ?? null}
+                                  {myChar ? (
+                                    <SignupSpecIcons
+                                      character={{
+                                        mainSpec: myChar.mainSpec,
+                                        offSpec: myChar.offSpec ?? null,
+                                      }}
+                                      signedSpec={signup.signedSpec}
+                                      onlySignedSpec={!!signup.onlySignedSpec}
+                                      specLockTitle={t('badgeOnlySignedSpec')}
                                       size={20}
-                                      slashClassName="hidden"
-                                      offSpecWrapperClassName="grayscale contrast-90 inline-flex"
-                                      offSpecIconClassName="opacity-90"
+                                    />
+                                  ) : specForIcon ? (
+                                    <SignupSpecIcons
+                                      character={null}
+                                      signedSpec={specForIcon}
+                                      onlySignedSpec={!!signup.onlySignedSpec}
+                                      specLockTitle={t('badgeOnlySignedSpec')}
+                                      size={20}
                                     />
                                   ) : null}
                                 </span>

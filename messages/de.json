@@ -145,6 +145,7 @@
     "raidStatus_completed": "Abgeschlossen",
     "sectionPublishedRoster": "Veröffentlichter Stand",
     "publishedGroupTitle": "Gruppe {n}",
+    "publishedPartyTitle": "5er {n}",
     "publishedReserveHeading": "Reserve",
     "publishedDeclinedHeading": "Abgesagt",
     "raidLeaderShort": "Raidleiter",
@@ -312,7 +313,18 @@
     "exportNamesFormatComma": "Kommagetrennt",
     "exportNamesFormatSemicolon": "Semikolon-getrennt",
     "exportNamesCopy": "In Zwischenspeicher kopieren",
-    "exportNamesPreview": "Vorschau — Text markieren und kopieren"
+    "exportNamesPreview": "Vorschau — Text markieren und kopieren",
+    "partyTitle": "5er {n}",
+    "comparisonRaidTitle": "Vergleichsraid wählen",
+    "comparisonOn": "Vergleich an",
+    "comparisonOff": "Vergleich aus",
+    "comparisonPagePrev": "Zurück",
+    "comparisonPageNext": "Vor",
+    "comparisonListEmpty": "Keine weiteren Raids in diesem Zeitraum.",
+    "comparisonLegendConfirmed": "Gesetzt",
+    "comparisonLegendReserve": "Reserve",
+    "comparisonLegendSignup": "Angemeldet",
+    "comparisonLegendUncertain": "Unsicher"
   },
   "raidEdit": {
     "sectionBasics": "Grunddaten & Termin",

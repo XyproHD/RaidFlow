@@ -7,6 +7,7 @@ import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { RaidDetailView, type AnnouncedLayoutProps } from '@/components/raid-detail/raid-detail-view';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
+import { syncPartySlotsForGroup } from '@/lib/planner-party-slots';
 import {
   getRaidDetailContext,
   parseRaidPageMode,
@@ -164,6 +165,13 @@ export default async function RaidDetailPage(props: {
       announcedLayout = {
         groupMeta: parsed.groups.map((g) => ({
           rosterOrder: g.rosterOrder,
+          partySlots: syncPartySlotsForGroup(
+            {
+              rosterOrder: g.rosterOrder,
+              partySlots: g.partySlots,
+            },
+            raid.maxPlayers
+          ),
           raidLeaderLabel: g.raidLeaderUserId ? labelForUser(g.raidLeaderUserId) : null,
           lootmasterLabel: g.lootmasterUserId ? labelForUser(g.lootmasterUserId) : null,
         })),

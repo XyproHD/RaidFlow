@@ -18,7 +18,7 @@ import { ClassIcon } from '@/components/class-icon';
 import { MinSpecRequirementRow } from '@/components/raid-planner/min-spec-requirement-row';
 import { RoleIcon } from '@/components/role-icon';
 import { CharacterMainStar } from '@/components/character-main-star';
-import { CharacterSpecIconsInline } from '@/components/character-display-parts';
+import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import type { LeaderPlacement } from '@/lib/raid-leader-placement';
 
 type GroupCharRule = { raidGroupId: string; characterId: string; allowed: boolean };
@@ -446,7 +446,6 @@ export function RaidEditPanel({
     const main = ch?.mainSpec ?? '';
     const parsed = getSpecByDisplayName(main);
     const classId = parsed?.classId ?? null;
-    const specShow = s.signedSpec?.trim() || main || '?';
     const stats = participationStats[s.userId] ?? { dungeon: 0, total: 0 };
     const hasOff = !!(ch?.offSpec?.trim());
 
@@ -470,14 +469,13 @@ export function RaidEditPanel({
             <ClassIcon classId={classId} size={20} title={main} />
           </span>
         ) : null}
-        <span className="inline-flex items-center gap-0.5 shrink-0">
-          <CharacterSpecIconsInline mainSpec={specShow} size={20} slashClassName="hidden" offSpec={null} />
-          {s.onlySignedSpec ? (
-            <span className="text-sm leading-none shrink-0" title={tDetail('badgeOnlySignedSpec')} aria-label={tDetail('badgeOnlySignedSpec')}>
-              🔒
-            </span>
-          ) : null}
-        </span>
+        <SignupSpecIcons
+          character={ch ? { mainSpec: ch.mainSpec, offSpec: ch.offSpec ?? null } : null}
+          signedSpec={s.signedSpec}
+          onlySignedSpec={!!s.onlySignedSpec}
+          specLockTitle={tDetail('badgeOnlySignedSpec')}
+          size={20}
+        />
         {s.isLate ? <span title={t('late')}>⏱</span> : null}
         <span className="font-medium truncate max-w-[9rem]">{ch?.name ?? '—'}</span>
         <span className="text-muted-foreground text-xs whitespace-nowrap">

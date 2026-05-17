@@ -145,6 +145,7 @@
     "raidStatus_completed": "Completed",
     "sectionPublishedRoster": "Published roster",
     "publishedGroupTitle": "Group {n}",
+    "publishedPartyTitle": "Party {n}",
     "publishedReserveHeading": "Bench",
     "publishedDeclinedHeading": "Declined",
     "raidLeaderShort": "Raid leader",
@@ -312,7 +313,18 @@
     "exportNamesFormatComma": "Comma-separated",
     "exportNamesFormatSemicolon": "Semicolon-separated",
     "exportNamesCopy": "Copy to clipboard",
-    "exportNamesPreview": "Preview — select and copy"
+    "exportNamesPreview": "Preview — select and copy",
+    "partyTitle": "Party {n}",
+    "comparisonRaidTitle": "Choose comparison raid",
+    "comparisonOn": "Compare on",
+    "comparisonOff": "Compare off",
+    "comparisonPagePrev": "Previous",
+    "comparisonPageNext": "Next",
+    "comparisonListEmpty": "No more raids in this range.",
+    "comparisonLegendConfirmed": "Set",
+    "comparisonLegendReserve": "Reserve",
+    "comparisonLegendSignup": "Signed up",
+    "comparisonLegendUncertain": "Uncertain"
   },
   "raidEdit": {
     "sectionBasics": "Basics & schedule",

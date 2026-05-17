@@ -9,6 +9,7 @@ import {
   getRoleEmoji,
 } from '@/lib/discord-wow-emojis';
 import type { AnnouncedGroupPayload } from '@/lib/raid-announce';
+import { PLANNER_PARTY_SIZE } from '@/lib/planner-party-slots';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import type { DiscordEmbed, DiscordMessageComponent } from '@/lib/discord-guild-api';
 import { BUYMEACOFFEE_URL } from '@/lib/support-links';
@@ -378,9 +379,30 @@ function classCountLine(
   return rows.join('\n');
 }
 
-/**
- * Kompakte Rollen-Verteilung für eine einzelne Gruppe (Unicode-Emojis).
- */
+/** Je 5er-Spalte (G1, G2, …) ein inline-Embed-Feld mit Spielerzeilen unter „Raid N“. */
+function appendRaidPartyColumnFields(
+  packer: RaidEmbedFieldPacker,
+  group: AnnouncedGroupPayload,
+  signupById: Map<string, RaidEmbedSignup>,
+  emojis: Record<string, string>
+): void {
+  const slots = group.partySlots ?? [];
+  for (let pi = 0; pi < slots.length; pi++) {
+    const row = slots[pi] ?? [];
+    const lines: string[] = [];
+    for (let c = 0; c < PLANNER_PARTY_SIZE; c++) {
+      const id = row[c]?.trim() ?? '';
+      const s = id ? signupById.get(id) : null;
+      lines.push(s ? playerLine(s, emojis) : '·');
+    }
+    packer.push({
+      name: `G${pi + 1}`,
+      value: lines.join('\n').slice(0, 1024) || '\u200b',
+      inline: true,
+    });
+  }
+}
+
 function groupRoleSummaryLine(
   signupIds: string[],
   signupById: Map<string, RaidEmbedSignup>,
@@ -461,7 +483,7 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
   const groupCount = announcedGroups?.groups.length ?? 1;
   const totalMax   = maxPlayers * groupCount;
   const anmeldungenValue = groupCount > 1
-    ? `${uniquePlayers} / ${totalMax} (${maxPlayers} je Gruppe)`
+    ? `${uniquePlayers} / ${totalMax} (${maxPlayers} je Raid)`
     : `${uniquePlayers} / ${maxPlayers}`;
 
   const byRole: Record<string, RaidEmbedSignup[]> = { Tank: [], Melee: [], Range: [], Healer: [], '?': [] };
@@ -521,30 +543,29 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
       headerLines.push(groupRoleSummaryLine(group.rosterOrder, signupById, discordEmojis));
       headerLines.push('▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬');
 
-      const playerLines: string[] = [];
-      for (const signupId of group.rosterOrder) {
-        const s = signupById.get(signupId);
-        if (!s) continue;
-        playerLines.push(playerLine(s, discordEmojis));
-      }
-
       const headerValue =
         headerLines.length > 0 ? headerLines.join('\n').slice(0, 1024) : '*leer*';
       packer.push({
-        name: `Gruppe ${gi + 1}`,
+        name: `Raid ${gi + 1}`,
         value: headerValue,
         inline: false,
       });
 
-      if (playerLines.length > 0) {
-        appendLinesInColumnFields(
-          packer,
-          `Gruppe ${gi + 1} · Kader`,
-          playerLines,
-          3
-        );
+      const hasPartyLayout = (group.partySlots?.length ?? 0) > 0;
+      if (hasPartyLayout) {
+        appendRaidPartyColumnFields(packer, group, signupById, discordEmojis);
       } else {
-        packer.push({ name: '\u200b', value: '*Keine Spieler im Kader.*', inline: false });
+        const playerLines: string[] = [];
+        for (const signupId of group.rosterOrder) {
+          const s = signupById.get(signupId);
+          if (!s) continue;
+          playerLines.push(playerLine(s, discordEmojis));
+        }
+        if (playerLines.length > 0) {
+          appendLinesInColumnFields(packer, `Raid ${gi + 1} · Kader`, playerLines, 3);
+        } else {
+          packer.push({ name: '\u200b', value: '*Keine Spieler im Kader.*', inline: false });
+        }
       }
     }
 

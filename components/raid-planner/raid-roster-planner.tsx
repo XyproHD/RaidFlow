@@ -31,6 +31,16 @@ import type { AnnounceRaidPayload } from '@/lib/raid-announce';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
 import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
+import { PlannerPartyInline } from '@/components/raid-planner/planner-party-grid';
+import {
+  applyPartyLayoutToGroup,
+  findFirstEmptyPartyCell,
+  parsePartySlotsFromStored,
+  rosterOrderFromPartySlots,
+  setPartyCell,
+  syncPartySlotsForGroup,
+} from '@/lib/planner-party-slots';
+import type { ComparisonPlacement } from '@/lib/planner-comparison';
 
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
 const ROLE_KEYS = ['Tank', 'Melee', 'Range', 'Healer'] as const;
@@ -103,7 +113,7 @@ type RaidHeaderMeta = {
 
 type DragSession = {
   signupId: string;
-  source: 'roster' | 'reserve' | 'pool';
+  source: 'roster' | 'reserve' | 'pool' | 'party';
   offsetX: number;
   offsetY: number;
   originRect: DOMRect;
@@ -124,10 +134,12 @@ type PlannerGroup = {
   rosterOrder: string[];
   raidLeaderUserId: string | null;
   lootmasterUserId: string | null;
+  partySlots: string[][];
 };
 
 type DropTarget =
   | { kind: 'roster'; groupIndex: number }
+  | { kind: 'party'; groupIndex: number; partyIndex: number; cellIndex?: number }
   | { kind: 'reserve' }
   | { kind: 'pool' };
 
@@ -143,12 +155,26 @@ function findDropTarget(x: number, y: number): DropTarget | null {
       const gi = Number.parseInt(raw, 10);
       return { kind: 'roster', groupIndex: Number.isFinite(gi) && gi >= 0 ? gi : 0 };
     }
+    if (z === 'party') {
+      const gi = Number.parseInt(el.dataset.rosterGroup ?? '0', 10);
+      const pi = Number.parseInt(el.dataset.partyIndex ?? '0', 10);
+      const cellRaw = el.dataset.partyCell;
+      const cellIndex =
+        cellRaw != null ? Number.parseInt(cellRaw, 10) : undefined;
+      if (!Number.isFinite(gi) || gi < 0 || !Number.isFinite(pi) || pi < 0) continue;
+      return {
+        kind: 'party',
+        groupIndex: gi,
+        partyIndex: pi,
+        cellIndex: Number.isFinite(cellIndex) ? cellIndex : undefined,
+      };
+    }
   }
   return null;
 }
 
 function allRosterIds(groups: PlannerGroup[]): string[] {
-  return groups.flatMap((g) => g.rosterOrder);
+  return groups.flatMap((g) => rosterOrderFromPartySlots(g.partySlots));
 }
 
 function findUserRosterConflict(
@@ -158,7 +184,7 @@ function findUserRosterConflict(
   userId: string
 ): string | null {
   for (const g of groups) {
-    for (const otherId of g.rosterOrder) {
+    for (const otherId of rosterOrderFromPartySlots(g.partySlots)) {
       if (otherId === draggingId) continue;
       const other = byId.get(otherId);
       if ((other?.userId ?? '').trim() === userId) return otherId;
@@ -167,16 +193,17 @@ function findUserRosterConflict(
   return null;
 }
 
-function dedupeRosterIdsAcrossGroups(groups: PlannerGroup[]): PlannerGroup[] {
+function dedupePartySlotsAcrossGroups(groups: PlannerGroup[], maxPlayers: number): PlannerGroup[] {
   const seen = new Set<string>();
   return groups.map((g) => {
-    const next: string[] = [];
-    for (const id of g.rosterOrder) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      next.push(id);
-    }
-    return { ...g, rosterOrder: next };
+    const slots = syncPartySlotsForGroup(g, maxPlayers).map((row) =>
+      row.map((id) => {
+        if (!id || seen.has(id)) return '';
+        seen.add(id);
+        return id;
+      })
+    );
+    return applyPartyLayoutToGroup({ ...g, partySlots: slots }, maxPlayers);
   });
 }
 
@@ -280,6 +307,19 @@ function countToMinLabel(count: number, min: number) {
   return String(count);
 }
 
+function minCountTone(count: number, min: number) {
+  if (min <= 0) return 'text-green-600 dark:text-green-500';
+  return count < min ? 'text-destructive' : 'text-green-600 dark:text-green-500';
+}
+
+function comparisonRowClass(placement: ComparisonPlacement | null, enabled: boolean) {
+  if (!enabled || !placement) return '';
+  if (placement === 'confirmed') return 'ring-2 ring-emerald-500/70 bg-emerald-500/[0.08]';
+  if (placement === 'reserve') return 'ring-2 ring-amber-500/70 bg-amber-500/[0.08]';
+  if (placement === 'uncertain') return 'ring-2 ring-violet-500/60 bg-violet-500/[0.08]';
+  return 'ring-2 ring-sky-500/60 bg-sky-500/[0.07]';
+}
+
 function toneForFulfillment(ratio: number | null) {
   if (ratio == null) return 'text-muted-foreground';
   if (ratio >= 1) return 'text-green-600 dark:text-green-500';
@@ -289,18 +329,6 @@ function toneForFulfillment(ratio: number | null) {
 
 function setFromArray(ids: (string | null | undefined)[]) {
   return new Set(ids.filter((x): x is string => typeof x === 'string' && x.length > 0));
-}
-
-function rosterInsertIndex(container: HTMLElement, clientY: number, draggingId: string): number {
-  const rows = [...container.querySelectorAll<HTMLElement>('[data-planner-row]')];
-  let idx = 0;
-  for (const el of rows) {
-    if (el.dataset.signupId === draggingId) continue;
-    const r = el.getBoundingClientRect();
-    if (clientY < r.top + r.height / 2) return idx;
-    idx++;
-  }
-  return idx;
 }
 
 export function RaidRosterPlanner({
@@ -380,11 +408,15 @@ export function RaidRosterPlanner({
   const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
 
   const [plannerGroups, setPlannerGroups] = useState<PlannerGroup[]>(() => [
-    {
-      rosterOrder: [],
-      raidLeaderUserId: null,
-      lootmasterUserId: null,
-    },
+    applyPartyLayoutToGroup(
+      {
+        rosterOrder: [],
+        raidLeaderUserId: null,
+        lootmasterUserId: null,
+        partySlots: [],
+      },
+      raid.maxPlayers
+    ),
   ]);
   const [reserveOrder, setReserveOrder] = useState<string[]>(() =>
     orderedReserveSignupIdsForDisplay(
@@ -455,7 +487,12 @@ export function RaidRosterPlanner({
         rosterOrder: [],
         raidLeaderUserId: null,
         lootmasterUserId: null,
+        partySlots: [],
       });
+
+      const maxPlayers = raid.maxPlayers;
+      const withSyncedParties = (g: PlannerGroup): PlannerGroup =>
+        applyPartyLayoutToGroup(g, maxPlayers);
 
       let nextGroups: PlannerGroup[];
 
@@ -475,7 +512,13 @@ export function RaidRosterPlanner({
             typeof o.lootmasterUserId === 'string' && o.lootmasterUserId.trim()
               ? o.lootmasterUserId.trim()
               : null;
-          return { rosterOrder: ord, raidLeaderUserId: rl, lootmasterUserId: lm };
+          const partySlots = parsePartySlotsFromStored(o.partySlots);
+          return withSyncedParties({
+            rosterOrder: ord,
+            raidLeaderUserId: rl,
+            lootmasterUserId: lm,
+            partySlots: partySlots ?? [],
+          });
         });
         if (nextReserve.length === 0) {
           nextReserve = ids.filter((id) => placementOf(id) === 'substitute');
@@ -499,15 +542,19 @@ export function RaidRosterPlanner({
             rosterOrder: nextRoster,
             raidLeaderUserId: null,
             lootmasterUserId: null,
+            partySlots: [],
           },
         ];
       }
 
-      nextGroups = dedupeRosterIdsAcrossGroups(
-        nextGroups.map((g) => ({
-          ...g,
-          rosterOrder: g.rosterOrder.filter((id) => placementOf(id) === 'confirmed'),
-        }))
+      nextGroups = dedupePartySlotsAcrossGroups(
+        nextGroups.map((g) =>
+          withSyncedParties({
+            ...g,
+            rosterOrder: g.rosterOrder.filter((id) => placementOf(id) === 'confirmed'),
+          })
+        ),
+        maxPlayers
       );
 
       if (nextGroups.length === 0) {
@@ -518,11 +565,18 @@ export function RaidRosterPlanner({
       const missingConfirmed = ids.filter(
         (id) => placementOf(id) === 'confirmed' && !rosterSet.has(id) && !nextReserve.includes(id)
       );
-      if (missingConfirmed.length > 0) {
-        nextGroups = nextGroups.map((g, i) =>
-          i === 0 ? { ...g, rosterOrder: [...g.rosterOrder, ...missingConfirmed] } : g
-        );
-        nextGroups = dedupeRosterIdsAcrossGroups(nextGroups);
+      if (missingConfirmed.length > 0 && nextGroups[0]) {
+        let slots = nextGroups[0].partySlots;
+        for (const mid of missingConfirmed) {
+          const empty = findFirstEmptyPartyCell(slots, maxPlayers);
+          if (!empty) break;
+          slots = setPartyCell(slots, empty.partyIndex, empty.cellIndex, mid, maxPlayers);
+        }
+        nextGroups = [
+          applyPartyLayoutToGroup({ ...nextGroups[0], partySlots: slots }, maxPlayers),
+          ...nextGroups.slice(1),
+        ];
+        nextGroups = dedupePartySlotsAcrossGroups(nextGroups, maxPlayers);
       }
 
       const rosterSetFinal = new Set(allRosterIds(nextGroups));
@@ -542,7 +596,7 @@ export function RaidRosterPlanner({
         leaderNotesHtml: initialPlannerLeaderNotesHtml ?? '',
       });
     },
-    [orderStorageKey, initialPlannerLeaderNotesHtml, persistedServerPlannerOrder]
+    [orderStorageKey, initialPlannerLeaderNotesHtml, persistedServerPlannerOrder, raid.maxPlayers]
   );
 
   useEffect(() => {
@@ -609,6 +663,95 @@ export function RaidRosterPlanner({
 
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [raidOptionsOpen, setRaidOptionsOpen] = useState(true);
+  const [comparisonOpen, setComparisonOpen] = useState(true);
+  const [comparisonEnabled, setComparisonEnabled] = useState(false);
+  const [comparisonRaidId, setComparisonRaidId] = useState<string | null>(null);
+  const [comparisonRaidLabel, setComparisonRaidLabel] = useState<string | null>(null);
+  const [comparisonPlacements, setComparisonPlacements] = useState<
+    Record<string, ComparisonPlacement>
+  >({});
+  const [comparisonList, setComparisonList] = useState<
+    {
+      id: string;
+      name: string;
+      scheduledAt: string;
+      status: string;
+      dungeonLabel: string;
+    }[]
+  >([]);
+  const [comparisonListLoading, setComparisonListLoading] = useState(false);
+  const [comparisonAfter, setComparisonAfter] = useState<string | null>(null);
+  const [comparisonHasOlder, setComparisonHasOlder] = useState(false);
+  const [comparisonHasNewer, setComparisonHasNewer] = useState(false);
+  const [comparisonTodayStart, setComparisonTodayStart] = useState<string | null>(null);
+
+  const syncPlannerGroupsParties = useCallback(
+    (groups: PlannerGroup[]) => groups.map((g) => applyPartyLayoutToGroup(g, raid.maxPlayers)),
+    [raid.maxPlayers]
+  );
+
+  const loadComparisonRaids = useCallback(
+    async (opts: { after?: string | null; before?: string | null } = {}) => {
+      setComparisonListLoading(true);
+      try {
+        const q = new URLSearchParams({
+          excludeRaidId: raidId,
+          locale: intlLocale,
+        });
+        if (opts.before) q.set('before', opts.before);
+        else if (opts.after) q.set('after', opts.after);
+        const res = await fetch(
+          `/api/guilds/${encodeURIComponent(guildId)}/raids/planner-comparison-list?${q}`
+        );
+        if (!res.ok) throw new Error('list failed');
+        const data = (await res.json()) as {
+          raids: typeof comparisonList;
+          cursors: { prevBefore: string; nextAfter: string; todayStart: string };
+          hasOlder: boolean;
+          hasNewer: boolean;
+        };
+        setComparisonList(data.raids);
+        setComparisonAfter(data.cursors.nextAfter);
+        setComparisonHasOlder(data.hasOlder);
+        setComparisonHasNewer(data.hasNewer);
+        setComparisonTodayStart(data.cursors.todayStart);
+      } catch {
+        setComparisonList([]);
+      } finally {
+        setComparisonListLoading(false);
+      }
+    },
+    [guildId, raidId, intlLocale]
+  );
+
+  useEffect(() => {
+    if (!comparisonOpen) return;
+    void loadComparisonRaids({});
+  }, [comparisonOpen, loadComparisonRaids]);
+
+  useEffect(() => {
+    if (!comparisonEnabled || !comparisonRaidId) {
+      setComparisonPlacements({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(comparisonRaidId)}/comparison-placement`
+        );
+        if (!res.ok) throw new Error('placement failed');
+        const data = (await res.json()) as { placements: Record<string, ComparisonPlacement> };
+        if (!cancelled) setComparisonPlacements(data.placements ?? {});
+      } catch {
+        if (!cancelled) setComparisonPlacements({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [comparisonEnabled, comparisonRaidId, guildId]);
+
   /** Dummy UI state (no backend yet) */
   const [unsetPlayersMode, setUnsetPlayersMode] = useState<'reserve' | 'decline'>('reserve');
   const [botNotifyTargets, setBotNotifyTargets] = useState({
@@ -629,7 +772,6 @@ export function RaidRosterPlanner({
   const [dragPoint, setDragPoint] = useState<{ clientX: number; clientY: number } | null>(null);
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
 
-  const rosterListRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const scheduledAt = useMemo(() => new Date(raid.scheduledAt), [raid.scheduledAt]);
   const scheduledEndAt = raid.scheduledEndAt ? new Date(raid.scheduledEndAt) : null;
@@ -1104,7 +1246,13 @@ export function RaidRosterPlanner({
 
       const applyPool = () => {
         setPlannerGroups((groups) =>
-          groups.map((g) => ({ ...g, rosterOrder: g.rosterOrder.filter((x) => x !== id) }))
+          syncPlannerGroupsParties(
+            groups.map((g) => ({
+              ...g,
+              rosterOrder: g.rosterOrder.filter((x) => x !== id),
+              partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
+            }))
+          )
         );
         setReserveOrder((o) => o.filter((x) => x !== id));
       };
@@ -1135,10 +1283,82 @@ export function RaidRosterPlanner({
           return;
         }
         setPlannerGroups((groups) =>
-          groups.map((g) => ({ ...g, rosterOrder: g.rosterOrder.filter((x) => x !== id) }))
+          syncPlannerGroupsParties(
+            groups.map((g) => ({
+              ...g,
+              rosterOrder: g.rosterOrder.filter((x) => x !== id),
+              partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
+            }))
+          )
         );
         setReserveOrder((o) => (o.includes(id) ? o : [...o, id]));
         endDrag();
+        return;
+      }
+
+      const placeInGroupParty = (destGi: number, partyIndex: number, cellIndex: number) => {
+        const dragged = byId.get(id);
+        const draggedUserId = (dragged?.userId ?? '').trim() || null;
+        if (draggedUserId) {
+          const groupsSans = plannerGroups.map((g) => ({
+            ...g,
+            partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
+          }));
+          const conflictId = findUserRosterConflict(
+            syncPlannerGroupsParties(groupsSans),
+            byId,
+            id,
+            draggedUserId
+          );
+          if (conflictId) {
+            setBlinkDiscordForIds(setFromArray([id, conflictId]));
+            window.setTimeout(() => setBlinkDiscordForIds(new Set()), 900);
+            setFlyBack({
+              signupId: id,
+              fromLeft: e.clientX - sess.offsetX,
+              fromTop: e.clientY - sess.offsetY,
+              toLeft: origin.left,
+              toTop: origin.top,
+              width: origin.width,
+              height: origin.height,
+            });
+            endDrag();
+            return;
+          }
+        }
+        setReserveOrder((o) => o.filter((x) => x !== id));
+        setPlannerGroups((groups) =>
+          syncPlannerGroupsParties(
+            groups.map((g, gi) => {
+              const cleared = g.partySlots.map((row) => row.filter((x) => x !== id));
+              if (gi !== destGi) return applyPartyLayoutToGroup({ ...g, partySlots: cleared }, raid.maxPlayers);
+              const nextSlots = setPartyCell(cleared, partyIndex, cellIndex, id, raid.maxPlayers);
+              return applyPartyLayoutToGroup({ ...g, partySlots: nextSlots }, raid.maxPlayers);
+            })
+          )
+        );
+        endDrag();
+      };
+
+      if (target?.kind === 'party') {
+        const destGi = target.groupIndex;
+        const destPi = target.partyIndex;
+        if (destGi < 0 || destGi >= plannerGroups.length || destPi < 0) {
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
+          });
+          endDrag();
+          return;
+        }
+        const cell =
+          typeof target.cellIndex === 'number' && target.cellIndex >= 0 ? target.cellIndex : 0;
+        placeInGroupParty(destGi, destPi, cell);
         return;
       }
 
@@ -1157,48 +1377,22 @@ export function RaidRosterPlanner({
           endDrag();
           return;
         }
-
-        const dragged = byId.get(id);
-        const draggedUserId = (dragged?.userId ?? '').trim() || null;
-        if (draggedUserId) {
-          const groupsSans = plannerGroups.map((g) => ({
-            ...g,
-            rosterOrder: g.rosterOrder.filter((x) => x !== id),
-          }));
-          const conflictId = findUserRosterConflict(groupsSans, byId, id, draggedUserId);
-          if (conflictId) {
-            setBlinkDiscordForIds(setFromArray([id, conflictId]));
-            window.setTimeout(() => setBlinkDiscordForIds(new Set()), 900);
-            setFlyBack({
-              signupId: id,
-              fromLeft: e.clientX - sess.offsetX,
-              fromTop: e.clientY - sess.offsetY,
-              toLeft: origin.left,
-              toTop: origin.top,
-              width: origin.width,
-              height: origin.height,
-            });
-            endDrag();
-            return;
-          }
-        }
-
-        const el = rosterListRefs.current[destGi];
-        const insertAt = el ? rosterInsertIndex(el, e.clientY, id) : 0;
-        setReserveOrder((o) => o.filter((x) => x !== id));
-        setPlannerGroups((groups) => {
-          const sans = groups.map((g) => ({
-            ...g,
-            rosterOrder: g.rosterOrder.filter((x) => x !== id),
-          }));
-          return sans.map((g, gi) => {
-            if (gi !== destGi) return g;
-            const next = [...g.rosterOrder];
-            next.splice(insertAt, 0, id);
-            return { ...g, rosterOrder: next };
+        const group = plannerGroups[destGi];
+        const empty = findFirstEmptyPartyCell(group?.partySlots ?? [], raid.maxPlayers);
+        if (!empty) {
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
           });
-        });
-        endDrag();
+          endDrag();
+          return;
+        }
+        placeInGroupParty(destGi, empty.partyIndex, empty.cellIndex);
         return;
       }
 
@@ -1227,7 +1421,7 @@ export function RaidRosterPlanner({
   const onRowPointerDown = (
     e: React.PointerEvent,
     signupId: string,
-    source: 'roster' | 'reserve' | 'pool'
+    source: 'roster' | 'reserve' | 'pool' | 'party'
   ) => {
     if (e.button !== 0) return;
     const row = (e.currentTarget as HTMLElement).closest('[data-planner-row]') as HTMLElement | null;
@@ -1329,9 +1523,16 @@ export function RaidRosterPlanner({
     return () => el.removeEventListener('transitionend', onEnd);
   }, [flyBack]);
 
-  function renderRow(s: RosterPlannerSignup, source: 'roster' | 'reserve' | 'pool', index?: number) {
+  function renderRow(
+    s: RosterPlannerSignup,
+    source: 'roster' | 'reserve' | 'pool' | 'party',
+    index?: number
+  ) {
     const isDragging = draggingId === s.id;
     const note = s.note?.trim() ?? '';
+    const uid = (s.userId ?? '').trim();
+    const cmpPlacement =
+      comparisonEnabled && uid ? (comparisonPlacements[uid] ?? null) : null;
     const displayDiscordName = resolveDiscordNameForSignup(s);
     const displayGearScore = resolveGearScoreForSignup(s);
     const punct = punctualityOf(s);
@@ -1350,6 +1551,7 @@ export function RaidRosterPlanner({
           attVariant === 'uncertain' && 'border-red-400/60 dark:border-red-700/55',
           attVariant === 'declined' &&
             'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40',
+          comparisonRowClass(cmpPlacement, comparisonEnabled),
           isDragging && 'opacity-25'
         )}
         onPointerDown={(e) => onRowPointerDown(e, s.id, source)}
@@ -1583,6 +1785,7 @@ export function RaidRosterPlanner({
         snapshotGroups = plannerGroups.map((g) => ({
           ...g,
           rosterOrder: g.rosterOrder.map((id) => map.get(id) ?? id),
+          partySlots: g.partySlots.map((row) => row.map((id) => map.get(id) ?? id)),
         }));
         snapshotReserve = reserveOrder.map((id) => map.get(id) ?? id);
         setSignups(snapshotSignups);
@@ -1600,10 +1803,11 @@ export function RaidRosterPlanner({
       const notesToSave = sanitizePlannerLeaderHtml(leaderNotesHtml);
       if (canEditRaid) {
         const plannerLayoutPayload = {
-          groups: snapshotGroups.map((g) => ({
+          groups: syncPlannerGroupsParties(snapshotGroups).map((g) => ({
             rosterOrder: g.rosterOrder,
             raidLeaderUserId: g.raidLeaderUserId,
             lootmasterUserId: g.lootmasterUserId,
+            partySlots: g.partySlots,
           })),
           reserveOrder: snapshotReserve,
         };
@@ -1653,7 +1857,7 @@ export function RaidRosterPlanner({
     if (!window.confirm(tRoster('removeGroupConfirm'))) return;
     const removed = plannerGroups[groupIndex];
     if (!removed) return;
-    const removedRoster = [...removed.rosterOrder];
+    const removedRoster = rosterOrderFromPartySlots(removed.partySlots);
     const nextGroups = plannerGroups.filter((_, i) => i !== groupIndex);
     const otherSet = new Set(allRosterIds(nextGroups));
     const rowById = new Map(signups.map((s) => [s.id, s]));
@@ -1721,10 +1925,11 @@ export function RaidRosterPlanner({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'announce',
-            groups: plannerGroups.map((g) => ({
+            groups: syncPlannerGroupsParties(plannerGroups).map((g) => ({
               rosterOrder: g.rosterOrder,
               raidLeaderUserId: g.raidLeaderUserId,
               lootmasterUserId: g.lootmasterUserId,
+              partySlots: g.partySlots,
             })),
             reserveOrder: reserveOrderPayload,
           }),
@@ -1987,11 +2192,15 @@ export function RaidRosterPlanner({
               onClick={() =>
                 setPlannerGroups((prev) => [
                   ...prev,
-                  {
-                    rosterOrder: [],
-                    raidLeaderUserId: null,
-                    lootmasterUserId: null,
-                  },
+                  applyPartyLayoutToGroup(
+                    {
+                      rosterOrder: [],
+                      raidLeaderUserId: null,
+                      lootmasterUserId: null,
+                      partySlots: [],
+                    },
+                    raid.maxPlayers
+                  ),
                 ])
               }
               className="w-full rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/30 transition-colors"
@@ -2114,15 +2323,14 @@ export function RaidRosterPlanner({
                       </label>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
                       {ROLE_KEYS.map((roleKey) => {
                         const need = overviewProps.roleMinByKey[roleKey] ?? 0;
-                        if (need <= 0) return null;
                         const cur = gRoleCounts[roleKey] ?? 0;
                         return (
-                          <span key={roleKey} className="inline-flex items-center gap-1.5">
+                          <span key={roleKey} className="inline-flex items-center gap-1.5 text-muted-foreground">
                             <RoleIcon role={roleKey} size={16} />
-                            <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
+                            <span className={cn('font-semibold tabular-nums', minCountTone(cur, need))}>
                               {countToMinLabel(cur, need)}
                             </span>
                           </span>
@@ -2136,15 +2344,20 @@ export function RaidRosterPlanner({
                               const cur = gSpecCounts.get(specKey) ?? 0;
                               const classId = parseMinSpecClassKey(specKey);
                               const title = minSpecKeyTitle(specKey, tProfile);
+                              const needN = typeof need === 'number' ? need : 0;
                               return (
-                                <span key={specKey} className="inline-flex items-center gap-1.5" title={title}>
+                                <span
+                                  key={specKey}
+                                  className="inline-flex items-center gap-1.5 text-muted-foreground"
+                                  title={title}
+                                >
                                   {classId ? (
                                     <ClassIcon classId={classId} size={16} title={title} />
                                   ) : (
                                     <SpecIcon spec={specKey} size={16} />
                                   )}
-                                  <span className={cn('font-semibold tabular-nums', cur < need ? 'text-destructive' : 'text-foreground')}>
-                                    {countToMinLabel(cur, need)}
+                                  <span className={cn('font-semibold tabular-nums', minCountTone(cur, needN))}>
+                                    {countToMinLabel(cur, needN)}
                                   </span>
                                 </span>
                               );
@@ -2152,23 +2365,16 @@ export function RaidRosterPlanner({
                         : null}
                     </div>
                   </div>
-                  <div
-                    ref={(el) => {
-                      rosterListRefs.current[groupIndex] = el;
+                  <PlannerPartyInline
+                    groupIndex={groupIndex}
+                    partySlots={group.partySlots}
+                    tPartyTitle={(n) => tRoster('partyTitle', { n })}
+                    renderSignup={(signupId, _pi, cellIndex) => {
+                      const s = byId.get(signupId);
+                      if (!s) return null;
+                      return renderRow(s, 'roster', cellIndex);
                     }}
-                    className="p-3 space-y-2"
-                    role="list"
-                  >
-                    {group.rosterOrder.length === 0 ? (
-                      <p className="text-sm text-muted-foreground px-1 py-4 text-center">{tRoster('rosterEmpty')}</p>
-                    ) : (
-                      group.rosterOrder.map((id, i) => {
-                        const s = byId.get(id);
-                        if (!s) return null;
-                        return renderRow(s, 'roster', i);
-                      })
-                    )}
-                  </div>
+                  />
                 </div>
               );
             })}
@@ -2663,6 +2869,163 @@ export function RaidRosterPlanner({
             >
               <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
                 {tPlanner('raidOptions')}
+              </span>
+            </button>
+          )}
+
+          {comparisonOpen ? (
+            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
+                <p className="text-sm font-medium">{tRoster('comparisonRaidTitle')}</p>
+                <button
+                  type="button"
+                  onClick={() => setComparisonOpen(false)}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
+                  aria-label={tRoster('comparisonRaidTitle')}
+                >
+                  ◀
+                </button>
+              </div>
+
+              <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+                <button
+                  type="button"
+                  onClick={() => setComparisonEnabled(false)}
+                  className={cn(
+                    'rounded-md px-2.5 py-1.5 text-sm flex-1',
+                    !comparisonEnabled
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted'
+                  )}
+                >
+                  {tRoster('comparisonOff')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setComparisonEnabled(true)}
+                  disabled={!comparisonRaidId}
+                  className={cn(
+                    'rounded-md px-2.5 py-1.5 text-sm flex-1',
+                    comparisonEnabled
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted',
+                    !comparisonRaidId && 'opacity-50 cursor-not-allowed'
+                  )}
+                >
+                  {tRoster('comparisonOn')}
+                </button>
+              </div>
+
+              {comparisonEnabled && comparisonRaidLabel ? (
+                <p className="text-xs text-muted-foreground truncate" title={comparisonRaidLabel}>
+                  {comparisonRaidLabel}
+                </p>
+              ) : null}
+
+              {comparisonEnabled ? (
+                <div className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-sm bg-emerald-500/80" />
+                    {tRoster('comparisonLegendConfirmed')}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-sm bg-amber-500/80" />
+                    {tRoster('comparisonLegendReserve')}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-sm bg-sky-500/80" />
+                    {tRoster('comparisonLegendSignup')}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-sm bg-violet-500/80" />
+                    {tRoster('comparisonLegendUncertain')}
+                  </span>
+                </div>
+              ) : null}
+
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  disabled={comparisonListLoading || !comparisonHasOlder}
+                  onClick={() => {
+                    const before =
+                      comparisonList[0]?.scheduledAt ??
+                      comparisonTodayStart ??
+                      new Date().toISOString();
+                    void loadComparisonRaids({ before });
+                  }}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
+                >
+                  {tRoster('comparisonPagePrev')}
+                </button>
+                <button
+                  type="button"
+                  disabled={comparisonListLoading || !comparisonHasNewer}
+                  onClick={() => {
+                    const lastIso = comparisonList[comparisonList.length - 1]?.scheduledAt;
+                    const after = lastIso
+                      ? new Date(new Date(lastIso).getTime() + 1).toISOString()
+                      : (comparisonAfter ?? comparisonTodayStart ?? new Date().toISOString());
+                    void loadComparisonRaids({ after });
+                  }}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted disabled:opacity-40"
+                >
+                  {tRoster('comparisonPageNext')}
+                </button>
+              </div>
+
+              <div className="max-h-64 overflow-y-auto space-y-1.5">
+                {comparisonListLoading ? (
+                  <p className="text-xs text-muted-foreground">{tPlanner('loading')}</p>
+                ) : comparisonList.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{tRoster('comparisonListEmpty')}</p>
+                ) : (
+                  comparisonList.map((r) => {
+                    const selected = comparisonRaidId === r.id;
+                    const dateStr = new Date(r.scheduledAt).toLocaleString(intlLocale, {
+                      weekday: 'short',
+                      day: '2-digit',
+                      month: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    });
+                    const statusLabel = t(`raidStatus_${r.status}`);
+                    return (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => {
+                          setComparisonRaidId(r.id);
+                          setComparisonRaidLabel(`${r.name} · ${dateStr}`);
+                          if (!comparisonEnabled) setComparisonEnabled(true);
+                        }}
+                        className={cn(
+                          'w-full text-left rounded-lg border px-2.5 py-2 text-xs transition-colors',
+                          selected
+                            ? 'border-primary/60 bg-primary/10'
+                            : 'border-border bg-background hover:bg-muted/40'
+                        )}
+                      >
+                        <p className="font-medium text-foreground truncate">{r.name}</p>
+                        <p className="text-muted-foreground mt-0.5">{dateStr}</p>
+                        <p className="text-muted-foreground truncate">{r.dungeonLabel}</p>
+                        <p className="text-muted-foreground/80 mt-0.5">{statusLabel}</p>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setComparisonOpen(true)}
+              className="w-full xl:w-10 rounded-xl border border-border bg-muted/15 py-4 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/25"
+              aria-label={tRoster('comparisonRaidTitle')}
+              title={tRoster('comparisonRaidTitle')}
+            >
+              <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
+                {tRoster('comparisonRaidTitle')}
               </span>
             </button>
           )}

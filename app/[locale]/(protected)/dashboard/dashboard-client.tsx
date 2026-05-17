@@ -13,6 +13,7 @@ import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
 import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
+import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { cn } from '@/lib/utils';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
 import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
@@ -658,14 +659,24 @@ export function DashboardClient({
                           {role ? <RoleIcon role={role} size={18} /> : null}
                           <span className="flex items-center gap-1 shrink-0">
                             {derivedClassId ? <ClassIcon classId={derivedClassId} size={22} title={specForIcon ?? undefined} /> : null}
-                            {specForIcon ? (
-                              <CharacterSpecIconsInline
-                                mainSpec={specForIcon}
-                                offSpec={s.characterOffSpec}
+                            {s.characterMainSpec ? (
+                              <SignupSpecIcons
+                                character={{
+                                  mainSpec: s.characterMainSpec,
+                                  offSpec: s.characterOffSpec,
+                                }}
+                                signedSpec={s.signedSpec}
+                                onlySignedSpec={false}
+                                specLockTitle={tRaidDetail('badgeOnlySignedSpec')}
                                 size={20}
-                                slashClassName="hidden"
-                                offSpecWrapperClassName="grayscale contrast-90 inline-flex"
-                                offSpecIconClassName="opacity-90"
+                              />
+                            ) : specForIcon ? (
+                              <SignupSpecIcons
+                                character={null}
+                                signedSpec={specForIcon}
+                                onlySignedSpec={false}
+                                specLockTitle={tRaidDetail('badgeOnlySignedSpec')}
+                                size={20}
                               />
                             ) : null}
                           </span>

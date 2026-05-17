@@ -11,8 +11,8 @@ import {
   CharacterForbidReserveBadge,
   CharacterGearscorePill,
   CharacterSignupPunctualityMark,
-  CharacterSpecIconsInline,
 } from '@/components/character-display-parts';
+import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import type { AnmeldungRow } from '@/components/raid-detail/raid-signup-player-row';
 
 function typeNorm(v: string) {
@@ -52,8 +52,6 @@ export function RaidDetailSignupTableRow({
   const tProfile = useTranslations('profile');
   const att = attendanceRowVariant(row, raidStatus);
   const main = row.character?.mainSpec?.trim() ?? '';
-  const off = row.character?.offSpec?.trim() ?? '';
-  const signed = (row.signedSpec?.trim() || main || '').trim();
   const punct = extras.punctuality;
   const punctLabel =
     punct === 'on_time' ? t('punctualityOnTime') : punct === 'tight' ? t('punctualityTight') : t('punctualityLate');
@@ -81,25 +79,13 @@ export function RaidDetailSignupTableRow({
               />
             ) : null}
             {extras.classId ? <ClassIcon classId={extras.classId} size={22} title={main || undefined} /> : null}
-            <span className="inline-flex items-center gap-0.5 shrink-0">
-              <CharacterSpecIconsInline
-                mainSpec={signed || main || '—'}
-                offSpec={off || null}
-                size={20}
-                slashClassName="hidden"
-                offSpecWrapperClassName="grayscale contrast-90 inline-flex"
-                offSpecIconClassName="opacity-90"
-              />
-              {row.onlySignedSpec ? (
-                <span
-                  className="text-sm leading-none shrink-0"
-                  title={t('badgeOnlySignedSpec')}
-                  aria-label={t('badgeOnlySignedSpec')}
-                >
-                  🔒
-                </span>
-              ) : null}
-            </span>
+            <SignupSpecIcons
+              character={row.character}
+              signedSpec={row.signedSpec}
+              onlySignedSpec={!!row.onlySignedSpec}
+              specLockTitle={t('badgeOnlySignedSpec')}
+              size={20}
+            />
             <span className="font-medium text-foreground truncate">{row.character?.name ?? t('signupAnonymous')}</span>
             {row.leaderMarkedTeilnehmer ? (
               <span className="text-xs rounded bg-primary/15 text-primary px-1.5 py-0.5 shrink-0">
