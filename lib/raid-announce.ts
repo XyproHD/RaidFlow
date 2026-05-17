@@ -1,5 +1,9 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
-import { parsePartySlotsFromStored, syncPartySlotsForGroup } from '@/lib/planner-party-slots';
+import {
+  parsePartySlotsFromStored,
+  rosterOrderFromPartySlots,
+  syncPartySlotsForGroup,
+} from '@/lib/planner-party-slots';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import type { LeaderPlacement } from '@/lib/raid-leader-placement';
 import {
@@ -160,15 +164,22 @@ export function buildAnnounceSignupUpdate(
 }
 
 /** DB-Feld `rf_raid.announced_planner_groups_json` (gleiche Struktur wie Announce-Payload ohne `action`). */
-export function announceLayoutToStoredJson(payload: AnnounceRaidPayload): Prisma.InputJsonValue {
+export function announceLayoutToStoredJson(
+  payload: AnnounceRaidPayload,
+  maxPlayers: number
+): Prisma.InputJsonValue {
   return {
     groups: payload.groups.map((g) => {
-      const partySlots = syncPartySlotsForGroup({
-        rosterOrder: g.rosterOrder,
-        partySlots: g.partySlots,
-      });
+      const partySlots = syncPartySlotsForGroup(
+        {
+          rosterOrder: g.rosterOrder,
+          partySlots: g.partySlots,
+        },
+        maxPlayers
+      );
+      const rosterOrder = rosterOrderFromPartySlots(partySlots);
       return {
-        rosterOrder: g.rosterOrder,
+        rosterOrder,
         raidLeaderUserId: g.raidLeaderUserId,
         lootmasterUserId: g.lootmasterUserId,
         partySlots,
@@ -203,8 +214,9 @@ export async function executeRaidAnnounceTransaction(args: {
   guildId: string;
   changedByUserId: string;
   payload: AnnounceRaidPayload;
+  maxPlayers: number;
 }): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  const { prisma, raidId, guildId, changedByUserId, payload } = args;
+  const { prisma, raidId, guildId, changedByUserId, payload, maxPlayers } = args;
 
   /** Einmal laden: Validierung + Audit-Vorher + keine findUnique-Schleife in der Transaktion (Vercel/5s-Timeout). */
   const signupRows = await prisma.rfRaidSignup.findMany({ where: { raidId } });
@@ -233,7 +245,7 @@ export async function executeRaidAnnounceTransaction(args: {
         where: { id: raidId },
         data: {
           status: 'announced',
-          announcedPlannerGroupsJson: announceLayoutToStoredJson(payload),
+          announcedPlannerGroupsJson: announceLayoutToStoredJson(payload, maxPlayers),
           draftPlannerGroupsJson:     Prisma.DbNull,
         },
       });

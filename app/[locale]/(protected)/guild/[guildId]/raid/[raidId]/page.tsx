@@ -165,10 +165,13 @@ export default async function RaidDetailPage(props: {
       announcedLayout = {
         groupMeta: parsed.groups.map((g) => ({
           rosterOrder: g.rosterOrder,
-          partySlots: syncPartySlotsForGroup({
-            rosterOrder: g.rosterOrder,
-            partySlots: g.partySlots,
-          }),
+          partySlots: syncPartySlotsForGroup(
+            {
+              rosterOrder: g.rosterOrder,
+              partySlots: g.partySlots,
+            },
+            raid.maxPlayers
+          ),
           raidLeaderLabel: g.raidLeaderUserId ? labelForUser(g.raidLeaderUserId) : null,
           lootmasterLabel: g.lootmasterUserId ? labelForUser(g.lootmasterUserId) : null,
         })),

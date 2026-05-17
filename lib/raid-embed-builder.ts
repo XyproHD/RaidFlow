@@ -391,10 +391,9 @@ function partyGroupLines(
   const out: string[] = [];
   for (let pi = 0; pi < slots.length; pi++) {
     const row = slots[pi] ?? [];
-    if (!row.some((id) => signupById.has(id))) continue;
     const cells: string[] = [];
     for (let c = 0; c < PLANNER_PARTY_SIZE; c++) {
-      const id = row[c];
+      const id = row[c]?.trim() ?? '';
       const s = id ? signupById.get(id) : null;
       cells.push(s ? playerLine(s, emojis) : '·');
     }
@@ -543,13 +542,6 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
       headerLines.push(groupRoleSummaryLine(group.rosterOrder, signupById, discordEmojis));
       headerLines.push('▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬');
 
-      const playerLines: string[] = [];
-      for (const signupId of group.rosterOrder) {
-        const s = signupById.get(signupId);
-        if (!s) continue;
-        playerLines.push(playerLine(s, discordEmojis));
-      }
-
       const headerValue =
         headerLines.length > 0 ? headerLines.join('\n').slice(0, 1024) : '*leer*';
       packer.push({
@@ -558,20 +550,21 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
         inline: false,
       });
 
-      if (playerLines.length > 0) {
-        appendLinesInColumnFields(
-          packer,
-          `Gruppe ${gi + 1} · Kader`,
-          playerLines,
-          3
-        );
-      } else {
-        packer.push({ name: '\u200b', value: '*Keine Spieler im Kader.*', inline: false });
-      }
-
       const partyLines = partyGroupLines(group, signupById, discordEmojis);
       if (partyLines.length > 0) {
-        appendLinesFullWidthChunks(packer, `Gruppe ${gi + 1} · 5er`, partyLines);
+        appendLinesFullWidthChunks(packer, `Gruppe ${gi + 1}`, partyLines);
+      } else {
+        const playerLines: string[] = [];
+        for (const signupId of group.rosterOrder) {
+          const s = signupById.get(signupId);
+          if (!s) continue;
+          playerLines.push(playerLine(s, discordEmojis));
+        }
+        if (playerLines.length > 0) {
+          appendLinesInColumnFields(packer, `Gruppe ${gi + 1} · Kader`, playerLines, 3);
+        } else {
+          packer.push({ name: '\u200b', value: '*Keine Spieler im Kader.*', inline: false });
+        }
       }
     }
 

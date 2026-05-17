@@ -31,9 +31,13 @@ import type { AnnounceRaidPayload } from '@/lib/raid-announce';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
 import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
-import { PlannerPartyGrid } from '@/components/raid-planner/planner-party-grid';
+import { PlannerPartyInline } from '@/components/raid-planner/planner-party-grid';
 import {
+  applyPartyLayoutToGroup,
+  findFirstEmptyPartyCell,
   parsePartySlotsFromStored,
+  rosterOrderFromPartySlots,
+  setPartyCell,
   syncPartySlotsForGroup,
 } from '@/lib/planner-party-slots';
 import type { ComparisonPlacement } from '@/lib/planner-comparison';
@@ -170,7 +174,7 @@ function findDropTarget(x: number, y: number): DropTarget | null {
 }
 
 function allRosterIds(groups: PlannerGroup[]): string[] {
-  return groups.flatMap((g) => g.rosterOrder);
+  return groups.flatMap((g) => rosterOrderFromPartySlots(g.partySlots));
 }
 
 function findUserRosterConflict(
@@ -180,7 +184,7 @@ function findUserRosterConflict(
   userId: string
 ): string | null {
   for (const g of groups) {
-    for (const otherId of g.rosterOrder) {
+    for (const otherId of rosterOrderFromPartySlots(g.partySlots)) {
       if (otherId === draggingId) continue;
       const other = byId.get(otherId);
       if ((other?.userId ?? '').trim() === userId) return otherId;
@@ -189,16 +193,17 @@ function findUserRosterConflict(
   return null;
 }
 
-function dedupeRosterIdsAcrossGroups(groups: PlannerGroup[]): PlannerGroup[] {
+function dedupePartySlotsAcrossGroups(groups: PlannerGroup[], maxPlayers: number): PlannerGroup[] {
   const seen = new Set<string>();
   return groups.map((g) => {
-    const next: string[] = [];
-    for (const id of g.rosterOrder) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      next.push(id);
-    }
-    return { ...g, rosterOrder: next };
+    const slots = syncPartySlotsForGroup(g, maxPlayers).map((row) =>
+      row.map((id) => {
+        if (!id || seen.has(id)) return '';
+        seen.add(id);
+        return id;
+      })
+    );
+    return applyPartyLayoutToGroup({ ...g, partySlots: slots }, maxPlayers);
   });
 }
 
@@ -326,18 +331,6 @@ function setFromArray(ids: (string | null | undefined)[]) {
   return new Set(ids.filter((x): x is string => typeof x === 'string' && x.length > 0));
 }
 
-function rosterInsertIndex(container: HTMLElement, clientY: number, draggingId: string): number {
-  const rows = [...container.querySelectorAll<HTMLElement>('[data-planner-row]')];
-  let idx = 0;
-  for (const el of rows) {
-    if (el.dataset.signupId === draggingId) continue;
-    const r = el.getBoundingClientRect();
-    if (clientY < r.top + r.height / 2) return idx;
-    idx++;
-  }
-  return idx;
-}
-
 export function RaidRosterPlanner({
   locale,
   guildId,
@@ -415,12 +408,15 @@ export function RaidRosterPlanner({
   const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
 
   const [plannerGroups, setPlannerGroups] = useState<PlannerGroup[]>(() => [
-    {
-      rosterOrder: [],
-      raidLeaderUserId: null,
-      lootmasterUserId: null,
-      partySlots: [],
-    },
+    applyPartyLayoutToGroup(
+      {
+        rosterOrder: [],
+        raidLeaderUserId: null,
+        lootmasterUserId: null,
+        partySlots: [],
+      },
+      raid.maxPlayers
+    ),
   ]);
   const [reserveOrder, setReserveOrder] = useState<string[]>(() =>
     orderedReserveSignupIdsForDisplay(
@@ -494,10 +490,9 @@ export function RaidRosterPlanner({
         partySlots: [],
       });
 
-      const withSyncedParties = (g: PlannerGroup): PlannerGroup => ({
-        ...g,
-        partySlots: syncPartySlotsForGroup(g),
-      });
+      const maxPlayers = raid.maxPlayers;
+      const withSyncedParties = (g: PlannerGroup): PlannerGroup =>
+        applyPartyLayoutToGroup(g, maxPlayers);
 
       let nextGroups: PlannerGroup[];
 
@@ -517,14 +512,12 @@ export function RaidRosterPlanner({
             typeof o.lootmasterUserId === 'string' && o.lootmasterUserId.trim()
               ? o.lootmasterUserId.trim()
               : null;
-          const partySlots =
-            parsePartySlotsFromStored(o.partySlots) ??
-            syncPartySlotsForGroup({ rosterOrder: ord, partySlots: [] });
+          const partySlots = parsePartySlotsFromStored(o.partySlots);
           return withSyncedParties({
             rosterOrder: ord,
             raidLeaderUserId: rl,
             lootmasterUserId: lm,
-            partySlots,
+            partySlots: partySlots ?? [],
           });
         });
         if (nextReserve.length === 0) {
@@ -554,13 +547,14 @@ export function RaidRosterPlanner({
         ];
       }
 
-      nextGroups = dedupeRosterIdsAcrossGroups(
+      nextGroups = dedupePartySlotsAcrossGroups(
         nextGroups.map((g) =>
           withSyncedParties({
             ...g,
             rosterOrder: g.rosterOrder.filter((id) => placementOf(id) === 'confirmed'),
           })
-        )
+        ),
+        maxPlayers
       );
 
       if (nextGroups.length === 0) {
@@ -571,11 +565,18 @@ export function RaidRosterPlanner({
       const missingConfirmed = ids.filter(
         (id) => placementOf(id) === 'confirmed' && !rosterSet.has(id) && !nextReserve.includes(id)
       );
-      if (missingConfirmed.length > 0) {
-        nextGroups = nextGroups.map((g, i) =>
-          i === 0 ? { ...g, rosterOrder: [...g.rosterOrder, ...missingConfirmed] } : g
-        );
-        nextGroups = dedupeRosterIdsAcrossGroups(nextGroups);
+      if (missingConfirmed.length > 0 && nextGroups[0]) {
+        let slots = nextGroups[0].partySlots;
+        for (const mid of missingConfirmed) {
+          const empty = findFirstEmptyPartyCell(slots, maxPlayers);
+          if (!empty) break;
+          slots = setPartyCell(slots, empty.partyIndex, empty.cellIndex, mid, maxPlayers);
+        }
+        nextGroups = [
+          applyPartyLayoutToGroup({ ...nextGroups[0], partySlots: slots }, maxPlayers),
+          ...nextGroups.slice(1),
+        ];
+        nextGroups = dedupePartySlotsAcrossGroups(nextGroups, maxPlayers);
       }
 
       const rosterSetFinal = new Set(allRosterIds(nextGroups));
@@ -595,7 +596,7 @@ export function RaidRosterPlanner({
         leaderNotesHtml: initialPlannerLeaderNotesHtml ?? '',
       });
     },
-    [orderStorageKey, initialPlannerLeaderNotesHtml, persistedServerPlannerOrder]
+    [orderStorageKey, initialPlannerLeaderNotesHtml, persistedServerPlannerOrder, raid.maxPlayers]
   );
 
   useEffect(() => {
@@ -684,12 +685,10 @@ export function RaidRosterPlanner({
   const [comparisonHasNewer, setComparisonHasNewer] = useState(false);
   const [comparisonTodayStart, setComparisonTodayStart] = useState<string | null>(null);
 
-  const syncPlannerGroupsParties = useCallback((groups: PlannerGroup[]) => {
-    return groups.map((g) => ({
-      ...g,
-      partySlots: syncPartySlotsForGroup(g),
-    }));
-  }, []);
+  const syncPlannerGroupsParties = useCallback(
+    (groups: PlannerGroup[]) => groups.map((g) => applyPartyLayoutToGroup(g, raid.maxPlayers)),
+    [raid.maxPlayers]
+  );
 
   const loadComparisonRaids = useCallback(
     async (opts: { after?: string | null; before?: string | null } = {}) => {
@@ -773,7 +772,6 @@ export function RaidRosterPlanner({
   const [dragPoint, setDragPoint] = useState<{ clientX: number; clientY: number } | null>(null);
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
 
-  const rosterListRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const scheduledAt = useMemo(() => new Date(raid.scheduledAt), [raid.scheduledAt]);
   const scheduledEndAt = raid.scheduledEndAt ? new Date(raid.scheduledEndAt) : null;
@@ -1298,61 +1296,69 @@ export function RaidRosterPlanner({
         return;
       }
 
-      if (target?.kind === 'party') {
-        const destGi = target.groupIndex;
-        const destPi = target.partyIndex;
-        const group = plannerGroups[destGi];
-        if (!group || destPi < 0) {
-          setFlyBack({
-            signupId: id,
-            fromLeft: e.clientX - sess.offsetX,
-            fromTop: e.clientY - sess.offsetY,
-            toLeft: origin.left,
-            toTop: origin.top,
-            width: origin.width,
-            height: origin.height,
-          });
-          endDrag();
-          return;
+      const placeInGroupParty = (destGi: number, partyIndex: number, cellIndex: number) => {
+        const dragged = byId.get(id);
+        const draggedUserId = (dragged?.userId ?? '').trim() || null;
+        if (draggedUserId) {
+          const groupsSans = plannerGroups.map((g) => ({
+            ...g,
+            partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
+          }));
+          const conflictId = findUserRosterConflict(
+            syncPlannerGroupsParties(groupsSans),
+            byId,
+            id,
+            draggedUserId
+          );
+          if (conflictId) {
+            setBlinkDiscordForIds(setFromArray([id, conflictId]));
+            window.setTimeout(() => setBlinkDiscordForIds(new Set()), 900);
+            setFlyBack({
+              signupId: id,
+              fromLeft: e.clientX - sess.offsetX,
+              fromTop: e.clientY - sess.offsetY,
+              toLeft: origin.left,
+              toTop: origin.top,
+              width: origin.width,
+              height: origin.height,
+            });
+            endDrag();
+            return;
+          }
         }
-        if (!group.rosterOrder.includes(id)) {
-          setFlyBack({
-            signupId: id,
-            fromLeft: e.clientX - sess.offsetX,
-            fromTop: e.clientY - sess.offsetY,
-            toLeft: origin.left,
-            toTop: origin.top,
-            width: origin.width,
-            height: origin.height,
-          });
-          endDrag();
-          return;
-        }
+        setReserveOrder((o) => o.filter((x) => x !== id));
         setPlannerGroups((groups) =>
           syncPlannerGroupsParties(
             groups.map((g, gi) => {
-              const slots = g.partySlots.map((row) => row.filter((x) => x !== id));
-              if (gi !== destGi) return { ...g, partySlots: slots };
-              const synced = syncPartySlotsForGroup({ ...g, partySlots: slots });
-              while (synced.length <= destPi) synced.push([]);
-              const row = [...(synced[destPi] ?? [])];
-              if (row.includes(id)) {
-                return { ...g, partySlots: synced };
-              }
-              if (row.length >= 5) {
-                return { ...g, partySlots: synced };
-              }
-              const cell =
-                typeof target.cellIndex === 'number' && target.cellIndex >= 0
-                  ? Math.min(target.cellIndex, row.length)
-                  : row.length;
-              row.splice(cell, 0, id);
-              synced[destPi] = row;
-              return { ...g, partySlots: synced };
+              const cleared = g.partySlots.map((row) => row.filter((x) => x !== id));
+              if (gi !== destGi) return applyPartyLayoutToGroup({ ...g, partySlots: cleared }, raid.maxPlayers);
+              const nextSlots = setPartyCell(cleared, partyIndex, cellIndex, id, raid.maxPlayers);
+              return applyPartyLayoutToGroup({ ...g, partySlots: nextSlots }, raid.maxPlayers);
             })
           )
         );
         endDrag();
+      };
+
+      if (target?.kind === 'party') {
+        const destGi = target.groupIndex;
+        const destPi = target.partyIndex;
+        if (destGi < 0 || destGi >= plannerGroups.length || destPi < 0) {
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
+          });
+          endDrag();
+          return;
+        }
+        const cell =
+          typeof target.cellIndex === 'number' && target.cellIndex >= 0 ? target.cellIndex : 0;
+        placeInGroupParty(destGi, destPi, cell);
         return;
       }
 
@@ -1371,50 +1377,22 @@ export function RaidRosterPlanner({
           endDrag();
           return;
         }
-
-        const dragged = byId.get(id);
-        const draggedUserId = (dragged?.userId ?? '').trim() || null;
-        if (draggedUserId) {
-          const groupsSans = plannerGroups.map((g) => ({
-            ...g,
-            rosterOrder: g.rosterOrder.filter((x) => x !== id),
-          }));
-          const conflictId = findUserRosterConflict(groupsSans, byId, id, draggedUserId);
-          if (conflictId) {
-            setBlinkDiscordForIds(setFromArray([id, conflictId]));
-            window.setTimeout(() => setBlinkDiscordForIds(new Set()), 900);
-            setFlyBack({
-              signupId: id,
-              fromLeft: e.clientX - sess.offsetX,
-              fromTop: e.clientY - sess.offsetY,
-              toLeft: origin.left,
-              toTop: origin.top,
-              width: origin.width,
-              height: origin.height,
-            });
-            endDrag();
-            return;
-          }
+        const group = plannerGroups[destGi];
+        const empty = findFirstEmptyPartyCell(group?.partySlots ?? [], raid.maxPlayers);
+        if (!empty) {
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
+          });
+          endDrag();
+          return;
         }
-
-        const el = rosterListRefs.current[destGi];
-        const insertAt = el ? rosterInsertIndex(el, e.clientY, id) : 0;
-        setReserveOrder((o) => o.filter((x) => x !== id));
-        setPlannerGroups((groups) =>
-          syncPlannerGroupsParties(
-            groups.map((g) => ({
-              ...g,
-              rosterOrder: g.rosterOrder.filter((x) => x !== id),
-              partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
-            })).map((g, gi) => {
-              if (gi !== destGi) return g;
-              const next = [...g.rosterOrder];
-              next.splice(insertAt, 0, id);
-              return { ...g, rosterOrder: next };
-            })
-          )
-        );
-        endDrag();
+        placeInGroupParty(destGi, empty.partyIndex, empty.cellIndex);
         return;
       }
 
@@ -1879,7 +1857,7 @@ export function RaidRosterPlanner({
     if (!window.confirm(tRoster('removeGroupConfirm'))) return;
     const removed = plannerGroups[groupIndex];
     if (!removed) return;
-    const removedRoster = [...removed.rosterOrder];
+    const removedRoster = rosterOrderFromPartySlots(removed.partySlots);
     const nextGroups = plannerGroups.filter((_, i) => i !== groupIndex);
     const otherSet = new Set(allRosterIds(nextGroups));
     const rowById = new Map(signups.map((s) => [s.id, s]));
@@ -2214,12 +2192,15 @@ export function RaidRosterPlanner({
               onClick={() =>
                 setPlannerGroups((prev) => [
                   ...prev,
-                  {
-                    rosterOrder: [],
-                    raidLeaderUserId: null,
-                    lootmasterUserId: null,
-                    partySlots: [],
-                  },
+                  applyPartyLayoutToGroup(
+                    {
+                      rosterOrder: [],
+                      raidLeaderUserId: null,
+                      lootmasterUserId: null,
+                      partySlots: [],
+                    },
+                    raid.maxPlayers
+                  ),
                 ])
               }
               className="w-full rounded-lg border border-dashed border-border bg-muted/10 px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/30 transition-colors"
@@ -2384,30 +2365,15 @@ export function RaidRosterPlanner({
                         : null}
                     </div>
                   </div>
-                  <div
-                    ref={(el) => {
-                      rosterListRefs.current[groupIndex] = el;
-                    }}
-                    className="p-3 space-y-2"
-                    role="list"
-                  >
-                    {group.rosterOrder.length === 0 ? (
-                      <p className="text-sm text-muted-foreground px-1 py-4 text-center">{tRoster('rosterEmpty')}</p>
-                    ) : (
-                      group.rosterOrder.map((id, i) => {
-                        const s = byId.get(id);
-                        if (!s) return null;
-                        return renderRow(s, 'roster', i);
-                      })
-                    )}
-                  </div>
-                  <PlannerPartyGrid
+                  <PlannerPartyInline
                     groupIndex={groupIndex}
                     partySlots={group.partySlots}
-                    byId={byId}
                     tPartyTitle={(n) => tRoster('partyTitle', { n })}
-                    onPointerDown={onRowPointerDown}
-                    draggingId={draggingId}
+                    renderSignup={(signupId, _pi, cellIndex) => {
+                      const s = byId.get(signupId);
+                      if (!s) return null;
+                      return renderRow(s, 'roster', cellIndex);
+                    }}
                   />
                 </div>
               );

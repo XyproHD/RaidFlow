@@ -171,6 +171,7 @@ export async function PATCH(
       guildId,
       changedByUserId: auth.userId,
       payload: parsed.data,
+      maxPlayers: raid.maxPlayers,
     });
     if (!exec.ok) {
       return NextResponse.json({ error: exec.error }, { status: exec.status });
@@ -393,7 +394,7 @@ export async function PATCH(
       if (!idCheck.ok) {
         return NextResponse.json({ error: idCheck.error }, { status: idCheck.status });
       }
-      announcedPlannerGroupsJsonUpdate = announceLayoutToStoredJson(parsed.data);
+      announcedPlannerGroupsJsonUpdate = announceLayoutToStoredJson(parsed.data, raid.maxPlayers);
     }
   }
 
@@ -420,7 +421,7 @@ export async function PATCH(
       if (!idCheck.ok) {
         return NextResponse.json({ error: idCheck.error }, { status: idCheck.status });
       }
-      draftPlannerGroupsJsonUpdate = announceLayoutToStoredJson(parsed.data);
+      draftPlannerGroupsJsonUpdate = announceLayoutToStoredJson(parsed.data, raid.maxPlayers);
     } else {
       draftPlannerGroupsJsonUpdate = Prisma.DbNull;
     }

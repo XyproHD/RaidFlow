@@ -38,8 +38,6 @@ import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
 import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
-import { PublishedPartyBlocks } from '@/components/raid-planner/published-party-blocks';
-
 export type AnnouncedLayoutProps = {
   groupMeta: {
     rosterOrder: string[];
@@ -620,43 +618,47 @@ export function RaidDetailView({
                     </p>
                   ) : null}
                 </div>
-                {meta.rosterOrder.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">—</p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {meta.rosterOrder.map((sid) => {
-                      const s = signupById.get(sid);
-                      if (!s) {
-                        return (
-                          <li key={sid} className="text-sm text-muted-foreground">
-                            {t('signupAnonymous')}
-                          </li>
-                        );
-                      }
+                {(meta.partySlots ?? []).length > 0
+                  ? meta.partySlots.map((row, pi) => {
+                      const ids = row.filter((sid) => !!sid?.trim());
                       return (
-                        <li key={sid} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
-                          <RaidSignupPlayerRow
-                            row={raidSignupToAnmeldungRow(s)}
-                            canEdit={false}
-                            showTypeLabel={false}
-                            raidStatus={raid.status}
-                          />
-                        </li>
+                        <div key={`pub-party-${gi}-${pi}`} className="space-y-1.5">
+                          <p className="text-[11px] font-medium text-muted-foreground">
+                            {t('publishedPartyTitle', { n: pi + 1 })}
+                          </p>
+                          {ids.length === 0 ? (
+                            <p className="text-sm text-muted-foreground">—</p>
+                          ) : (
+                            <ul className="flex flex-col gap-2">
+                              {ids.map((sid) => {
+                                const s = signupById.get(sid);
+                                if (!s) {
+                                  return (
+                                    <li key={sid} className="text-sm text-muted-foreground">
+                                      {t('signupAnonymous')}
+                                    </li>
+                                  );
+                                }
+                                return (
+                                  <li
+                                    key={sid}
+                                    className="rounded-lg border border-border bg-card shadow-sm overflow-hidden"
+                                  >
+                                    <RaidSignupPlayerRow
+                                      row={raidSignupToAnmeldungRow(s)}
+                                      canEdit={false}
+                                      showTypeLabel={false}
+                                      raidStatus={raid.status}
+                                    />
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                        </div>
                       );
-                    })}
-                  </ul>
-                )}
-                {meta.partySlots && meta.partySlots.length > 0 ? (
-                  <PublishedPartyBlocks
-                    partySlots={meta.partySlots}
-                    partyTitle={(n) => t('publishedPartyTitle', { n })}
-                    resolveName={(sid) => {
-                      const s = signupById.get(sid);
-                      return s?.character?.name?.trim() ?? null;
-                    }}
-                    className="pt-2"
-                  />
-                ) : null}
+                    })
+                  : null}
               </div>
             ))}
             <div className="space-y-2">
