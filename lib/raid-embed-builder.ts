@@ -379,27 +379,28 @@ function classCountLine(
   return rows.join('\n');
 }
 
-/**
- * Kompakte Rollen-Verteilung für eine einzelne Gruppe (Unicode-Emojis).
- */
-function partyGroupLines(
+/** Je 5er-Spalte (G1, G2, …) ein inline-Embed-Feld mit Spielerzeilen unter „Raid N“. */
+function appendRaidPartyColumnFields(
+  packer: RaidEmbedFieldPacker,
   group: AnnouncedGroupPayload,
   signupById: Map<string, RaidEmbedSignup>,
   emojis: Record<string, string>
-): string[] {
+): void {
   const slots = group.partySlots ?? [];
-  const out: string[] = [];
   for (let pi = 0; pi < slots.length; pi++) {
     const row = slots[pi] ?? [];
-    const cells: string[] = [];
+    const lines: string[] = [];
     for (let c = 0; c < PLANNER_PARTY_SIZE; c++) {
       const id = row[c]?.trim() ?? '';
       const s = id ? signupById.get(id) : null;
-      cells.push(s ? playerLine(s, emojis) : '·');
+      lines.push(s ? playerLine(s, emojis) : '·');
     }
-    out.push(`**5er ${pi + 1}:** ${cells.join(' · ')}`);
+    packer.push({
+      name: `G${pi + 1}`,
+      value: lines.join('\n').slice(0, 1024) || '\u200b',
+      inline: true,
+    });
   }
-  return out;
 }
 
 function groupRoleSummaryLine(
@@ -482,7 +483,7 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
   const groupCount = announcedGroups?.groups.length ?? 1;
   const totalMax   = maxPlayers * groupCount;
   const anmeldungenValue = groupCount > 1
-    ? `${uniquePlayers} / ${totalMax} (${maxPlayers} je Gruppe)`
+    ? `${uniquePlayers} / ${totalMax} (${maxPlayers} je Raid)`
     : `${uniquePlayers} / ${maxPlayers}`;
 
   const byRole: Record<string, RaidEmbedSignup[]> = { Tank: [], Melee: [], Range: [], Healer: [], '?': [] };
@@ -545,14 +546,14 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
       const headerValue =
         headerLines.length > 0 ? headerLines.join('\n').slice(0, 1024) : '*leer*';
       packer.push({
-        name: `Gruppe ${gi + 1}`,
+        name: `Raid ${gi + 1}`,
         value: headerValue,
         inline: false,
       });
 
-      const partyLines = partyGroupLines(group, signupById, discordEmojis);
-      if (partyLines.length > 0) {
-        appendLinesFullWidthChunks(packer, `Gruppe ${gi + 1}`, partyLines);
+      const hasPartyLayout = (group.partySlots?.length ?? 0) > 0;
+      if (hasPartyLayout) {
+        appendRaidPartyColumnFields(packer, group, signupById, discordEmojis);
       } else {
         const playerLines: string[] = [];
         for (const signupId of group.rosterOrder) {
@@ -561,7 +562,7 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
           playerLines.push(playerLine(s, discordEmojis));
         }
         if (playerLines.length > 0) {
-          appendLinesInColumnFields(packer, `Gruppe ${gi + 1} · Kader`, playerLines, 3);
+          appendLinesInColumnFields(packer, `Raid ${gi + 1} · Kader`, playerLines, 3);
         } else {
           packer.push({ name: '\u200b', value: '*Keine Spieler im Kader.*', inline: false });
         }
