@@ -571,7 +571,7 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
 
       const partyLines = partyGroupLines(group, signupById, discordEmojis);
       if (partyLines.length > 0) {
-        appendLinesInColumnFields(packer, `Gruppe ${gi + 1} · 5er`, partyLines, 1);
+        appendLinesFullWidthChunks(packer, `Gruppe ${gi + 1} · 5er`, partyLines);
       }
     }
 
