@@ -2466,7 +2466,7 @@ export function RaidRosterPlanner({
                 </button>
               </div>
             </div>
-            <div className="p-3 space-y-4 max-h-[min(70vh,720px)] overflow-y-auto">
+            <div className="p-3 space-y-4">
               {ROLE_ORDER.map((role) => {
                 const ids = standardPoolByRole.get(role) ?? [];
                 if (ids.length === 0) return null;
