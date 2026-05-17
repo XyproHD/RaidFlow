@@ -1,0 +1,2 @@
+[deploy]
+preDeployCommand = "node bin/prisma-migrate-deploy-retry.js"

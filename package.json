@@ -7,7 +7,7 @@
     "dev": "next dev",
     "bot": "cd discord-bot && npm start",
     "dev:all": "npx concurrently -n web,bot \"npm run dev\" \"npm run bot\"",
-    "build": "npx prisma generate && node bin/prisma-migrate-deploy-retry.js && next build",
+    "build": "npx prisma generate && next build",
     "migrate:deploy": "prisma migrate deploy",
     "postinstall": "npx prisma generate",
     "start": "next start",
