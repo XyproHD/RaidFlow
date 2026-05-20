@@ -120,18 +120,19 @@ type RaidHeaderMeta = {
 
 type QuickDropTarget = 'decline' | 'pool' | 'reserve';
 
-/** Abstand Bubble-Anker → Maus: Quick-Buttons blenden bis 0 aus. */
+/** Abstand Button-Mitte → Maus: jeder Quick-Button blendet für sich bis 0 aus. */
 const QUICK_DRAG_FADE_MAX_PX = 90;
 
-function dragDistanceFromAnchor(
-  anchor: { clientX: number; clientY: number },
+function quickDropOpacityFromPointer(
+  el: HTMLElement | null,
   clientX: number,
   clientY: number
 ): number {
-  return Math.hypot(clientX - anchor.clientX, clientY - anchor.clientY);
-}
-
-function quickMenuOpacityFromDragDistance(dist: number): number {
+  if (!el) return 1;
+  const r = el.getBoundingClientRect();
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  const dist = Math.hypot(clientX - cx, clientY - cy);
   if (dist >= QUICK_DRAG_FADE_MAX_PX) return 0;
   return 1 - dist / QUICK_DRAG_FADE_MAX_PX;
 }
@@ -850,6 +851,11 @@ export function RaidRosterPlanner({
     clientY: number;
   } | null>(null);
   const [quickDropHover, setQuickDropHover] = useState<QuickDropTarget | null>(null);
+  const quickDropBtnRefs = useRef<Record<QuickDropTarget, HTMLButtonElement | null>>({
+    decline: null,
+    pool: null,
+    reserve: null,
+  });
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
 
 
@@ -1354,11 +1360,17 @@ export function RaidRosterPlanner({
       const clientY = e.clientY;
       setDragPoint({ clientX, clientY });
       if (quickMenuAnchor) {
-        const dist = dragDistanceFromAnchor(quickMenuAnchor, clientX, clientY);
-        const opacity = quickMenuOpacityFromDragDistance(dist);
-        setQuickDropHover(
-          opacity > 0.08 ? findQuickDropTarget(clientX, clientY) : null
-        );
+        const hover = findQuickDropTarget(clientX, clientY);
+        if (hover) {
+          const opacity = quickDropOpacityFromPointer(
+            quickDropBtnRefs.current[hover],
+            clientX,
+            clientY
+          );
+          setQuickDropHover(opacity > 0.08 ? hover : null);
+        } else {
+          setQuickDropHover(null);
+        }
       }
     };
 
@@ -1436,12 +1448,17 @@ export function RaidRosterPlanner({
         return true;
       };
 
-      const quickFadeDist = quickMenuAnchor
-        ? dragDistanceFromAnchor(quickMenuAnchor, e.clientX, e.clientY)
-        : QUICK_DRAG_FADE_MAX_PX;
+      const quickHover = quickMenuAnchor
+        ? findQuickDropTarget(e.clientX, e.clientY)
+        : null;
       const quick =
-        quickFadeDist < QUICK_DRAG_FADE_MAX_PX
-          ? findQuickDropTarget(e.clientX, e.clientY)
+        quickHover &&
+        quickDropOpacityFromPointer(
+          quickDropBtnRefs.current[quickHover],
+          e.clientX,
+          e.clientY
+        ) > 0
+          ? quickHover
           : null;
       if (quick === 'pool') {
         applyPool();
@@ -1851,11 +1868,31 @@ export function RaidRosterPlanner({
           menuTop: quickMenuAnchor.clientY - dragSession.offsetY,
         }
       : null;
-  const quickDragDistance =
-    quickMenuAnchor && dragPoint
-      ? dragDistanceFromAnchor(quickMenuAnchor, dragPoint.clientX, dragPoint.clientY)
-      : 0;
-  const quickMenuOpacity = quickMenuOpacityFromDragDistance(quickDragDistance);
+  const quickDropPointer = dragPoint ?? quickMenuAnchor;
+  const quickDropOpacities: Record<QuickDropTarget, number> = quickDropPointer
+    ? {
+        decline: quickDropOpacityFromPointer(
+          quickDropBtnRefs.current.decline,
+          quickDropPointer.clientX,
+          quickDropPointer.clientY
+        ),
+        pool: quickDropOpacityFromPointer(
+          quickDropBtnRefs.current.pool,
+          quickDropPointer.clientX,
+          quickDropPointer.clientY
+        ),
+        reserve: quickDropOpacityFromPointer(
+          quickDropBtnRefs.current.reserve,
+          quickDropPointer.clientX,
+          quickDropPointer.clientY
+        ),
+      }
+    : { decline: 1, pool: 1, reserve: 1 };
+  const quickMenuMaxOpacity = Math.max(
+    quickDropOpacities.decline,
+    quickDropOpacities.pool,
+    quickDropOpacities.reserve
+  );
 
   function addManualSignup() {
     if (!addSelected) return;
@@ -3634,33 +3671,34 @@ export function RaidRosterPlanner({
           })()
         : null}
 
-      {dragQuickMenuActive && quickMenuLayout && quickMenuOpacity > 0
+      {dragQuickMenuActive && quickMenuLayout && quickMenuMaxOpacity > 0
         ? createPortal(
             <div
-              className="fixed z-[1300] pointer-events-none transition-opacity duration-75"
+              className="fixed z-[1300] pointer-events-none"
               style={{
                 left: quickMenuLayout.menuLeft,
                 top: quickMenuLayout.menuTop,
                 transform: 'translate(-50%, calc(-100% - 10px))',
-                opacity: quickMenuOpacity,
               }}
             >
-              <div
-                className={cn(
-                  'flex items-center justify-center gap-1.5',
-                  quickMenuOpacity > 0.12 ? 'pointer-events-auto' : 'pointer-events-none'
-                )}
-              >
+              <div className="flex items-center justify-center gap-1.5">
                 <button
+                  ref={(el) => {
+                    quickDropBtnRefs.current.decline = el;
+                  }}
                   type="button"
                   data-quick-drop="decline"
                   className={cn(
-                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-red-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-100',
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-red-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter,opacity] duration-75',
                     quickDropHover === 'decline'
                       ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
-                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110'
+                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
+                    quickDropOpacities.decline > 0.12
+                      ? 'pointer-events-auto'
+                      : 'pointer-events-none'
                   )}
                   style={{
+                    opacity: quickDropOpacities.decline,
                     background:
                       'linear-gradient(165deg, rgba(127, 29, 29, 0.9) 0%, rgba(69, 10, 10, 0.82) 100%)',
                   }}
@@ -3668,15 +3706,22 @@ export function RaidRosterPlanner({
                   {tRoster('quickDropDecline')}
                 </button>
                 <button
+                  ref={(el) => {
+                    quickDropBtnRefs.current.pool = el;
+                  }}
                   type="button"
                   data-quick-drop="pool"
                   className={cn(
-                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-sky-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-100',
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-sky-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter,opacity] duration-75',
                     quickDropHover === 'pool'
                       ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
-                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110'
+                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
+                    quickDropOpacities.pool > 0.12
+                      ? 'pointer-events-auto'
+                      : 'pointer-events-none'
                   )}
                   style={{
+                    opacity: quickDropOpacities.pool,
                     background:
                       'linear-gradient(165deg, rgba(12, 74, 110, 0.9) 0%, rgba(8, 47, 73, 0.82) 100%)',
                   }}
@@ -3684,15 +3729,22 @@ export function RaidRosterPlanner({
                   {tRoster('quickDropSignup')}
                 </button>
                 <button
+                  ref={(el) => {
+                    quickDropBtnRefs.current.reserve = el;
+                  }}
                   type="button"
                   data-quick-drop="reserve"
                   className={cn(
-                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-amber-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-100',
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-amber-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter,opacity] duration-75',
                     quickDropHover === 'reserve'
                       ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
-                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110'
+                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
+                    quickDropOpacities.reserve > 0.12
+                      ? 'pointer-events-auto'
+                      : 'pointer-events-none'
                   )}
                   style={{
+                    opacity: quickDropOpacities.reserve,
                     background:
                       'linear-gradient(165deg, rgba(146, 88, 12, 0.9) 0%, rgba(120, 53, 15, 0.82) 100%)',
                   }}
