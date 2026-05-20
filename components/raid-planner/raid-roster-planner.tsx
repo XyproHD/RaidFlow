@@ -120,6 +120,22 @@ type RaidHeaderMeta = {
 
 type QuickDropTarget = 'decline' | 'pool' | 'reserve';
 
+/** Abstand Bubble-Anker → Maus: Quick-Buttons blenden bis 0 aus. */
+const QUICK_DRAG_FADE_MAX_PX = 90;
+
+function dragDistanceFromAnchor(
+  anchor: { clientX: number; clientY: number },
+  clientX: number,
+  clientY: number
+): number {
+  return Math.hypot(clientX - anchor.clientX, clientY - anchor.clientY);
+}
+
+function quickMenuOpacityFromDragDistance(dist: number): number {
+  if (dist >= QUICK_DRAG_FADE_MAX_PX) return 0;
+  return 1 - dist / QUICK_DRAG_FADE_MAX_PX;
+}
+
 type DragSession = {
   signupId: string;
   source: 'roster' | 'reserve' | 'pool' | 'party';
@@ -833,6 +849,7 @@ export function RaidRosterPlanner({
     clientX: number;
     clientY: number;
   } | null>(null);
+  const [quickDropHover, setQuickDropHover] = useState<QuickDropTarget | null>(null);
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
 
 
@@ -1324,6 +1341,7 @@ export function RaidRosterPlanner({
     setDragSession(null);
     setDragPoint(null);
     setQuickMenuAnchor(null);
+    setQuickDropHover(null);
   }, []);
 
   useEffect(() => {
@@ -1332,7 +1350,16 @@ export function RaidRosterPlanner({
     const sess = dragSession;
     const onMove = (e: PointerEvent) => {
       if (e.pointerId !== sess.pointerId) return;
-      setDragPoint({ clientX: e.clientX, clientY: e.clientY });
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      setDragPoint({ clientX, clientY });
+      if (quickMenuAnchor) {
+        const dist = dragDistanceFromAnchor(quickMenuAnchor, clientX, clientY);
+        const opacity = quickMenuOpacityFromDragDistance(dist);
+        setQuickDropHover(
+          opacity > 0.08 ? findQuickDropTarget(clientX, clientY) : null
+        );
+      }
     };
 
     const onUp = (e: PointerEvent) => {
@@ -1409,7 +1436,13 @@ export function RaidRosterPlanner({
         return true;
       };
 
-      const quick = findQuickDropTarget(e.clientX, e.clientY);
+      const quickFadeDist = quickMenuAnchor
+        ? dragDistanceFromAnchor(quickMenuAnchor, e.clientX, e.clientY)
+        : QUICK_DRAG_FADE_MAX_PX;
+      const quick =
+        quickFadeDist < QUICK_DRAG_FADE_MAX_PX
+          ? findQuickDropTarget(e.clientX, e.clientY)
+          : null;
       if (quick === 'pool') {
         applyPool();
         endDrag();
@@ -1602,7 +1635,7 @@ export function RaidRosterPlanner({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragSession, endDrag, byId, plannerGroups]);
+  }, [dragSession, endDrag, byId, plannerGroups, quickMenuAnchor]);
 
   const onRowPointerDown = (
     e: React.PointerEvent,
@@ -1818,6 +1851,11 @@ export function RaidRosterPlanner({
           menuTop: quickMenuAnchor.clientY - dragSession.offsetY,
         }
       : null;
+  const quickDragDistance =
+    quickMenuAnchor && dragPoint
+      ? dragDistanceFromAnchor(quickMenuAnchor, dragPoint.clientX, dragPoint.clientY)
+      : 0;
+  const quickMenuOpacity = quickMenuOpacityFromDragDistance(quickDragDistance);
 
   function addManualSignup() {
     if (!addSelected) return;
@@ -3596,35 +3634,68 @@ export function RaidRosterPlanner({
           })()
         : null}
 
-      {dragQuickMenuActive && quickMenuLayout
+      {dragQuickMenuActive && quickMenuLayout && quickMenuOpacity > 0
         ? createPortal(
             <div
-              className="fixed z-[1300] pointer-events-none"
+              className="fixed z-[1300] pointer-events-none transition-opacity duration-75"
               style={{
                 left: quickMenuLayout.menuLeft,
                 top: quickMenuLayout.menuTop,
-                transform: 'translate(-50%, calc(-100% - 12px))',
+                transform: 'translate(-50%, calc(-100% - 10px))',
+                opacity: quickMenuOpacity,
               }}
             >
-              <div className="flex items-center justify-center gap-2.5 pointer-events-auto rounded-2xl border border-border/80 bg-background/95 px-2 py-2 shadow-xl backdrop-blur-sm">
+              <div
+                className={cn(
+                  'flex items-center justify-center gap-1.5',
+                  quickMenuOpacity > 0.12 ? 'pointer-events-auto' : 'pointer-events-none'
+                )}
+              >
                 <button
                   type="button"
                   data-quick-drop="decline"
-                  className="rounded-full border-2 border-red-700 bg-red-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-red-700 active:scale-95 whitespace-nowrap"
+                  className={cn(
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-red-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-100',
+                    quickDropHover === 'decline'
+                      ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
+                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110'
+                  )}
+                  style={{
+                    background:
+                      'linear-gradient(165deg, rgba(127, 29, 29, 0.9) 0%, rgba(69, 10, 10, 0.82) 100%)',
+                  }}
                 >
                   {tRoster('quickDropDecline')}
                 </button>
                 <button
                   type="button"
                   data-quick-drop="pool"
-                  className="rounded-full border-2 border-sky-700 bg-sky-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-sky-700 active:scale-95 whitespace-nowrap"
+                  className={cn(
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-sky-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-100',
+                    quickDropHover === 'pool'
+                      ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
+                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110'
+                  )}
+                  style={{
+                    background:
+                      'linear-gradient(165deg, rgba(12, 74, 110, 0.9) 0%, rgba(8, 47, 73, 0.82) 100%)',
+                  }}
                 >
                   {tRoster('quickDropSignup')}
                 </button>
                 <button
                   type="button"
                   data-quick-drop="reserve"
-                  className="rounded-full border-2 border-amber-700 bg-amber-500 px-4 py-2.5 text-xs font-bold text-amber-950 shadow-md hover:bg-amber-400 active:scale-95 whitespace-nowrap"
+                  className={cn(
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-amber-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-100',
+                    quickDropHover === 'reserve'
+                      ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
+                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110'
+                  )}
+                  style={{
+                    background:
+                      'linear-gradient(165deg, rgba(146, 88, 12, 0.9) 0%, rgba(120, 53, 15, 0.82) 100%)',
+                  }}
                 >
                   {tRoster('quickDropReserve')}
                 </button>
