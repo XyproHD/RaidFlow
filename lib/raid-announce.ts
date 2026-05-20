@@ -6,6 +6,7 @@ import {
 } from '@/lib/planner-party-slots';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import type { LeaderPlacement } from '@/lib/raid-leader-placement';
+import type { UnsetPlayersMode } from '@/lib/planner-unset-policy';
 import {
   isPreservedAttendanceSignupType,
   normalizeSignupType,
@@ -128,6 +129,8 @@ export function resolveAnnouncedSignupType(params: {
   currentType: string;
   forbidReserve: boolean;
   leaderPlacement: LeaderPlacement;
+  /** Raid-Option „Nicht gesetzte Spieler“ (nur Pool / nicht im Kader). */
+  unsetPlayersMode?: UnsetPlayersMode;
 }): RaidSignupType {
   if (params.forbidReserve) return 'declined';
   if (isPreservedAttendanceSignupType(params.currentType)) {
@@ -135,6 +138,12 @@ export function resolveAnnouncedSignupType(params: {
       signupTypeNorm(params.currentType)) as RaidSignupType;
   }
   if (params.leaderPlacement === 'confirmed') return 'normal';
+  if (
+    params.leaderPlacement === 'signup' &&
+    params.unsetPlayersMode === 'decline'
+  ) {
+    return 'declined';
+  }
   return 'reserve';
 }
 
@@ -148,13 +157,15 @@ export function setConfirmedForAnnouncedPlacement(
 
 export function buildAnnounceSignupUpdate(
   row: AnnounceSignupRow,
-  payload: AnnounceRaidPayload
+  payload: AnnounceRaidPayload,
+  unsetPlayersMode?: UnsetPlayersMode
 ): { type: string; leaderPlacement: string; setConfirmed: boolean } {
   const leaderPlacement = leaderPlacementFromAnnounceLayout(row.id, payload);
   const type = resolveAnnouncedSignupType({
     currentType: row.type,
     forbidReserve: row.forbidReserve,
     leaderPlacement,
+    unsetPlayersMode,
   });
   return {
     type,
@@ -215,8 +226,10 @@ export async function executeRaidAnnounceTransaction(args: {
   changedByUserId: string;
   payload: AnnounceRaidPayload;
   maxPlayers: number;
+  unsetPlayersMode?: UnsetPlayersMode;
 }): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  const { prisma, raidId, guildId, changedByUserId, payload, maxPlayers } = args;
+  const { prisma, raidId, guildId, changedByUserId, payload, maxPlayers, unsetPlayersMode } =
+    args;
 
   /** Einmal laden: Validierung + Audit-Vorher + keine findUnique-Schleife in der Transaktion (Vercel/5s-Timeout). */
   const signupRows = await prisma.rfRaidSignup.findMany({ where: { raidId } });
@@ -229,7 +242,8 @@ export async function executeRaidAnnounceTransaction(args: {
       for (const prev of signupRows) {
         const next = buildAnnounceSignupUpdate(
           { id: prev.id, type: prev.type, forbidReserve: prev.forbidReserve },
-          payload
+          payload,
+          unsetPlayersMode
         );
         await tx.rfRaidSignup.update({
           where: { id: prev.id },
@@ -256,7 +270,8 @@ export async function executeRaidAnnounceTransaction(args: {
   for (const prev of signupRows) {
     const next = buildAnnounceSignupUpdate(
       { id: prev.id, type: prev.type, forbidReserve: prev.forbidReserve },
-      payload
+      payload,
+      unsetPlayersMode
     );
     const prevSnap = snapshotSignup(prev as unknown as Record<string, unknown>);
     const merged = {

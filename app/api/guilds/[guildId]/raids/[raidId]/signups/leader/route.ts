@@ -13,6 +13,11 @@ import {
   resolveAnnouncedSignupType,
   setConfirmedForAnnouncedPlacement,
 } from '@/lib/raid-announce';
+import { parseUnsetPlayersMode } from '@/lib/planner-unset-policy';
+import {
+  displayNameForSignupRow,
+  jsonSignupValidationError,
+} from '@/lib/raid-signup-api-errors';
 
 function validateSignedSpec(
   signedSpec: string,
@@ -84,7 +89,13 @@ export async function POST(
 
   const character = await prisma.rfCharacter.findFirst({
     where: { id: characterId, userId: targetUserId, guildId },
-    select: { id: true, mainSpec: true, offSpec: true },
+    select: {
+      id: true,
+      name: true,
+      guildDiscordDisplayName: true,
+      mainSpec: true,
+      offSpec: true,
+    },
   });
   if (!character) {
     return NextResponse.json(
@@ -104,20 +115,20 @@ export async function POST(
     where: { raidId, userId: targetUserId, characterId },
   });
 
+  const unsetPlayersMode = parseUnsetPlayersMode(body.unsetPlayersMode);
+  const usesAnnouncedPlacementRules =
+    raid.status === 'announced' || raid.status === 'locked';
+  const displayName = displayNameForSignupRow({ character });
+
   let typeForDb = typeNorm;
   let setConfirmed = setConfirmedForPlacement(leaderPlacement);
 
-  if (raid.status === 'announced' || raid.status === 'locked') {
-    if (leaderPlacement !== 'confirmed' && (existing?.forbidReserve ?? false)) {
-      return NextResponse.json(
-        { error: 'Reserve is forbidden by signup condition' },
-        { status: 400 }
-      );
-    }
+  if (usesAnnouncedPlacementRules) {
     typeForDb = resolveAnnouncedSignupType({
       currentType: existing?.type ?? typeNorm,
       forbidReserve: existing?.forbidReserve ?? false,
       leaderPlacement,
+      unsetPlayersMode,
     });
     setConfirmed = setConfirmedForAnnouncedPlacement(leaderPlacement, typeForDb);
   } else {
@@ -125,21 +136,23 @@ export async function POST(
   }
 
   if (existing) {
-    if (existing.forbidReserve && typeNorm === 'reserve') {
-      return NextResponse.json(
-        { error: 'Reserve is forbidden by signup condition' },
-        { status: 400 }
-      );
+    if (
+      !usesAnnouncedPlacementRules &&
+      existing.forbidReserve &&
+      typeNorm === 'reserve'
+    ) {
+      return jsonSignupValidationError('Reserve is forbidden by signup condition', 400, [
+        { signupId: existing.id, displayName },
+      ]);
     }
     if (
       existing.onlySignedSpec &&
       existing.signedSpec &&
       existing.signedSpec.trim() !== signedSpecRaw.trim()
     ) {
-      return NextResponse.json(
-        { error: 'Spec is locked by signup condition' },
-        { status: 400 }
-      );
+      return jsonSignupValidationError('Spec is locked by signup condition', 400, [
+        { signupId: existing.id, displayName },
+      ]);
     }
     const prevSnap = snapshotSignup(existing);
     const updated = await prisma.rfRaidSignup.update({

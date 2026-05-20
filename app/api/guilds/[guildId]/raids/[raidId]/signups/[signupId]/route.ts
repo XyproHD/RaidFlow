@@ -12,6 +12,11 @@ import {
   resolveAnnouncedSignupType,
   setConfirmedForAnnouncedPlacement,
 } from '@/lib/raid-announce';
+import { parseUnsetPlayersMode } from '@/lib/planner-unset-policy';
+import {
+  displayNameForSignupRow,
+  jsonSignupValidationError,
+} from '@/lib/raid-signup-api-errors';
 
 function validateSignedSpec(
   signedSpec: string,
@@ -54,7 +59,12 @@ export async function PATCH(
     where: { id: signupId, raidId, raid: { guildId } },
     include: {
       character: {
-        select: { mainSpec: true, offSpec: true },
+        select: {
+          name: true,
+          guildDiscordDisplayName: true,
+          mainSpec: true,
+          offSpec: true,
+        },
       },
     },
   });
@@ -101,10 +111,9 @@ export async function PATCH(
 
   if (body.cycleSignedSpec === true) {
     if (signup.onlySignedSpec) {
-      return NextResponse.json(
-        { error: 'Spec is locked by signup condition' },
-        { status: 400 }
-      );
+      return jsonSignupValidationError('Spec is locked by signup condition', 400, [
+        { signupId, displayName: signupDisplayName },
+      ]);
     }
     if (!offSpec?.trim()) {
       return NextResponse.json({ error: 'No off spec to cycle' }, { status: 400 });
@@ -119,21 +128,26 @@ export async function PATCH(
     }
   } else if (typeof body.signedSpec === 'string') {
     if (signup.onlySignedSpec && body.signedSpec.trim() !== (signup.signedSpec ?? '').trim()) {
-      return NextResponse.json(
-        { error: 'Spec is locked by signup condition' },
-        { status: 400 }
-      );
+      return jsonSignupValidationError('Spec is locked by signup condition', 400, [
+        { signupId, displayName: signupDisplayName },
+      ]);
     }
     signedSpec = body.signedSpec.trim();
   }
 
-  if (signup.forbidReserve) {
-    if (signup.type === 'reserve') {
-      return NextResponse.json(
-        { error: 'Reserve is forbidden by signup condition' },
-        { status: 400 }
-      );
-    }
+  const signupDisplayName = displayNameForSignupRow(signup);
+  const unsetPlayersMode = parseUnsetPlayersMode(body.unsetPlayersMode);
+  const usesAnnouncedPlacementRules =
+    raid.status === 'announced' || raid.status === 'locked';
+
+  if (
+    !usesAnnouncedPlacementRules &&
+    signup.forbidReserve &&
+    signup.type === 'reserve'
+  ) {
+    return jsonSignupValidationError('Reserve is forbidden by signup condition', 400, [
+      { signupId, displayName: signupDisplayName },
+    ]);
   }
 
   if (signup.character) {
@@ -147,17 +161,12 @@ export async function PATCH(
   let nextType = signup.type;
   let setConfirmed = setConfirmedForPlacement(leaderPlacement);
 
-  if (raid.status === 'announced') {
-    if (leaderPlacement !== 'confirmed' && signup.forbidReserve) {
-      return NextResponse.json(
-        { error: 'Reserve is forbidden by signup condition' },
-        { status: 400 }
-      );
-    }
+  if (usesAnnouncedPlacementRules) {
     nextType = resolveAnnouncedSignupType({
       currentType: signup.type,
       forbidReserve: signup.forbidReserve,
       leaderPlacement,
+      unsetPlayersMode,
     });
     setConfirmed = setConfirmedForAnnouncedPlacement(leaderPlacement, nextType);
   }
@@ -169,7 +178,7 @@ export async function PATCH(
       leaderMarkedTeilnehmer,
       leaderPlacement,
       setConfirmed,
-      ...(raid.status === 'announced' ? { type: nextType } : {}),
+      ...(usesAnnouncedPlacementRules ? { type: nextType } : {}),
       signedSpec: signedSpec || undefined,
     },
     select: {

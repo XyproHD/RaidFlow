@@ -28,6 +28,12 @@ import { PlannerLeaderNotesCollapsible } from '@/components/raid-planner/planner
 import { GroupCharNamesExport } from '@/components/raid-planner/group-char-names-export';
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 import type { AnnounceRaidPayload } from '@/lib/raid-announce';
+import {
+  appendUnsetPlayersToReserveOrder,
+  leaderPlacementForPlannerSlot,
+  type UnsetPlayersMode,
+} from '@/lib/planner-unset-policy';
+import { formatSignupApiErrorPayload } from '@/lib/raid-signup-api-errors';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
 import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
@@ -760,8 +766,7 @@ export function RaidRosterPlanner({
     };
   }, [comparisonEnabled, comparisonRaidId, guildId]);
 
-  /** Dummy UI state (no backend yet) */
-  const [unsetPlayersMode, setUnsetPlayersMode] = useState<'reserve' | 'decline'>('reserve');
+  const [unsetPlayersMode, setUnsetPlayersMode] = useState<UnsetPlayersMode>('reserve');
   const [botNotifyTargets, setBotNotifyTargets] = useState({
     roster: true,
     reserve: false,
@@ -1695,11 +1700,19 @@ export function RaidRosterPlanner({
     try {
       const rosterFlat = allRosterIds(plannerGroups);
       const rosterSetForPlacement = new Set(rosterFlat);
-      const reserveBenchForPlacement = orderedReserveSignupIdsForDisplay(
+      const forbidReserveById = new Map(signups.map((s) => [s.id, !!s.forbidReserve]));
+      let effectiveReserveOrder = orderedReserveSignupIdsForDisplay(
         reserveOrder,
         signups.map((s) => ({ id: s.id, type: s.signupType }))
       ).filter((id) => !rosterSetForPlacement.has(id));
-      const reservePlacementSet = new Set(reserveBenchForPlacement);
+      effectiveReserveOrder = appendUnsetPlayersToReserveOrder({
+        allSignupIds: signups.map((s) => s.id),
+        rosterIdSet: rosterSetForPlacement,
+        reserveOrder: effectiveReserveOrder,
+        forbidReserveById,
+        unsetPlayersMode,
+      });
+      const reservePlacementSet = new Set(effectiveReserveOrder);
 
       for (const rid of rosterFlat) {
         const row = byId.get(rid);
@@ -1713,9 +1726,13 @@ export function RaidRosterPlanner({
       }
 
       const placementForId = (id: string): 'signup' | 'substitute' | 'confirmed' => {
-        if (rosterFlat.includes(id)) return 'confirmed';
-        if (reservePlacementSet.has(id)) return 'substitute';
-        return 'signup';
+        const row = byId.get(id);
+        return leaderPlacementForPlannerSlot({
+          onRoster: rosterFlat.includes(id),
+          onReserveBench: reservePlacementSet.has(id),
+          forbidReserve: !!row?.forbidReserve,
+          unsetPlayersMode,
+        });
       };
 
       const idToRow = new Map(signups.map((s) => [s.id, s]));
@@ -1745,12 +1762,13 @@ export function RaidRosterPlanner({
                 signedSpec,
                 leaderPlacement,
                 note,
+                unsetPlayersMode,
               }),
             }
           );
           if (!res.ok) {
             const txt = await res.text().catch(() => '');
-            throw new Error(txt || 'Failed to create signup');
+            throw new Error(formatSignupApiErrorPayload(txt) || 'Failed to create signup');
           }
           const json = (await res.json()) as { signup?: { id?: string } };
           const newId = (json.signup?.id ?? '').trim();
@@ -1763,12 +1781,12 @@ export function RaidRosterPlanner({
           {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ leaderPlacement, signedSpec }),
+            body: JSON.stringify({ leaderPlacement, signedSpec, unsetPlayersMode }),
           }
         );
         if (!res.ok) {
           const txt = await res.text().catch(() => '');
-          throw new Error(txt || 'Failed to save');
+          throw new Error(formatSignupApiErrorPayload(txt) || 'Failed to save');
         }
         return null;
       };
@@ -1781,7 +1799,7 @@ export function RaidRosterPlanner({
 
       let snapshotSignups = signups;
       let snapshotGroups = plannerGroups;
-      let snapshotReserve = reserveOrder;
+      let snapshotReserve = effectiveReserveOrder;
 
       if (mappings.length > 0) {
         const map = new Map(mappings.map((m) => [m.oldId, m.newId]));
@@ -1795,17 +1813,24 @@ export function RaidRosterPlanner({
           rosterOrder: g.rosterOrder.map((id) => map.get(id) ?? id),
           partySlots: g.partySlots.map((row) => row.map((id) => map.get(id) ?? id)),
         }));
-        snapshotReserve = reserveOrder.map((id) => map.get(id) ?? id);
+        snapshotReserve = effectiveReserveOrder.map((id) => map.get(id) ?? id);
         setSignups(snapshotSignups);
         setPlannerGroups(snapshotGroups);
       }
 
       const snapRosterFlat = allRosterIds(snapshotGroups);
       const snapRosterSet = new Set(snapRosterFlat);
-      snapshotReserve = orderedReserveSignupIdsForDisplay(
-        snapshotReserve,
-        snapshotSignups.map((s) => ({ id: s.id, type: s.signupType }))
-      ).filter((id) => !snapRosterSet.has(id));
+      const snapForbid = new Map(snapshotSignups.map((s) => [s.id, !!s.forbidReserve]));
+      snapshotReserve = appendUnsetPlayersToReserveOrder({
+        allSignupIds: snapshotSignups.map((s) => s.id),
+        rosterIdSet: snapRosterSet,
+        reserveOrder: orderedReserveSignupIdsForDisplay(
+          snapshotReserve,
+          snapshotSignups.map((s) => ({ id: s.id, type: s.signupType }))
+        ).filter((id) => !snapRosterSet.has(id)),
+        forbidReserveById: snapForbid,
+        unsetPlayersMode,
+      });
       setReserveOrder(snapshotReserve);
 
       const notesToSave = sanitizePlannerLeaderHtml(leaderNotesHtml);
@@ -1833,7 +1858,7 @@ export function RaidRosterPlanner({
         );
         if (!resRaid.ok) {
           const txt = await resRaid.text().catch(() => '');
-          throw new Error(txt || 'Failed to save raid planner notes');
+          throw new Error(formatSignupApiErrorPayload(txt) || 'Failed to save raid planner notes');
         }
       }
 
@@ -1921,10 +1946,17 @@ export function RaidRosterPlanner({
     setSaveError(null);
     try {
       const rosterSetAnnounce = new Set(rosterFlat);
-      const reserveOrderPayload = orderedReserveSignupIdsForDisplay(
-        reserveOrder,
-        signups.map((s) => ({ id: s.id, type: s.signupType }))
-      ).filter((id) => !rosterSetAnnounce.has(id));
+      const forbidReserveAnnounce = new Map(signups.map((s) => [s.id, !!s.forbidReserve]));
+      const reserveOrderPayload = appendUnsetPlayersToReserveOrder({
+        allSignupIds: signups.map((s) => s.id),
+        rosterIdSet: rosterSetAnnounce,
+        reserveOrder: orderedReserveSignupIdsForDisplay(
+          reserveOrder,
+          signups.map((s) => ({ id: s.id, type: s.signupType }))
+        ).filter((id) => !rosterSetAnnounce.has(id)),
+        forbidReserveById: forbidReserveAnnounce,
+        unsetPlayersMode,
+      });
 
       const res = await fetch(
         `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
@@ -1940,12 +1972,13 @@ export function RaidRosterPlanner({
               partySlots: g.partySlots,
             })),
             reserveOrder: reserveOrderPayload,
+            unsetPlayersMode,
           }),
         }
       );
       if (!res.ok) {
         const txt = await res.text().catch(() => '');
-        throw new Error(txt || tRoster('announceError'));
+        throw new Error(formatSignupApiErrorPayload(txt) || tRoster('announceError'));
       }
       router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
       router.refresh();
