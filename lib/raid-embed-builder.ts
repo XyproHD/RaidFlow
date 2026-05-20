@@ -12,7 +12,7 @@ import type { AnnouncedGroupPayload } from '@/lib/raid-announce';
 import { PLANNER_PARTY_SIZE } from '@/lib/planner-party-slots';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import type { DiscordEmbed, DiscordMessageComponent } from '@/lib/discord-guild-api';
-import { BUYMEACOFFEE_URL } from '@/lib/support-links';
+import { KOFI_URL } from '@/lib/support-links';
 
 // ---------------------------------------------------------------------------
 // Embed-Farben je Status
@@ -462,7 +462,7 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
   const planUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}/plan`;
   const linksMarkdown =
     `[Dashboard](${dashUrl}) · [Raid ansehen](${raidUrl}) · [Planer](${planUrl}) · ` +
-    `[Kaffeespende](${BUYMEACOFFEE_URL})`;
+    `[Kaffeespende](${KOFI_URL})`;
 
   const publicNotePlain = input.publicNote?.trim()
     ? plainTextForDiscord(input.publicNote.trim(), 3900)

@@ -219,6 +219,24 @@ function findQuickDropTarget(x: number, y: number): QuickDropTarget | null {
   return null;
 }
 
+/** Loslassen auf Quick-Button (vor Planer-Zonen darunter). */
+function resolveQuickDropOnRelease(
+  clientX: number,
+  clientY: number,
+  hoverFallback: QuickDropTarget | null,
+  plannerGroups: PlannerGroup[]
+): QuickDropTarget | null {
+  const hit = findQuickDropTarget(clientX, clientY) ?? hoverFallback;
+  if (!hit) return null;
+  if (
+    hit.kind === 'party' &&
+    isPartyRowFull(plannerGroups[hit.groupIndex]?.partySlots[hit.partyIndex] ?? [])
+  ) {
+    return null;
+  }
+  return hit;
+}
+
 function findDropTarget(x: number, y: number): DropTarget | null {
   const stack = document.elementsFromPoint(x, y);
   for (const el of stack) {
@@ -888,6 +906,7 @@ export function RaidRosterPlanner({
     clientY: number;
   } | null>(null);
   const [quickDropHover, setQuickDropHover] = useState<QuickDropTarget | null>(null);
+  const quickDropHoverRef = useRef<QuickDropTarget | null>(null);
   const quickDropBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   /** Feste Viewport-Mitten nach Mount; kein getBoundingClientRect pro Frame. */
   const [quickDropCenters, setQuickDropCenters] = useState<Record<
@@ -1397,6 +1416,7 @@ export function RaidRosterPlanner({
     setDragPoint(null);
     setQuickMenuAnchor(null);
     setQuickDropHover(null);
+    quickDropHoverRef.current = null;
     setQuickDropCenters(null);
   }, []);
 
@@ -1451,12 +1471,16 @@ export function RaidRosterPlanner({
             const row = plannerGroups[hover.groupIndex]?.partySlots[hover.partyIndex];
             if (row && isPartyRowFull(row)) {
               setQuickDropHover(null);
+              quickDropHoverRef.current = null;
               return;
             }
           }
-          setQuickDropHover(opacity > 0.08 ? hover : null);
+          const nextHover = opacity > 0.08 ? hover : null;
+          setQuickDropHover(nextHover);
+          quickDropHoverRef.current = nextHover;
         } else {
           setQuickDropHover(null);
+          quickDropHoverRef.current = null;
         }
       }
     };
@@ -1530,45 +1554,6 @@ export function RaidRosterPlanner({
         return true;
       };
 
-      const target = findDropTarget(e.clientX, e.clientY);
-
-      if (target?.kind === 'pool') {
-        applyPool();
-        endDrag();
-        return;
-      }
-
-      if (target?.kind === 'decline') {
-        applyDecline();
-        endDrag();
-        return;
-      }
-
-      if (target?.kind === 'reserve') {
-        const dragged = byId.get(id);
-        if (dragged?.forbidReserve) {
-          setPulseForbidReserveId(id);
-          window.setTimeout(() => {
-            setPulseForbidReserveId((cur) => (cur === id ? null : cur));
-          }, 900);
-          setFlyBack({
-            signupId: id,
-            fromLeft: e.clientX - sess.offsetX,
-            fromTop: e.clientY - sess.offsetY,
-            toLeft: origin.left,
-            toTop: origin.top,
-            width: origin.width,
-            height: origin.height,
-          });
-          endDrag();
-          return;
-        }
-        if (applyReserve()) {
-          endDrag();
-        }
-        return;
-      }
-
       const placeInGroupParty = (destGi: number, partyIndex: number, cellIndex: number) => {
         const dragged = byId.get(id);
         const draggedUserId = (dragged?.userId ?? '').trim() || null;
@@ -1621,26 +1606,14 @@ export function RaidRosterPlanner({
         endDrag();
       };
 
-      const quickHover = quickMenuAnchor
-        ? findQuickDropTarget(e.clientX, e.clientY)
+      const quick = quickMenuAnchor
+        ? resolveQuickDropOnRelease(
+            e.clientX,
+            e.clientY,
+            quickDropHoverRef.current,
+            plannerGroups
+          )
         : null;
-      const quickOpacity =
-        quickHover != null
-          ? quickDropOpacityFromCenter(
-              quickDropCenters?.[quickDropTargetKey(quickHover)],
-              e.clientX,
-              e.clientY
-            )
-          : 0;
-      const quick =
-        quickHover && quickOpacity > 0
-          ? quickHover.kind === 'party' &&
-            isPartyRowFull(
-              plannerGroups[quickHover.groupIndex]?.partySlots[quickHover.partyIndex] ?? []
-            )
-            ? null
-            : quickHover
-          : null;
       if (quick?.kind === 'action' && quick.action === 'pool') {
         applyPool();
         endDrag();
@@ -1684,6 +1657,45 @@ export function RaidRosterPlanner({
           return;
         }
         placeInGroupParty(destGi, destPi, emptyCi);
+        return;
+      }
+
+      const target = findDropTarget(e.clientX, e.clientY);
+
+      if (target?.kind === 'pool') {
+        applyPool();
+        endDrag();
+        return;
+      }
+
+      if (target?.kind === 'decline') {
+        applyDecline();
+        endDrag();
+        return;
+      }
+
+      if (target?.kind === 'reserve') {
+        const dragged = byId.get(id);
+        if (dragged?.forbidReserve) {
+          setPulseForbidReserveId(id);
+          window.setTimeout(() => {
+            setPulseForbidReserveId((cur) => (cur === id ? null : cur));
+          }, 900);
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
+          });
+          endDrag();
+          return;
+        }
+        if (applyReserve()) {
+          endDrag();
+        }
         return;
       }
 
