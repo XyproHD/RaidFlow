@@ -118,9 +118,6 @@ type RaidHeaderMeta = {
   maxPlayers: number;
 };
 
-/** Kurz ziehen → Quick-Menü; weiter ziehen → normales Ablegen. */
-const QUICK_DRAG_MENU_MAX_PX = 52;
-
 type QuickDropTarget = 'decline' | 'pool' | 'reserve';
 
 type DragSession = {
@@ -166,10 +163,6 @@ function findQuickDropTarget(x: number, y: number): QuickDropTarget | null {
     if (q === 'decline' || q === 'pool' || q === 'reserve') return q;
   }
   return null;
-}
-
-function dragDistanceFromStart(sess: DragSession, clientX: number, clientY: number): number {
-  return Math.hypot(clientX - sess.startClientX, clientY - sess.startClientY);
 }
 
 function findDropTarget(x: number, y: number): DropTarget | null {
@@ -1339,22 +1332,13 @@ export function RaidRosterPlanner({
     const sess = dragSession;
     const onMove = (e: PointerEvent) => {
       if (e.pointerId !== sess.pointerId) return;
-      const clientX = e.clientX;
-      const clientY = e.clientY;
-      setDragPoint({ clientX, clientY });
-      const dist = dragDistanceFromStart(sess, clientX, clientY);
-      if (dist < QUICK_DRAG_MENU_MAX_PX) {
-        setQuickMenuAnchor((prev) => prev ?? { clientX, clientY });
-      } else {
-        setQuickMenuAnchor(null);
-      }
+      setDragPoint({ clientX: e.clientX, clientY: e.clientY });
     };
 
     const onUp = (e: PointerEvent) => {
       if (e.pointerId !== sess.pointerId) return;
       const id = sess.signupId;
       const origin = sess.originRect;
-      const dist = dragDistanceFromStart(sess, e.clientX, e.clientY);
 
       const patchSignupRow = (patch: Partial<Pick<RosterPlannerSignup, 'leaderPlacement' | 'signupType'>>) => {
         setSignups((prev) =>
@@ -1425,42 +1409,29 @@ export function RaidRosterPlanner({
         return true;
       };
 
-      if (dist < QUICK_DRAG_MENU_MAX_PX) {
-        const quick = findQuickDropTarget(e.clientX, e.clientY);
-        if (quick === 'pool') {
-          applyPool();
-          endDrag();
-          return;
+      const quick = findQuickDropTarget(e.clientX, e.clientY);
+      if (quick === 'pool') {
+        applyPool();
+        endDrag();
+        return;
+      }
+      if (quick === 'decline') {
+        applyDecline();
+        endDrag();
+        return;
+      }
+      if (quick === 'reserve') {
+        if (!applyReserve()) {
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
+          });
         }
-        if (quick === 'decline') {
-          applyDecline();
-          endDrag();
-          return;
-        }
-        if (quick === 'reserve') {
-          if (!applyReserve()) {
-            setFlyBack({
-              signupId: id,
-              fromLeft: e.clientX - sess.offsetX,
-              fromTop: e.clientY - sess.offsetY,
-              toLeft: origin.left,
-              toTop: origin.top,
-              width: origin.width,
-              height: origin.height,
-            });
-          }
-          endDrag();
-          return;
-        }
-        setFlyBack({
-          signupId: id,
-          fromLeft: e.clientX - sess.offsetX,
-          fromTop: e.clientY - sess.offsetY,
-          toLeft: origin.left,
-          toTop: origin.top,
-          width: origin.width,
-          height: origin.height,
-        });
         endDrag();
         return;
       }
@@ -1654,7 +1625,7 @@ export function RaidRosterPlanner({
       startClientY: e.clientY,
     });
     setDragPoint({ clientX: e.clientX, clientY: e.clientY });
-    setQuickMenuAnchor(null);
+    setQuickMenuAnchor({ clientX: e.clientX, clientY: e.clientY });
   };
 
   const draggingId = dragSession?.signupId ?? null;
@@ -1843,8 +1814,6 @@ export function RaidRosterPlanner({
   const quickMenuLayout =
     dragSession && quickMenuAnchor
       ? {
-          bubbleLeft: quickMenuAnchor.clientX - dragSession.offsetX,
-          bubbleTop: quickMenuAnchor.clientY - dragSession.offsetY,
           menuLeft: quickMenuAnchor.clientX,
           menuTop: quickMenuAnchor.clientY - dragSession.offsetY,
         }
@@ -3584,12 +3553,6 @@ export function RaidRosterPlanner({
       {dragSession && dragPoint && draggedSignup
         ? (() => {
             const dv = attendanceRowVariant(draggedSignup);
-            const ghostLeft = dragQuickMenuActive
-              ? (quickMenuLayout?.bubbleLeft ?? dragPoint.clientX - dragSession.offsetX)
-              : dragPoint.clientX - dragSession.offsetX;
-            const ghostTop = dragQuickMenuActive
-              ? (quickMenuLayout?.bubbleTop ?? dragPoint.clientY - dragSession.offsetY)
-              : dragPoint.clientY - dragSession.offsetY;
             return createPortal(
               <div
                 className={cn(
@@ -3600,8 +3563,8 @@ export function RaidRosterPlanner({
                     'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40'
                 )}
                 style={{
-                  left: ghostLeft,
-                  top: ghostTop,
+                  left: dragPoint.clientX - dragSession.offsetX,
+                  top: dragPoint.clientY - dragSession.offsetY,
                   width: dragSession.originRect.width,
                   minHeight: dragSession.originRect.height,
                 }}
@@ -3640,28 +3603,28 @@ export function RaidRosterPlanner({
               style={{
                 left: quickMenuLayout.menuLeft,
                 top: quickMenuLayout.menuTop,
-                transform: 'translate(-50%, calc(-100% - 10px))',
+                transform: 'translate(-50%, calc(-100% - 12px))',
               }}
             >
-              <div className="flex items-center justify-center gap-2 pointer-events-auto">
+              <div className="flex items-center justify-center gap-2.5 pointer-events-auto rounded-2xl border border-border/80 bg-background/95 px-2 py-2 shadow-xl backdrop-blur-sm">
                 <button
                   type="button"
                   data-quick-drop="decline"
-                  className="rounded-full border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs font-semibold shadow-md hover:bg-red-500/20 whitespace-nowrap"
+                  className="rounded-full border-2 border-red-700 bg-red-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-red-700 active:scale-95 whitespace-nowrap"
                 >
                   {tRoster('quickDropDecline')}
                 </button>
                 <button
                   type="button"
                   data-quick-drop="pool"
-                  className="rounded-full border border-border bg-background px-3 py-2 text-xs font-semibold shadow-md hover:bg-muted whitespace-nowrap"
+                  className="rounded-full border-2 border-sky-700 bg-sky-600 px-4 py-2.5 text-xs font-bold text-white shadow-md hover:bg-sky-700 active:scale-95 whitespace-nowrap"
                 >
                   {tRoster('quickDropSignup')}
                 </button>
                 <button
                   type="button"
                   data-quick-drop="reserve"
-                  className="rounded-full border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs font-semibold shadow-md hover:bg-amber-500/20 whitespace-nowrap"
+                  className="rounded-full border-2 border-amber-700 bg-amber-500 px-4 py-2.5 text-xs font-bold text-amber-950 shadow-md hover:bg-amber-400 active:scale-95 whitespace-nowrap"
                 >
                   {tRoster('quickDropReserve')}
                 </button>
