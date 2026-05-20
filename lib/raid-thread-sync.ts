@@ -239,6 +239,47 @@ export async function syncRaidThreadSummary(
 // Benachrichtigungen (werden als neue Thread-Nachrichten gepostet)
 // ---------------------------------------------------------------------------
 
+function discordRaiderRoleMention(roleId: string | null | undefined): string | null {
+  const id = roleId?.trim();
+  if (!id) return null;
+  return `<@&${id}>`;
+}
+
+/** Thread-Log beim Anlegen eines offenen Raids: Raider-Rolle per @ informieren. */
+export async function postRaidOpenThreadNotice(raidId: string): Promise<void> {
+  try {
+    const raid = await prisma.rfRaid.findUnique({
+      where: { id: raidId },
+      select: {
+        discordThreadId: true,
+        name: true,
+        status: true,
+        guild: { select: { discordRoleRaiderId: true } },
+        dungeon: { select: { name: true } },
+      },
+    });
+    if (!raid?.discordThreadId) return;
+    if (raid.status !== 'open') return;
+
+    const { createChannelMessageFull } = await import('@/lib/discord-guild-api');
+    const roleMention = discordRaiderRoleMention(raid.guild.discordRoleRaiderId);
+    const lead = roleMention
+      ? `${roleMention}, ein neuer Raid steht zur Anmeldung bereit.`
+      : 'Ein neuer Raid steht zur Anmeldung bereit.';
+    const content = `${lead}\n📣 **${raid.dungeon.name}** / **${raid.name}**`;
+
+    const raiderRoleId = raid.guild.discordRoleRaiderId?.trim();
+    await createChannelMessageFull(raid.discordThreadId, {
+      content: content.slice(0, 2000),
+      ...(raiderRoleId
+        ? { allowedMentions: { parse: [], roles: [raiderRoleId] } }
+        : {}),
+    });
+  } catch (e) {
+    console.error('[postRaidOpenThreadNotice]', raidId, e);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Signup-Änderungs-Protokoll
 // ---------------------------------------------------------------------------
