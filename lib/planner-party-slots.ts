@@ -134,6 +134,31 @@ export function findFirstEmptyPartyCell(
   return null;
 }
 
+/** Entfernt Signup-IDs aus Kader/Party-Slots (z. B. Absage-Block). */
+export function stripSignupIdsFromPlannerGroups<
+  T extends {
+    rosterOrder: string[];
+    partySlots: string[][];
+    raidLeaderUserId?: string | null;
+    lootmasterUserId?: string | null;
+  },
+>(groups: T[], removeIds: Set<string>, maxPlayers: number): T[] {
+  if (removeIds.size === 0) return groups;
+  return groups.map((g) => {
+    const partySlots = g.partySlots.map((row) =>
+      row.map((id) => (removeIds.has(id) ? PARTY_SLOT_EMPTY : id))
+    );
+    return applyPartyLayoutToGroup(
+      {
+        ...g,
+        rosterOrder: g.rosterOrder.filter((id) => !removeIds.has(id)),
+        partySlots,
+      },
+      maxPlayers
+    );
+  });
+}
+
 export function parsePartySlotsFromStored(raw: unknown): string[][] | undefined {
   if (!Array.isArray(raw)) return undefined;
   return raw.map((row) =>

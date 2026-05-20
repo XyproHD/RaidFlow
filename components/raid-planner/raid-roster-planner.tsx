@@ -44,6 +44,7 @@ import {
   parsePartySlotsFromStored,
   rosterOrderFromPartySlots,
   setPartyCell,
+  stripSignupIdsFromPlannerGroups,
   syncPartySlotsForGroup,
 } from '@/lib/planner-party-slots';
 import type { ComparisonPlacement } from '@/lib/planner-comparison';
@@ -117,6 +118,11 @@ type RaidHeaderMeta = {
   maxPlayers: number;
 };
 
+/** Kurz ziehen → Quick-Menü; weiter ziehen → normales Ablegen. */
+const QUICK_DRAG_MENU_MAX_PX = 52;
+
+type QuickDropTarget = 'decline' | 'pool' | 'reserve';
+
 type DragSession = {
   signupId: string;
   source: 'roster' | 'reserve' | 'pool' | 'party';
@@ -124,6 +130,8 @@ type DragSession = {
   offsetY: number;
   originRect: DOMRect;
   pointerId: number;
+  startClientX: number;
+  startClientY: number;
 };
 
 type FlyBackState = {
@@ -149,6 +157,20 @@ type DropTarget =
   | { kind: 'decline' }
   | { kind: 'reserve' }
   | { kind: 'pool' };
+
+function findQuickDropTarget(x: number, y: number): QuickDropTarget | null {
+  const stack = document.elementsFromPoint(x, y);
+  for (const el of stack) {
+    if (!(el instanceof HTMLElement)) continue;
+    const q = el.dataset.quickDrop;
+    if (q === 'decline' || q === 'pool' || q === 'reserve') return q;
+  }
+  return null;
+}
+
+function dragDistanceFromStart(sess: DragSession, clientX: number, clientY: number): number {
+  return Math.hypot(clientX - sess.startClientX, clientY - sess.startClientY);
+}
 
 function findDropTarget(x: number, y: number): DropTarget | null {
   const stack = document.elementsFromPoint(x, y);
@@ -406,12 +428,6 @@ export function RaidRosterPlanner({
   const orderStorageKey = useMemo(() => `rf:raidPlannerOrder:${raidId}`, [raidId]);
   useEffect(() => {
     setSignups(initialSignups);
-    setReserveOrder((prev) =>
-      orderedReserveSignupIdsForDisplay(
-        prev,
-        initialSignups.map((s) => ({ id: s.id, type: s.signupType }))
-      )
-    );
   }, [initialSignups]);
 
   const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
@@ -579,9 +595,20 @@ export function RaidRosterPlanner({
         nextGroups = [defaultGroup()];
       }
 
+      if (nextDecline.length > 0) {
+        const declineSet = new Set(nextDecline);
+        nextGroups = stripSignupIdsFromPlannerGroups(nextGroups, declineSet, maxPlayers);
+        nextReserve = nextReserve.filter((id) => !declineSet.has(id));
+      }
+
       const rosterSet = new Set(allRosterIds(nextGroups));
+      const declineSetMissing = new Set(nextDecline);
       const missingConfirmed = ids.filter(
-        (id) => placementOf(id) === 'confirmed' && !rosterSet.has(id) && !nextReserve.includes(id)
+        (id) =>
+          placementOf(id) === 'confirmed' &&
+          !rosterSet.has(id) &&
+          !nextReserve.includes(id) &&
+          !declineSetMissing.has(id)
       );
       if (missingConfirmed.length > 0 && nextGroups[0]) {
         let slots = nextGroups[0].partySlots;
@@ -1311,9 +1338,15 @@ export function RaidRosterPlanner({
 
     const onUp = (e: PointerEvent) => {
       if (e.pointerId !== sess.pointerId) return;
-      const target = findDropTarget(e.clientX, e.clientY);
       const id = sess.signupId;
       const origin = sess.originRect;
+      const dist = dragDistanceFromStart(sess, e.clientX, e.clientY);
+
+      const patchSignupRow = (patch: Partial<Pick<RosterPlannerSignup, 'leaderPlacement' | 'signupType'>>) => {
+        setSignups((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, ...patch } : s))
+        );
+      };
 
       const applyPool = () => {
         setPlannerGroups((groups) =>
@@ -1327,15 +1360,15 @@ export function RaidRosterPlanner({
         );
         setReserveOrder((o) => o.filter((x) => x !== id));
         setDeclineOrder((o) => o.filter((x) => x !== id));
+        const row = byId.get(id);
+        const tn = row ? typeNorm(row.signupType) : 'normal';
+        patchSignupRow({
+          leaderPlacement: 'signup',
+          ...(tn === 'declined' ? { signupType: 'normal' as const } : {}),
+        });
       };
 
-      if (target?.kind === 'pool') {
-        applyPool();
-        endDrag();
-        return;
-      }
-
-      if (target?.kind === 'decline') {
+      const applyDecline = () => {
         setPlannerGroups((groups) =>
           syncPlannerGroupsParties(
             groups.map((g) => ({
@@ -1347,6 +1380,87 @@ export function RaidRosterPlanner({
         );
         setReserveOrder((o) => o.filter((x) => x !== id));
         setDeclineOrder((o) => (o.includes(id) ? o : [...o, id]));
+        patchSignupRow({ leaderPlacement: 'signup', signupType: 'declined' });
+      };
+
+      const applyReserve = (): boolean => {
+        const dragged = byId.get(id);
+        if (dragged?.forbidReserve) {
+          setPulseForbidReserveId(id);
+          window.setTimeout(() => {
+            setPulseForbidReserveId((cur) => (cur === id ? null : cur));
+          }, 900);
+          return false;
+        }
+        setPlannerGroups((groups) =>
+          syncPlannerGroupsParties(
+            groups.map((g) => ({
+              ...g,
+              rosterOrder: g.rosterOrder.filter((x) => x !== id),
+              partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
+            }))
+          )
+        );
+        setDeclineOrder((o) => o.filter((x) => x !== id));
+        setReserveOrder((o) => (o.includes(id) ? o : [...o, id]));
+        const tn = dragged ? typeNorm(dragged.signupType) : 'normal';
+        patchSignupRow({
+          leaderPlacement: 'substitute',
+          ...(tn === 'declined' ? { signupType: 'reserve' as const } : {}),
+        });
+        return true;
+      };
+
+      if (dist < QUICK_DRAG_MENU_MAX_PX) {
+        const quick = findQuickDropTarget(e.clientX, e.clientY);
+        if (quick === 'pool') {
+          applyPool();
+          endDrag();
+          return;
+        }
+        if (quick === 'decline') {
+          applyDecline();
+          endDrag();
+          return;
+        }
+        if (quick === 'reserve') {
+          if (!applyReserve()) {
+            setFlyBack({
+              signupId: id,
+              fromLeft: e.clientX - sess.offsetX,
+              fromTop: e.clientY - sess.offsetY,
+              toLeft: origin.left,
+              toTop: origin.top,
+              width: origin.width,
+              height: origin.height,
+            });
+          }
+          endDrag();
+          return;
+        }
+        setFlyBack({
+          signupId: id,
+          fromLeft: e.clientX - sess.offsetX,
+          fromTop: e.clientY - sess.offsetY,
+          toLeft: origin.left,
+          toTop: origin.top,
+          width: origin.width,
+          height: origin.height,
+        });
+        endDrag();
+        return;
+      }
+
+      const target = findDropTarget(e.clientX, e.clientY);
+
+      if (target?.kind === 'pool') {
+        applyPool();
+        endDrag();
+        return;
+      }
+
+      if (target?.kind === 'decline') {
+        applyDecline();
         endDrag();
         return;
       }
@@ -1370,18 +1484,9 @@ export function RaidRosterPlanner({
           endDrag();
           return;
         }
-        setPlannerGroups((groups) =>
-          syncPlannerGroupsParties(
-            groups.map((g) => ({
-              ...g,
-              rosterOrder: g.rosterOrder.filter((x) => x !== id),
-              partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
-            }))
-          )
-        );
-        setDeclineOrder((o) => o.filter((x) => x !== id));
-        setReserveOrder((o) => (o.includes(id) ? o : [...o, id]));
-        endDrag();
+        if (applyReserve()) {
+          endDrag();
+        }
         return;
       }
 
@@ -1427,6 +1532,12 @@ export function RaidRosterPlanner({
             })
           )
         );
+        const row = byId.get(id);
+        const tn = row ? typeNorm(row.signupType) : 'normal';
+        patchSignupRow({
+          leaderPlacement: 'confirmed',
+          ...(tn === 'declined' ? { signupType: 'normal' as const } : {}),
+        });
         endDrag();
       };
 
@@ -1525,6 +1636,8 @@ export function RaidRosterPlanner({
       offsetY: e.clientY - rect.top,
       originRect: rect,
       pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
     });
     setDragPoint({ clientX: e.clientX, clientY: e.clientY });
   };
@@ -1711,6 +1824,11 @@ export function RaidRosterPlanner({
   }
 
   const draggedSignup = dragSession ? byId.get(dragSession.signupId) : null;
+  const dragQuickMenuActive =
+    !!dragSession &&
+    !!dragPoint &&
+    dragDistanceFromStart(dragSession, dragPoint.clientX, dragPoint.clientY) <
+      QUICK_DRAG_MENU_MAX_PX;
 
   function addManualSignup() {
     if (!addSelected) return;
@@ -1775,7 +1893,13 @@ export function RaidRosterPlanner({
     setSaving(true);
     setSaveError(null);
     try {
-      const rosterFlat = allRosterIds(plannerGroups);
+      const declinePlacementSetPre = new Set(declineOrder);
+      const plannerGroupsForSave = stripSignupIdsFromPlannerGroups(
+        plannerGroups,
+        declinePlacementSetPre,
+        raid.maxPlayers
+      );
+      const rosterFlat = allRosterIds(plannerGroupsForSave);
       const rosterSetForPlacement = new Set(rosterFlat);
       const forbidReserveById = new Map(signups.map((s) => [s.id, !!s.forbidReserve]));
       const baseReserve = orderedReserveSignupIdsForDisplay(
@@ -1799,7 +1923,7 @@ export function RaidRosterPlanner({
         const row = byId.get(rid);
         const uid = (row?.userId ?? '').trim();
         if (!uid) continue;
-        if (findUserRosterConflict(plannerGroups, byId, rid, uid)) {
+        if (findUserRosterConflict(plannerGroupsForSave, byId, rid, uid)) {
           setSaveError(tRoster('saveErrorDiscordMultiGroup'));
           setSaving(false);
           return;
@@ -1887,7 +2011,7 @@ export function RaidRosterPlanner({
       }
 
       let snapshotSignups = signups;
-      let snapshotGroups = plannerGroups;
+      let snapshotGroups = plannerGroupsForSave;
       let snapshotReserve = effectiveReserveOrder;
       let snapshotDecline = effectiveDeclineOrder;
 
@@ -1896,9 +2020,15 @@ export function RaidRosterPlanner({
         snapshotSignups = signups.map((row) => {
           const nid = map.get(row.id);
           if (!nid) return row;
-          return { ...row, id: nid, leaderPlacement: placementForId(row.id) };
+          const declined = effectiveDeclineOrder.includes(row.id);
+          return {
+            ...row,
+            id: nid,
+            leaderPlacement: placementForId(row.id),
+            signupType: declined ? 'declined' : row.signupType,
+          };
         });
-        snapshotGroups = plannerGroups.map((g) => ({
+        snapshotGroups = plannerGroupsForSave.map((g) => ({
           ...g,
           rosterOrder: g.rosterOrder.map((id) => map.get(id) ?? id),
           partySlots: g.partySlots.map((row) => row.map((id) => map.get(id) ?? id)),
@@ -1925,6 +2055,12 @@ export function RaidRosterPlanner({
       });
       snapshotReserve = snapPolicy.reserveOrder;
       snapshotDecline = snapPolicy.declineOrder;
+      snapshotGroups = stripSignupIdsFromPlannerGroups(
+        snapshotGroups,
+        new Set(snapshotDecline),
+        raid.maxPlayers
+      );
+      setPlannerGroups(snapshotGroups);
       setReserveOrder(snapshotReserve);
       setDeclineOrder(snapshotDecline);
 
@@ -1970,6 +2106,22 @@ export function RaidRosterPlanner({
         );
       }
 
+      const declineSnapSet = new Set(snapshotDecline);
+      const rosterSnapSet = new Set(allRosterIds(snapshotGroups));
+      const reserveSnapSet = new Set(snapshotReserve);
+      snapshotSignups = snapshotSignups.map((s) => {
+        if (declineSnapSet.has(s.id)) {
+          return { ...s, leaderPlacement: 'signup' as const, signupType: 'declined' };
+        }
+        if (rosterSnapSet.has(s.id)) {
+          return { ...s, leaderPlacement: 'confirmed' as const };
+        }
+        if (reserveSnapSet.has(s.id)) {
+          return { ...s, leaderPlacement: 'substitute' as const };
+        }
+        return { ...s, leaderPlacement: 'signup' as const };
+      });
+
       setSavedSnapshot({
         signups: snapshotSignups,
         plannerGroups: snapshotGroups,
@@ -1978,6 +2130,7 @@ export function RaidRosterPlanner({
         leaderNotesHtml: notesToSave,
       });
       setLastSavedAt(Date.now());
+      setSignups(snapshotSignups);
       router.refresh();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
@@ -3403,6 +3556,41 @@ export function RaidRosterPlanner({
                   </table>
                 </div>
               </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {dragQuickMenuActive && dragPoint
+        ? createPortal(
+            <div
+              className="fixed z-[1200] flex items-center gap-2 pointer-events-auto"
+              style={{
+                left: Math.min(dragPoint.clientX + 14, window.innerWidth - 220),
+                top: Math.max(8, dragPoint.clientY - 44),
+              }}
+            >
+              <button
+                type="button"
+                data-quick-drop="decline"
+                className="rounded-full border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs font-semibold shadow-md hover:bg-red-500/20"
+              >
+                {tRoster('quickDropDecline')}
+              </button>
+              <button
+                type="button"
+                data-quick-drop="pool"
+                className="rounded-full border border-border bg-background px-3 py-2 text-xs font-semibold shadow-md hover:bg-muted"
+              >
+                {tRoster('quickDropSignup')}
+              </button>
+              <button
+                type="button"
+                data-quick-drop="reserve"
+                className="rounded-full border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs font-semibold shadow-md hover:bg-amber-500/20"
+              >
+                {tRoster('quickDropReserve')}
+              </button>
             </div>,
             document.body
           )
