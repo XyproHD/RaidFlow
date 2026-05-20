@@ -835,6 +835,11 @@ export function RaidRosterPlanner({
 
   const [dragSession, setDragSession] = useState<DragSession | null>(null);
   const [dragPoint, setDragPoint] = useState<{ clientX: number; clientY: number } | null>(null);
+  /** Feste Position beim Kurz-Ziehen, damit Quick-Menü und Bubble nicht mitwandern. */
+  const [quickMenuAnchor, setQuickMenuAnchor] = useState<{
+    clientX: number;
+    clientY: number;
+  } | null>(null);
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
 
 
@@ -1325,6 +1330,7 @@ export function RaidRosterPlanner({
   const endDrag = useCallback(() => {
     setDragSession(null);
     setDragPoint(null);
+    setQuickMenuAnchor(null);
   }, []);
 
   useEffect(() => {
@@ -1333,7 +1339,15 @@ export function RaidRosterPlanner({
     const sess = dragSession;
     const onMove = (e: PointerEvent) => {
       if (e.pointerId !== sess.pointerId) return;
-      setDragPoint({ clientX: e.clientX, clientY: e.clientY });
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      setDragPoint({ clientX, clientY });
+      const dist = dragDistanceFromStart(sess, clientX, clientY);
+      if (dist < QUICK_DRAG_MENU_MAX_PX) {
+        setQuickMenuAnchor((prev) => prev ?? { clientX, clientY });
+      } else {
+        setQuickMenuAnchor(null);
+      }
     };
 
     const onUp = (e: PointerEvent) => {
@@ -1640,6 +1654,7 @@ export function RaidRosterPlanner({
       startClientY: e.clientY,
     });
     setDragPoint({ clientX: e.clientX, clientY: e.clientY });
+    setQuickMenuAnchor(null);
   };
 
   const draggingId = dragSession?.signupId ?? null;
@@ -1824,11 +1839,16 @@ export function RaidRosterPlanner({
   }
 
   const draggedSignup = dragSession ? byId.get(dragSession.signupId) : null;
-  const dragQuickMenuActive =
-    !!dragSession &&
-    !!dragPoint &&
-    dragDistanceFromStart(dragSession, dragPoint.clientX, dragPoint.clientY) <
-      QUICK_DRAG_MENU_MAX_PX;
+  const dragQuickMenuActive = !!dragSession && !!quickMenuAnchor;
+  const quickMenuLayout =
+    dragSession && quickMenuAnchor
+      ? {
+          bubbleLeft: quickMenuAnchor.clientX - dragSession.offsetX,
+          bubbleTop: quickMenuAnchor.clientY - dragSession.offsetY,
+          menuLeft: quickMenuAnchor.clientX,
+          menuTop: quickMenuAnchor.clientY - dragSession.offsetY,
+        }
+      : null;
 
   function addManualSignup() {
     if (!addSelected) return;
@@ -3561,44 +3581,15 @@ export function RaidRosterPlanner({
           )
         : null}
 
-      {dragQuickMenuActive && dragPoint
-        ? createPortal(
-            <div
-              className="fixed z-[1200] flex items-center gap-2 pointer-events-auto"
-              style={{
-                left: Math.min(dragPoint.clientX + 14, window.innerWidth - 220),
-                top: Math.max(8, dragPoint.clientY - 44),
-              }}
-            >
-              <button
-                type="button"
-                data-quick-drop="decline"
-                className="rounded-full border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs font-semibold shadow-md hover:bg-red-500/20"
-              >
-                {tRoster('quickDropDecline')}
-              </button>
-              <button
-                type="button"
-                data-quick-drop="pool"
-                className="rounded-full border border-border bg-background px-3 py-2 text-xs font-semibold shadow-md hover:bg-muted"
-              >
-                {tRoster('quickDropSignup')}
-              </button>
-              <button
-                type="button"
-                data-quick-drop="reserve"
-                className="rounded-full border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs font-semibold shadow-md hover:bg-amber-500/20"
-              >
-                {tRoster('quickDropReserve')}
-              </button>
-            </div>,
-            document.body
-          )
-        : null}
-
       {dragSession && dragPoint && draggedSignup
         ? (() => {
             const dv = attendanceRowVariant(draggedSignup);
+            const ghostLeft = dragQuickMenuActive
+              ? (quickMenuLayout?.bubbleLeft ?? dragPoint.clientX - dragSession.offsetX)
+              : dragPoint.clientX - dragSession.offsetX;
+            const ghostTop = dragQuickMenuActive
+              ? (quickMenuLayout?.bubbleTop ?? dragPoint.clientY - dragSession.offsetY)
+              : dragPoint.clientY - dragSession.offsetY;
             return createPortal(
               <div
                 className={cn(
@@ -3609,8 +3600,8 @@ export function RaidRosterPlanner({
                     'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40'
                 )}
                 style={{
-                  left: dragPoint.clientX - dragSession.offsetX,
-                  top: dragPoint.clientY - dragSession.offsetY,
+                  left: ghostLeft,
+                  top: ghostTop,
                   width: dragSession.originRect.width,
                   minHeight: dragSession.originRect.height,
                 }}
@@ -3640,6 +3631,44 @@ export function RaidRosterPlanner({
               document.body
             );
           })()
+        : null}
+
+      {dragQuickMenuActive && quickMenuLayout
+        ? createPortal(
+            <div
+              className="fixed z-[1300] pointer-events-none"
+              style={{
+                left: quickMenuLayout.menuLeft,
+                top: quickMenuLayout.menuTop,
+                transform: 'translate(-50%, calc(-100% - 10px))',
+              }}
+            >
+              <div className="flex items-center justify-center gap-2 pointer-events-auto">
+                <button
+                  type="button"
+                  data-quick-drop="decline"
+                  className="rounded-full border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs font-semibold shadow-md hover:bg-red-500/20 whitespace-nowrap"
+                >
+                  {tRoster('quickDropDecline')}
+                </button>
+                <button
+                  type="button"
+                  data-quick-drop="pool"
+                  className="rounded-full border border-border bg-background px-3 py-2 text-xs font-semibold shadow-md hover:bg-muted whitespace-nowrap"
+                >
+                  {tRoster('quickDropSignup')}
+                </button>
+                <button
+                  type="button"
+                  data-quick-drop="reserve"
+                  className="rounded-full border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs font-semibold shadow-md hover:bg-amber-500/20 whitespace-nowrap"
+                >
+                  {tRoster('quickDropReserve')}
+                </button>
+              </div>
+            </div>,
+            document.body
+          )
         : null}
 
       {flyBack && byId.get(flyBack.signupId)
