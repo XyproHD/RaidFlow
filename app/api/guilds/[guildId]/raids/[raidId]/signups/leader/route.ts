@@ -123,11 +123,14 @@ export async function POST(
   let typeForDb = typeNorm;
   let setConfirmed = setConfirmedForPlacement(leaderPlacement);
 
+  const plannerDeclined = body.plannerDeclined === true;
+
   if (usesAnnouncedPlacementRules) {
     typeForDb = resolveAnnouncedSignupType({
       currentType: existing?.type ?? typeNorm,
       forbidReserve: existing?.forbidReserve ?? false,
       leaderPlacement,
+      plannerDeclined,
       unsetPlayersMode,
     });
     setConfirmed = setConfirmedForAnnouncedPlacement(leaderPlacement, typeForDb);

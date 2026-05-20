@@ -24,6 +24,7 @@ export type AnnouncedGroupPayload = {
 export type AnnounceRaidPayload = {
   groups: AnnouncedGroupPayload[];
   reserveOrder: string[];
+  declineOrder: string[];
 };
 
 export type AnnounceParseResult =
@@ -98,7 +99,36 @@ export function parseAnnounceRaidPayload(body: Record<string, unknown>): Announc
     resSet.add(id);
   }
 
-  return { ok: true, data: { groups, reserveOrder } };
+  const decRaw = body.declineOrder;
+  const declineOrder = Array.isArray(decRaw)
+    ? decRaw
+        .filter((x): x is string => typeof x === 'string')
+        .map((x) => x.trim())
+        .filter(Boolean)
+    : [];
+  const decSet = new Set<string>();
+  for (const id of declineOrder) {
+    if (rosterSet.has(id)) {
+      return {
+        ok: false,
+        error: 'Signup cannot be both on roster and decline list',
+        status: 400,
+      };
+    }
+    if (resSet.has(id)) {
+      return {
+        ok: false,
+        error: 'Signup cannot be both on reserve and decline list',
+        status: 400,
+      };
+    }
+    if (decSet.has(id)) {
+      return { ok: false, error: 'Duplicate id in declineOrder', status: 400 };
+    }
+    decSet.add(id);
+  }
+
+  return { ok: true, data: { groups, reserveOrder, declineOrder } };
 }
 
 /** Server-JSON aus rf_raid.announced_planner_groups_json → gleiches Format wie Announce-Payload. */
@@ -120,8 +150,16 @@ export function leaderPlacementFromAnnounceLayout(
 ): LeaderPlacement {
   const onRoster = payload.groups.some((g) => g.rosterOrder.includes(signupId));
   if (onRoster) return 'confirmed';
+  if (payload.declineOrder.includes(signupId)) return 'signup';
   if (payload.reserveOrder.includes(signupId)) return 'substitute';
   return 'signup';
+}
+
+export function isInAnnounceDeclineBlock(
+  signupId: string,
+  payload: AnnounceRaidPayload
+): boolean {
+  return payload.declineOrder.includes(signupId);
 }
 
 /** Typ nach Ankündigung/Planer-Layout — „uncertain“/„declined“ bleiben erhalten. */
@@ -129,10 +167,12 @@ export function resolveAnnouncedSignupType(params: {
   currentType: string;
   forbidReserve: boolean;
   leaderPlacement: LeaderPlacement;
+  /** Explizit im Planer-Absage-Block oder Raid-Option „Absagen“. */
+  plannerDeclined?: boolean;
   /** Raid-Option „Nicht gesetzte Spieler“ (nur Pool / nicht im Kader). */
   unsetPlayersMode?: UnsetPlayersMode;
 }): RaidSignupType {
-  if (params.forbidReserve) return 'declined';
+  if (params.plannerDeclined || params.forbidReserve) return 'declined';
   if (isPreservedAttendanceSignupType(params.currentType)) {
     return (normalizeSignupType(params.currentType) ??
       signupTypeNorm(params.currentType)) as RaidSignupType;
@@ -165,6 +205,7 @@ export function buildAnnounceSignupUpdate(
     currentType: row.type,
     forbidReserve: row.forbidReserve,
     leaderPlacement,
+    plannerDeclined: isInAnnounceDeclineBlock(row.id, payload),
     unsetPlayersMode,
   });
   return {
@@ -197,6 +238,7 @@ export function announceLayoutToStoredJson(
       };
     }),
     reserveOrder: payload.reserveOrder,
+    declineOrder: payload.declineOrder,
   };
 }
 
@@ -214,6 +256,11 @@ export function validateAnnouncePayloadAgainstKnownIds(
   for (const id of payload.reserveOrder) {
     if (!knownSignupIds.has(id)) {
       return { ok: false, error: 'Unknown signup id in reserveOrder', status: 400 };
+    }
+  }
+  for (const id of payload.declineOrder) {
+    if (!knownSignupIds.has(id)) {
+      return { ok: false, error: 'Unknown signup id in declineOrder', status: 400 };
     }
   }
   return { ok: true };

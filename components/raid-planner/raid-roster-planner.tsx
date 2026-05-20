@@ -29,7 +29,7 @@ import { GroupCharNamesExport } from '@/components/raid-planner/group-char-names
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 import type { AnnounceRaidPayload } from '@/lib/raid-announce';
 import {
-  appendUnsetPlayersToReserveOrder,
+  applyPlannerUnsetPolicy,
   leaderPlacementForPlannerSlot,
   type UnsetPlayersMode,
 } from '@/lib/planner-unset-policy';
@@ -146,6 +146,7 @@ type PlannerGroup = {
 type DropTarget =
   | { kind: 'roster'; groupIndex: number }
   | { kind: 'party'; groupIndex: number; partyIndex: number; cellIndex?: number }
+  | { kind: 'decline' }
   | { kind: 'reserve' }
   | { kind: 'pool' };
 
@@ -155,6 +156,7 @@ function findDropTarget(x: number, y: number): DropTarget | null {
     if (!(el instanceof HTMLElement)) continue;
     const z = el.dataset.dropZone;
     if (z === 'pool') return { kind: 'pool' };
+    if (z === 'decline') return { kind: 'decline' };
     if (z === 'reserve') return { kind: 'reserve' };
     if (z === 'roster') {
       const raw = el.dataset.rosterGroup ?? '0';
@@ -397,6 +399,7 @@ export function RaidRosterPlanner({
     signups: RosterPlannerSignup[];
     plannerGroups: PlannerGroup[];
     reserveOrder: string[];
+    declineOrder: string[];
     leaderNotesHtml: string;
   } | null>(null);
 
@@ -430,6 +433,8 @@ export function RaidRosterPlanner({
       initialSignups.map((s) => ({ id: s.id, type: s.signupType }))
     )
   );
+  const [declineOrder, setDeclineOrder] = useState<string[]>([]);
+  const [declineBlockOpen, setDeclineBlockOpen] = useState(false);
 
   function safeJsonParse<T>(raw: string | null): T | null {
     if (!raw) return null;
@@ -453,6 +458,7 @@ export function RaidRosterPlanner({
       type StoredPlanner = {
         rosterOrder?: unknown;
         reserveOrder?: unknown;
+        declineOrder?: unknown;
         groups?: unknown;
       };
 
@@ -461,6 +467,7 @@ export function RaidRosterPlanner({
           ? {
               groups: persistedServerPlannerOrder.groups as unknown,
               reserveOrder: persistedServerPlannerOrder.reserveOrder as unknown,
+              declineOrder: persistedServerPlannerOrder.declineOrder as unknown,
             }
           : null;
       const stored: StoredPlanner | null =
@@ -476,6 +483,10 @@ export function RaidRosterPlanner({
         stored && Array.isArray(stored.reserveOrder)
           ? (stored.reserveOrder.filter((x) => typeof x === 'string') as string[])
           : null;
+      const storedDecline =
+        stored && Array.isArray(stored.declineOrder)
+          ? (stored.declineOrder.filter((x) => typeof x === 'string') as string[])
+          : null;
 
       const normalize = (arr: string[] | null) => {
         if (!arr) return [];
@@ -488,6 +499,7 @@ export function RaidRosterPlanner({
       };
 
       let nextReserve = normalize(storedReserve);
+      let nextDecline = normalize(storedDecline);
 
       const defaultGroup = (): PlannerGroup => ({
         rosterOrder: [],
@@ -592,13 +604,26 @@ export function RaidRosterPlanner({
         rows.map((r) => ({ id: r.id, type: r.signupType }))
       ).filter((id) => !rosterSetFinal.has(id));
 
+      if (nextDecline.length === 0) {
+        for (const id of ids) {
+          if (rosterSetFinal.has(id) || nextReserve.includes(id)) continue;
+          const row = rows.find((x) => x.id === id);
+          if (row && typeNorm(row.signupType) === 'declined') nextDecline.push(id);
+        }
+      }
+      nextDecline = nextDecline.filter(
+        (id) => !rosterSetFinal.has(id) && !nextReserve.includes(id)
+      );
+
       setPlannerGroups(nextGroups);
       setReserveOrder(nextReserve);
+      setDeclineOrder(nextDecline);
 
       setSavedSnapshot({
         signups: rows,
         plannerGroups: nextGroups,
         reserveOrder: nextReserve,
+        declineOrder: nextDecline,
         leaderNotesHtml: initialPlannerLeaderNotesHtml ?? '',
       });
     },
@@ -989,13 +1014,24 @@ export function RaidRosterPlanner({
   const reserveBenchOrderedIds = useMemo(() => {
     const ord = orderedReserveSignupIdsForDisplay(reserveOrder, signupRowsForReserveOrder);
     const roster = new Set(allRosterIds(plannerGroups));
-    return ord.filter((id) => !roster.has(id));
-  }, [reserveOrder, signupRowsForReserveOrder, plannerGroups]);
+    const decline = new Set(declineOrder);
+    return ord.filter((id) => !roster.has(id) && !decline.has(id));
+  }, [reserveOrder, signupRowsForReserveOrder, plannerGroups, declineOrder]);
+
+  const declineBenchOrderedIds = useMemo(() => {
+    const roster = new Set(allRosterIds(plannerGroups));
+    const reserve = new Set(reserveBenchOrderedIds);
+    return declineOrder.filter((id) => byId.has(id) && !roster.has(id) && !reserve.has(id));
+  }, [declineOrder, plannerGroups, reserveBenchOrderedIds, byId]);
 
   const poolIds = useMemo(() => {
-    const placed = new Set([...allRosterIds(plannerGroups), ...reserveBenchOrderedIds]);
+    const placed = new Set([
+      ...allRosterIds(plannerGroups),
+      ...reserveBenchOrderedIds,
+      ...declineBenchOrderedIds,
+    ]);
     return signups.map((s) => s.id).filter((id) => !placed.has(id));
-  }, [signups, plannerGroups, reserveBenchOrderedIds]);
+  }, [signups, plannerGroups, reserveBenchOrderedIds, declineBenchOrderedIds]);
 
   const signupsWithNotesList = useMemo(() => {
     return signups
@@ -1098,10 +1134,11 @@ export function RaidRosterPlanner({
   const declinedPoolIds = useMemo(
     () =>
       filteredPoolIds.filter((id) => {
+        if (declineBenchOrderedIds.includes(id)) return false;
         const s = byId.get(id);
         return !!s && typeNorm(s.signupType) === 'declined';
       }),
-    [filteredPoolIds, byId]
+    [filteredPoolIds, byId, declineBenchOrderedIds]
   );
 
   const filteredReserveIds = useMemo(() => {
@@ -1150,6 +1187,27 @@ export function RaidRosterPlanner({
     }
     return m;
   }, [filteredReserveIds, byId]);
+
+  const declineBlockFilteredIds = useMemo(() => {
+    return declineBenchOrderedIds.filter((id) => {
+      const s = byId.get(id);
+      if (!s) return false;
+      return (
+        passesCharFilters(s) && passesPunctuality(s) && passesAttendanceFilter(s)
+      );
+    });
+  }, [
+    declineBenchOrderedIds,
+    byId,
+    passesCharFilters,
+    passesPunctuality,
+    passesAttendanceFilter,
+  ]);
+
+  const declineBlockByRole = useMemo(
+    () => poolIdsToRoleMap(declineBlockFilteredIds),
+    [declineBlockFilteredIds, poolIdsToRoleMap]
+  );
 
   const poolRoleCounts = useMemo(() => {
     const out: Record<TbcRole, number> = { Tank: 0, Healer: 0, Melee: 0, Range: 0 };
@@ -1268,10 +1326,27 @@ export function RaidRosterPlanner({
           )
         );
         setReserveOrder((o) => o.filter((x) => x !== id));
+        setDeclineOrder((o) => o.filter((x) => x !== id));
       };
 
       if (target?.kind === 'pool') {
         applyPool();
+        endDrag();
+        return;
+      }
+
+      if (target?.kind === 'decline') {
+        setPlannerGroups((groups) =>
+          syncPlannerGroupsParties(
+            groups.map((g) => ({
+              ...g,
+              rosterOrder: g.rosterOrder.filter((x) => x !== id),
+              partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
+            }))
+          )
+        );
+        setReserveOrder((o) => o.filter((x) => x !== id));
+        setDeclineOrder((o) => (o.includes(id) ? o : [...o, id]));
         endDrag();
         return;
       }
@@ -1304,6 +1379,7 @@ export function RaidRosterPlanner({
             }))
           )
         );
+        setDeclineOrder((o) => o.filter((x) => x !== id));
         setReserveOrder((o) => (o.includes(id) ? o : [...o, id]));
         endDrag();
         return;
@@ -1340,6 +1416,7 @@ export function RaidRosterPlanner({
           }
         }
         setReserveOrder((o) => o.filter((x) => x !== id));
+        setDeclineOrder((o) => o.filter((x) => x !== id));
         setPlannerGroups((groups) =>
           syncPlannerGroupsParties(
             groups.map((g, gi) => {
@@ -1701,18 +1778,22 @@ export function RaidRosterPlanner({
       const rosterFlat = allRosterIds(plannerGroups);
       const rosterSetForPlacement = new Set(rosterFlat);
       const forbidReserveById = new Map(signups.map((s) => [s.id, !!s.forbidReserve]));
-      let effectiveReserveOrder = orderedReserveSignupIdsForDisplay(
+      const baseReserve = orderedReserveSignupIdsForDisplay(
         reserveOrder,
         signups.map((s) => ({ id: s.id, type: s.signupType }))
       ).filter((id) => !rosterSetForPlacement.has(id));
-      effectiveReserveOrder = appendUnsetPlayersToReserveOrder({
+      const policyApplied = applyPlannerUnsetPolicy({
         allSignupIds: signups.map((s) => s.id),
         rosterIdSet: rosterSetForPlacement,
-        reserveOrder: effectiveReserveOrder,
+        reserveOrder: baseReserve,
+        declineOrder,
         forbidReserveById,
         unsetPlayersMode,
       });
+      const effectiveReserveOrder = policyApplied.reserveOrder;
+      const effectiveDeclineOrder = policyApplied.declineOrder;
       const reservePlacementSet = new Set(effectiveReserveOrder);
+      const declinePlacementSet = new Set(effectiveDeclineOrder);
 
       for (const rid of rosterFlat) {
         const row = byId.get(rid);
@@ -1730,6 +1811,7 @@ export function RaidRosterPlanner({
         return leaderPlacementForPlannerSlot({
           onRoster: rosterFlat.includes(id),
           onReserveBench: reservePlacementSet.has(id),
+          onDeclineBlock: declinePlacementSet.has(id),
           forbidReserve: !!row?.forbidReserve,
           unsetPlayersMode,
         });
@@ -1743,6 +1825,7 @@ export function RaidRosterPlanner({
         const row = idToRow.get(id);
         if (!row) return null;
         const leaderPlacement = placementForId(id);
+        const plannerDeclined = declinePlacementSet.has(id);
         const signedSpec = (row.signedSpec?.trim() || row.originalSignedSpec?.trim() || row.mainSpec.trim()).trim();
         const note = row.note ?? null;
 
@@ -1763,6 +1846,7 @@ export function RaidRosterPlanner({
                 leaderPlacement,
                 note,
                 unsetPlayersMode,
+                plannerDeclined,
               }),
             }
           );
@@ -1781,7 +1865,12 @@ export function RaidRosterPlanner({
           {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ leaderPlacement, signedSpec, unsetPlayersMode }),
+            body: JSON.stringify({
+              leaderPlacement,
+              signedSpec,
+              unsetPlayersMode,
+              plannerDeclined,
+            }),
           }
         );
         if (!res.ok) {
@@ -1800,6 +1889,7 @@ export function RaidRosterPlanner({
       let snapshotSignups = signups;
       let snapshotGroups = plannerGroups;
       let snapshotReserve = effectiveReserveOrder;
+      let snapshotDecline = effectiveDeclineOrder;
 
       if (mappings.length > 0) {
         const map = new Map(mappings.map((m) => [m.oldId, m.newId]));
@@ -1814,6 +1904,7 @@ export function RaidRosterPlanner({
           partySlots: g.partySlots.map((row) => row.map((id) => map.get(id) ?? id)),
         }));
         snapshotReserve = effectiveReserveOrder.map((id) => map.get(id) ?? id);
+        snapshotDecline = effectiveDeclineOrder.map((id) => map.get(id) ?? id);
         setSignups(snapshotSignups);
         setPlannerGroups(snapshotGroups);
       }
@@ -1821,17 +1912,21 @@ export function RaidRosterPlanner({
       const snapRosterFlat = allRosterIds(snapshotGroups);
       const snapRosterSet = new Set(snapRosterFlat);
       const snapForbid = new Map(snapshotSignups.map((s) => [s.id, !!s.forbidReserve]));
-      snapshotReserve = appendUnsetPlayersToReserveOrder({
+      const snapPolicy = applyPlannerUnsetPolicy({
         allSignupIds: snapshotSignups.map((s) => s.id),
         rosterIdSet: snapRosterSet,
         reserveOrder: orderedReserveSignupIdsForDisplay(
           snapshotReserve,
           snapshotSignups.map((s) => ({ id: s.id, type: s.signupType }))
         ).filter((id) => !snapRosterSet.has(id)),
+        declineOrder: snapshotDecline,
         forbidReserveById: snapForbid,
         unsetPlayersMode,
       });
+      snapshotReserve = snapPolicy.reserveOrder;
+      snapshotDecline = snapPolicy.declineOrder;
       setReserveOrder(snapshotReserve);
+      setDeclineOrder(snapshotDecline);
 
       const notesToSave = sanitizePlannerLeaderHtml(leaderNotesHtml);
       if (canEditRaid) {
@@ -1843,6 +1938,7 @@ export function RaidRosterPlanner({
             partySlots: g.partySlots,
           })),
           reserveOrder: snapshotReserve,
+          declineOrder: snapshotDecline,
         };
         const resRaid = await fetch(
           `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
@@ -1866,7 +1962,11 @@ export function RaidRosterPlanner({
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(
           orderStorageKey,
-          JSON.stringify({ groups: snapshotGroups, reserveOrder: snapshotReserve })
+          JSON.stringify({
+            groups: snapshotGroups,
+            reserveOrder: snapshotReserve,
+            declineOrder: snapshotDecline,
+          })
         );
       }
 
@@ -1874,6 +1974,7 @@ export function RaidRosterPlanner({
         signups: snapshotSignups,
         plannerGroups: snapshotGroups,
         reserveOrder: snapshotReserve,
+        declineOrder: snapshotDecline,
         leaderNotesHtml: notesToSave,
       });
       setLastSavedAt(Date.now());
@@ -1947,16 +2048,19 @@ export function RaidRosterPlanner({
     try {
       const rosterSetAnnounce = new Set(rosterFlat);
       const forbidReserveAnnounce = new Map(signups.map((s) => [s.id, !!s.forbidReserve]));
-      const reserveOrderPayload = appendUnsetPlayersToReserveOrder({
+      const announcePolicy = applyPlannerUnsetPolicy({
         allSignupIds: signups.map((s) => s.id),
         rosterIdSet: rosterSetAnnounce,
         reserveOrder: orderedReserveSignupIdsForDisplay(
           reserveOrder,
           signups.map((s) => ({ id: s.id, type: s.signupType }))
         ).filter((id) => !rosterSetAnnounce.has(id)),
+        declineOrder,
         forbidReserveById: forbidReserveAnnounce,
         unsetPlayersMode,
       });
+      const reserveOrderPayload = announcePolicy.reserveOrder;
+      const declineOrderPayload = announcePolicy.declineOrder;
 
       const res = await fetch(
         `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
@@ -1972,6 +2076,7 @@ export function RaidRosterPlanner({
               partySlots: g.partySlots,
             })),
             reserveOrder: reserveOrderPayload,
+            declineOrder: declineOrderPayload,
             unsetPlayersMode,
           }),
         }
@@ -1980,6 +2085,8 @@ export function RaidRosterPlanner({
         const txt = await res.text().catch(() => '');
         throw new Error(formatSignupApiErrorPayload(txt) || tRoster('announceError'));
       }
+      setReserveOrder(reserveOrderPayload);
+      setDeclineOrder(declineOrderPayload);
       router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
       router.refresh();
     } catch (e) {
@@ -1995,6 +2102,7 @@ export function RaidRosterPlanner({
     setSignups(savedSnapshot.signups);
     setPlannerGroups(savedSnapshot.plannerGroups);
     setReserveOrder(savedSnapshot.reserveOrder);
+    setDeclineOrder(savedSnapshot.declineOrder);
     setLeaderNotesHtml(savedSnapshot.leaderNotesHtml);
     setNotesBootstrapKey((k) => k + 1);
   }
@@ -2228,6 +2336,65 @@ export function RaidRosterPlanner({
       <div className="flex flex-col xl:flex-row gap-4 items-start">
         <div className="flex-1 min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-4 w-full order-2 xl:order-1">
           <div className="space-y-4 min-w-0">
+            <div
+              data-drop-zone="decline"
+              className={cn(
+                'rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden transition-[box-shadow] duration-200',
+                dragActive && 'ring-2 ring-destructive/40 ring-offset-2 ring-offset-background'
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => setDeclineBlockOpen((v) => !v)}
+                className="w-full border-b border-border bg-muted/20 px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-muted/30 transition-colors"
+                aria-expanded={declineBlockOpen}
+              >
+                <span className="text-sm font-semibold text-foreground">
+                  {tRoster('declineBlockTitle')}
+                </span>
+                <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                  {declineBlockOpen
+                    ? tRoster('declineBlockCollapse')
+                    : tRoster('declineBlockExpand', { count: declineBlockFilteredIds.length })}
+                </span>
+              </button>
+              {declineBlockOpen ? (
+                <div className="p-3 space-y-3 min-h-[72px]">
+                  {declineBlockFilteredIds.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{tRoster('declineBlockEmpty')}</p>
+                  ) : (
+                    ROLE_ORDER.map((role) => {
+                      const ids = declineBlockByRole.get(role) ?? [];
+                      if (ids.length === 0) return null;
+                      return (
+                        <div key={`decline-${role}`}>
+                          <div className="flex items-center gap-2 mb-2 text-xs font-medium text-muted-foreground">
+                            <RoleIcon role={role} size={16} />
+                            <span>{role}</span>
+                          </div>
+                          <div className="space-y-2 pl-1" role="list">
+                            {ids.map((id) => {
+                              const s = byId.get(id);
+                              if (!s) return null;
+                              return renderRow(s, 'pool');
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                <div className="px-4 py-2 text-xs text-muted-foreground min-h-[40px] flex items-center">
+                  {declineBlockFilteredIds.length > 0
+                    ? tRoster('declineBlockCollapsedHint', {
+                        count: declineBlockFilteredIds.length,
+                      })
+                    : tRoster('declineBlockEmpty')}
+                </div>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={() =>

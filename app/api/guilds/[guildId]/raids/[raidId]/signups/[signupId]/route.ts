@@ -162,11 +162,14 @@ export async function PATCH(
   let nextType = signup.type;
   let setConfirmed = setConfirmedForPlacement(leaderPlacement);
 
+  const plannerDeclined = body.plannerDeclined === true;
+
   if (usesAnnouncedPlacementRules) {
     nextType = resolveAnnouncedSignupType({
       currentType: signup.type,
       forbidReserve: signup.forbidReserve,
       leaderPlacement,
+      plannerDeclined,
       unsetPlayersMode,
     });
     setConfirmed = setConfirmedForAnnouncedPlacement(leaderPlacement, nextType);
