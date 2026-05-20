@@ -308,10 +308,14 @@ export async function postSignupChangeThreadNotice(
 
     let content: string;
     if (listPublic) {
-      if (action === 'signup') {
+      if (action === 'signup' && details.type === 'declined') {
+        content = `🚫 **${charName}** ist nicht da`;
+      } else if (action === 'signup') {
         content = `✍️ **${charName}** hat sich angemeldet${specText}${typeText}${puncText}`;
       } else if (action === 'unsignup') {
         content = `🚪 **${charName}** hat sich abgemeldet`;
+      } else if (action === 'edit' && details.type === 'declined') {
+        content = `🚫 **${charName}** ist nicht da`;
       } else {
         content = `✏️ **${charName}** hat die Anmeldung bearbeitet${specText}${typeText}${puncText}`;
       }
@@ -332,10 +336,14 @@ export async function postSignupChangeThreadNotice(
       } else if (details.type === 'declined') {
         anonTypeSuffix = ' *(Nicht da)*';
       }
-      if (action === 'signup') {
+      if (action === 'signup' && details.type === 'declined') {
+        content = `🚫 ${who} ist nicht da`;
+      } else if (action === 'signup') {
         content = `✍️ ${who} hat sich angemeldet${anonTypeSuffix}${puncText}`;
       } else if (action === 'unsignup') {
         content = `🚪 ${who} hat sich abgemeldet`;
+      } else if (action === 'edit' && details.type === 'declined') {
+        content = `🚫 ${who} ist nicht da`;
       } else {
         content = `✏️ ${who} hat die Anmeldung bearbeitet${anonTypeSuffix}${puncText}`;
       }

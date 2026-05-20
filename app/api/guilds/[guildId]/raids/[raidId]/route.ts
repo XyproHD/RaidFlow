@@ -11,6 +11,7 @@ import {
   parseAnnounceRaidPayload,
   validateAnnouncePayloadAgainstKnownIds,
 } from '@/lib/raid-announce';
+import { parseUnsetPlayersMode } from '@/lib/planner-unset-policy';
 import { RAID_CANCEL_DM_MAX_LENGTH } from '@/lib/raid-cancel-message';
 
 /**
@@ -172,6 +173,7 @@ export async function PATCH(
       changedByUserId: auth.userId,
       payload: parsed.data,
       maxPlayers: raid.maxPlayers,
+      unsetPlayersMode: parseUnsetPlayersMode(body.unsetPlayersMode),
     });
     if (!exec.ok) {
       return NextResponse.json({ error: exec.error }, { status: exec.status });

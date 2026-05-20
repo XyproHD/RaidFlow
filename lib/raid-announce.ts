@@ -6,6 +6,7 @@ import {
 } from '@/lib/planner-party-slots';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import type { LeaderPlacement } from '@/lib/raid-leader-placement';
+import type { UnsetPlayersMode } from '@/lib/planner-unset-policy';
 import {
   isPreservedAttendanceSignupType,
   normalizeSignupType,
@@ -23,6 +24,7 @@ export type AnnouncedGroupPayload = {
 export type AnnounceRaidPayload = {
   groups: AnnouncedGroupPayload[];
   reserveOrder: string[];
+  declineOrder: string[];
 };
 
 export type AnnounceParseResult =
@@ -97,7 +99,36 @@ export function parseAnnounceRaidPayload(body: Record<string, unknown>): Announc
     resSet.add(id);
   }
 
-  return { ok: true, data: { groups, reserveOrder } };
+  const decRaw = body.declineOrder;
+  const declineOrder = Array.isArray(decRaw)
+    ? decRaw
+        .filter((x): x is string => typeof x === 'string')
+        .map((x) => x.trim())
+        .filter(Boolean)
+    : [];
+  const decSet = new Set<string>();
+  for (const id of declineOrder) {
+    if (rosterSet.has(id)) {
+      return {
+        ok: false,
+        error: 'Signup cannot be both on roster and decline list',
+        status: 400,
+      };
+    }
+    if (resSet.has(id)) {
+      return {
+        ok: false,
+        error: 'Signup cannot be both on reserve and decline list',
+        status: 400,
+      };
+    }
+    if (decSet.has(id)) {
+      return { ok: false, error: 'Duplicate id in declineOrder', status: 400 };
+    }
+    decSet.add(id);
+  }
+
+  return { ok: true, data: { groups, reserveOrder, declineOrder } };
 }
 
 /** Server-JSON aus rf_raid.announced_planner_groups_json → gleiches Format wie Announce-Payload. */
@@ -119,8 +150,16 @@ export function leaderPlacementFromAnnounceLayout(
 ): LeaderPlacement {
   const onRoster = payload.groups.some((g) => g.rosterOrder.includes(signupId));
   if (onRoster) return 'confirmed';
+  if (payload.declineOrder.includes(signupId)) return 'signup';
   if (payload.reserveOrder.includes(signupId)) return 'substitute';
   return 'signup';
+}
+
+export function isInAnnounceDeclineBlock(
+  signupId: string,
+  payload: AnnounceRaidPayload
+): boolean {
+  return payload.declineOrder.includes(signupId);
 }
 
 /** Typ nach Ankündigung/Planer-Layout — „uncertain“/„declined“ bleiben erhalten. */
@@ -128,13 +167,23 @@ export function resolveAnnouncedSignupType(params: {
   currentType: string;
   forbidReserve: boolean;
   leaderPlacement: LeaderPlacement;
+  /** Explizit im Planer-Absage-Block oder Raid-Option „Absagen“. */
+  plannerDeclined?: boolean;
+  /** Raid-Option „Nicht gesetzte Spieler“ (nur Pool / nicht im Kader). */
+  unsetPlayersMode?: UnsetPlayersMode;
 }): RaidSignupType {
-  if (params.forbidReserve) return 'declined';
+  if (params.plannerDeclined || params.forbidReserve) return 'declined';
   if (isPreservedAttendanceSignupType(params.currentType)) {
     return (normalizeSignupType(params.currentType) ??
       signupTypeNorm(params.currentType)) as RaidSignupType;
   }
   if (params.leaderPlacement === 'confirmed') return 'normal';
+  if (
+    params.leaderPlacement === 'signup' &&
+    params.unsetPlayersMode === 'decline'
+  ) {
+    return 'declined';
+  }
   return 'reserve';
 }
 
@@ -148,13 +197,16 @@ export function setConfirmedForAnnouncedPlacement(
 
 export function buildAnnounceSignupUpdate(
   row: AnnounceSignupRow,
-  payload: AnnounceRaidPayload
+  payload: AnnounceRaidPayload,
+  unsetPlayersMode?: UnsetPlayersMode
 ): { type: string; leaderPlacement: string; setConfirmed: boolean } {
   const leaderPlacement = leaderPlacementFromAnnounceLayout(row.id, payload);
   const type = resolveAnnouncedSignupType({
     currentType: row.type,
     forbidReserve: row.forbidReserve,
     leaderPlacement,
+    plannerDeclined: isInAnnounceDeclineBlock(row.id, payload),
+    unsetPlayersMode,
   });
   return {
     type,
@@ -186,6 +238,7 @@ export function announceLayoutToStoredJson(
       };
     }),
     reserveOrder: payload.reserveOrder,
+    declineOrder: payload.declineOrder,
   };
 }
 
@@ -205,6 +258,11 @@ export function validateAnnouncePayloadAgainstKnownIds(
       return { ok: false, error: 'Unknown signup id in reserveOrder', status: 400 };
     }
   }
+  for (const id of payload.declineOrder) {
+    if (!knownSignupIds.has(id)) {
+      return { ok: false, error: 'Unknown signup id in declineOrder', status: 400 };
+    }
+  }
   return { ok: true };
 }
 
@@ -215,8 +273,10 @@ export async function executeRaidAnnounceTransaction(args: {
   changedByUserId: string;
   payload: AnnounceRaidPayload;
   maxPlayers: number;
+  unsetPlayersMode?: UnsetPlayersMode;
 }): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  const { prisma, raidId, guildId, changedByUserId, payload, maxPlayers } = args;
+  const { prisma, raidId, guildId, changedByUserId, payload, maxPlayers, unsetPlayersMode } =
+    args;
 
   /** Einmal laden: Validierung + Audit-Vorher + keine findUnique-Schleife in der Transaktion (Vercel/5s-Timeout). */
   const signupRows = await prisma.rfRaidSignup.findMany({ where: { raidId } });
@@ -229,7 +289,8 @@ export async function executeRaidAnnounceTransaction(args: {
       for (const prev of signupRows) {
         const next = buildAnnounceSignupUpdate(
           { id: prev.id, type: prev.type, forbidReserve: prev.forbidReserve },
-          payload
+          payload,
+          unsetPlayersMode
         );
         await tx.rfRaidSignup.update({
           where: { id: prev.id },
@@ -256,7 +317,8 @@ export async function executeRaidAnnounceTransaction(args: {
   for (const prev of signupRows) {
     const next = buildAnnounceSignupUpdate(
       { id: prev.id, type: prev.type, forbidReserve: prev.forbidReserve },
-      payload
+      payload,
+      unsetPlayersMode
     );
     const prevSnap = snapshotSignup(prev as unknown as Record<string, unknown>);
     const merged = {

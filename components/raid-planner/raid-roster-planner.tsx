@@ -28,6 +28,12 @@ import { PlannerLeaderNotesCollapsible } from '@/components/raid-planner/planner
 import { GroupCharNamesExport } from '@/components/raid-planner/group-char-names-export';
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 import type { AnnounceRaidPayload } from '@/lib/raid-announce';
+import {
+  applyPlannerUnsetPolicy,
+  leaderPlacementForPlannerSlot,
+  type UnsetPlayersMode,
+} from '@/lib/planner-unset-policy';
+import { formatSignupApiErrorPayload } from '@/lib/raid-signup-api-errors';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
 import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
@@ -38,6 +44,7 @@ import {
   parsePartySlotsFromStored,
   rosterOrderFromPartySlots,
   setPartyCell,
+  stripSignupIdsFromPlannerGroups,
   syncPartySlotsForGroup,
 } from '@/lib/planner-party-slots';
 import type { ComparisonPlacement } from '@/lib/planner-comparison';
@@ -111,6 +118,37 @@ type RaidHeaderMeta = {
   maxPlayers: number;
 };
 
+type QuickDropTarget = 'decline' | 'pool' | 'reserve';
+
+/** Abstand Button-Mitte → Maus: jeder Quick-Button blendet für sich bis 0 aus. */
+const QUICK_DRAG_FADE_MAX_PX = 120;
+
+const QUICK_DROP_TARGETS: QuickDropTarget[] = ['decline', 'pool', 'reserve'];
+
+function quickDropOpacityFromCenter(
+  center: { x: number; y: number } | null | undefined,
+  clientX: number,
+  clientY: number
+): number {
+  if (!center) return 0;
+  const dist = Math.hypot(clientX - center.x, clientY - center.y);
+  if (dist >= QUICK_DRAG_FADE_MAX_PX) return 0;
+  return Math.min(1, Math.max(0, 1 - dist / QUICK_DRAG_FADE_MAX_PX));
+}
+
+function measureQuickDropCenters(
+  refs: Record<QuickDropTarget, HTMLButtonElement | null>
+): Record<QuickDropTarget, { x: number; y: number }> | null {
+  const centers = {} as Record<QuickDropTarget, { x: number; y: number }>;
+  for (const target of QUICK_DROP_TARGETS) {
+    const el = refs[target];
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    centers[target] = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+  return centers;
+}
+
 type DragSession = {
   signupId: string;
   source: 'roster' | 'reserve' | 'pool' | 'party';
@@ -118,6 +156,8 @@ type DragSession = {
   offsetY: number;
   originRect: DOMRect;
   pointerId: number;
+  startClientX: number;
+  startClientY: number;
 };
 
 type FlyBackState = {
@@ -140,8 +180,19 @@ type PlannerGroup = {
 type DropTarget =
   | { kind: 'roster'; groupIndex: number }
   | { kind: 'party'; groupIndex: number; partyIndex: number; cellIndex?: number }
+  | { kind: 'decline' }
   | { kind: 'reserve' }
   | { kind: 'pool' };
+
+function findQuickDropTarget(x: number, y: number): QuickDropTarget | null {
+  const stack = document.elementsFromPoint(x, y);
+  for (const el of stack) {
+    if (!(el instanceof HTMLElement)) continue;
+    const q = el.dataset.quickDrop;
+    if (q === 'decline' || q === 'pool' || q === 'reserve') return q;
+  }
+  return null;
+}
 
 function findDropTarget(x: number, y: number): DropTarget | null {
   const stack = document.elementsFromPoint(x, y);
@@ -149,6 +200,7 @@ function findDropTarget(x: number, y: number): DropTarget | null {
     if (!(el instanceof HTMLElement)) continue;
     const z = el.dataset.dropZone;
     if (z === 'pool') return { kind: 'pool' };
+    if (z === 'decline') return { kind: 'decline' };
     if (z === 'reserve') return { kind: 'reserve' };
     if (z === 'roster') {
       const raw = el.dataset.rosterGroup ?? '0';
@@ -391,18 +443,13 @@ export function RaidRosterPlanner({
     signups: RosterPlannerSignup[];
     plannerGroups: PlannerGroup[];
     reserveOrder: string[];
+    declineOrder: string[];
     leaderNotesHtml: string;
   } | null>(null);
 
   const orderStorageKey = useMemo(() => `rf:raidPlannerOrder:${raidId}`, [raidId]);
   useEffect(() => {
     setSignups(initialSignups);
-    setReserveOrder((prev) =>
-      orderedReserveSignupIdsForDisplay(
-        prev,
-        initialSignups.map((s) => ({ id: s.id, type: s.signupType }))
-      )
-    );
   }, [initialSignups]);
 
   const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
@@ -424,6 +471,8 @@ export function RaidRosterPlanner({
       initialSignups.map((s) => ({ id: s.id, type: s.signupType }))
     )
   );
+  const [declineOrder, setDeclineOrder] = useState<string[]>([]);
+  const [declineBlockOpen, setDeclineBlockOpen] = useState(false);
 
   function safeJsonParse<T>(raw: string | null): T | null {
     if (!raw) return null;
@@ -447,6 +496,7 @@ export function RaidRosterPlanner({
       type StoredPlanner = {
         rosterOrder?: unknown;
         reserveOrder?: unknown;
+        declineOrder?: unknown;
         groups?: unknown;
       };
 
@@ -455,6 +505,7 @@ export function RaidRosterPlanner({
           ? {
               groups: persistedServerPlannerOrder.groups as unknown,
               reserveOrder: persistedServerPlannerOrder.reserveOrder as unknown,
+              declineOrder: persistedServerPlannerOrder.declineOrder as unknown,
             }
           : null;
       const stored: StoredPlanner | null =
@@ -470,6 +521,10 @@ export function RaidRosterPlanner({
         stored && Array.isArray(stored.reserveOrder)
           ? (stored.reserveOrder.filter((x) => typeof x === 'string') as string[])
           : null;
+      const storedDecline =
+        stored && Array.isArray(stored.declineOrder)
+          ? (stored.declineOrder.filter((x) => typeof x === 'string') as string[])
+          : null;
 
       const normalize = (arr: string[] | null) => {
         if (!arr) return [];
@@ -482,6 +537,7 @@ export function RaidRosterPlanner({
       };
 
       let nextReserve = normalize(storedReserve);
+      let nextDecline = normalize(storedDecline);
 
       const defaultGroup = (): PlannerGroup => ({
         rosterOrder: [],
@@ -561,9 +617,20 @@ export function RaidRosterPlanner({
         nextGroups = [defaultGroup()];
       }
 
+      if (nextDecline.length > 0) {
+        const declineSet = new Set(nextDecline);
+        nextGroups = stripSignupIdsFromPlannerGroups(nextGroups, declineSet, maxPlayers);
+        nextReserve = nextReserve.filter((id) => !declineSet.has(id));
+      }
+
       const rosterSet = new Set(allRosterIds(nextGroups));
+      const declineSetMissing = new Set(nextDecline);
       const missingConfirmed = ids.filter(
-        (id) => placementOf(id) === 'confirmed' && !rosterSet.has(id) && !nextReserve.includes(id)
+        (id) =>
+          placementOf(id) === 'confirmed' &&
+          !rosterSet.has(id) &&
+          !nextReserve.includes(id) &&
+          !declineSetMissing.has(id)
       );
       if (missingConfirmed.length > 0 && nextGroups[0]) {
         let slots = nextGroups[0].partySlots;
@@ -586,13 +653,26 @@ export function RaidRosterPlanner({
         rows.map((r) => ({ id: r.id, type: r.signupType }))
       ).filter((id) => !rosterSetFinal.has(id));
 
+      if (nextDecline.length === 0) {
+        for (const id of ids) {
+          if (rosterSetFinal.has(id) || nextReserve.includes(id)) continue;
+          const row = rows.find((x) => x.id === id);
+          if (row && typeNorm(row.signupType) === 'declined') nextDecline.push(id);
+        }
+      }
+      nextDecline = nextDecline.filter(
+        (id) => !rosterSetFinal.has(id) && !nextReserve.includes(id)
+      );
+
       setPlannerGroups(nextGroups);
       setReserveOrder(nextReserve);
+      setDeclineOrder(nextDecline);
 
       setSavedSnapshot({
         signups: rows,
         plannerGroups: nextGroups,
         reserveOrder: nextReserve,
+        declineOrder: nextDecline,
         leaderNotesHtml: initialPlannerLeaderNotesHtml ?? '',
       });
     },
@@ -760,8 +840,7 @@ export function RaidRosterPlanner({
     };
   }, [comparisonEnabled, comparisonRaidId, guildId]);
 
-  /** Dummy UI state (no backend yet) */
-  const [unsetPlayersMode, setUnsetPlayersMode] = useState<'reserve' | 'decline'>('reserve');
+  const [unsetPlayersMode, setUnsetPlayersMode] = useState<UnsetPlayersMode>('reserve');
   const [botNotifyTargets, setBotNotifyTargets] = useState({
     roster: true,
     reserve: false,
@@ -778,6 +857,22 @@ export function RaidRosterPlanner({
 
   const [dragSession, setDragSession] = useState<DragSession | null>(null);
   const [dragPoint, setDragPoint] = useState<{ clientX: number; clientY: number } | null>(null);
+  /** Feste Position beim Kurz-Ziehen, damit Quick-Menü und Bubble nicht mitwandern. */
+  const [quickMenuAnchor, setQuickMenuAnchor] = useState<{
+    clientX: number;
+    clientY: number;
+  } | null>(null);
+  const [quickDropHover, setQuickDropHover] = useState<QuickDropTarget | null>(null);
+  const quickDropBtnRefs = useRef<Record<QuickDropTarget, HTMLButtonElement | null>>({
+    decline: null,
+    pool: null,
+    reserve: null,
+  });
+  /** Feste Viewport-Mitten nach Mount; kein getBoundingClientRect pro Frame. */
+  const [quickDropCenters, setQuickDropCenters] = useState<Record<
+    QuickDropTarget,
+    { x: number; y: number }
+  > | null>(null);
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
 
 
@@ -984,13 +1079,24 @@ export function RaidRosterPlanner({
   const reserveBenchOrderedIds = useMemo(() => {
     const ord = orderedReserveSignupIdsForDisplay(reserveOrder, signupRowsForReserveOrder);
     const roster = new Set(allRosterIds(plannerGroups));
-    return ord.filter((id) => !roster.has(id));
-  }, [reserveOrder, signupRowsForReserveOrder, plannerGroups]);
+    const decline = new Set(declineOrder);
+    return ord.filter((id) => !roster.has(id) && !decline.has(id));
+  }, [reserveOrder, signupRowsForReserveOrder, plannerGroups, declineOrder]);
+
+  const declineBenchOrderedIds = useMemo(() => {
+    const roster = new Set(allRosterIds(plannerGroups));
+    const reserve = new Set(reserveBenchOrderedIds);
+    return declineOrder.filter((id) => byId.has(id) && !roster.has(id) && !reserve.has(id));
+  }, [declineOrder, plannerGroups, reserveBenchOrderedIds, byId]);
 
   const poolIds = useMemo(() => {
-    const placed = new Set([...allRosterIds(plannerGroups), ...reserveBenchOrderedIds]);
+    const placed = new Set([
+      ...allRosterIds(plannerGroups),
+      ...reserveBenchOrderedIds,
+      ...declineBenchOrderedIds,
+    ]);
     return signups.map((s) => s.id).filter((id) => !placed.has(id));
-  }, [signups, plannerGroups, reserveBenchOrderedIds]);
+  }, [signups, plannerGroups, reserveBenchOrderedIds, declineBenchOrderedIds]);
 
   const signupsWithNotesList = useMemo(() => {
     return signups
@@ -1093,10 +1199,11 @@ export function RaidRosterPlanner({
   const declinedPoolIds = useMemo(
     () =>
       filteredPoolIds.filter((id) => {
+        if (declineBenchOrderedIds.includes(id)) return false;
         const s = byId.get(id);
         return !!s && typeNorm(s.signupType) === 'declined';
       }),
-    [filteredPoolIds, byId]
+    [filteredPoolIds, byId, declineBenchOrderedIds]
   );
 
   const filteredReserveIds = useMemo(() => {
@@ -1145,6 +1252,27 @@ export function RaidRosterPlanner({
     }
     return m;
   }, [filteredReserveIds, byId]);
+
+  const declineBlockFilteredIds = useMemo(() => {
+    return declineBenchOrderedIds.filter((id) => {
+      const s = byId.get(id);
+      if (!s) return false;
+      return (
+        passesCharFilters(s) && passesPunctuality(s) && passesAttendanceFilter(s)
+      );
+    });
+  }, [
+    declineBenchOrderedIds,
+    byId,
+    passesCharFilters,
+    passesPunctuality,
+    passesAttendanceFilter,
+  ]);
+
+  const declineBlockByRole = useMemo(
+    () => poolIdsToRoleMap(declineBlockFilteredIds),
+    [declineBlockFilteredIds, poolIdsToRoleMap]
+  );
 
   const poolRoleCounts = useMemo(() => {
     const out: Record<TbcRole, number> = { Tank: 0, Healer: 0, Melee: 0, Range: 0 };
@@ -1235,7 +1363,38 @@ export function RaidRosterPlanner({
   const endDrag = useCallback(() => {
     setDragSession(null);
     setDragPoint(null);
+    setQuickMenuAnchor(null);
+    setQuickDropHover(null);
+    setQuickDropCenters(null);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!dragSession || !quickMenuAnchor) {
+      setQuickDropCenters(null);
+      return;
+    }
+    let cancelled = false;
+    let attempts = 0;
+    const tryMeasure = () => {
+      if (cancelled || attempts > 10) return;
+      attempts += 1;
+      const centers = measureQuickDropCenters(quickDropBtnRefs.current);
+      if (centers) {
+        setQuickDropCenters(centers);
+        return;
+      }
+      requestAnimationFrame(tryMeasure);
+    };
+    tryMeasure();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    dragSession?.signupId,
+    dragSession?.offsetY,
+    quickMenuAnchor?.clientX,
+    quickMenuAnchor?.clientY,
+  ]);
 
   useEffect(() => {
     if (!dragSession) return;
@@ -1243,14 +1402,34 @@ export function RaidRosterPlanner({
     const sess = dragSession;
     const onMove = (e: PointerEvent) => {
       if (e.pointerId !== sess.pointerId) return;
-      setDragPoint({ clientX: e.clientX, clientY: e.clientY });
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      setDragPoint({ clientX, clientY });
+      if (quickMenuAnchor) {
+        const hover = findQuickDropTarget(clientX, clientY);
+        if (hover) {
+          const opacity = quickDropOpacityFromCenter(
+            quickDropCenters?.[hover],
+            clientX,
+            clientY
+          );
+          setQuickDropHover(opacity > 0.08 ? hover : null);
+        } else {
+          setQuickDropHover(null);
+        }
+      }
     };
 
     const onUp = (e: PointerEvent) => {
       if (e.pointerId !== sess.pointerId) return;
-      const target = findDropTarget(e.clientX, e.clientY);
       const id = sess.signupId;
       const origin = sess.originRect;
+
+      const patchSignupRow = (patch: Partial<Pick<RosterPlannerSignup, 'leaderPlacement' | 'signupType'>>) => {
+        setSignups((prev) =>
+          prev.map((s) => (s.id === id ? { ...s, ...patch } : s))
+        );
+      };
 
       const applyPool = () => {
         setPlannerGroups((groups) =>
@@ -1263,10 +1442,102 @@ export function RaidRosterPlanner({
           )
         );
         setReserveOrder((o) => o.filter((x) => x !== id));
+        setDeclineOrder((o) => o.filter((x) => x !== id));
+        const row = byId.get(id);
+        const tn = row ? typeNorm(row.signupType) : 'normal';
+        patchSignupRow({
+          leaderPlacement: 'signup',
+          ...(tn === 'declined' ? { signupType: 'normal' as const } : {}),
+        });
       };
+
+      const applyDecline = () => {
+        setPlannerGroups((groups) =>
+          syncPlannerGroupsParties(
+            groups.map((g) => ({
+              ...g,
+              rosterOrder: g.rosterOrder.filter((x) => x !== id),
+              partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
+            }))
+          )
+        );
+        setReserveOrder((o) => o.filter((x) => x !== id));
+        setDeclineOrder((o) => (o.includes(id) ? o : [...o, id]));
+        patchSignupRow({ leaderPlacement: 'signup', signupType: 'declined' });
+      };
+
+      const applyReserve = (): boolean => {
+        const dragged = byId.get(id);
+        if (dragged?.forbidReserve) {
+          setPulseForbidReserveId(id);
+          window.setTimeout(() => {
+            setPulseForbidReserveId((cur) => (cur === id ? null : cur));
+          }, 900);
+          return false;
+        }
+        setPlannerGroups((groups) =>
+          syncPlannerGroupsParties(
+            groups.map((g) => ({
+              ...g,
+              rosterOrder: g.rosterOrder.filter((x) => x !== id),
+              partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
+            }))
+          )
+        );
+        setDeclineOrder((o) => o.filter((x) => x !== id));
+        setReserveOrder((o) => (o.includes(id) ? o : [...o, id]));
+        const tn = dragged ? typeNorm(dragged.signupType) : 'normal';
+        patchSignupRow({
+          leaderPlacement: 'substitute',
+          ...(tn === 'declined' ? { signupType: 'reserve' as const } : {}),
+        });
+        return true;
+      };
+
+      const quickHover = quickMenuAnchor
+        ? findQuickDropTarget(e.clientX, e.clientY)
+        : null;
+      const quick =
+        quickHover &&
+        quickDropOpacityFromCenter(quickDropCenters?.[quickHover], e.clientX, e.clientY) > 0
+          ? quickHover
+          : null;
+      if (quick === 'pool') {
+        applyPool();
+        endDrag();
+        return;
+      }
+      if (quick === 'decline') {
+        applyDecline();
+        endDrag();
+        return;
+      }
+      if (quick === 'reserve') {
+        if (!applyReserve()) {
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
+          });
+        }
+        endDrag();
+        return;
+      }
+
+      const target = findDropTarget(e.clientX, e.clientY);
 
       if (target?.kind === 'pool') {
         applyPool();
+        endDrag();
+        return;
+      }
+
+      if (target?.kind === 'decline') {
+        applyDecline();
         endDrag();
         return;
       }
@@ -1290,17 +1561,9 @@ export function RaidRosterPlanner({
           endDrag();
           return;
         }
-        setPlannerGroups((groups) =>
-          syncPlannerGroupsParties(
-            groups.map((g) => ({
-              ...g,
-              rosterOrder: g.rosterOrder.filter((x) => x !== id),
-              partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
-            }))
-          )
-        );
-        setReserveOrder((o) => (o.includes(id) ? o : [...o, id]));
-        endDrag();
+        if (applyReserve()) {
+          endDrag();
+        }
         return;
       }
 
@@ -1335,6 +1598,7 @@ export function RaidRosterPlanner({
           }
         }
         setReserveOrder((o) => o.filter((x) => x !== id));
+        setDeclineOrder((o) => o.filter((x) => x !== id));
         setPlannerGroups((groups) =>
           syncPlannerGroupsParties(
             groups.map((g, gi) => {
@@ -1345,6 +1609,12 @@ export function RaidRosterPlanner({
             })
           )
         );
+        const row = byId.get(id);
+        const tn = row ? typeNorm(row.signupType) : 'normal';
+        patchSignupRow({
+          leaderPlacement: 'confirmed',
+          ...(tn === 'declined' ? { signupType: 'normal' as const } : {}),
+        });
         endDrag();
       };
 
@@ -1424,7 +1694,7 @@ export function RaidRosterPlanner({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragSession, endDrag, byId, plannerGroups]);
+  }, [dragSession, endDrag, byId, plannerGroups, quickMenuAnchor, quickDropCenters]);
 
   const onRowPointerDown = (
     e: React.PointerEvent,
@@ -1443,8 +1713,11 @@ export function RaidRosterPlanner({
       offsetY: e.clientY - rect.top,
       originRect: rect,
       pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
     });
     setDragPoint({ clientX: e.clientX, clientY: e.clientY });
+    setQuickMenuAnchor({ clientX: e.clientX, clientY: e.clientY });
   };
 
   const draggingId = dragSession?.signupId ?? null;
@@ -1629,6 +1902,34 @@ export function RaidRosterPlanner({
   }
 
   const draggedSignup = dragSession ? byId.get(dragSession.signupId) : null;
+  const dragQuickMenuActive = !!dragSession && !!quickMenuAnchor;
+  const quickMenuLayout =
+    dragSession && quickMenuAnchor
+      ? {
+          menuLeft: quickMenuAnchor.clientX,
+          menuTop: quickMenuAnchor.clientY - dragSession.offsetY,
+        }
+      : null;
+  const quickDropPointer = dragPoint ?? quickMenuAnchor;
+  const quickDropOpacities: Record<QuickDropTarget, number> = quickDropPointer
+    ? {
+        decline: quickDropOpacityFromCenter(
+          quickDropCenters?.decline,
+          quickDropPointer.clientX,
+          quickDropPointer.clientY
+        ),
+        pool: quickDropOpacityFromCenter(
+          quickDropCenters?.pool,
+          quickDropPointer.clientX,
+          quickDropPointer.clientY
+        ),
+        reserve: quickDropOpacityFromCenter(
+          quickDropCenters?.reserve,
+          quickDropPointer.clientX,
+          quickDropPointer.clientY
+        ),
+      }
+    : { decline: 0, pool: 0, reserve: 0 };
 
   function addManualSignup() {
     if (!addSelected) return;
@@ -1693,19 +1994,37 @@ export function RaidRosterPlanner({
     setSaving(true);
     setSaveError(null);
     try {
-      const rosterFlat = allRosterIds(plannerGroups);
+      const declinePlacementSetPre = new Set(declineOrder);
+      const plannerGroupsForSave = stripSignupIdsFromPlannerGroups(
+        plannerGroups,
+        declinePlacementSetPre,
+        raid.maxPlayers
+      );
+      const rosterFlat = allRosterIds(plannerGroupsForSave);
       const rosterSetForPlacement = new Set(rosterFlat);
-      const reserveBenchForPlacement = orderedReserveSignupIdsForDisplay(
+      const forbidReserveById = new Map(signups.map((s) => [s.id, !!s.forbidReserve]));
+      const baseReserve = orderedReserveSignupIdsForDisplay(
         reserveOrder,
         signups.map((s) => ({ id: s.id, type: s.signupType }))
       ).filter((id) => !rosterSetForPlacement.has(id));
-      const reservePlacementSet = new Set(reserveBenchForPlacement);
+      const policyApplied = applyPlannerUnsetPolicy({
+        allSignupIds: signups.map((s) => s.id),
+        rosterIdSet: rosterSetForPlacement,
+        reserveOrder: baseReserve,
+        declineOrder,
+        forbidReserveById,
+        unsetPlayersMode,
+      });
+      const effectiveReserveOrder = policyApplied.reserveOrder;
+      const effectiveDeclineOrder = policyApplied.declineOrder;
+      const reservePlacementSet = new Set(effectiveReserveOrder);
+      const declinePlacementSet = new Set(effectiveDeclineOrder);
 
       for (const rid of rosterFlat) {
         const row = byId.get(rid);
         const uid = (row?.userId ?? '').trim();
         if (!uid) continue;
-        if (findUserRosterConflict(plannerGroups, byId, rid, uid)) {
+        if (findUserRosterConflict(plannerGroupsForSave, byId, rid, uid)) {
           setSaveError(tRoster('saveErrorDiscordMultiGroup'));
           setSaving(false);
           return;
@@ -1713,9 +2032,14 @@ export function RaidRosterPlanner({
       }
 
       const placementForId = (id: string): 'signup' | 'substitute' | 'confirmed' => {
-        if (rosterFlat.includes(id)) return 'confirmed';
-        if (reservePlacementSet.has(id)) return 'substitute';
-        return 'signup';
+        const row = byId.get(id);
+        return leaderPlacementForPlannerSlot({
+          onRoster: rosterFlat.includes(id),
+          onReserveBench: reservePlacementSet.has(id),
+          onDeclineBlock: declinePlacementSet.has(id),
+          forbidReserve: !!row?.forbidReserve,
+          unsetPlayersMode,
+        });
       };
 
       const idToRow = new Map(signups.map((s) => [s.id, s]));
@@ -1726,6 +2050,7 @@ export function RaidRosterPlanner({
         const row = idToRow.get(id);
         if (!row) return null;
         const leaderPlacement = placementForId(id);
+        const plannerDeclined = declinePlacementSet.has(id);
         const signedSpec = (row.signedSpec?.trim() || row.originalSignedSpec?.trim() || row.mainSpec.trim()).trim();
         const note = row.note ?? null;
 
@@ -1745,12 +2070,14 @@ export function RaidRosterPlanner({
                 signedSpec,
                 leaderPlacement,
                 note,
+                unsetPlayersMode,
+                plannerDeclined,
               }),
             }
           );
           if (!res.ok) {
             const txt = await res.text().catch(() => '');
-            throw new Error(txt || 'Failed to create signup');
+            throw new Error(formatSignupApiErrorPayload(txt) || 'Failed to create signup');
           }
           const json = (await res.json()) as { signup?: { id?: string } };
           const newId = (json.signup?.id ?? '').trim();
@@ -1763,12 +2090,17 @@ export function RaidRosterPlanner({
           {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ leaderPlacement, signedSpec }),
+            body: JSON.stringify({
+              leaderPlacement,
+              signedSpec,
+              unsetPlayersMode,
+              plannerDeclined,
+            }),
           }
         );
         if (!res.ok) {
           const txt = await res.text().catch(() => '');
-          throw new Error(txt || 'Failed to save');
+          throw new Error(formatSignupApiErrorPayload(txt) || 'Failed to save');
         }
         return null;
       };
@@ -1780,33 +2112,58 @@ export function RaidRosterPlanner({
       }
 
       let snapshotSignups = signups;
-      let snapshotGroups = plannerGroups;
-      let snapshotReserve = reserveOrder;
+      let snapshotGroups = plannerGroupsForSave;
+      let snapshotReserve = effectiveReserveOrder;
+      let snapshotDecline = effectiveDeclineOrder;
 
       if (mappings.length > 0) {
         const map = new Map(mappings.map((m) => [m.oldId, m.newId]));
         snapshotSignups = signups.map((row) => {
           const nid = map.get(row.id);
           if (!nid) return row;
-          return { ...row, id: nid, leaderPlacement: placementForId(row.id) };
+          const declined = effectiveDeclineOrder.includes(row.id);
+          return {
+            ...row,
+            id: nid,
+            leaderPlacement: placementForId(row.id),
+            signupType: declined ? 'declined' : row.signupType,
+          };
         });
-        snapshotGroups = plannerGroups.map((g) => ({
+        snapshotGroups = plannerGroupsForSave.map((g) => ({
           ...g,
           rosterOrder: g.rosterOrder.map((id) => map.get(id) ?? id),
           partySlots: g.partySlots.map((row) => row.map((id) => map.get(id) ?? id)),
         }));
-        snapshotReserve = reserveOrder.map((id) => map.get(id) ?? id);
+        snapshotReserve = effectiveReserveOrder.map((id) => map.get(id) ?? id);
+        snapshotDecline = effectiveDeclineOrder.map((id) => map.get(id) ?? id);
         setSignups(snapshotSignups);
         setPlannerGroups(snapshotGroups);
       }
 
       const snapRosterFlat = allRosterIds(snapshotGroups);
       const snapRosterSet = new Set(snapRosterFlat);
-      snapshotReserve = orderedReserveSignupIdsForDisplay(
-        snapshotReserve,
-        snapshotSignups.map((s) => ({ id: s.id, type: s.signupType }))
-      ).filter((id) => !snapRosterSet.has(id));
+      const snapForbid = new Map(snapshotSignups.map((s) => [s.id, !!s.forbidReserve]));
+      const snapPolicy = applyPlannerUnsetPolicy({
+        allSignupIds: snapshotSignups.map((s) => s.id),
+        rosterIdSet: snapRosterSet,
+        reserveOrder: orderedReserveSignupIdsForDisplay(
+          snapshotReserve,
+          snapshotSignups.map((s) => ({ id: s.id, type: s.signupType }))
+        ).filter((id) => !snapRosterSet.has(id)),
+        declineOrder: snapshotDecline,
+        forbidReserveById: snapForbid,
+        unsetPlayersMode,
+      });
+      snapshotReserve = snapPolicy.reserveOrder;
+      snapshotDecline = snapPolicy.declineOrder;
+      snapshotGroups = stripSignupIdsFromPlannerGroups(
+        snapshotGroups,
+        new Set(snapshotDecline),
+        raid.maxPlayers
+      );
+      setPlannerGroups(snapshotGroups);
       setReserveOrder(snapshotReserve);
+      setDeclineOrder(snapshotDecline);
 
       const notesToSave = sanitizePlannerLeaderHtml(leaderNotesHtml);
       if (canEditRaid) {
@@ -1818,6 +2175,7 @@ export function RaidRosterPlanner({
             partySlots: g.partySlots,
           })),
           reserveOrder: snapshotReserve,
+          declineOrder: snapshotDecline,
         };
         const resRaid = await fetch(
           `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
@@ -1833,7 +2191,7 @@ export function RaidRosterPlanner({
         );
         if (!resRaid.ok) {
           const txt = await resRaid.text().catch(() => '');
-          throw new Error(txt || 'Failed to save raid planner notes');
+          throw new Error(formatSignupApiErrorPayload(txt) || 'Failed to save raid planner notes');
         }
       }
 
@@ -1841,17 +2199,39 @@ export function RaidRosterPlanner({
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(
           orderStorageKey,
-          JSON.stringify({ groups: snapshotGroups, reserveOrder: snapshotReserve })
+          JSON.stringify({
+            groups: snapshotGroups,
+            reserveOrder: snapshotReserve,
+            declineOrder: snapshotDecline,
+          })
         );
       }
+
+      const declineSnapSet = new Set(snapshotDecline);
+      const rosterSnapSet = new Set(allRosterIds(snapshotGroups));
+      const reserveSnapSet = new Set(snapshotReserve);
+      snapshotSignups = snapshotSignups.map((s) => {
+        if (declineSnapSet.has(s.id)) {
+          return { ...s, leaderPlacement: 'signup' as const, signupType: 'declined' };
+        }
+        if (rosterSnapSet.has(s.id)) {
+          return { ...s, leaderPlacement: 'confirmed' as const };
+        }
+        if (reserveSnapSet.has(s.id)) {
+          return { ...s, leaderPlacement: 'substitute' as const };
+        }
+        return { ...s, leaderPlacement: 'signup' as const };
+      });
 
       setSavedSnapshot({
         signups: snapshotSignups,
         plannerGroups: snapshotGroups,
         reserveOrder: snapshotReserve,
+        declineOrder: snapshotDecline,
         leaderNotesHtml: notesToSave,
       });
       setLastSavedAt(Date.now());
+      setSignups(snapshotSignups);
       router.refresh();
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
@@ -1921,10 +2301,20 @@ export function RaidRosterPlanner({
     setSaveError(null);
     try {
       const rosterSetAnnounce = new Set(rosterFlat);
-      const reserveOrderPayload = orderedReserveSignupIdsForDisplay(
-        reserveOrder,
-        signups.map((s) => ({ id: s.id, type: s.signupType }))
-      ).filter((id) => !rosterSetAnnounce.has(id));
+      const forbidReserveAnnounce = new Map(signups.map((s) => [s.id, !!s.forbidReserve]));
+      const announcePolicy = applyPlannerUnsetPolicy({
+        allSignupIds: signups.map((s) => s.id),
+        rosterIdSet: rosterSetAnnounce,
+        reserveOrder: orderedReserveSignupIdsForDisplay(
+          reserveOrder,
+          signups.map((s) => ({ id: s.id, type: s.signupType }))
+        ).filter((id) => !rosterSetAnnounce.has(id)),
+        declineOrder,
+        forbidReserveById: forbidReserveAnnounce,
+        unsetPlayersMode,
+      });
+      const reserveOrderPayload = announcePolicy.reserveOrder;
+      const declineOrderPayload = announcePolicy.declineOrder;
 
       const res = await fetch(
         `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}`,
@@ -1940,13 +2330,17 @@ export function RaidRosterPlanner({
               partySlots: g.partySlots,
             })),
             reserveOrder: reserveOrderPayload,
+            declineOrder: declineOrderPayload,
+            unsetPlayersMode,
           }),
         }
       );
       if (!res.ok) {
         const txt = await res.text().catch(() => '');
-        throw new Error(txt || tRoster('announceError'));
+        throw new Error(formatSignupApiErrorPayload(txt) || tRoster('announceError'));
       }
+      setReserveOrder(reserveOrderPayload);
+      setDeclineOrder(declineOrderPayload);
       router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
       router.refresh();
     } catch (e) {
@@ -1962,6 +2356,7 @@ export function RaidRosterPlanner({
     setSignups(savedSnapshot.signups);
     setPlannerGroups(savedSnapshot.plannerGroups);
     setReserveOrder(savedSnapshot.reserveOrder);
+    setDeclineOrder(savedSnapshot.declineOrder);
     setLeaderNotesHtml(savedSnapshot.leaderNotesHtml);
     setNotesBootstrapKey((k) => k + 1);
   }
@@ -2195,6 +2590,65 @@ export function RaidRosterPlanner({
       <div className="flex flex-col xl:flex-row gap-4 items-start">
         <div className="flex-1 min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-4 w-full order-2 xl:order-1">
           <div className="space-y-4 min-w-0">
+            <div
+              data-drop-zone="decline"
+              className={cn(
+                'rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden transition-[box-shadow] duration-200',
+                dragActive && 'ring-2 ring-destructive/40 ring-offset-2 ring-offset-background'
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => setDeclineBlockOpen((v) => !v)}
+                className="w-full border-b border-border bg-muted/20 px-4 py-3 flex items-center justify-between gap-2 text-left hover:bg-muted/30 transition-colors"
+                aria-expanded={declineBlockOpen}
+              >
+                <span className="text-sm font-semibold text-foreground">
+                  {tRoster('declineBlockTitle')}
+                </span>
+                <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                  {declineBlockOpen
+                    ? tRoster('declineBlockCollapse')
+                    : tRoster('declineBlockExpand', { count: declineBlockFilteredIds.length })}
+                </span>
+              </button>
+              {declineBlockOpen ? (
+                <div className="p-3 space-y-3 min-h-[72px]">
+                  {declineBlockFilteredIds.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{tRoster('declineBlockEmpty')}</p>
+                  ) : (
+                    ROLE_ORDER.map((role) => {
+                      const ids = declineBlockByRole.get(role) ?? [];
+                      if (ids.length === 0) return null;
+                      return (
+                        <div key={`decline-${role}`}>
+                          <div className="flex items-center gap-2 mb-2 text-xs font-medium text-muted-foreground">
+                            <RoleIcon role={role} size={16} />
+                            <span>{role}</span>
+                          </div>
+                          <div className="space-y-2 pl-1" role="list">
+                            {ids.map((id) => {
+                              const s = byId.get(id);
+                              if (!s) return null;
+                              return renderRow(s, 'pool');
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ) : (
+                <div className="px-4 py-2 text-xs text-muted-foreground min-h-[40px] flex items-center">
+                  {declineBlockFilteredIds.length > 0
+                    ? tRoster('declineBlockCollapsedHint', {
+                        count: declineBlockFilteredIds.length,
+                      })
+                    : tRoster('declineBlockEmpty')}
+                </div>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={() =>
@@ -3252,6 +3706,92 @@ export function RaidRosterPlanner({
               document.body
             );
           })()
+        : null}
+
+      {dragQuickMenuActive && quickMenuLayout
+        ? createPortal(
+            <div
+              className="fixed z-[1300] pointer-events-none"
+              style={{
+                left: quickMenuLayout.menuLeft,
+                top: quickMenuLayout.menuTop,
+                transform: 'translate(-50%, calc(-100% - 10px))',
+              }}
+            >
+              <div className="flex items-center justify-center gap-1.5">
+                <button
+                  ref={(el) => {
+                    quickDropBtnRefs.current.decline = el;
+                  }}
+                  type="button"
+                  data-quick-drop="decline"
+                  className={cn(
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-red-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75',
+                    quickDropHover === 'decline'
+                      ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
+                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
+                    quickDropOpacities.decline > 0.12
+                      ? 'pointer-events-auto'
+                      : 'pointer-events-none'
+                  )}
+                  style={{
+                    opacity: quickDropOpacities.decline,
+                    background:
+                      'linear-gradient(165deg, rgba(127, 29, 29, 0.9) 0%, rgba(69, 10, 10, 0.82) 100%)',
+                  }}
+                >
+                  {tRoster('quickDropDecline')}
+                </button>
+                <button
+                  ref={(el) => {
+                    quickDropBtnRefs.current.pool = el;
+                  }}
+                  type="button"
+                  data-quick-drop="pool"
+                  className={cn(
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-sky-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75',
+                    quickDropHover === 'pool'
+                      ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
+                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
+                    quickDropOpacities.pool > 0.12
+                      ? 'pointer-events-auto'
+                      : 'pointer-events-none'
+                  )}
+                  style={{
+                    opacity: quickDropOpacities.pool,
+                    background:
+                      'linear-gradient(165deg, rgba(12, 74, 110, 0.9) 0%, rgba(8, 47, 73, 0.82) 100%)',
+                  }}
+                >
+                  {tRoster('quickDropSignup')}
+                </button>
+                <button
+                  ref={(el) => {
+                    quickDropBtnRefs.current.reserve = el;
+                  }}
+                  type="button"
+                  data-quick-drop="reserve"
+                  className={cn(
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-amber-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75',
+                    quickDropHover === 'reserve'
+                      ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
+                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
+                    quickDropOpacities.reserve > 0.12
+                      ? 'pointer-events-auto'
+                      : 'pointer-events-none'
+                  )}
+                  style={{
+                    opacity: quickDropOpacities.reserve,
+                    background:
+                      'linear-gradient(165deg, rgba(146, 88, 12, 0.9) 0%, rgba(120, 53, 15, 0.82) 100%)',
+                  }}
+                >
+                  {tRoster('quickDropReserve')}
+                </button>
+              </div>
+            </div>,
+            document.body
+          )
         : null}
 
       {flyBack && byId.get(flyBack.signupId)
