@@ -45,6 +45,7 @@ import {
   isPartyRowFull,
   parsePartySlotsFromStored,
   rosterOrderFromPartySlots,
+  setPartyCell,
   setOrSwapPartyCell,
   stripSignupIdsFromPlannerGroups,
   syncPartySlotsForGroup,
