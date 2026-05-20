@@ -298,10 +298,17 @@ export interface DiscordMessageComponent {
   max_values?: number;
 }
 
+export type DiscordAllowedMentions = {
+  parse?: ('roles' | 'users' | 'everyone')[];
+  roles?: string[];
+  users?: string[];
+};
+
 export interface DiscordMessageOptions {
   content?: string;
   embeds?: DiscordEmbed[];
   components?: DiscordMessageComponent[];
+  allowedMentions?: DiscordAllowedMentions;
 }
 
 /**
@@ -328,6 +335,7 @@ export async function createChannelMessageFull(
   if (options.content) body.content = options.content.slice(0, 2000);
   if (options.embeds?.length) body.embeds = options.embeds;
   if (options.components?.length) body.components = options.components;
+  if (options.allowedMentions) body.allowed_mentions = options.allowedMentions;
 
   const res = await fetch(`${DISCORD_API_BASE}/channels/${channelId}/messages`, {
     method: 'POST',
