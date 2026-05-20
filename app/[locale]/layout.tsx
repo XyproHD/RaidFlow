@@ -7,7 +7,7 @@ import { SessionProvider } from '@/components/session-provider';
 import { Topbar } from '@/components/topbar';
 import { StatusBanner } from '@/components/status-banner';
 import { FeedbackFab } from '@/components/feedback-fab';
-import { BuymeacoffeeFab } from '@/components/buymeacoffee-fab';
+import { KofiFab } from '@/components/kofi-fab';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getAppConfig, OWNER_DISCORD_ID } from '@/lib/app-config';
@@ -93,7 +93,7 @@ export default async function LocaleLayout({
                 />
                 {showStatusBanner && <StatusBanner message={statusMessage} />}
                 <main className="flex-1">{children}</main>
-                <BuymeacoffeeFab />
+                <KofiFab />
                 <FeedbackFab />
               </div>
             </NextIntlClientProvider>

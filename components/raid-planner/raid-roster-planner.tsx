@@ -40,10 +40,13 @@ import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overl
 import { PlannerPartyInline } from '@/components/raid-planner/planner-party-grid';
 import {
   applyPartyLayoutToGroup,
+  findFirstEmptyCellInPartyRow,
   findFirstEmptyPartyCell,
+  isPartyRowFull,
   parsePartySlotsFromStored,
   rosterOrderFromPartySlots,
   setPartyCell,
+  setOrSwapPartyCell,
   stripSignupIdsFromPlannerGroups,
   syncPartySlotsForGroup,
 } from '@/lib/planner-party-slots';
@@ -118,12 +121,24 @@ type RaidHeaderMeta = {
   maxPlayers: number;
 };
 
-type QuickDropTarget = 'decline' | 'pool' | 'reserve';
+type QuickDropActionTarget = 'decline' | 'pool' | 'reserve';
+
+type QuickDropTarget =
+  | { kind: 'action'; action: QuickDropActionTarget }
+  | { kind: 'party'; groupIndex: number; partyIndex: number };
 
 /** Abstand Button-Mitte → Maus: jeder Quick-Button blendet für sich bis 0 aus. */
-const QUICK_DRAG_FADE_MAX_PX = 120;
+const QUICK_DRAG_FADE_MAX_PX = 160;
 
-const QUICK_DROP_TARGETS: QuickDropTarget[] = ['decline', 'pool', 'reserve'];
+function quickDropTargetKey(target: QuickDropTarget): string {
+  if (target.kind === 'action') return target.action;
+  return `party:${target.groupIndex}:${target.partyIndex}`;
+}
+
+function quickDropTargetsEqual(a: QuickDropTarget | null, b: QuickDropTarget | null): boolean {
+  if (!a || !b) return false;
+  return quickDropTargetKey(a) === quickDropTargetKey(b);
+}
 
 function quickDropOpacityFromCenter(
   center: { x: number; y: number } | null | undefined,
@@ -137,14 +152,15 @@ function quickDropOpacityFromCenter(
 }
 
 function measureQuickDropCenters(
-  refs: Record<QuickDropTarget, HTMLButtonElement | null>
-): Record<QuickDropTarget, { x: number; y: number }> | null {
-  const centers = {} as Record<QuickDropTarget, { x: number; y: number }>;
-  for (const target of QUICK_DROP_TARGETS) {
-    const el = refs[target];
+  keys: string[],
+  refs: Record<string, HTMLButtonElement | null>
+): Record<string, { x: number; y: number }> | null {
+  const centers: Record<string, { x: number; y: number }> = {};
+  for (const key of keys) {
+    const el = refs[key];
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    centers[target] = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    centers[key] = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }
   return centers;
 }
@@ -189,9 +205,36 @@ function findQuickDropTarget(x: number, y: number): QuickDropTarget | null {
   for (const el of stack) {
     if (!(el instanceof HTMLElement)) continue;
     const q = el.dataset.quickDrop;
-    if (q === 'decline' || q === 'pool' || q === 'reserve') return q;
+    if (q === 'decline' || q === 'pool' || q === 'reserve') {
+      return { kind: 'action', action: q };
+    }
+    if (q === 'party') {
+      const gi = Number.parseInt(el.dataset.quickGroup ?? '', 10);
+      const pi = Number.parseInt(el.dataset.quickParty ?? '', 10);
+      if (Number.isFinite(gi) && gi >= 0 && Number.isFinite(pi) && pi >= 0) {
+        return { kind: 'party', groupIndex: gi, partyIndex: pi };
+      }
+    }
   }
   return null;
+}
+
+/** Loslassen auf Quick-Button (vor Planer-Zonen darunter). */
+function resolveQuickDropOnRelease(
+  clientX: number,
+  clientY: number,
+  hoverFallback: QuickDropTarget | null,
+  plannerGroups: PlannerGroup[]
+): QuickDropTarget | null {
+  const hit = findQuickDropTarget(clientX, clientY) ?? hoverFallback;
+  if (!hit) return null;
+  if (
+    hit.kind === 'party' &&
+    isPartyRowFull(plannerGroups[hit.groupIndex]?.partySlots[hit.partyIndex] ?? [])
+  ) {
+    return null;
+  }
+  return hit;
 }
 
 function findDropTarget(x: number, y: number): DropTarget | null {
@@ -863,14 +906,11 @@ export function RaidRosterPlanner({
     clientY: number;
   } | null>(null);
   const [quickDropHover, setQuickDropHover] = useState<QuickDropTarget | null>(null);
-  const quickDropBtnRefs = useRef<Record<QuickDropTarget, HTMLButtonElement | null>>({
-    decline: null,
-    pool: null,
-    reserve: null,
-  });
+  const quickDropHoverRef = useRef<QuickDropTarget | null>(null);
+  const quickDropBtnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   /** Feste Viewport-Mitten nach Mount; kein getBoundingClientRect pro Frame. */
   const [quickDropCenters, setQuickDropCenters] = useState<Record<
-    QuickDropTarget,
+    string,
     { x: number; y: number }
   > | null>(null);
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
@@ -1360,11 +1400,23 @@ export function RaidRosterPlanner({
   const toggleAllowWeekday = () => setAllowWeekday((v) => (!v && !allowWeekend ? v : !v));
   const toggleAllowWeekend = () => setAllowWeekend((v) => (!v && !allowWeekday ? v : !v));
 
+  const quickDropTargetKeys = useMemo(() => {
+    const keys: string[] = ['decline', 'pool', 'reserve'];
+    for (let gi = 0; gi < plannerGroups.length; gi++) {
+      const slots = plannerGroups[gi]?.partySlots ?? [];
+      for (let pi = 0; pi < slots.length; pi++) {
+        keys.push(`party:${gi}:${pi}`);
+      }
+    }
+    return keys;
+  }, [plannerGroups]);
+
   const endDrag = useCallback(() => {
     setDragSession(null);
     setDragPoint(null);
     setQuickMenuAnchor(null);
     setQuickDropHover(null);
+    quickDropHoverRef.current = null;
     setQuickDropCenters(null);
   }, []);
 
@@ -1378,7 +1430,7 @@ export function RaidRosterPlanner({
     const tryMeasure = () => {
       if (cancelled || attempts > 10) return;
       attempts += 1;
-      const centers = measureQuickDropCenters(quickDropBtnRefs.current);
+      const centers = measureQuickDropCenters(quickDropTargetKeys, quickDropBtnRefs.current);
       if (centers) {
         setQuickDropCenters(centers);
         return;
@@ -1394,6 +1446,7 @@ export function RaidRosterPlanner({
     dragSession?.offsetY,
     quickMenuAnchor?.clientX,
     quickMenuAnchor?.clientY,
+    quickDropTargetKeys,
   ]);
 
   useEffect(() => {
@@ -1408,14 +1461,26 @@ export function RaidRosterPlanner({
       if (quickMenuAnchor) {
         const hover = findQuickDropTarget(clientX, clientY);
         if (hover) {
+          const key = quickDropTargetKey(hover);
           const opacity = quickDropOpacityFromCenter(
-            quickDropCenters?.[hover],
+            quickDropCenters?.[key],
             clientX,
             clientY
           );
-          setQuickDropHover(opacity > 0.08 ? hover : null);
+          if (hover.kind === 'party') {
+            const row = plannerGroups[hover.groupIndex]?.partySlots[hover.partyIndex];
+            if (row && isPartyRowFull(row)) {
+              setQuickDropHover(null);
+              quickDropHoverRef.current = null;
+              return;
+            }
+          }
+          const nextHover = opacity > 0.08 ? hover : null;
+          setQuickDropHover(nextHover);
+          quickDropHoverRef.current = nextHover;
         } else {
           setQuickDropHover(null);
+          quickDropHoverRef.current = null;
         }
       }
     };
@@ -1443,12 +1508,7 @@ export function RaidRosterPlanner({
         );
         setReserveOrder((o) => o.filter((x) => x !== id));
         setDeclineOrder((o) => o.filter((x) => x !== id));
-        const row = byId.get(id);
-        const tn = row ? typeNorm(row.signupType) : 'normal';
-        patchSignupRow({
-          leaderPlacement: 'signup',
-          ...(tn === 'declined' ? { signupType: 'normal' as const } : {}),
-        });
+        patchSignupRow({ leaderPlacement: 'signup' });
       };
 
       const applyDecline = () => {
@@ -1494,25 +1554,77 @@ export function RaidRosterPlanner({
         return true;
       };
 
-      const quickHover = quickMenuAnchor
-        ? findQuickDropTarget(e.clientX, e.clientY)
+      const placeInGroupParty = (destGi: number, partyIndex: number, cellIndex: number) => {
+        const dragged = byId.get(id);
+        const draggedUserId = (dragged?.userId ?? '').trim() || null;
+        if (draggedUserId) {
+          const groupsSans = plannerGroups.map((g) => ({
+            ...g,
+            partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
+          }));
+          const conflictId = findUserRosterConflict(
+            syncPlannerGroupsParties(groupsSans),
+            byId,
+            id,
+            draggedUserId
+          );
+          if (conflictId) {
+            setBlinkDiscordForIds(setFromArray([id, conflictId]));
+            window.setTimeout(() => setBlinkDiscordForIds(new Set()), 900);
+            setFlyBack({
+              signupId: id,
+              fromLeft: e.clientX - sess.offsetX,
+              fromTop: e.clientY - sess.offsetY,
+              toLeft: origin.left,
+              toTop: origin.top,
+              width: origin.width,
+              height: origin.height,
+            });
+            endDrag();
+            return;
+          }
+        }
+        setReserveOrder((o) => o.filter((x) => x !== id));
+        setDeclineOrder((o) => o.filter((x) => x !== id));
+        setPlannerGroups((groups) =>
+          syncPlannerGroupsParties(
+            groups.map((g, gi) => {
+              const cleared = g.partySlots.map((row) => row.filter((x) => x !== id));
+              if (gi !== destGi) return applyPartyLayoutToGroup({ ...g, partySlots: cleared }, raid.maxPlayers);
+              const nextSlots = setOrSwapPartyCell(
+                cleared,
+                partyIndex,
+                cellIndex,
+                id,
+                raid.maxPlayers
+              );
+              return applyPartyLayoutToGroup({ ...g, partySlots: nextSlots }, raid.maxPlayers);
+            })
+          )
+        );
+        patchSignupRow({ leaderPlacement: 'confirmed' });
+        endDrag();
+      };
+
+      const quick = quickMenuAnchor
+        ? resolveQuickDropOnRelease(
+            e.clientX,
+            e.clientY,
+            quickDropHoverRef.current,
+            plannerGroups
+          )
         : null;
-      const quick =
-        quickHover &&
-        quickDropOpacityFromCenter(quickDropCenters?.[quickHover], e.clientX, e.clientY) > 0
-          ? quickHover
-          : null;
-      if (quick === 'pool') {
+      if (quick?.kind === 'action' && quick.action === 'pool') {
         applyPool();
         endDrag();
         return;
       }
-      if (quick === 'decline') {
+      if (quick?.kind === 'action' && quick.action === 'decline') {
         applyDecline();
         endDrag();
         return;
       }
-      if (quick === 'reserve') {
+      if (quick?.kind === 'action' && quick.action === 'reserve') {
         if (!applyReserve()) {
           setFlyBack({
             signupId: id,
@@ -1525,6 +1637,26 @@ export function RaidRosterPlanner({
           });
         }
         endDrag();
+        return;
+      }
+      if (quick?.kind === 'party') {
+        const { groupIndex: destGi, partyIndex: destPi } = quick;
+        const row = plannerGroups[destGi]?.partySlots[destPi];
+        const emptyCi = row ? findFirstEmptyCellInPartyRow(row) : null;
+        if (destGi < 0 || destGi >= plannerGroups.length || destPi < 0 || emptyCi == null) {
+          setFlyBack({
+            signupId: id,
+            fromLeft: e.clientX - sess.offsetX,
+            fromTop: e.clientY - sess.offsetY,
+            toLeft: origin.left,
+            toTop: origin.top,
+            width: origin.width,
+            height: origin.height,
+          });
+          endDrag();
+          return;
+        }
+        placeInGroupParty(destGi, destPi, emptyCi);
         return;
       }
 
@@ -1566,57 +1698,6 @@ export function RaidRosterPlanner({
         }
         return;
       }
-
-      const placeInGroupParty = (destGi: number, partyIndex: number, cellIndex: number) => {
-        const dragged = byId.get(id);
-        const draggedUserId = (dragged?.userId ?? '').trim() || null;
-        if (draggedUserId) {
-          const groupsSans = plannerGroups.map((g) => ({
-            ...g,
-            partySlots: g.partySlots.map((row) => row.filter((x) => x !== id)),
-          }));
-          const conflictId = findUserRosterConflict(
-            syncPlannerGroupsParties(groupsSans),
-            byId,
-            id,
-            draggedUserId
-          );
-          if (conflictId) {
-            setBlinkDiscordForIds(setFromArray([id, conflictId]));
-            window.setTimeout(() => setBlinkDiscordForIds(new Set()), 900);
-            setFlyBack({
-              signupId: id,
-              fromLeft: e.clientX - sess.offsetX,
-              fromTop: e.clientY - sess.offsetY,
-              toLeft: origin.left,
-              toTop: origin.top,
-              width: origin.width,
-              height: origin.height,
-            });
-            endDrag();
-            return;
-          }
-        }
-        setReserveOrder((o) => o.filter((x) => x !== id));
-        setDeclineOrder((o) => o.filter((x) => x !== id));
-        setPlannerGroups((groups) =>
-          syncPlannerGroupsParties(
-            groups.map((g, gi) => {
-              const cleared = g.partySlots.map((row) => row.filter((x) => x !== id));
-              if (gi !== destGi) return applyPartyLayoutToGroup({ ...g, partySlots: cleared }, raid.maxPlayers);
-              const nextSlots = setPartyCell(cleared, partyIndex, cellIndex, id, raid.maxPlayers);
-              return applyPartyLayoutToGroup({ ...g, partySlots: nextSlots }, raid.maxPlayers);
-            })
-          )
-        );
-        const row = byId.get(id);
-        const tn = row ? typeNorm(row.signupType) : 'normal';
-        patchSignupRow({
-          leaderPlacement: 'confirmed',
-          ...(tn === 'declined' ? { signupType: 'normal' as const } : {}),
-        });
-        endDrag();
-      };
 
       if (target?.kind === 'party') {
         const destGi = target.groupIndex;
@@ -1694,7 +1775,15 @@ export function RaidRosterPlanner({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragSession, endDrag, byId, plannerGroups, quickMenuAnchor, quickDropCenters]);
+  }, [
+    dragSession,
+    endDrag,
+    byId,
+    plannerGroups,
+    quickMenuAnchor,
+    quickDropCenters,
+    raid.maxPlayers,
+  ]);
 
   const onRowPointerDown = (
     e: React.PointerEvent,
@@ -1911,25 +2000,24 @@ export function RaidRosterPlanner({
         }
       : null;
   const quickDropPointer = dragPoint ?? quickMenuAnchor;
-  const quickDropOpacities: Record<QuickDropTarget, number> = quickDropPointer
-    ? {
-        decline: quickDropOpacityFromCenter(
-          quickDropCenters?.decline,
-          quickDropPointer.clientX,
-          quickDropPointer.clientY
-        ),
-        pool: quickDropOpacityFromCenter(
-          quickDropCenters?.pool,
-          quickDropPointer.clientX,
-          quickDropPointer.clientY
-        ),
-        reserve: quickDropOpacityFromCenter(
-          quickDropCenters?.reserve,
-          quickDropPointer.clientX,
-          quickDropPointer.clientY
-        ),
-      }
-    : { decline: 0, pool: 0, reserve: 0 };
+  const quickDropOpacities = useMemo(() => {
+    if (!quickDropPointer) return {} as Record<string, number>;
+    const out: Record<string, number> = {};
+    for (const key of quickDropTargetKeys) {
+      out[key] = quickDropOpacityFromCenter(
+        quickDropCenters?.[key],
+        quickDropPointer.clientX,
+        quickDropPointer.clientY
+      );
+    }
+    return out;
+  }, [quickDropPointer, quickDropCenters, quickDropTargetKeys]);
+
+  /** Fest unter Start-Bubble (Anker), nicht unter der mitwanderneden Drag-Bubble. */
+  const quickPartyMenuTop =
+    dragSession && quickMenuAnchor
+      ? quickMenuAnchor.clientY - dragSession.offsetY + dragSession.originRect.height + 8
+      : null;
 
   function addManualSignup() {
     if (!addSelected) return;
@@ -3719,75 +3807,99 @@ export function RaidRosterPlanner({
               }}
             >
               <div className="flex items-center justify-center gap-1.5">
-                <button
-                  ref={(el) => {
-                    quickDropBtnRefs.current.decline = el;
-                  }}
-                  type="button"
-                  data-quick-drop="decline"
-                  className={cn(
-                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-red-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75',
-                    quickDropHover === 'decline'
-                      ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
-                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
-                    quickDropOpacities.decline > 0.12
-                      ? 'pointer-events-auto'
-                      : 'pointer-events-none'
-                  )}
-                  style={{
-                    opacity: quickDropOpacities.decline,
-                    background:
-                      'linear-gradient(165deg, rgba(127, 29, 29, 0.9) 0%, rgba(69, 10, 10, 0.82) 100%)',
-                  }}
-                >
-                  {tRoster('quickDropDecline')}
-                </button>
-                <button
-                  ref={(el) => {
-                    quickDropBtnRefs.current.pool = el;
-                  }}
-                  type="button"
-                  data-quick-drop="pool"
-                  className={cn(
-                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-sky-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75',
-                    quickDropHover === 'pool'
-                      ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
-                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
-                    quickDropOpacities.pool > 0.12
-                      ? 'pointer-events-auto'
-                      : 'pointer-events-none'
-                  )}
-                  style={{
-                    opacity: quickDropOpacities.pool,
-                    background:
-                      'linear-gradient(165deg, rgba(12, 74, 110, 0.9) 0%, rgba(8, 47, 73, 0.82) 100%)',
-                  }}
-                >
-                  {tRoster('quickDropSignup')}
-                </button>
-                <button
-                  ref={(el) => {
-                    quickDropBtnRefs.current.reserve = el;
-                  }}
-                  type="button"
-                  data-quick-drop="reserve"
-                  className={cn(
-                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-amber-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75',
-                    quickDropHover === 'reserve'
-                      ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
-                      : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
-                    quickDropOpacities.reserve > 0.12
-                      ? 'pointer-events-auto'
-                      : 'pointer-events-none'
-                  )}
-                  style={{
-                    opacity: quickDropOpacities.reserve,
-                    background:
-                      'linear-gradient(165deg, rgba(146, 88, 12, 0.9) 0%, rgba(120, 53, 15, 0.82) 100%)',
-                  }}
-                >
-                  {tRoster('quickDropReserve')}
-                </button>
+                {(
+                  [
+                    ['decline', tRoster('quickDropDecline'), 'text-red-50', 'linear-gradient(165deg, rgba(127, 29, 29, 0.9) 0%, rgba(69, 10, 10, 0.82) 100%)'] as const,
+                    ['pool', tRoster('quickDropSignup'), 'text-sky-50', 'linear-gradient(165deg, rgba(12, 74, 110, 0.9) 0%, rgba(8, 47, 73, 0.82) 100%)'] as const,
+                    ['reserve', tRoster('quickDropReserve'), 'text-amber-50', 'linear-gradient(165deg, rgba(146, 88, 12, 0.9) 0%, rgba(120, 53, 15, 0.82) 100%)'] as const,
+                  ] as const
+                ).map(([action, label, textClass, bg]) => {
+                  const target: QuickDropTarget = { kind: 'action', action };
+                  const key = quickDropTargetKey(target);
+                  const opacity = quickDropOpacities[key] ?? 0;
+                  return (
+                    <button
+                      key={key}
+                      ref={(el) => {
+                        quickDropBtnRefs.current[key] = el;
+                      }}
+                      type="button"
+                      data-quick-drop={action}
+                      className={cn(
+                        'rounded-full px-2.5 py-1.5 text-[11px] font-semibold shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75',
+                        textClass,
+                        quickDropTargetsEqual(quickDropHover, target)
+                          ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
+                          : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
+                        opacity > 0.12 ? 'pointer-events-auto' : 'pointer-events-none'
+                      )}
+                      style={{ opacity, background: bg }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
+      {dragQuickMenuActive && quickMenuLayout && quickPartyMenuTop != null
+        ? createPortal(
+            <div
+              className="fixed z-[1300] pointer-events-none"
+              style={{
+                left: quickMenuLayout.menuLeft,
+                top: quickPartyMenuTop,
+                transform: 'translate(-50%, 0)',
+              }}
+            >
+              <div className="flex items-start justify-center gap-3">
+                {plannerGroups.map((group, gi) => (
+                  <div
+                    key={`quick-parties-g${gi}`}
+                    className={cn(
+                      'flex items-center gap-0.5',
+                      gi > 0 && 'pl-3 ml-1 border-l border-white/25'
+                    )}
+                  >
+                    {group.partySlots.map((row, pi) => {
+                      const target: QuickDropTarget = { kind: 'party', groupIndex: gi, partyIndex: pi };
+                      const key = quickDropTargetKey(target);
+                      const full = isPartyRowFull(row);
+                      const opacity = quickDropOpacities[key] ?? 0;
+                      return (
+                        <button
+                          key={key}
+                          ref={(el) => {
+                            quickDropBtnRefs.current[key] = el;
+                          }}
+                          type="button"
+                          data-quick-drop="party"
+                          data-quick-group={String(gi)}
+                          data-quick-party={String(pi)}
+                          className={cn(
+                            'rounded-full px-1.5 py-0.5 text-[10px] font-bold shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75 min-w-[1.75rem]',
+                            full
+                              ? 'bg-red-600 text-white cursor-not-allowed'
+                              : 'bg-white/95 text-neutral-900 hover:scale-105 hover:ring-2 hover:ring-white/60',
+                            quickDropTargetsEqual(quickDropHover, target) &&
+                              !full &&
+                              'scale-110 ring-2 ring-white/80 shadow-lg z-10',
+                            !full && opacity > 0.12
+                              ? 'pointer-events-auto'
+                              : 'pointer-events-none'
+                          )}
+                          style={{ opacity: Math.min(1, opacity) }}
+                          aria-disabled={full}
+                        >
+                          G{pi + 1}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             </div>,
             document.body

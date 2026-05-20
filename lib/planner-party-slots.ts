@@ -121,6 +121,64 @@ export function setPartyCell(
   return next;
 }
 
+export function findFirstEmptyCellInPartyRow(row: string[]): number | null {
+  for (let ci = 0; ci < PLANNER_PARTY_SIZE; ci++) {
+    const id = (row[ci] ?? '').trim();
+    if (!id || id === PARTY_SLOT_EMPTY) return ci;
+  }
+  return null;
+}
+
+export function isPartyRowFull(row: string[]): boolean {
+  return findFirstEmptyCellInPartyRow(row) === null;
+}
+
+/** Ziel belegt und Quelle bekannt → tauschen; sonst wie setPartyCell. */
+export function setOrSwapPartyCell(
+  partySlots: string[][],
+  partyIndex: number,
+  cellIndex: number,
+  signupId: string,
+  maxPlayers: number
+): string[][] {
+  const slotCount = partySlotCountForMaxPlayers(maxPlayers);
+  const next = normalizePartySlots(partySlots, slotCount);
+  if (partyIndex < 0 || partyIndex >= next.length || cellIndex < 0 || cellIndex >= PLANNER_PARTY_SIZE) {
+    return next;
+  }
+
+  let srcPi = -1;
+  let srcCi = -1;
+  for (let pi = 0; pi < next.length; pi++) {
+    for (let ci = 0; ci < PLANNER_PARTY_SIZE; ci++) {
+      if (next[pi]![ci] === signupId) {
+        srcPi = pi;
+        srcCi = ci;
+      }
+    }
+  }
+
+  const occupant = (next[partyIndex]![cellIndex] ?? PARTY_SLOT_EMPTY).trim();
+  const hasOccupant = occupant.length > 0 && occupant !== signupId;
+
+  if (hasOccupant && srcPi >= 0) {
+    next[srcPi]![srcCi] = occupant;
+    next[partyIndex]![cellIndex] = signupId;
+    return next;
+  }
+
+  if (hasOccupant) {
+    const emptyCi = findFirstEmptyCellInPartyRow(next[partyIndex]!);
+    if (emptyCi != null) {
+      next[partyIndex]![emptyCi] = occupant;
+      next[partyIndex]![cellIndex] = signupId;
+      return next;
+    }
+  }
+
+  return setPartyCell(partySlots, partyIndex, cellIndex, signupId, maxPlayers);
+}
+
 export function findFirstEmptyPartyCell(
   partySlots: string[][],
   maxPlayers: number
