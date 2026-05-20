@@ -2001,9 +2001,10 @@ export function RaidRosterPlanner({
     return out;
   }, [quickDropPointer, quickDropCenters, quickDropTargetKeys]);
 
+  /** Fest unter Start-Bubble (Anker), nicht unter der mitwanderneden Drag-Bubble. */
   const quickPartyMenuTop =
-    dragSession && dragPoint
-      ? dragPoint.clientY - dragSession.offsetY + dragSession.originRect.height + 8
+    dragSession && quickMenuAnchor
+      ? quickMenuAnchor.clientY - dragSession.offsetY + dragSession.originRect.height + 8
       : null;
 
   function addManualSignup() {
@@ -3832,12 +3833,12 @@ export function RaidRosterPlanner({
           )
         : null}
 
-      {dragQuickMenuActive && dragPoint && dragSession && quickPartyMenuTop != null
+      {dragQuickMenuActive && quickMenuLayout && quickPartyMenuTop != null
         ? createPortal(
             <div
               className="fixed z-[1300] pointer-events-none"
               style={{
-                left: dragPoint.clientX,
+                left: quickMenuLayout.menuLeft,
                 top: quickPartyMenuTop,
                 transform: 'translate(-50%, 0)',
               }}
