@@ -72,6 +72,8 @@ export async function PATCH(
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
+  const signupDisplayName = displayNameForSignupRow(signup);
+
   const raid = await prisma.rfRaid.findFirst({
     where: { id: raidId, guildId },
     select: { status: true },
@@ -135,7 +137,6 @@ export async function PATCH(
     signedSpec = body.signedSpec.trim();
   }
 
-  const signupDisplayName = displayNameForSignupRow(signup);
   const unsetPlayersMode = parseUnsetPlayersMode(body.unsetPlayersMode);
   const usesAnnouncedPlacementRules =
     raid.status === 'announced' || raid.status === 'locked';
