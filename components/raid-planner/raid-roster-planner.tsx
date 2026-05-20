@@ -121,20 +121,32 @@ type RaidHeaderMeta = {
 type QuickDropTarget = 'decline' | 'pool' | 'reserve';
 
 /** Abstand Button-Mitte → Maus: jeder Quick-Button blendet für sich bis 0 aus. */
-const QUICK_DRAG_FADE_MAX_PX = 90;
+const QUICK_DRAG_FADE_MAX_PX = 120;
 
-function quickDropOpacityFromPointer(
-  el: HTMLElement | null,
+const QUICK_DROP_TARGETS: QuickDropTarget[] = ['decline', 'pool', 'reserve'];
+
+function quickDropOpacityFromCenter(
+  center: { x: number; y: number } | null | undefined,
   clientX: number,
   clientY: number
 ): number {
-  if (!el) return 1;
-  const r = el.getBoundingClientRect();
-  const cx = r.left + r.width / 2;
-  const cy = r.top + r.height / 2;
-  const dist = Math.hypot(clientX - cx, clientY - cy);
+  if (!center) return 0;
+  const dist = Math.hypot(clientX - center.x, clientY - center.y);
   if (dist >= QUICK_DRAG_FADE_MAX_PX) return 0;
-  return 1 - dist / QUICK_DRAG_FADE_MAX_PX;
+  return Math.min(1, Math.max(0, 1 - dist / QUICK_DRAG_FADE_MAX_PX));
+}
+
+function measureQuickDropCenters(
+  refs: Record<QuickDropTarget, HTMLButtonElement | null>
+): Record<QuickDropTarget, { x: number; y: number }> | null {
+  const centers = {} as Record<QuickDropTarget, { x: number; y: number }>;
+  for (const target of QUICK_DROP_TARGETS) {
+    const el = refs[target];
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    centers[target] = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+  return centers;
 }
 
 type DragSession = {
@@ -856,6 +868,11 @@ export function RaidRosterPlanner({
     pool: null,
     reserve: null,
   });
+  /** Feste Viewport-Mitten nach Mount; kein getBoundingClientRect pro Frame. */
+  const [quickDropCenters, setQuickDropCenters] = useState<Record<
+    QuickDropTarget,
+    { x: number; y: number }
+  > | null>(null);
   const [flyBack, setFlyBack] = useState<FlyBackState | null>(null);
 
 
@@ -1348,7 +1365,36 @@ export function RaidRosterPlanner({
     setDragPoint(null);
     setQuickMenuAnchor(null);
     setQuickDropHover(null);
+    setQuickDropCenters(null);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!dragSession || !quickMenuAnchor) {
+      setQuickDropCenters(null);
+      return;
+    }
+    let cancelled = false;
+    let attempts = 0;
+    const tryMeasure = () => {
+      if (cancelled || attempts > 10) return;
+      attempts += 1;
+      const centers = measureQuickDropCenters(quickDropBtnRefs.current);
+      if (centers) {
+        setQuickDropCenters(centers);
+        return;
+      }
+      requestAnimationFrame(tryMeasure);
+    };
+    tryMeasure();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    dragSession?.signupId,
+    dragSession?.offsetY,
+    quickMenuAnchor?.clientX,
+    quickMenuAnchor?.clientY,
+  ]);
 
   useEffect(() => {
     if (!dragSession) return;
@@ -1362,8 +1408,8 @@ export function RaidRosterPlanner({
       if (quickMenuAnchor) {
         const hover = findQuickDropTarget(clientX, clientY);
         if (hover) {
-          const opacity = quickDropOpacityFromPointer(
-            quickDropBtnRefs.current[hover],
+          const opacity = quickDropOpacityFromCenter(
+            quickDropCenters?.[hover],
             clientX,
             clientY
           );
@@ -1453,11 +1499,7 @@ export function RaidRosterPlanner({
         : null;
       const quick =
         quickHover &&
-        quickDropOpacityFromPointer(
-          quickDropBtnRefs.current[quickHover],
-          e.clientX,
-          e.clientY
-        ) > 0
+        quickDropOpacityFromCenter(quickDropCenters?.[quickHover], e.clientX, e.clientY) > 0
           ? quickHover
           : null;
       if (quick === 'pool') {
@@ -1652,7 +1694,7 @@ export function RaidRosterPlanner({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragSession, endDrag, byId, plannerGroups, quickMenuAnchor]);
+  }, [dragSession, endDrag, byId, plannerGroups, quickMenuAnchor, quickDropCenters]);
 
   const onRowPointerDown = (
     e: React.PointerEvent,
@@ -1871,28 +1913,23 @@ export function RaidRosterPlanner({
   const quickDropPointer = dragPoint ?? quickMenuAnchor;
   const quickDropOpacities: Record<QuickDropTarget, number> = quickDropPointer
     ? {
-        decline: quickDropOpacityFromPointer(
-          quickDropBtnRefs.current.decline,
+        decline: quickDropOpacityFromCenter(
+          quickDropCenters?.decline,
           quickDropPointer.clientX,
           quickDropPointer.clientY
         ),
-        pool: quickDropOpacityFromPointer(
-          quickDropBtnRefs.current.pool,
+        pool: quickDropOpacityFromCenter(
+          quickDropCenters?.pool,
           quickDropPointer.clientX,
           quickDropPointer.clientY
         ),
-        reserve: quickDropOpacityFromPointer(
-          quickDropBtnRefs.current.reserve,
+        reserve: quickDropOpacityFromCenter(
+          quickDropCenters?.reserve,
           quickDropPointer.clientX,
           quickDropPointer.clientY
         ),
       }
-    : { decline: 1, pool: 1, reserve: 1 };
-  const quickMenuMaxOpacity = Math.max(
-    quickDropOpacities.decline,
-    quickDropOpacities.pool,
-    quickDropOpacities.reserve
-  );
+    : { decline: 0, pool: 0, reserve: 0 };
 
   function addManualSignup() {
     if (!addSelected) return;
@@ -3671,7 +3708,7 @@ export function RaidRosterPlanner({
           })()
         : null}
 
-      {dragQuickMenuActive && quickMenuLayout && quickMenuMaxOpacity > 0
+      {dragQuickMenuActive && quickMenuLayout
         ? createPortal(
             <div
               className="fixed z-[1300] pointer-events-none"
@@ -3689,7 +3726,7 @@ export function RaidRosterPlanner({
                   type="button"
                   data-quick-drop="decline"
                   className={cn(
-                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-red-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter,opacity] duration-75',
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-red-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75',
                     quickDropHover === 'decline'
                       ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
                       : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
@@ -3712,7 +3749,7 @@ export function RaidRosterPlanner({
                   type="button"
                   data-quick-drop="pool"
                   className={cn(
-                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-sky-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter,opacity] duration-75',
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-sky-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75',
                     quickDropHover === 'pool'
                       ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
                       : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
@@ -3735,7 +3772,7 @@ export function RaidRosterPlanner({
                   type="button"
                   data-quick-drop="reserve"
                   className={cn(
-                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-amber-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter,opacity] duration-75',
+                    'rounded-full px-2.5 py-1.5 text-[11px] font-semibold text-amber-50 shadow-md whitespace-nowrap transition-[transform,box-shadow,filter] duration-75',
                     quickDropHover === 'reserve'
                       ? 'scale-110 ring-2 ring-white/80 shadow-lg brightness-125 z-10'
                       : 'hover:scale-105 hover:ring-2 hover:ring-white/50 hover:brightness-110',
