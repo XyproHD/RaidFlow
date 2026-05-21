@@ -1,10 +1,11 @@
 /**
  * Mapping von WoW-Spec-Anzeigenamen und Rollen auf die Discord-Emoji-Keys
- * aus rf_app_config (discord_emojis JSON).
+ * aus rf_app_config (discord_emojis JSON) bzw. externer Emoji-Guild (wow_*).
  *
  * Dieselbe Logik wie in discord-bot/app-home.js (SPEC_KEY_BY_DISPLAY etc.),
  * hier als TypeScript-Version für den Embed-Builder im Webapp.
  */
+import { getClassEnglishName } from '@/lib/wow-tbc-classes';
 
 /** Spec-Anzeigename (mainSpec in DB) → Emoji-Key in discord_emojis */
 export const SPEC_EMOJI_KEY: Record<string, string> = {
@@ -87,34 +88,64 @@ export function getClassFromSpec(spec: string): string {
   return parts[parts.length - 1] ?? '';
 }
 
-/**
- * Gibt das Discord-Emoji-Markup für eine Spec zurück.
- * Fallback: leerer String.
- */
-export function getSpecEmoji(spec: string, emojis: Record<string, string>): string {
-  const key = SPEC_EMOJI_KEY[spec?.trim() ?? ''];
-  return key ? (emojis[key] ?? '') : '';
+/** Discord-Markup aus rf_app_config / externer Emoji-Guild (`<:wow_*:id>`). */
+function resolveDiscordWowEmoji(
+  key: string | undefined,
+  emojis: Record<string, string>,
+  unicodeFallback?: string
+): string {
+  if (key) {
+    const markup = emojis[key]?.trim();
+    if (markup) return markup;
+  }
+  return unicodeFallback ?? '';
+}
+
+function classEmojiKeyForClassId(classId: string): string | undefined {
+  const english = getClassEnglishName(classId);
+  return CLASS_EMOJI_KEY[english];
 }
 
 /**
- * Gibt das Discord-Emoji-Markup für die Klasse eines Specs zurück.
- * Fallback: leerer String.
+ * Klassen-Emoji per classId (druid, …) → wow_druid usw.
+ */
+export function getClassEmojiByClassId(
+  classId: string,
+  emojis: Record<string, string>
+): string {
+  return resolveDiscordWowEmoji(classEmojiKeyForClassId(classId), emojis);
+}
+
+/**
+ * Gibt das Discord-Emoji-Markup für eine Spec zurück.
+ * Fallback: Klassen-Emoji (wow_*), sonst leer.
+ */
+export function getSpecEmoji(spec: string, emojis: Record<string, string>): string {
+  const trimmed = spec?.trim() ?? '';
+  const specMarkup = resolveDiscordWowEmoji(SPEC_EMOJI_KEY[trimmed], emojis);
+  if (specMarkup) return specMarkup;
+  return getClassEmoji(trimmed, emojis);
+}
+
+/**
+ * Gibt das Discord-Emoji-Markup für die Klasse eines Specs zurück (wow_druid, …).
  */
 export function getClassEmoji(spec: string, emojis: Record<string, string>): string {
   const className = getClassFromSpec(spec);
-  const key = CLASS_EMOJI_KEY[className];
-  return key ? (emojis[key] ?? '') : '';
+  return resolveDiscordWowEmoji(CLASS_EMOJI_KEY[className], emojis);
 }
 
 /**
- * Gibt das Discord-Emoji-Markup für eine Rolle zurück.
- * Fallback: Unicode-Emoji.
+ * Gibt das Discord-Emoji-Markup für eine Rolle zurück (wow_tank, …).
+ * Fallback: Unicode nur wenn kein Server-Emoji konfiguriert ist.
  */
 export function getRoleEmoji(
   role: string,
   emojis: Record<string, string>
 ): string {
-  const key = ROLE_EMOJI_KEY[role];
-  if (key && emojis[key]) return emojis[key];
-  return ROLE_FALLBACK_EMOJI[role] ?? '❓';
+  return resolveDiscordWowEmoji(
+    ROLE_EMOJI_KEY[role],
+    emojis,
+    ROLE_FALLBACK_EMOJI[role] ?? '❓'
+  );
 }
