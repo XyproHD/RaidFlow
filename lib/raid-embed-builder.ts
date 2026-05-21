@@ -323,7 +323,7 @@ function appendLinesInColumnFields(
 }
 
 // ---------------------------------------------------------------------------
-// Zusammenfassungs-Helfer (Anmeldungen)
+// Zusammenfassungs-Helfer (Übersicht + Anmeldungen)
 // ---------------------------------------------------------------------------
 
 function splitByRole(signups: RaidEmbedSignup[]): Record<string, RaidEmbedSignup[]> {
@@ -362,19 +362,28 @@ function buildRoleCountsColumn(
   return lines.join('\n').slice(0, 1024);
 }
 
-/** Spalte „Klassen“: alle TBC-Klassen, auch mit 0. */
-function buildClassCountsColumn(
-  signups: RaidEmbedSignup[],
+function formatClassCountLine(
+  cls: (typeof TBC_CLASSES)[number],
+  count: number,
   emojis: Record<string, string>,
 ): string {
+  const emoji = getClassEmojiByClassId(cls.id, emojis);
+  const prefix = emoji ? `${emoji} ` : '';
+  return `${prefix}${cls.name} · **${count}**`;
+}
+
+/** Klassen-Zähler in zwei Spalten (alle TBC-Klassen, auch mit 0). */
+function buildClassCountsColumns(
+  signups: RaidEmbedSignup[],
+  emojis: Record<string, string>,
+): { left: string; right: string } {
   const counts = countSignupsByClassId(signups);
-  const lines = TBC_CLASSES.map((cls) => {
-    const n = counts.get(cls.id) ?? 0;
-    const emoji = getClassEmojiByClassId(cls.id, emojis);
-    const prefix = emoji ? `${emoji} ` : '';
-    return `${prefix}**${cls.name}** · **${n}**`;
-  });
-  return lines.join('\n').slice(0, 1024);
+  const lines = TBC_CLASSES.map((cls) => formatClassCountLine(cls, counts.get(cls.id) ?? 0, emojis));
+  const mid = Math.ceil(lines.length / 2);
+  return {
+    left: lines.slice(0, mid).join('\n').slice(0, 1024) || '\u200b',
+    right: lines.slice(mid).join('\n').slice(0, 1024) || '\u200b',
+  };
 }
 
 const EMPTY_PLAYER_SLOT = '·';
@@ -442,22 +451,29 @@ function appendAnmeldungenSection(
   emojis: Record<string, string>,
   opts?: { showPlayers?: boolean },
 ): void {
-  packer.push({ name: '📋 Anmeldungen', value: '\u200b', inline: false });
+  const classes = buildClassCountsColumns(mainSignups, emojis);
 
   packer.push({
-    name: '**Rollen**',
+    name: '📋 Übersicht',
     value: buildRoleCountsColumn(byRole, mins, emojis),
     inline: true,
   });
   packer.push({
     name: '**Klassen**',
-    value: buildClassCountsColumn(mainSignups, emojis),
+    value: classes.left,
+    inline: true,
+  });
+  packer.push({
+    name: '\u200b',
+    value: classes.right,
     inline: true,
   });
 
   packer.push({ name: '\u200b', value: '\u200b', inline: false });
 
   if (opts?.showPlayers === false) return;
+
+  packer.push({ name: '📋 Anmeldungen', value: '\u200b', inline: false });
 
   if (mainSignups.length > 0) {
     appendPlayersByRoleColumns(packer, byRole, emojis);
@@ -503,12 +519,16 @@ function groupRoleClassSummaryBlock(
   }
   const byRole = splitByRole(rosterSignups);
   const zeroMins = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
+  const classes = buildClassCountsColumns(rosterSignups, emojis);
+  const classBlock = [classes.left, classes.right]
+    .filter((c) => c && c !== '\u200b')
+    .join('\n');
   return [
+    '**Übersicht**',
     '**Rollen**',
     buildRoleCountsColumn(byRole, zeroMins, emojis),
-    '',
     '**Klassen**',
-    buildClassCountsColumn(rosterSignups, emojis),
+    classBlock,
   ].join('\n').slice(0, 1024);
 }
 
