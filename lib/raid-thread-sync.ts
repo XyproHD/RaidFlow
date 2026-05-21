@@ -285,6 +285,39 @@ function formatRaidLeaderInfoDate(date: Date): string {
   }).format(date);
 }
 
+const LEADER_INFO_SEP = '━━━━━━━━━━━━━━━━━━━━━━';
+
+/** Baut den Discord-Text für den Raidleader-Kanal (max. 2000 Zeichen). */
+function buildRaidLeaderChannelContent(
+  discordUserLabel: string,
+  raidName: string,
+  dungeonName: string,
+  termin: string,
+  userMessage: string,
+  raidleaderMention: string
+): string {
+  const header = [
+    '📨 **Info an Raidleader**',
+    LEADER_INFO_SEP,
+    `👤 **Von:** ${discordUserLabel}`,
+    `⚔️ **Raid:** ${raidName}`,
+    `🏰 **Dungeon:** ${dungeonName}`,
+    `📅 **Termin:** ${termin}`,
+    '',
+    '💬 **Nachricht:**',
+  ].join('\n');
+
+  const footer = raidleaderMention ? `\n\n${LEADER_INFO_SEP}\n${raidleaderMention}` : '';
+  const maxBody = Math.max(0, 2000 - header.length - footer.length - 8);
+
+  let body = userMessage.replace(/```/g, '`\u200b``');
+  if (body.length > maxBody) {
+    body = `${body.slice(0, Math.max(0, maxBody - 1))}…`;
+  }
+
+  return `${header}\n\`\`\`\n${body}\n\`\`\`${footer}`.slice(0, 2000);
+}
+
 /** Freitext eines Users an den konfigurierten Raidleader-Kanal. */
 export async function postRaidLeaderChannelInfo(
   raidId: string,
@@ -311,20 +344,17 @@ export async function postRaidLeaderChannelInfo(
   }
 
   const termin = formatRaidLeaderInfoDate(raid.scheduledAt);
-  const raidLine = `${raid.name} · ${raid.dungeon.name} · ${termin}`;
   const rlRoleId = raid.guild.discordRoleRaidleaderId?.trim();
   const mention = rlRoleId ? `<@&${rlRoleId}>` : '';
 
-  const content = [
-    `Discord User: ${discordUserLabel}`,
-    `Raid: ${raidLine}`,
-    'Hat folgende Nachricht gesendet:',
+  const content = buildRaidLeaderChannelContent(
+    discordUserLabel,
+    raid.name,
+    raid.dungeon.name,
+    termin,
     trimmed,
-    mention,
-  ]
-    .filter(Boolean)
-    .join('\n')
-    .slice(0, 2000);
+    mention
+  );
 
   await createChannelMessageFull(raid.discordLeaderChannelId, {
     content,
