@@ -14,6 +14,7 @@ import { prisma } from '@/lib/prisma';
 import {
   createChannelMessageFull,
   createThreadFromMessage,
+  deleteChannelMessage,
   editChannelMessageFull,
 } from '@/lib/discord-guild-api';
 import { buildRaidEmbeds, buildRaidActionButtons } from '@/lib/raid-embed-builder';
@@ -233,6 +234,104 @@ export async function syncRaidThreadSummary(
   } catch (e) {
     console.error('[syncRaidThreadSummary]', raidId, e);
   }
+}
+
+/**
+ * Raid-Post erneut senden (Push): alte Kanal-Nachricht löschen, neu posten → wieder unten im Channel.
+ * Der Diskussions-Thread bleibt unverändert (discordThreadId).
+ */
+export async function pushRaidDiscordPost(raidId: string): Promise<void> {
+  const raid = await prisma.rfRaid.findUnique({
+    where: { id: raidId },
+    select: {
+      discordChannelId: true,
+      discordChannelMessageId: true,
+      status: true,
+    },
+  });
+  if (!raid?.discordChannelId || !raid.discordChannelMessageId) {
+    throw new Error('NO_DISCORD_POST');
+  }
+  if (raid.status === 'cancelled' || raid.status === 'completed') {
+    throw new Error('RAID_NOT_PUSHABLE');
+  }
+
+  const channelId = raid.discordChannelId;
+  const oldMessageId = raid.discordChannelMessageId;
+
+  await prisma.rfRaid.update({
+    where: { id: raidId },
+    data: { discordChannelMessageId: null },
+  });
+
+  try {
+    await deleteChannelMessage(channelId, oldMessageId);
+  } catch (e) {
+    console.warn('[pushRaidDiscordPost] delete failed:', e);
+  }
+
+  await syncRaidThreadSummary(raidId, { allowCreate: true });
+}
+
+function formatRaidLeaderInfoDate(date: Date): string {
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin',
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+/** Freitext eines Users an den konfigurierten Raidleader-Kanal. */
+export async function postRaidLeaderChannelInfo(
+  raidId: string,
+  discordUserLabel: string,
+  message: string
+): Promise<void> {
+  const raid = await prisma.rfRaid.findUnique({
+    where: { id: raidId },
+    select: {
+      name: true,
+      scheduledAt: true,
+      discordLeaderChannelId: true,
+      dungeon: { select: { name: true } },
+      guild: { select: { discordRoleRaidleaderId: true } },
+    },
+  });
+  if (!raid?.discordLeaderChannelId?.trim()) {
+    throw new Error('NO_LEADER_CHANNEL');
+  }
+
+  const trimmed = message.trim();
+  if (!trimmed) {
+    throw new Error('MESSAGE_EMPTY');
+  }
+
+  const termin = formatRaidLeaderInfoDate(raid.scheduledAt);
+  const raidLine = `${raid.name} · ${raid.dungeon.name} · ${termin}`;
+  const rlRoleId = raid.guild.discordRoleRaidleaderId?.trim();
+  const mention = rlRoleId ? `<@&${rlRoleId}>` : '';
+
+  const content = [
+    `Discord User: ${discordUserLabel}`,
+    `Raid: ${raidLine}`,
+    'Hat folgende Nachricht gesendet:',
+    trimmed,
+    mention,
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 2000);
+
+  await createChannelMessageFull(raid.discordLeaderChannelId, {
+    content,
+    ...(rlRoleId
+      ? { allowedMentions: { parse: [], roles: [rlRoleId] } }
+      : {}),
+  });
 }
 
 // ---------------------------------------------------------------------------

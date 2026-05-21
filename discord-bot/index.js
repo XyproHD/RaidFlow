@@ -2892,6 +2892,151 @@ async function handleEditNoteModal(interaction, raidId) {
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
+// ---------------------------------------------------------------------------
+// RaidTools & Info @ Raidlead
+// ---------------------------------------------------------------------------
+
+function raidToolsErrorText(err) {
+  const map = {
+    FORBIDDEN:         '❌ Nur Raidleader oder Gildenmeister dürfen RaidTools nutzen.',
+    NO_DISCORD_POST:   '❌ Kein Discord-Beitrag für diesen Raid vorhanden.',
+    RAID_NOT_PUSHABLE: '❌ Abgeschlossene oder abgesagte Raids können nicht gepusht werden.',
+    SYNC_FAILED:       '❌ Beitrag konnte nicht synchronisiert werden.',
+    PUSH_FAILED:       '❌ Raid konnte nicht gepusht werden.',
+    NO_LEADER_CHANNEL: '❌ Für diesen Raid ist kein Raidleader-Kanal hinterlegt.',
+    MESSAGE_EMPTY:     '❌ Bitte eine Nachricht eingeben.',
+    POST_FAILED:       '❌ Nachricht konnte nicht gesendet werden.',
+    NOT_LINKED:        raidActionErrorText('NOT_LINKED'),
+  };
+  return map[err] ?? `❌ Fehler: ${String(err)}`;
+}
+
+async function handleRaidToolsButton(interaction, raidId) {
+  const { ok, json } = await getDiscordAction({
+    action: 'get-raid-tools',
+    discordUserId: interaction.user.id,
+    raidId,
+  });
+  if (!ok || !json.linked) {
+    return interaction.reply({
+      content: raidActionErrorText('NOT_LINKED'),
+      ephemeral: true,
+    }).catch(() => {});
+  }
+  if (!json.canManage) {
+    return interaction.reply({
+      content: raidToolsErrorText('FORBIDDEN'),
+      ephemeral: true,
+    }).catch(() => {});
+  }
+
+  const rid = raidId.replace(/-/g, '');
+  const row = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId(`rf:toolsel:${rid}`)
+      .setPlaceholder('RaidTools – Funktion wählen')
+      .addOptions(
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Beitrag aktualisieren')
+          .setDescription('Discord-Beitrag mit dem Backend synchronisieren')
+          .setValue('sync')
+          .setEmoji('🔄'),
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Raid Pushen')
+          .setDescription('Beitrag erneut posten (wieder unten im Channel)')
+          .setValue('push')
+          .setEmoji('⬇️'),
+      ),
+  );
+
+  await interaction.reply({
+    content:   '🛠️ **RaidTools** – wähle eine Funktion:',
+    components: [row],
+    ephemeral: true,
+  }).catch(() => {});
+}
+
+async function handleRaidToolsSelect(interaction, raidId) {
+  const tool = interaction.values[0];
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
+  const action = tool === 'push' ? 'push-raid' : 'sync-post';
+  const { ok, json } = await callDiscordAction({
+    action,
+    discordUserId: interaction.user.id,
+    raidId,
+  });
+
+  const outcome = ok
+    ? `✅ ${json.message ?? 'Erledigt.'}`
+    : raidToolsErrorText(json.error);
+  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
+async function handleRaidInfoRlButton(interaction, raidId) {
+  const { ok, json } = await getDiscordAction({
+    action: 'get-raid-tools',
+    discordUserId: interaction.user.id,
+    raidId,
+  });
+  if (!ok || !json.linked) {
+    return interaction.reply({
+      content: raidActionErrorText('NOT_LINKED'),
+      ephemeral: true,
+    }).catch(() => {});
+  }
+  if (!json.hasLeaderChannel) {
+    return interaction.reply({
+      content: raidToolsErrorText('NO_LEADER_CHANNEL'),
+      ephemeral: true,
+    }).catch(() => {});
+  }
+
+  const raidNoDash = raidId.replace(/-/g, '');
+  const modal = new ModalBuilder()
+    .setCustomId(`rfm:rlinfo:${raidNoDash}`)
+    .setTitle('Info @ Raidleader');
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('message')
+        .setLabel('Nachricht an Raidleader-Kanal')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(1500)
+        .setPlaceholder(
+          'Verfasse eine Nachricht für den Raidleader-Kanal. Nur Raidleader können sie lesen.',
+        ),
+    ),
+  );
+  await interaction.showModal(modal).catch(() => {});
+}
+
+async function handleRaidLeaderInfoModal(interaction, raidId) {
+  const message = interaction.fields.getTextInputValue('message').trim();
+  const discordUserLabel =
+    interaction.member?.displayName?.trim() ||
+    interaction.user.globalName?.trim() ||
+    interaction.user.username;
+
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
+  const { ok, json } = await callDiscordAction({
+    action: 'leader-info',
+    discordUserId: interaction.user.id,
+    raidId,
+    message,
+    discordUserLabel,
+  });
+
+  const outcome = ok
+    ? `✅ ${json.message ?? 'Nachricht gesendet.'}`
+    : raidToolsErrorText(json.error);
+  await interaction.editReply({ content: outcome }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
 // =============================================================================
 // interactionCreate
 // =============================================================================
@@ -2946,6 +3091,8 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'j2prev')      { await handleJoin2StepNav(interaction, raidId, 'prev'); return; }
         if (action === 'j2nextchar')  { await handleJoin2StepNav(interaction, raidId, 'next'); return; }
         if (action === 'j2open')      { await handleJoin2OpenNoteModal(interaction, raidId); return; }
+        if (action === 'tools')       { await handleRaidToolsButton(interaction, raidId); return; }
+        if (action === 'inforl')      { await handleRaidInfoRlButton(interaction, raidId); return; }
       } catch (e) {
         console.error('[RaidButton]', bid, e);
         await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
@@ -3023,6 +3170,17 @@ client.on('interactionCreate', async (interaction) => {
         await handleJoin2PuncSelect(interaction, raidId);
       } catch (e) {
         console.error('[Join2PuncSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:toolsel:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleRaidToolsSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[RaidToolsSelect]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
       }
       return;
@@ -3219,6 +3377,7 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'joinnote') { await handleJoinNoteModal(interaction, raidId); return; }
         if (action === 'join2note') { await handleJoin2NoteModal(interaction, raidId); return; }
         if (action === 'editnote') { await handleEditNoteModal(interaction, raidId); return; }
+        if (action === 'rlinfo')   { await handleRaidLeaderInfoModal(interaction, raidId); return; }
       } catch (e) {
         console.error('[RaidModal]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler beim Verarbeiten.', ephemeral: true }).catch(() => {});
