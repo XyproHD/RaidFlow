@@ -2912,22 +2912,32 @@ function raidToolsErrorText(err) {
 }
 
 async function handleRaidToolsButton(interaction, raidId) {
-  const { ok, json } = await getDiscordAction({
-    action: 'get-raid-tools',
-    discordUserId: interaction.user.id,
-    raidId,
-  });
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
+  let ok = false;
+  let json = {};
+  try {
+    ({ ok, json } = await getDiscordAction({
+      action: 'get-raid-tools',
+      discordUserId: interaction.user.id,
+      raidId,
+    }));
+  } catch (e) {
+    console.error('[RaidToolsButton] get-raid-tools', e);
+    await interaction.editReply({ content: '❌ Backend nicht erreichbar.', components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
   if (!ok || !json.linked) {
-    return interaction.reply({
-      content: raidActionErrorText('NOT_LINKED'),
-      ephemeral: true,
-    }).catch(() => {});
+    await interaction.editReply({ content: raidActionErrorText('NOT_LINKED'), components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
   }
   if (!json.canManage) {
-    return interaction.reply({
-      content: raidToolsErrorText('FORBIDDEN'),
-      ephemeral: true,
-    }).catch(() => {});
+    await interaction.editReply({ content: raidToolsErrorText('FORBIDDEN'), components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
   }
 
   const rid = raidId.replace(/-/g, '');
@@ -2939,20 +2949,17 @@ async function handleRaidToolsButton(interaction, raidId) {
         new StringSelectMenuOptionBuilder()
           .setLabel('Beitrag aktualisieren')
           .setDescription('Discord-Beitrag mit dem Backend synchronisieren')
-          .setValue('sync')
-          .setEmoji('🔄'),
+          .setValue('sync'),
         new StringSelectMenuOptionBuilder()
           .setLabel('Raid Pushen')
           .setDescription('Beitrag erneut posten (wieder unten im Channel)')
-          .setValue('push')
-          .setEmoji('⬇️'),
+          .setValue('push'),
       ),
   );
 
-  await interaction.reply({
+  await interaction.editReply({
     content:   '🛠️ **RaidTools** – wähle eine Funktion:',
     components: [row],
-    ephemeral: true,
   }).catch(() => {});
 }
 
@@ -2961,11 +2968,20 @@ async function handleRaidToolsSelect(interaction, raidId) {
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
   const action = tool === 'push' ? 'push-raid' : 'sync-post';
-  const { ok, json } = await callDiscordAction({
-    action,
-    discordUserId: interaction.user.id,
-    raidId,
-  });
+  let ok = false;
+  let json = {};
+  try {
+    ({ ok, json } = await callDiscordAction({
+      action,
+      discordUserId: interaction.user.id,
+      raidId,
+    }));
+  } catch (e) {
+    console.error('[RaidToolsSelect]', action, e);
+    await interaction.editReply({ content: '❌ Backend nicht erreichbar.', components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
 
   const outcome = ok
     ? `✅ ${json.message ?? 'Erledigt.'}`
@@ -2975,39 +2991,19 @@ async function handleRaidToolsSelect(interaction, raidId) {
 }
 
 async function handleRaidInfoRlButton(interaction, raidId) {
-  const { ok, json } = await getDiscordAction({
-    action: 'get-raid-tools',
-    discordUserId: interaction.user.id,
-    raidId,
-  });
-  if (!ok || !json.linked) {
-    return interaction.reply({
-      content: raidActionErrorText('NOT_LINKED'),
-      ephemeral: true,
-    }).catch(() => {});
-  }
-  if (!json.hasLeaderChannel) {
-    return interaction.reply({
-      content: raidToolsErrorText('NO_LEADER_CHANNEL'),
-      ephemeral: true,
-    }).catch(() => {});
-  }
-
   const raidNoDash = raidId.replace(/-/g, '');
   const modal = new ModalBuilder()
     .setCustomId(`rfm:rlinfo:${raidNoDash}`)
-    .setTitle('Info @ Raidleader');
+    .setTitle('Info an Raidleader');
   modal.addComponents(
     new ActionRowBuilder().addComponents(
       new TextInputBuilder()
         .setCustomId('message')
-        .setLabel('Nachricht an Raidleader-Kanal')
+        .setLabel('Nachricht (nur Raidleader-Kanal)')
         .setStyle(TextInputStyle.Paragraph)
         .setRequired(true)
         .setMaxLength(1500)
-        .setPlaceholder(
-          'Verfasse eine Nachricht für den Raidleader-Kanal. Nur Raidleader können sie lesen.',
-        ),
+        .setPlaceholder('Freitext an den Raidleader-Kanal (nur RL lesen)'),
     ),
   );
   await interaction.showModal(modal).catch(() => {});
@@ -3093,9 +3089,20 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'j2open')      { await handleJoin2OpenNoteModal(interaction, raidId); return; }
         if (action === 'tools')       { await handleRaidToolsButton(interaction, raidId); return; }
         if (action === 'inforl')      { await handleRaidInfoRlButton(interaction, raidId); return; }
+
+        console.warn('[RaidButton] unbekannte Aktion:', action, bid);
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({ content: '❌ Unbekannte Aktion.', components: [] }).catch(() => {});
+        } else {
+          await interaction.reply({ content: '❌ Unbekannte Aktion.', ephemeral: true }).catch(() => {});
+        }
       } catch (e) {
         console.error('[RaidButton]', bid, e);
-        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({ content: '❌ Interner Fehler.', components: [] }).catch(() => {});
+        } else {
+          await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+        }
       }
       return;
     }
