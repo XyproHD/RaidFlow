@@ -323,7 +323,7 @@ function appendLinesInColumnFields(
 }
 
 // ---------------------------------------------------------------------------
-// Zusammenfassungs-Helfer (Übersicht + Anmeldungen)
+// Zusammenfassungs-Helfer (Rollen/Klassen + Anmeldungen)
 // ---------------------------------------------------------------------------
 
 function splitByRole(signups: RaidEmbedSignup[]): Record<string, RaidEmbedSignup[]> {
@@ -454,7 +454,7 @@ function appendAnmeldungenSection(
   const classes = buildClassCountsColumns(mainSignups, emojis);
 
   packer.push({
-    name: '📋 Übersicht',
+    name: 'Rollen',
     value: buildRoleCountsColumn(byRole, mins, emojis),
     inline: true,
   });
@@ -524,7 +524,6 @@ function groupRoleClassSummaryBlock(
     .filter((c) => c && c !== '\u200b')
     .join('\n');
   return [
-    '**Übersicht**',
     '**Rollen**',
     buildRoleCountsColumn(byRole, zeroMins, emojis),
     '**Klassen**',
