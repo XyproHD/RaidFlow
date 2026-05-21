@@ -507,28 +507,23 @@ function appendRaidPartyColumnFields(
   }
 }
 
-function groupRoleClassSummaryBlock(
+/** Kompakte Rollen-Zeile im Kader-Header (angekündigte Raids) — unverändert zur ursprünglichen Darstellung. */
+function groupRoleSummaryLine(
   signupIds: string[],
   signupById: Map<string, RaidEmbedSignup>,
   emojis: Record<string, string>,
 ): string {
-  const rosterSignups: RaidEmbedSignup[] = [];
+  const counts: Record<string, number> = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
   for (const id of signupIds) {
     const s = signupById.get(id);
-    if (s) rosterSignups.push(s);
+    if (!s) continue;
+    const spec = s.signedSpec?.trim() || s.mainSpec?.trim();
+    const role = spec ? roleFromSpecDisplayName(spec) : null;
+    if (role && role in counts) counts[role]++;
   }
-  const byRole = splitByRole(rosterSignups);
-  const zeroMins = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
-  const classes = buildClassCountsColumns(rosterSignups, emojis);
-  const classBlock = [classes.left, classes.right]
-    .filter((c) => c && c !== '\u200b')
-    .join('\n');
-  return [
-    '**Rollen**',
-    buildRoleCountsColumn(byRole, zeroMins, emojis),
-    '**Klassen**',
-    classBlock,
-  ].join('\n').slice(0, 1024);
+  return ROLE_DEFS
+    .map(({ key }) => `${getRoleEmoji(key, emojis)} ${counts[key]}`)
+    .join('  ');
 }
 
 // ---------------------------------------------------------------------------
@@ -645,7 +640,7 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
         headerLines.push(headerParts.join('  ·  '));
       }
 
-      headerLines.push(groupRoleClassSummaryBlock(group.rosterOrder, signupById, discordEmojis));
+      headerLines.push(groupRoleSummaryLine(group.rosterOrder, signupById, discordEmojis));
       headerLines.push('▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬');
 
       const headerValue =
