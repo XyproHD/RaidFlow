@@ -14,6 +14,7 @@ import { prisma } from '@/lib/prisma';
 import {
   createChannelMessageFull,
   createThreadFromMessage,
+  deleteChannelMessage,
   editChannelMessageFull,
 } from '@/lib/discord-guild-api';
 import { buildRaidEmbeds, buildRaidActionButtons } from '@/lib/raid-embed-builder';
@@ -233,6 +234,134 @@ export async function syncRaidThreadSummary(
   } catch (e) {
     console.error('[syncRaidThreadSummary]', raidId, e);
   }
+}
+
+/**
+ * Raid-Post erneut senden (Push): alte Kanal-Nachricht löschen, neu posten → wieder unten im Channel.
+ * Der Diskussions-Thread bleibt unverändert (discordThreadId).
+ */
+export async function pushRaidDiscordPost(raidId: string): Promise<void> {
+  const raid = await prisma.rfRaid.findUnique({
+    where: { id: raidId },
+    select: {
+      discordChannelId: true,
+      discordChannelMessageId: true,
+      status: true,
+    },
+  });
+  if (!raid?.discordChannelId || !raid.discordChannelMessageId) {
+    throw new Error('NO_DISCORD_POST');
+  }
+  if (raid.status === 'cancelled' || raid.status === 'completed') {
+    throw new Error('RAID_NOT_PUSHABLE');
+  }
+
+  const channelId = raid.discordChannelId;
+  const oldMessageId = raid.discordChannelMessageId;
+
+  await prisma.rfRaid.update({
+    where: { id: raidId },
+    data: { discordChannelMessageId: null },
+  });
+
+  try {
+    await deleteChannelMessage(channelId, oldMessageId);
+  } catch (e) {
+    console.warn('[pushRaidDiscordPost] delete failed:', e);
+  }
+
+  await syncRaidThreadSummary(raidId, { allowCreate: true });
+}
+
+function formatRaidLeaderInfoDate(date: Date): string {
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin',
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+const LEADER_INFO_SEP = '━━━━━━━━━━━━━━━━━━━━━━';
+
+/** Baut den Discord-Text für den Raidleader-Kanal (max. 2000 Zeichen). */
+function buildRaidLeaderChannelContent(
+  discordUserLabel: string,
+  raidName: string,
+  dungeonName: string,
+  termin: string,
+  userMessage: string,
+  raidleaderMention: string
+): string {
+  const header = [
+    '📨 **Info an Raidleader**',
+    LEADER_INFO_SEP,
+    `👤 **Von:** ${discordUserLabel}`,
+    `⚔️ **Raid:** ${raidName}`,
+    `🏰 **Dungeon:** ${dungeonName}`,
+    `📅 **Termin:** ${termin}`,
+    '',
+    '💬 **Nachricht:**',
+  ].join('\n');
+
+  const footer = raidleaderMention ? `\n\n${LEADER_INFO_SEP}\n${raidleaderMention}` : '';
+  const maxBody = Math.max(0, 2000 - header.length - footer.length - 8);
+
+  let body = userMessage.replace(/```/g, '`\u200b``');
+  if (body.length > maxBody) {
+    body = `${body.slice(0, Math.max(0, maxBody - 1))}…`;
+  }
+
+  return `${header}\n\`\`\`\n${body}\n\`\`\`${footer}`.slice(0, 2000);
+}
+
+/** Freitext eines Users an den konfigurierten Raidleader-Kanal. */
+export async function postRaidLeaderChannelInfo(
+  raidId: string,
+  discordUserLabel: string,
+  message: string
+): Promise<void> {
+  const raid = await prisma.rfRaid.findUnique({
+    where: { id: raidId },
+    select: {
+      name: true,
+      scheduledAt: true,
+      discordLeaderChannelId: true,
+      dungeon: { select: { name: true } },
+      guild: { select: { discordRoleRaidleaderId: true } },
+    },
+  });
+  if (!raid?.discordLeaderChannelId?.trim()) {
+    throw new Error('NO_LEADER_CHANNEL');
+  }
+
+  const trimmed = message.trim();
+  if (!trimmed) {
+    throw new Error('MESSAGE_EMPTY');
+  }
+
+  const termin = formatRaidLeaderInfoDate(raid.scheduledAt);
+  const rlRoleId = raid.guild.discordRoleRaidleaderId?.trim();
+  const mention = rlRoleId ? `<@&${rlRoleId}>` : '';
+
+  const content = buildRaidLeaderChannelContent(
+    discordUserLabel,
+    raid.name,
+    raid.dungeon.name,
+    termin,
+    trimmed,
+    mention
+  );
+
+  await createChannelMessageFull(raid.discordLeaderChannelId, {
+    content,
+    ...(rlRoleId
+      ? { allowedMentions: { parse: [], roles: [rlRoleId] } }
+      : {}),
+  });
 }
 
 // ---------------------------------------------------------------------------

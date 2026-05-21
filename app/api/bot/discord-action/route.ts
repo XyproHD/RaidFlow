@@ -8,7 +8,12 @@ import {
   validateSignedSpecForCharacter,
 } from '@/lib/raid-self-signup-mutation';
 import { normalizeSignupType, normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
-import { postSignupChangeThreadNotice, syncRaidThreadSummary } from '@/lib/raid-thread-sync';
+import {
+  postRaidLeaderChannelInfo,
+  postSignupChangeThreadNotice,
+  pushRaidDiscordPost,
+  syncRaidThreadSummary,
+} from '@/lib/raid-thread-sync';
 import { getAppConfig } from '@/lib/app-config';
 
 /**
@@ -20,8 +25,13 @@ import { getAppConfig } from '@/lib/app-config';
  *   join            – Eigene Anmeldung (characterId, type, signedSpec, note, punctuality)
  *   edit-signup     – Bestehende Anmeldung bearbeiten (gleiche Felder wie join)
  *   unregister      – Abmelden (optional: reason für späte Absage)
+ *   sync-post       – Discord-Beitrag neu synchronisieren (RaidTools, Raidleader+)
+ *   push-raid       – Raid-Post löschen und neu senden (RaidTools, Raidleader+)
+ *   leader-info     – Freitext an Raidleader-Kanal (message, discordUserLabel)
  *
  * GET /api/bot/discord-action?action=get-signup&discordUserId=...&raidId=...
+ * GET /api/bot/discord-action?action=get-raid-tools&discordUserId=...&raidId=...
+ *   canManage (Raidleader/Gildenmeister inkl. Owner-Web-Override), hasLeaderChannel
  *   Gibt aktuelle Anmeldedaten zurück (für Edit-Modal pre-fill).
  *
  * GET /api/bot/discord-action?action=get-chars&discordUserId=...&raidId=...
@@ -49,7 +59,13 @@ export async function GET(request: NextRequest) {
 
   const raid = await prisma.rfRaid.findUnique({
     where:  { id: raidId },
-    select: { id: true, guildId: true, signupUntil: true, status: true },
+    select: {
+      id: true,
+      guildId: true,
+      signupUntil: true,
+      status: true,
+      discordLeaderChannelId: true,
+    },
   });
   if (!raid) {
     return NextResponse.json({ error: 'Raid not found' }, { status: 404 });
@@ -64,6 +80,18 @@ export async function GET(request: NextRequest) {
   }
 
   const signupPhase = computeRaidSignupPhase(raid);
+
+  if (action === 'get-raid-tools') {
+    const access = await resolveRaidAccess(user.id, discordUserId, raid.guildId, raidId);
+    if (!access.ok) {
+      return NextResponse.json({ linked: true, canManage: false, hasLeaderChannel: false }, { status: 200 });
+    }
+    return NextResponse.json({
+      linked: true,
+      canManage: access.canEdit,
+      hasLeaderChannel: !!raid.discordLeaderChannelId?.trim(),
+    });
+  }
 
   if (action === 'get-signup') {
     const [rawSignups, appCfg] = await Promise.all([
@@ -442,6 +470,107 @@ export async function POST(request: NextRequest) {
       });
     }
     return NextResponse.json({ ok: true, message: 'Abmeldung erfolgreich.' });
+  }
+
+  // -------------------------------------------------------------------------
+  // RaidTools: Beitrag synchronisieren
+  // -------------------------------------------------------------------------
+  if (action === 'sync-post') {
+    if (!access.canEdit) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN', message: 'Nur Raidleader oder Gildenmeister dürfen RaidTools nutzen.' },
+        { status: 403 }
+      );
+    }
+    try {
+      await syncRaidThreadSummary(raidId);
+      return NextResponse.json({ ok: true, message: 'Discord-Beitrag wurde aktualisiert.' });
+    } catch (e) {
+      console.error('[discord-action sync-post]', raidId, e);
+      return NextResponse.json(
+        { error: 'SYNC_FAILED', message: 'Beitrag konnte nicht synchronisiert werden.' },
+        { status: 500 }
+      );
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // RaidTools: Raid pushen (neu posten)
+  // -------------------------------------------------------------------------
+  if (action === 'push-raid') {
+    if (!access.canEdit) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN', message: 'Nur Raidleader oder Gildenmeister dürfen RaidTools nutzen.' },
+        { status: 403 }
+      );
+    }
+    try {
+      await pushRaidDiscordPost(raidId);
+      return NextResponse.json({ ok: true, message: 'Raid wurde nach unten gepusht.' });
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      if (err === 'NO_DISCORD_POST') {
+        return NextResponse.json(
+          { error: 'NO_DISCORD_POST', message: 'Kein Discord-Beitrag für diesen Raid vorhanden.' },
+          { status: 400 }
+        );
+      }
+      if (err === 'RAID_NOT_PUSHABLE') {
+        return NextResponse.json(
+          { error: 'RAID_NOT_PUSHABLE', message: 'Abgeschlossene oder abgesagte Raids können nicht gepusht werden.' },
+          { status: 400 }
+        );
+      }
+      console.error('[discord-action push-raid]', raidId, e);
+      return NextResponse.json(
+        { error: 'PUSH_FAILED', message: 'Raid konnte nicht gepusht werden.' },
+        { status: 500 }
+      );
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Info @ Raidlead
+  // -------------------------------------------------------------------------
+  if (action === 'leader-info') {
+    const message = typeof body.message === 'string' ? body.message.trim() : '';
+    const discordUserLabel =
+      typeof body.discordUserLabel === 'string' ? body.discordUserLabel.trim() : '';
+    if (!message) {
+      return NextResponse.json(
+        { error: 'MESSAGE_EMPTY', message: 'Bitte eine Nachricht eingeben.' },
+        { status: 400 }
+      );
+    }
+    if (!discordUserLabel) {
+      return NextResponse.json({ error: 'Missing discordUserLabel' }, { status: 400 });
+    }
+    try {
+      await postRaidLeaderChannelInfo(raidId, discordUserLabel, message);
+      return NextResponse.json({ ok: true, message: 'Nachricht wurde an den Raidleader-Kanal gesendet.' });
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      if (err === 'NO_LEADER_CHANNEL') {
+        return NextResponse.json(
+          {
+            error: 'NO_LEADER_CHANNEL',
+            message: 'Für diesen Raid ist kein Raidleader-Kanal hinterlegt.',
+          },
+          { status: 400 }
+        );
+      }
+      if (err === 'MESSAGE_EMPTY') {
+        return NextResponse.json(
+          { error: 'MESSAGE_EMPTY', message: 'Bitte eine Nachricht eingeben.' },
+          { status: 400 }
+        );
+      }
+      console.error('[discord-action leader-info]', raidId, e);
+      return NextResponse.json(
+        { error: 'POST_FAILED', message: 'Nachricht konnte nicht gesendet werden.' },
+        { status: 500 }
+      );
+    }
   }
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 });

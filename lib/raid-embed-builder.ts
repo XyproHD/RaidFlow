@@ -670,5 +670,12 @@ export function buildRaidActionButtons(
         { type: 2, style: 4, label: 'Bin nicht da', emoji: { name: '🚫' }, custom_id: `rf:decl:${rid}:${gid}` },
       ],
     },
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 2, label: 'RaidTools', emoji: { name: '🟡' }, custom_id: `rf:tools:${rid}:${gid}` },
+        { type: 2, style: 2, label: 'Info @ Raidlead', emoji: { name: '🟡' }, custom_id: `rf:inforl:${rid}:${gid}` },
+      ],
+    },
   ];
 }
