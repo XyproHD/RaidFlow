@@ -5,9 +5,10 @@
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import {
   getSpecEmoji,
-  getClassEmoji,
+  getClassEmojiByClassId,
   getRoleEmoji,
 } from '@/lib/discord-wow-emojis';
+import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import type { AnnouncedGroupPayload } from '@/lib/raid-announce';
 import { PLANNER_PARTY_SIZE } from '@/lib/planner-party-slots';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
@@ -142,9 +143,7 @@ function playerLine(s: RaidEmbedSignup, emojis: Record<string, string>): string 
   const charName   = s.characterName || '?';
   const twink      = s.isMain === false ? ' *(T)*' : '';
   const punc       = punctualityIcon(s.punctuality);
-  const classEmoji = getClassEmoji(spec, emojis);
-  const specEmoji  = getSpecEmoji(spec, emojis);
-  const emojiPart  = [classEmoji, specEmoji].filter(Boolean).join('');
+  const emojiPart = getSpecEmoji(spec, emojis);
   return `${emojiPart}${emojiPart ? ' ' : ''}${charName}${twink}${punc}`;
 }
 
@@ -324,59 +323,148 @@ function appendLinesInColumnFields(
 }
 
 // ---------------------------------------------------------------------------
-// Zusammenfassungs-Helfer
+// Zusammenfassungs-Helfer (Anmeldungen)
 // ---------------------------------------------------------------------------
 
-/**
- * Rollen-Zusammenfassung mit Server-Icons (bzw. Unicode-Fallback).
- * Mindestvorgabe nicht erfüllt → **count/min** (fett), sonst nur count.
- */
-function roleSummaryLine(
-  byRole: Record<string, RaidEmbedSignup[]>,
-  mins:   { Tank: number; Melee: number; Range: number; Healer: number },
-  emojis: Record<string, string>,
-): string {
-  const parts = ROLE_DEFS.map(({ key }) => {
-    const count = byRole[key]?.length ?? 0;
-    const min   = mins[key as keyof typeof mins] ?? 0;
-    const emoji = getRoleEmoji(key, emojis);
-    if (min > 0 && count < min) {
-      return `${emoji} **${count}/${min}**`;
-    }
-    return `${emoji} ${count}`;
-  });
-  return parts.join('  ');
+function splitByRole(signups: RaidEmbedSignup[]): Record<string, RaidEmbedSignup[]> {
+  const byRole: Record<string, RaidEmbedSignup[]> = { Tank: [], Melee: [], Range: [], Healer: [], '?': [] };
+  for (const s of signups) {
+    const spec = s.signedSpec?.trim() || s.mainSpec?.trim();
+    const role = spec ? roleFromSpecDisplayName(spec) : null;
+    (byRole[role ?? '?'] ??= []).push(s);
+  }
+  return byRole;
 }
 
-/**
- * Klassen-Zusammenfassung — gleiche Optik wie Rollen-Zeile.
- * Trenner ` · ` zwischen Einträgen, nach je 5 Klassen Zeilenumbruch.
- * Nur ausgegeben wenn Custom-Server-Emojis konfiguriert sind.
- */
-function classCountLine(
-  signups: RaidEmbedSignup[],
-  emojis: Record<string, string>
-): string {
+function countSignupsByClassId(signups: RaidEmbedSignup[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const s of signups) {
     const spec = s.signedSpec?.trim() || s.mainSpec?.trim() || '';
-    const cls  = getClassEmoji(spec, emojis);
-    if (!cls) continue;
-    counts.set(cls, (counts.get(cls) ?? 0) + 1);
+    const cid = getSpecByDisplayName(spec)?.classId;
+    if (cid) counts.set(cid, (counts.get(cid) ?? 0) + 1);
   }
-  if (counts.size === 0) return '';
+  return counts;
+}
 
-  const COLS = 5;
-  const entries = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  const rows: string[] = [];
-  for (let i = 0; i < entries.length; i += COLS) {
-    rows.push(
-      entries.slice(i, i + COLS)
-        .map(([emoji, n]) => `${emoji} ${n}`)
-        .join('  ·  ')
-    );
+/** Spalte „Rollen“: alle Rollen, auch mit 0; Mindestvorgabe als count/min. */
+function buildRoleCountsColumn(
+  byRole: Record<string, RaidEmbedSignup[]>,
+  mins: { Tank: number; Melee: number; Range: number; Healer: number },
+  emojis: Record<string, string>,
+): string {
+  const lines = ROLE_DEFS.map(({ key, label }) => {
+    const count = byRole[key]?.length ?? 0;
+    const min = mins[key as keyof typeof mins] ?? 0;
+    const emoji = getRoleEmoji(key, emojis);
+    const countStr = min > 0 && count < min ? `**${count}/${min}**` : `**${count}**`;
+    return `${emoji} ${label} · ${countStr}`;
+  });
+  return lines.join('\n').slice(0, 1024);
+}
+
+/** Spalte „Klassen“: alle TBC-Klassen, auch mit 0. */
+function buildClassCountsColumn(
+  signups: RaidEmbedSignup[],
+  emojis: Record<string, string>,
+): string {
+  const counts = countSignupsByClassId(signups);
+  const lines = TBC_CLASSES.map((cls) => {
+    const n = counts.get(cls.id) ?? 0;
+    const emoji = getClassEmojiByClassId(cls.id, emojis);
+    const prefix = emoji ? `${emoji} ` : '';
+    return `${prefix}**${cls.name}** · **${n}**`;
+  });
+  return lines.join('\n').slice(0, 1024);
+}
+
+const EMPTY_PLAYER_SLOT = '·';
+
+/** Spieler je Rolle in bis zu drei Spalten pro Zeile (Discord-Limit). */
+function appendPlayersByRoleColumns(
+  packer: RaidEmbedFieldPacker,
+  byRole: Record<string, RaidEmbedSignup[]>,
+  emojis: Record<string, string>,
+): void {
+  const pushRoleColumn = (key: string, label: string) => {
+    const players = byRole[key] ?? [];
+    const title = `${getRoleEmoji(key, emojis)} ${label}`.trim();
+    if (players.length === 0) {
+      packer.push({ name: title.slice(0, 256), value: EMPTY_PLAYER_SLOT, inline: true });
+      return;
+    }
+    const lines = players.map((s) => playerLine(s, emojis));
+    let part = 0;
+    let i = 0;
+    while (i < lines.length) {
+      const chunk: string[] = [];
+      let len = 0;
+      while (i < lines.length) {
+        const line = lines[i]!;
+        const add = chunk.length ? 1 + line.length : line.length;
+        if (len + add > DISCORD_FIELD_VALUE_SAFE && chunk.length > 0) break;
+        if (len + add > DISCORD_FIELD_VALUE_SAFE && chunk.length === 0) {
+          chunk.push(`${line.slice(0, Math.max(1, DISCORD_FIELD_VALUE_SAFE - 1))}…`);
+          i++;
+          break;
+        }
+        chunk.push(line);
+        len += add;
+        i++;
+      }
+      const name =
+        part === 0 ? title.slice(0, 256) : `${title} (${part + 1})`.slice(0, 256);
+      packer.push({
+        name,
+        value: chunk.join('\n').slice(0, 1024) || EMPTY_PLAYER_SLOT,
+        inline: true,
+      });
+      part++;
+    }
+  };
+
+  for (const { key, label } of ROLE_DEFS.slice(0, 3)) {
+    pushRoleColumn(key, label);
   }
-  return rows.join('\n');
+  packer.push({ name: '\u200b', value: '\u200b', inline: false });
+  pushRoleColumn('Healer', 'Heiler');
+
+  if ((byRole['?']?.length ?? 0) > 0) {
+    packer.push({ name: '\u200b', value: '\u200b', inline: false });
+    pushRoleColumn('?', 'Unbekannt');
+  }
+}
+
+function appendAnmeldungenSection(
+  packer: RaidEmbedFieldPacker,
+  mainSignups: RaidEmbedSignup[],
+  byRole: Record<string, RaidEmbedSignup[]>,
+  mins: { Tank: number; Melee: number; Range: number; Healer: number },
+  emojis: Record<string, string>,
+  opts?: { showPlayers?: boolean },
+): void {
+  packer.push({ name: '📋 Anmeldungen', value: '\u200b', inline: false });
+
+  packer.push({
+    name: '**Rollen**',
+    value: buildRoleCountsColumn(byRole, mins, emojis),
+    inline: true,
+  });
+  packer.push({
+    name: '**Klassen**',
+    value: buildClassCountsColumn(mainSignups, emojis),
+    inline: true,
+  });
+
+  packer.push({ name: '\u200b', value: '\u200b', inline: false });
+
+  if (opts?.showPlayers === false) return;
+
+  if (mainSignups.length > 0) {
+    appendPlayersByRoleColumns(packer, byRole, emojis);
+    packer.push({ name: '\u200b', value: '\u200b', inline: false });
+  } else {
+    packer.push({ name: '\u200b', value: '_Keine Spieler angemeldet._', inline: false });
+  }
 }
 
 /** Je 5er-Spalte (G1, G2, …) ein inline-Embed-Feld mit Spielerzeilen unter „Raid N“. */
@@ -403,22 +491,25 @@ function appendRaidPartyColumnFields(
   }
 }
 
-function groupRoleSummaryLine(
+function groupRoleClassSummaryBlock(
   signupIds: string[],
   signupById: Map<string, RaidEmbedSignup>,
-  emojis: Record<string, string>
+  emojis: Record<string, string>,
 ): string {
-  const counts: Record<string, number> = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
+  const rosterSignups: RaidEmbedSignup[] = [];
   for (const id of signupIds) {
     const s = signupById.get(id);
-    if (!s) continue;
-    const spec = s.signedSpec?.trim() || s.mainSpec?.trim();
-    const role = spec ? roleFromSpecDisplayName(spec) : null;
-    if (role && role in counts) counts[role]++;
+    if (s) rosterSignups.push(s);
   }
-  return ROLE_DEFS
-    .map(({ key }) => `${getRoleEmoji(key, emojis)} ${counts[key]}`)
-    .join('  ');
+  const byRole = splitByRole(rosterSignups);
+  const zeroMins = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
+  return [
+    '**Rollen**',
+    buildRoleCountsColumn(byRole, zeroMins, emojis),
+    '',
+    '**Klassen**',
+    buildClassCountsColumn(rosterSignups, emojis),
+  ].join('\n').slice(0, 1024);
 }
 
 // ---------------------------------------------------------------------------
@@ -486,12 +577,8 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
     ? `${uniquePlayers} / ${totalMax} (${maxPlayers} je Raid)`
     : `${uniquePlayers} / ${maxPlayers}`;
 
-  const byRole: Record<string, RaidEmbedSignup[]> = { Tank: [], Melee: [], Range: [], Healer: [], '?': [] };
-  for (const s of mainSignups) {
-    const spec = s.signedSpec?.trim() || s.mainSpec?.trim();
-    const role = spec ? roleFromSpecDisplayName(spec) : null;
-    (byRole[role ?? '?'] ??= []).push(s);
-  }
+  const byRole = splitByRole(mainSignups);
+  const roleMins = { Tank: minTanks, Melee: minMelee, Range: minRange, Healer: minHealers };
 
   const labelCol = [
     '📅 **Termin**',
@@ -509,15 +596,14 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
   packer.push({ name: '\u200b', value: labelCol, inline: true });
   packer.push({ name: '\u200b', value: valueCol, inline: true });
 
-  if (isRevealed && mainSignups.length > 0) {
-    const mins      = { Tank: minTanks, Melee: minMelee, Range: minRange, Healer: minHealers };
-    const roleLine  = roleSummaryLine(byRole, mins, discordEmojis);
-    const classLine = classCountLine(mainSignups, discordEmojis);
-    const summaryValue = classLine ? `${roleLine}\n${classLine}` : roleLine;
-    packer.push({ name: '\u200b', value: summaryValue, inline: false });
-  }
-
   packer.push({ name: '\u200b', value: '\u200b', inline: false });
+
+  if (isRevealed) {
+    appendAnmeldungenSection(packer, mainSignups, byRole, roleMins, discordEmojis, {
+      showPlayers: !isAnnounced,
+    });
+    packer.push({ name: '\u200b', value: '\u200b', inline: false });
+  }
 
   if (isAnnounced && announcedGroups && announcedGroups.groups.length > 0) {
     const signupById   = new Map(signups.map(s => [s.id, s]));
@@ -540,7 +626,7 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
         headerLines.push(headerParts.join('  ·  '));
       }
 
-      headerLines.push(groupRoleSummaryLine(group.rosterOrder, signupById, discordEmojis));
+      headerLines.push(groupRoleClassSummaryBlock(group.rosterOrder, signupById, discordEmojis));
       headerLines.push('▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬');
 
       const headerValue =
@@ -589,29 +675,6 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
       }
     }
   } else if (isRevealed && (mainSignups.length > 0 || openReserveOrdered.length > 0)) {
-    if (mainSignups.length > 0) {
-      for (const { key, label } of ROLE_DEFS) {
-        const group = byRole[key];
-        if (!group?.length) continue;
-        const roleEmoji = getRoleEmoji(key, discordEmojis);
-        const nameBase = `${roleEmoji} ${label} (${group.length})`.trim();
-        appendLinesFullWidthChunks(
-          packer,
-          nameBase,
-          group.map(s => playerLine(s, discordEmojis)),
-        );
-      }
-
-      if (byRole['?'].length > 0) {
-        appendLinesFullWidthChunks(
-          packer,
-          `❓ Unbekannte Rolle (${byRole['?'].length})`,
-          byRole['?'].map(s => playerLine(s, discordEmojis)),
-        );
-      }
-    }
-    packer.push({ name: '\u200b', value: '\u200b', inline: false });
-
     const resTitle = `Reserve (${openReserveOrdered.length})`;
     if (openReserveOrdered.length > 0) {
       appendLinesInColumnFields(
@@ -633,8 +696,7 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
       value: '*nicht öffentlich*',
       inline: false,
     });
-  } else {
-    packer.push({ name: '\u200b', value: '*Noch keine Anmeldungen.*', inline: false });
+  } else if (isRevealed) {
     packer.push({ name: 'Reserve (0)', value: '*Keine Reserve*', inline: false });
   }
 
