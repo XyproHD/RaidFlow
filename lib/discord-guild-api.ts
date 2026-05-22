@@ -400,6 +400,78 @@ export async function editChannelMessageFull(
   }
 }
 
+export interface DiscordFetchedMessage {
+  id: string;
+  content: string;
+  timestamp: string;
+}
+
+/**
+ * Liest Nachrichten aus Channel oder Thread (neueste zuerst).
+ * `before`: ältere Nachrichten vor dieser Message-ID laden.
+ */
+export async function fetchChannelMessages(
+  channelId: string,
+  opts?: { limit?: number; before?: string }
+): Promise<DiscordFetchedMessage[]> {
+  const token = getBotToken();
+  if (!token) throw new Error('DISCORD_BOT_TOKEN not set');
+
+  const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 100);
+  const qs = new URLSearchParams({ limit: String(limit) });
+  if (opts?.before) qs.set('before', opts.before);
+
+  const res = await fetch(
+    `${DISCORD_API_BASE}/channels/${channelId}/messages?${qs}`,
+    { headers: { Authorization: `Bot ${token}` } }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Discord API fetch messages: ${res.status} ${text}`);
+  }
+
+  const data = (await res.json()) as Array<{
+    id?: string;
+    content?: string;
+    timestamp?: string;
+  }>;
+  if (!Array.isArray(data)) return [];
+
+  return data
+    .filter((m): m is { id: string; content: string; timestamp: string } => !!m.id && !!m.timestamp)
+    .map((m) => ({
+      id: m.id,
+      content: typeof m.content === 'string' ? m.content : '',
+      timestamp: m.timestamp,
+    }));
+}
+
+/** Alle Thread-Nachrichten chronologisch (älteste zuerst), mit Pagination. */
+export async function fetchAllChannelMessages(
+  channelId: string,
+  maxMessages = 500
+): Promise<DiscordFetchedMessage[]> {
+  const collected: DiscordFetchedMessage[] = [];
+  let before: string | undefined;
+
+  while (collected.length < maxMessages) {
+    const batch = await fetchChannelMessages(channelId, {
+      limit: 100,
+      before,
+    });
+    if (batch.length === 0) break;
+    collected.push(...batch);
+    if (batch.length < 100) break;
+    before = batch[batch.length - 1]!.id;
+  }
+
+  collected.sort(
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
+  return collected.slice(0, maxMessages);
+}
+
 /**
  * Löscht eine Nachricht im Kanal oder Thread (Best-Effort: 404 wird ignoriert).
  */
