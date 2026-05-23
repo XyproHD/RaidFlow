@@ -53,9 +53,28 @@ export async function pruneIneligibleOpenRaidSignups(
 
   if (raidIdsToPrune.length === 0) return;
 
-  await prisma.rfRaidSignup.deleteMany({
+  const deleted = await prisma.rfRaidSignup.findMany({
     where: { userId, raidId: { in: raidIdsToPrune } },
+    select: { id: true, raidId: true },
   });
+  if (deleted.length === 0) return;
+
+  await prisma.rfRaidSignup.deleteMany({
+    where: { id: { in: deleted.map((d) => d.id) } },
+  });
+
+  const { purgeSignupIdsFromRaidPlannerStorage } = await import('@/lib/raid-planner-json-cleanup');
+  const byRaid = new Map<string, string[]>();
+  for (const row of deleted) {
+    const list = byRaid.get(row.raidId) ?? [];
+    list.push(row.id);
+    byRaid.set(row.raidId, list);
+  }
+  for (const [raidId, ids] of byRaid) {
+    await purgeSignupIdsFromRaidPlannerStorage(prisma, raidId, ids).catch((e) =>
+      console.error('[prune signups] planner json cleanup:', e)
+    );
+  }
 
   for (const raidId of new Set(raidIdsToPrune)) {
     void syncRaidThreadSummary(raidId);

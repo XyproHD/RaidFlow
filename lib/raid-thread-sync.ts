@@ -16,6 +16,8 @@ import {
   createThreadFromMessage,
   deleteChannelMessage,
   editChannelMessageFull,
+  fetchAllChannelMessages,
+  type DiscordFetchedMessage,
 } from '@/lib/discord-guild-api';
 import { buildRaidEmbeds, buildRaidActionButtons } from '@/lib/raid-embed-builder';
 import { getAppConfig } from '@/lib/app-config';
@@ -236,9 +238,94 @@ export async function syncRaidThreadSummary(
   }
 }
 
+const DISCORD_MESSAGE_MAX = 2000;
+const THREAD_ARCHIVE_HEADER = '📜 **Protokoll (übernommen)**\n\n';
+
+function formatThreadArchiveTimestamp(date: Date): string {
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+/** Zeitstempel vor jeder Zeile — bereits archivierte Zeilen (mit `[…]`) bleiben unverändert. */
+function formatArchivedThreadLine(msg: DiscordFetchedMessage): string {
+  const text = msg.content.trim();
+  if (!text) return '';
+  if (/^\[\d{1,2}\.\d{1,2}\.\d{2,4}[,.]?\s*\d{1,2}:\d{2}\]/.test(text)) {
+    return text;
+  }
+  const ts = formatThreadArchiveTimestamp(new Date(msg.timestamp));
+  return `[${ts}] ${text}`;
+}
+
+/** Gruppiert Protokollzeilen in mehrere Discord-Nachrichten (max. 2000 Zeichen). */
+function buildThreadArchiveChunks(messages: DiscordFetchedMessage[]): string[] {
+  const lines = messages.map(formatArchivedThreadLine).filter(Boolean);
+  if (lines.length === 0) return [];
+
+  const chunks: string[] = [];
+  let buffer = THREAD_ARCHIVE_HEADER;
+
+  const flush = () => {
+    const trimmed = buffer.trimEnd();
+    if (trimmed && trimmed !== THREAD_ARCHIVE_HEADER.trim()) {
+      chunks.push(trimmed.slice(0, DISCORD_MESSAGE_MAX));
+    }
+    buffer = '';
+  };
+
+  for (const rawLine of lines) {
+    const line =
+      rawLine.length > DISCORD_MESSAGE_MAX - 20
+        ? `${rawLine.slice(0, DISCORD_MESSAGE_MAX - 23)}…`
+        : rawLine;
+
+    const needsSep = buffer.length > 0 && !buffer.endsWith('\n\n') && buffer !== THREAD_ARCHIVE_HEADER;
+    const candidate = needsSep ? `${buffer}\n${line}` : `${buffer}${line}`;
+
+    if (candidate.length > DISCORD_MESSAGE_MAX) {
+      flush();
+      buffer = line;
+      if (buffer.length > DISCORD_MESSAGE_MAX) {
+        chunks.push(buffer.slice(0, DISCORD_MESSAGE_MAX));
+        buffer = '';
+      }
+    } else {
+      buffer = candidate;
+    }
+  }
+
+  flush();
+  return chunks;
+}
+
+async function loadThreadArchiveChunks(threadId: string): Promise<string[]> {
+  try {
+    const messages = await fetchAllChannelMessages(threadId);
+    return buildThreadArchiveChunks(messages);
+  } catch (e) {
+    console.warn('[pushRaidDiscordPost] thread archive read failed:', e);
+    return [];
+  }
+}
+
+async function postThreadArchiveChunks(threadId: string, chunks: string[]): Promise<void> {
+  const { createChannelMessage } = await import('@/lib/discord-guild-api');
+  for (const chunk of chunks) {
+    const text = chunk.trim();
+    if (!text) continue;
+    await createChannelMessage(threadId, text.slice(0, DISCORD_MESSAGE_MAX));
+  }
+}
+
 /**
  * Raid-Post erneut senden (Push): alte Kanal-Nachricht löschen, neu posten → wieder unten im Channel.
- * Der Diskussions-Thread bleibt unverändert (discordThreadId).
+ * Protokoll-Nachrichten aus dem bisherigen Thread werden mit Zeitstempel in den neuen Thread übernommen.
  */
 export async function pushRaidDiscordPost(raidId: string): Promise<void> {
   const raid = await prisma.rfRaid.findUnique({
@@ -246,6 +333,7 @@ export async function pushRaidDiscordPost(raidId: string): Promise<void> {
     select: {
       discordChannelId: true,
       discordChannelMessageId: true,
+      discordThreadId: true,
       status: true,
     },
   });
@@ -258,6 +346,9 @@ export async function pushRaidDiscordPost(raidId: string): Promise<void> {
 
   const channelId = raid.discordChannelId;
   const oldMessageId = raid.discordChannelMessageId;
+  const oldThreadId = raid.discordThreadId?.trim() || null;
+
+  const archiveChunks = oldThreadId ? await loadThreadArchiveChunks(oldThreadId) : [];
 
   await prisma.rfRaid.update({
     where: { id: raidId },
@@ -271,6 +362,19 @@ export async function pushRaidDiscordPost(raidId: string): Promise<void> {
   }
 
   await syncRaidThreadSummary(raidId, { allowCreate: true });
+
+  const after = await prisma.rfRaid.findUnique({
+    where: { id: raidId },
+    select: { discordThreadId: true },
+  });
+  const newThreadId = after?.discordThreadId?.trim();
+  if (newThreadId && archiveChunks.length > 0) {
+    try {
+      await postThreadArchiveChunks(newThreadId, archiveChunks);
+    } catch (e) {
+      console.warn('[pushRaidDiscordPost] thread archive post failed:', e);
+    }
+  }
 }
 
 function formatRaidLeaderInfoDate(date: Date): string {

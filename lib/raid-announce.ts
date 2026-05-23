@@ -275,14 +275,22 @@ export async function executeRaidAnnounceTransaction(args: {
   maxPlayers: number;
   unsetPlayersMode?: UnsetPlayersMode;
 }): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  const { prisma, raidId, guildId, changedByUserId, payload, maxPlayers, unsetPlayersMode } =
-    args;
+  const { prisma, raidId, guildId, changedByUserId, maxPlayers, unsetPlayersMode } = args;
 
   /** Einmal laden: Validierung + Audit-Vorher + keine findUnique-Schleife in der Transaktion (Vercel/5s-Timeout). */
   const signupRows = await prisma.rfRaidSignup.findMany({ where: { raidId } });
   const known = new Set(signupRows.map((s) => s.id));
-  const idCheck = validateAnnouncePayloadAgainstKnownIds(payload, known);
+  const { sanitizeAnnounceRaidPayload } = await import('@/lib/planner-roster-sanitize');
+  const sanitized = sanitizeAnnounceRaidPayload(args.payload, known, maxPlayers);
+  if (sanitized.hadInvalid) {
+    console.warn(
+      `[raid announce] removed ${sanitized.removed.length} invalid signup id(s) from planner layout`,
+      sanitized.removed.map((r) => r.signupId)
+    );
+  }
+  const idCheck = validateAnnouncePayloadAgainstKnownIds(sanitized.payload, known);
   if (!idCheck.ok) return idCheck;
+  const payload = sanitized.payload;
 
   await prisma.$transaction(
     async (tx) => {

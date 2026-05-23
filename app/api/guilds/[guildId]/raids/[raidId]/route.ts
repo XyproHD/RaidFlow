@@ -9,8 +9,8 @@ import {
   announceLayoutToStoredJson,
   executeRaidAnnounceTransaction,
   parseAnnounceRaidPayload,
-  validateAnnouncePayloadAgainstKnownIds,
 } from '@/lib/raid-announce';
+import { sanitizeAnnounceRaidPayload } from '@/lib/planner-roster-sanitize';
 import { parseUnsetPlayersMode } from '@/lib/planner-unset-policy';
 import { RAID_CANCEL_DM_MAX_LENGTH } from '@/lib/raid-cancel-message';
 
@@ -392,11 +392,11 @@ export async function PATCH(
         select: { id: true },
       });
       const known = new Set(knownRows.map((r) => r.id));
-      const idCheck = validateAnnouncePayloadAgainstKnownIds(parsed.data, known);
-      if (!idCheck.ok) {
-        return NextResponse.json({ error: idCheck.error }, { status: idCheck.status });
-      }
-      announcedPlannerGroupsJsonUpdate = announceLayoutToStoredJson(parsed.data, raid.maxPlayers);
+      const sanitized = sanitizeAnnounceRaidPayload(parsed.data, known, raid.maxPlayers);
+      announcedPlannerGroupsJsonUpdate = announceLayoutToStoredJson(
+        sanitized.payload,
+        raid.maxPlayers
+      );
     }
   }
 
@@ -419,11 +419,11 @@ export async function PATCH(
         select: { id: true },
       });
       const known = new Set(knownRows.map((r) => r.id));
-      const idCheck = validateAnnouncePayloadAgainstKnownIds(parsed.data, known);
-      if (!idCheck.ok) {
-        return NextResponse.json({ error: idCheck.error }, { status: idCheck.status });
-      }
-      draftPlannerGroupsJsonUpdate = announceLayoutToStoredJson(parsed.data, raid.maxPlayers);
+      const sanitized = sanitizeAnnounceRaidPayload(parsed.data, known, raid.maxPlayers);
+      draftPlannerGroupsJsonUpdate = announceLayoutToStoredJson(
+        sanitized.payload,
+        raid.maxPlayers
+      );
     } else {
       draftPlannerGroupsJsonUpdate = Prisma.DbNull;
     }
