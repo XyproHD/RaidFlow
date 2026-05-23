@@ -7,6 +7,8 @@ type PlannerPartyInlineProps = {
   groupIndex: number;
   partySlots: string[][];
   tPartyTitle: (n: number) => string;
+  /** Nur bekannte Signup-IDs gelten als belegt (Ghost-IDs aus veraltetem JSON → leerer Slot). */
+  knownSignupIds?: Set<string>;
   renderSignup: (signupId: string, partyIndex: number, cellIndex: number) => React.ReactNode;
 };
 
@@ -15,6 +17,7 @@ export function PlannerPartyInline({
   groupIndex,
   partySlots,
   tPartyTitle,
+  knownSignupIds,
   renderSignup,
 }: PlannerPartyInlineProps) {
   if (partySlots.length === 0) return null;
@@ -29,7 +32,8 @@ export function PlannerPartyInline({
           <div className="space-y-1.5" role="list">
             {Array.from({ length: PLANNER_PARTY_SIZE }, (_, cellIndex) => {
               const id = row[cellIndex]?.trim() ?? '';
-              const hasPlayer = id.length > 0;
+              const hasPlayer =
+                id.length > 0 && (!knownSignupIds || knownSignupIds.has(id));
               return (
                 <div
                   key={`${groupIndex}-${partyIndex}-${cellIndex}`}

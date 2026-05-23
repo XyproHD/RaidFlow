@@ -226,6 +226,12 @@ export async function DELETE(
       : null;
     const prevSnap = snapshotSignup(existing);
     await prisma.rfRaidSignup.delete({ where: { id: existing.id } });
+    const { purgeSignupIdsFromRaidPlannerStorage } = await import(
+      '@/lib/raid-planner-json-cleanup'
+    );
+    await purgeSignupIdsFromRaidPlannerStorage(prisma, raidId, [existing.id]).catch((e) =>
+      console.error('[DELETE signup] planner json cleanup:', e)
+    );
     const auditNewValue =
       raid.status === 'announced' && existing.setConfirmed && withdrawReason.length >= WITHDRAW_REASON_MIN
         ? JSON.stringify({ withdrawReason })

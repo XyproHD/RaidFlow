@@ -40,9 +40,7 @@ import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overl
 import { PlannerPartyInline } from '@/components/raid-planner/planner-party-grid';
 import {
   applyPartyLayoutToGroup,
-  findFirstEmptyCellInPartyRow,
   findFirstEmptyPartyCell,
-  isPartyRowFull,
   parsePartySlotsFromStored,
   rosterOrderFromPartySlots,
   setPartyCell,
@@ -50,6 +48,11 @@ import {
   stripSignupIdsFromPlannerGroups,
   syncPartySlotsForGroup,
 } from '@/lib/planner-party-slots';
+import {
+  isPartyRowFullForKnown,
+  sanitizeAnnounceRaidPayload,
+  type PlannerSanitizeRemoval,
+} from '@/lib/planner-roster-sanitize';
 import type { ComparisonPlacement } from '@/lib/planner-comparison';
 
 const ROLE_ORDER: TbcRole[] = ['Tank', 'Healer', 'Melee', 'Range'];
@@ -224,13 +227,17 @@ function resolveQuickDropOnRelease(
   clientX: number,
   clientY: number,
   hoverFallback: QuickDropTarget | null,
-  plannerGroups: PlannerGroup[]
+  plannerGroups: PlannerGroup[],
+  knownSignupIds: Set<string>
 ): QuickDropTarget | null {
   const hit = findQuickDropTarget(clientX, clientY) ?? hoverFallback;
   if (!hit) return null;
   if (
     hit.kind === 'party' &&
-    isPartyRowFull(plannerGroups[hit.groupIndex]?.partySlots[hit.partyIndex] ?? [])
+    isPartyRowFullForKnown(
+      plannerGroups[hit.groupIndex]?.partySlots[hit.partyIndex] ?? [],
+      knownSignupIds
+    )
   ) {
     return null;
   }
@@ -496,6 +503,7 @@ export function RaidRosterPlanner({
   }, [initialSignups]);
 
   const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
+  const knownSignupIds = useMemo(() => new Set(signups.map((s) => s.id)), [signups]);
 
   const [plannerGroups, setPlannerGroups] = useState<PlannerGroup[]>(() => [
     applyPartyLayoutToGroup(
@@ -706,6 +714,17 @@ export function RaidRosterPlanner({
       nextDecline = nextDecline.filter(
         (id) => !rosterSetFinal.has(id) && !nextReserve.includes(id)
       );
+
+      const layoutSanitized = sanitizeAnnounceRaidPayload(
+        { groups: nextGroups, reserveOrder: nextReserve, declineOrder: nextDecline },
+        idsSet,
+        maxPlayers
+      );
+      if (layoutSanitized.hadInvalid) {
+        nextGroups = layoutSanitized.payload.groups as PlannerGroup[];
+        nextReserve = layoutSanitized.payload.reserveOrder;
+        nextDecline = layoutSanitized.payload.declineOrder;
+      }
 
       setPlannerGroups(nextGroups);
       setReserveOrder(nextReserve);
@@ -1469,7 +1488,7 @@ export function RaidRosterPlanner({
           );
           if (hover.kind === 'party') {
             const row = plannerGroups[hover.groupIndex]?.partySlots[hover.partyIndex];
-            if (row && isPartyRowFull(row)) {
+            if (row && isPartyRowFullForKnown(row, knownSignupIds)) {
               setQuickDropHover(null);
               quickDropHoverRef.current = null;
               return;
@@ -1611,7 +1630,8 @@ export function RaidRosterPlanner({
             e.clientX,
             e.clientY,
             quickDropHoverRef.current,
-            plannerGroups
+            plannerGroups,
+            knownSignupIds
           )
         : null;
       if (quick?.kind === 'action' && quick.action === 'pool') {
@@ -2077,29 +2097,121 @@ export function RaidRosterPlanner({
     }
   }
 
+  function applyLayoutSanitizeToState(
+    groups: PlannerGroup[],
+    reserve: string[],
+    decline: string[]
+  ): { groups: PlannerGroup[]; reserve: string[]; decline: string[] } {
+    const r = sanitizeAnnounceRaidPayload(
+      { groups, reserveOrder: reserve, declineOrder: decline },
+      knownSignupIds,
+      raid.maxPlayers
+    );
+    if (!r.hadInvalid) return { groups, reserve, decline };
+    return {
+      groups: r.payload.groups as PlannerGroup[],
+      reserve: r.payload.reserveOrder,
+      decline: r.payload.declineOrder,
+    };
+  }
+
+  async function doSanitizeRoster() {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const cleaned = applyLayoutSanitizeToState(plannerGroups, reserveOrder, declineOrder);
+      setPlannerGroups(cleaned.groups);
+      setReserveOrder(cleaned.reserve);
+      setDeclineOrder(cleaned.decline);
+
+      const res = await fetch(
+        `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/planner-sanitize`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            persist: true,
+            layout: {
+              groups: syncPlannerGroupsParties(cleaned.groups).map((g) => ({
+                rosterOrder: g.rosterOrder,
+                raidLeaderUserId: g.raidLeaderUserId,
+                lootmasterUserId: g.lootmasterUserId,
+                partySlots: g.partySlots,
+              })),
+              reserveOrder: cleaned.reserve,
+              declineOrder: cleaned.decline,
+            },
+          }),
+        }
+      );
+      const json = (await res.json().catch(() => ({}))) as {
+        hadInvalid?: boolean;
+        removed?: Array<{ hint?: string; signupId?: string }>;
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(json.error || tRoster('sanitizeRosterError'));
+      }
+      if (!json.hadInvalid) {
+        setSaveError(tRoster('sanitizeRosterClean'));
+        return;
+      }
+      const hints = (json.removed ?? [])
+        .map((r) => r.hint || r.signupId || '')
+        .filter(Boolean)
+        .join('\n');
+      setSaveError(
+        tRoster('sanitizeRosterFixed', { count: String(json.removed?.length ?? 0) }) +
+          (hints ? `\n${hints}` : '')
+      );
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function doSaveDraft() {
     if (saving) return;
     setSaving(true);
     setSaveError(null);
     try {
       const declinePlacementSetPre = new Set(declineOrder);
-      const plannerGroupsForSave = stripSignupIdsFromPlannerGroups(
+      let plannerGroupsForSave = stripSignupIdsFromPlannerGroups(
         plannerGroups,
         declinePlacementSetPre,
         raid.maxPlayers
       );
+      const preSaveSanitize = sanitizeAnnounceRaidPayload(
+        {
+          groups: plannerGroupsForSave,
+          reserveOrder,
+          declineOrder,
+        },
+        knownSignupIds,
+        raid.maxPlayers
+      );
+      if (preSaveSanitize.hadInvalid) {
+        plannerGroupsForSave = preSaveSanitize.payload.groups as PlannerGroup[];
+        setPlannerGroups(plannerGroupsForSave);
+        setReserveOrder(preSaveSanitize.payload.reserveOrder);
+        setDeclineOrder(preSaveSanitize.payload.declineOrder);
+      }
+      const reserveOrderWorking = preSaveSanitize.payload.reserveOrder;
+      const declineOrderWorking = preSaveSanitize.payload.declineOrder;
       const rosterFlat = allRosterIds(plannerGroupsForSave);
       const rosterSetForPlacement = new Set(rosterFlat);
       const forbidReserveById = new Map(signups.map((s) => [s.id, !!s.forbidReserve]));
       const baseReserve = orderedReserveSignupIdsForDisplay(
-        reserveOrder,
+        reserveOrderWorking,
         signups.map((s) => ({ id: s.id, type: s.signupType }))
       ).filter((id) => !rosterSetForPlacement.has(id));
       const policyApplied = applyPlannerUnsetPolicy({
         allSignupIds: signups.map((s) => s.id),
         rosterIdSet: rosterSetForPlacement,
         reserveOrder: baseReserve,
-        declineOrder,
+        declineOrder: declineOrderWorking,
         forbidReserveById,
         unsetPlayersMode,
       });
@@ -2249,6 +2361,20 @@ export function RaidRosterPlanner({
         new Set(snapshotDecline),
         raid.maxPlayers
       );
+      const snapSanitized = sanitizeAnnounceRaidPayload(
+        {
+          groups: snapshotGroups,
+          reserveOrder: snapshotReserve,
+          declineOrder: snapshotDecline,
+        },
+        new Set(snapshotSignups.map((s) => s.id)),
+        raid.maxPlayers
+      );
+      if (snapSanitized.hadInvalid) {
+        snapshotGroups = snapSanitized.payload.groups as PlannerGroup[];
+        snapshotReserve = snapSanitized.payload.reserveOrder;
+        snapshotDecline = snapSanitized.payload.declineOrder;
+      }
       setPlannerGroups(snapshotGroups);
       setReserveOrder(snapshotReserve);
       setDeclineOrder(snapshotDecline);
@@ -2374,12 +2500,17 @@ export function RaidRosterPlanner({
       setSaveError(tRoster('announceSaveManualFirst'));
       return;
     }
-    const rosterFlat = allRosterIds(plannerGroups);
-    for (const rid of rosterFlat) {
+    const announceLayoutPreview = applyLayoutSanitizeToState(
+      plannerGroups,
+      reserveOrder,
+      declineOrder
+    );
+    const rosterFlatPreview = allRosterIds(announceLayoutPreview.groups);
+    for (const rid of rosterFlatPreview) {
       const row = byId.get(rid);
       const uid = (row?.userId ?? '').trim();
       if (!uid) continue;
-      if (findUserRosterConflict(plannerGroups, byId, rid, uid)) {
+      if (findUserRosterConflict(announceLayoutPreview.groups, byId, rid, uid)) {
         setSaveError(tRoster('saveErrorDiscordMultiGroup'));
         return;
       }
@@ -2388,16 +2519,26 @@ export function RaidRosterPlanner({
     setSaving(true);
     setSaveError(null);
     try {
-      const rosterSetAnnounce = new Set(rosterFlat);
+      const announceLayoutClean = announceLayoutPreview;
+      setPlannerGroups(announceLayoutClean.groups);
+      setReserveOrder(announceLayoutClean.reserve);
+      setDeclineOrder(announceLayoutClean.decline);
+      const groupsForAnnounce = stripSignupIdsFromPlannerGroups(
+        announceLayoutClean.groups,
+        new Set(announceLayoutClean.decline),
+        raid.maxPlayers
+      );
+      const rosterFlatAnnounce = allRosterIds(groupsForAnnounce);
+      const rosterSetAnnounce = new Set(rosterFlatAnnounce);
       const forbidReserveAnnounce = new Map(signups.map((s) => [s.id, !!s.forbidReserve]));
       const announcePolicy = applyPlannerUnsetPolicy({
         allSignupIds: signups.map((s) => s.id),
         rosterIdSet: rosterSetAnnounce,
         reserveOrder: orderedReserveSignupIdsForDisplay(
-          reserveOrder,
+          announceLayoutClean.reserve,
           signups.map((s) => ({ id: s.id, type: s.signupType }))
         ).filter((id) => !rosterSetAnnounce.has(id)),
-        declineOrder,
+        declineOrder: announceLayoutClean.decline,
         forbidReserveById: forbidReserveAnnounce,
         unsetPlayersMode,
       });
@@ -2411,7 +2552,7 @@ export function RaidRosterPlanner({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'announce',
-            groups: syncPlannerGroupsParties(plannerGroups).map((g) => ({
+            groups: syncPlannerGroupsParties(groupsForAnnounce).map((g) => ({
               rosterOrder: g.rosterOrder,
               raidLeaderUserId: g.raidLeaderUserId,
               lootmasterUserId: g.lootmasterUserId,
@@ -2427,6 +2568,7 @@ export function RaidRosterPlanner({
         const txt = await res.text().catch(() => '');
         throw new Error(formatSignupApiErrorPayload(txt) || tRoster('announceError'));
       }
+      setPlannerGroups(groupsForAnnounce);
       setReserveOrder(reserveOrderPayload);
       setDeclineOrder(declineOrderPayload);
       router.push(`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`);
@@ -2586,6 +2728,21 @@ export function RaidRosterPlanner({
               title={tRoster('save')}
             >
               {tRoster('save')}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void doSanitizeRoster()}
+              disabled={saving}
+              className={cn(
+                'rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                'border-amber-600/50 text-amber-800 hover:bg-amber-50',
+                'dark:border-amber-400/50 dark:text-amber-300 dark:hover:bg-amber-950/30',
+                saving && 'opacity-60 cursor-not-allowed'
+              )}
+              title={tRoster('sanitizeRosterHint')}
+            >
+              {tRoster('sanitizeRoster')}
             </button>
 
             <button
@@ -2918,6 +3075,7 @@ export function RaidRosterPlanner({
                   <PlannerPartyInline
                     groupIndex={groupIndex}
                     partySlots={group.partySlots}
+                    knownSignupIds={knownSignupIds}
                     tPartyTitle={(n) => tRoster('partyTitle', { n })}
                     renderSignup={(signupId, _pi, cellIndex) => {
                       const s = byId.get(signupId);
@@ -3867,7 +4025,7 @@ export function RaidRosterPlanner({
                     {group.partySlots.map((row, pi) => {
                       const target: QuickDropTarget = { kind: 'party', groupIndex: gi, partyIndex: pi };
                       const key = quickDropTargetKey(target);
-                      const full = isPartyRowFull(row);
+                      const full = isPartyRowFullForKnown(row, knownSignupIds);
                       const opacity = quickDropOpacities[key] ?? 0;
                       return (
                         <button
