@@ -40,6 +40,7 @@ import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overl
 import { PlannerPartyInline } from '@/components/raid-planner/planner-party-grid';
 import {
   applyPartyLayoutToGroup,
+  findFirstEmptyCellInPartyRow,
   findFirstEmptyPartyCell,
   parsePartySlotsFromStored,
   rosterOrderFromPartySlots,
