@@ -478,38 +478,83 @@ function discordRaiderRoleMention(roleId: string | null | undefined): string | n
   return `<@&${id}>`;
 }
 
-/** Thread-Log beim Anlegen eines offenen Raids: Raider-Rolle per @ informieren. */
-export async function postRaidOpenThreadNotice(raidId: string): Promise<void> {
+function formatRaidChannelNoticeDate(date: Date): string {
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin',
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
+/** Raider-Rolle im Raid-Channel erwähnen (nicht im Thread-Log). */
+export async function postRaidRaiderChannelMention(
+  raidId: string,
+  messageBody: string,
+  opts?: { commaAfterMention?: boolean }
+): Promise<void> {
+  const raid = await prisma.rfRaid.findUnique({
+    where: { id: raidId },
+    select: {
+      discordChannelId: true,
+      guild: { select: { discordRoleRaiderId: true } },
+    },
+  });
+  const channelId = raid?.discordChannelId?.trim();
+  if (!channelId) {
+    throw new Error('NO_DISCORD_CHANNEL');
+  }
+
+  const body = messageBody.trim();
+  if (!body) {
+    throw new Error('MESSAGE_EMPTY');
+  }
+
+  const roleMention = discordRaiderRoleMention(raid!.guild.discordRoleRaiderId);
+  const content = (
+    roleMention
+      ? opts?.commaAfterMention
+        ? `${roleMention}, ${body}`
+        : `${roleMention} ${body}`
+      : body
+  ).slice(0, 2000);
+  const raiderRoleId = raid!.guild.discordRoleRaiderId?.trim();
+
+  const { createChannelMessageFull } = await import('@/lib/discord-guild-api');
+  await createChannelMessageFull(channelId, {
+    content,
+    ...(raiderRoleId
+      ? { allowedMentions: { parse: [], roles: [raiderRoleId] } }
+      : {}),
+  });
+}
+
+/**
+ * Beim Anlegen eines offenen Raids: Hinweis im Channel (oberhalb des Raid-Posts),
+ * nicht im Thread-Protokoll.
+ */
+export async function postRaidOpenChannelNotice(raidId: string): Promise<void> {
   try {
     const raid = await prisma.rfRaid.findUnique({
       where: { id: raidId },
       select: {
-        discordThreadId: true,
-        name: true,
+        discordChannelId: true,
+        scheduledAt: true,
         status: true,
         guild: { select: { discordRoleRaiderId: true } },
-        dungeon: { select: { name: true } },
       },
     });
-    if (!raid?.discordThreadId) return;
-    if (raid.status !== 'open') return;
+    if (!raid?.discordChannelId?.trim() || raid.status !== 'open') return;
 
-    const { createChannelMessageFull } = await import('@/lib/discord-guild-api');
-    const roleMention = discordRaiderRoleMention(raid.guild.discordRoleRaiderId);
-    const lead = roleMention
-      ? `${roleMention}, ein neuer Raid steht zur Anmeldung bereit.`
-      : 'Ein neuer Raid steht zur Anmeldung bereit.';
-    const content = `${lead}\n📣 **${raid.dungeon.name}** / **${raid.name}**`;
-
-    const raiderRoleId = raid.guild.discordRoleRaiderId?.trim();
-    await createChannelMessageFull(raid.discordThreadId, {
-      content: content.slice(0, 2000),
-      ...(raiderRoleId
-        ? { allowedMentions: { parse: [], roles: [raiderRoleId] } }
-        : {}),
-    });
+    const dateLabel = formatRaidChannelNoticeDate(raid.scheduledAt);
+    await postRaidRaiderChannelMention(
+      raidId,
+      `für den ${dateLabel} steht ein neuer Anmelder zur Verfügung.`,
+      { commaAfterMention: true }
+    );
   } catch (e) {
-    console.error('[postRaidOpenThreadNotice]', raidId, e);
+    console.error('[postRaidOpenChannelNotice]', raidId, e);
   }
 }
 

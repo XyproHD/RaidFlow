@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
 import { channelExists } from '@/lib/discord-guild-api';
-import { postRaidOpenThreadNotice, syncRaidThreadSummary } from '@/lib/raid-thread-sync';
+import { postRaidOpenChannelNotice, syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 import { parseMinSpecsPayload } from '@/lib/min-spec-keys';
 
 /**
@@ -268,9 +268,9 @@ export async function POST(
       data:  { discordChannelId },
     });
     try {
-      // syncRaidThreadSummary postet Embed in Channel + erstellt Thread + speichert IDs
+      // Hinweis im Channel (vor dem Embed), danach Raid-Post + Thread
+      await postRaidOpenChannelNotice(raid.id);
       await syncRaidThreadSummary(raid.id, { allowCreate: true });
-      await postRaidOpenThreadNotice(raid.id);
     } catch (e) {
       console.error('[POST raids] Discord post failed:', e);
       discordThreadWarning = 'discord_post_failed';

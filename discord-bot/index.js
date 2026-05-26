@@ -2903,8 +2903,9 @@ function raidToolsErrorText(err) {
     RAID_NOT_PUSHABLE: '❌ Abgeschlossene oder abgesagte Raids können nicht gepusht werden.',
     SYNC_FAILED:       '❌ Beitrag konnte nicht synchronisiert werden.',
     PUSH_FAILED:       '❌ Raid konnte nicht gepusht werden.',
-    NO_LEADER_CHANNEL: '❌ Für diesen Raid ist kein Raidleader-Kanal hinterlegt.',
-    MESSAGE_EMPTY:     '❌ Bitte eine Nachricht eingeben.',
+    NO_LEADER_CHANNEL:  '❌ Für diesen Raid ist kein Raidleader-Kanal hinterlegt.',
+    NO_DISCORD_CHANNEL: '❌ Kein Discord-Channel für diesen Raid hinterlegt.',
+    MESSAGE_EMPTY:      '❌ Bitte eine Nachricht eingeben.',
     POST_FAILED:       '❌ Nachricht konnte nicht gesendet werden.',
     NOT_LINKED:        raidActionErrorText('NOT_LINKED'),
   };
@@ -2951,9 +2952,13 @@ async function handleRaidToolsButton(interaction, raidId) {
           .setDescription('Discord-Beitrag mit dem Backend synchronisieren')
           .setValue('sync'),
         new StringSelectMenuOptionBuilder()
-          .setLabel('Raid Pushen')
+          .setLabel('Raid pushen (ohne Erwähnung)')
           .setDescription('Beitrag erneut posten (wieder unten im Channel)')
           .setValue('push'),
+        new StringSelectMenuOptionBuilder()
+          .setLabel('Raid pushen (mit Erwähnung)')
+          .setDescription('Raider-Rolle erwähnen, dann Beitrag nach unten pushen')
+          .setValue('push-mention'),
       ),
   );
 
@@ -2963,8 +2968,51 @@ async function handleRaidToolsButton(interaction, raidId) {
   }).catch(() => {});
 }
 
+function showRaidPushMentionModal(interaction, raidId) {
+  const raidNoDash = raidId.replace(/-/g, '');
+  const modal = new ModalBuilder()
+    .setCustomId(`rfm:pushmention:${raidNoDash}`)
+    .setTitle('Raid pushen (mit Erwähnung)');
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('mentionText')
+        .setLabel('Zusatztext (nach @Raider-Rolle)')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(1500)
+        .setPlaceholder('z. B. Es werden noch mehr Anmeldungen benötigt.'),
+    ),
+  );
+  return interaction.showModal(modal);
+}
+
+async function handleRaidPushMentionModal(interaction, raidId) {
+  const mentionText = interaction.fields.getTextInputValue('mentionText').trim();
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+
+  const { ok, json } = await callDiscordAction({
+    action: 'push-raid-mention',
+    discordUserId: interaction.user.id,
+    raidId,
+    mentionText,
+  });
+
+  const outcome = ok
+    ? `✅ ${json.message ?? 'Erwähnung gesendet und Raid gepusht.'}`
+    : raidToolsErrorText(json.error);
+  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
 async function handleRaidToolsSelect(interaction, raidId) {
   const tool = interaction.values[0];
+
+  if (tool === 'push-mention') {
+    await showRaidPushMentionModal(interaction, raidId).catch(() => {});
+    return;
+  }
+
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
 
   const action = tool === 'push' ? 'push-raid' : 'sync-post';
@@ -3384,7 +3432,8 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'joinnote') { await handleJoinNoteModal(interaction, raidId); return; }
         if (action === 'join2note') { await handleJoin2NoteModal(interaction, raidId); return; }
         if (action === 'editnote') { await handleEditNoteModal(interaction, raidId); return; }
-        if (action === 'rlinfo')   { await handleRaidLeaderInfoModal(interaction, raidId); return; }
+        if (action === 'rlinfo')       { await handleRaidLeaderInfoModal(interaction, raidId); return; }
+        if (action === 'pushmention')  { await handleRaidPushMentionModal(interaction, raidId); return; }
       } catch (e) {
         console.error('[RaidModal]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler beim Verarbeiten.', ephemeral: true }).catch(() => {});
