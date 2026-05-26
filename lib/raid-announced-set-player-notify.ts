@@ -135,13 +135,14 @@ export async function resolveRaidflowActorLabel(
   userId: string,
   guildId: string
 ): Promise<string> {
-  const ug = await prisma.rfUserGuild.findFirst({
-    where: { userId, guildId },
-    select: { guildDiscordDisplayName: true },
+  const withDiscord = await prisma.rfCharacter.findFirst({
+    where: { userId, guildId, guildDiscordDisplayName: { not: null } },
+    select: { guildDiscordDisplayName: true, name: true, isMain: true },
+    orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
   });
-  if (ug?.guildDiscordDisplayName?.trim()) {
-    return ug.guildDiscordDisplayName.trim();
-  }
+  const discord = withDiscord?.guildDiscordDisplayName?.trim();
+  if (discord) return discord;
+
   const ch = await prisma.rfCharacter.findFirst({
     where: { userId, guildId },
     select: { name: true },
