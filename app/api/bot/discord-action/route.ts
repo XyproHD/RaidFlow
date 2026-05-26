@@ -10,6 +10,7 @@ import {
 import { normalizeSignupType, normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
 import {
   postRaidLeaderChannelInfo,
+  postRaidRaiderChannelMention,
   postSignupChangeThreadNotice,
   pushRaidDiscordPost,
   syncRaidThreadSummary,
@@ -26,7 +27,8 @@ import { getAppConfig } from '@/lib/app-config';
  *   edit-signup     – Bestehende Anmeldung bearbeiten (gleiche Felder wie join)
  *   unregister      – Abmelden (optional: reason für späte Absage)
  *   sync-post       – Discord-Beitrag neu synchronisieren (RaidTools, Raidleader+)
- *   push-raid       – Raid-Post löschen und neu senden (RaidTools, Raidleader+)
+ *   push-raid         – Raid-Post löschen und neu senden (ohne Erwähnung)
+ *   push-raid-mention – Raider-Erwähnung im Channel, dann Push (mentionText)
  *   leader-info     – Freitext an Raidleader-Kanal (message, discordUserLabel)
  *
  * GET /api/bot/discord-action?action=get-signup&discordUserId=...&raidId=...
@@ -524,6 +526,66 @@ export async function POST(request: NextRequest) {
       console.error('[discord-action push-raid]', raidId, e);
       return NextResponse.json(
         { error: 'PUSH_FAILED', message: 'Raid konnte nicht gepusht werden.' },
+        { status: 500 }
+      );
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // RaidTools: Push mit Raider-Erwähnung im Channel
+  // -------------------------------------------------------------------------
+  if (action === 'push-raid-mention') {
+    if (!access.canEdit) {
+      return NextResponse.json(
+        { error: 'FORBIDDEN', message: 'Nur Raidleader oder Gildenmeister dürfen RaidTools nutzen.' },
+        { status: 403 }
+      );
+    }
+    const mentionText = typeof body.mentionText === 'string' ? body.mentionText.trim() : '';
+    if (!mentionText) {
+      return NextResponse.json(
+        { error: 'MESSAGE_EMPTY', message: 'Bitte einen Nachrichtentext eingeben.' },
+        { status: 400 }
+      );
+    }
+    try {
+      await postRaidRaiderChannelMention(raidId, mentionText);
+      await pushRaidDiscordPost(raidId);
+      return NextResponse.json({
+        ok: true,
+        message: 'Erwähnung gesendet und Raid wurde nach unten gepusht.',
+      });
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e);
+      if (err === 'NO_DISCORD_CHANNEL') {
+        return NextResponse.json(
+          { error: 'NO_DISCORD_CHANNEL', message: 'Kein Discord-Channel für diesen Raid hinterlegt.' },
+          { status: 400 }
+        );
+      }
+      if (err === 'MESSAGE_EMPTY') {
+        return NextResponse.json(
+          { error: 'MESSAGE_EMPTY', message: 'Bitte einen Nachrichtentext eingeben.' },
+          { status: 400 }
+        );
+      }
+      if (err === 'NO_DISCORD_POST' || err === 'RAID_NOT_PUSHABLE' || err === 'PUSH_FAILED') {
+        return NextResponse.json(
+          {
+            error: err,
+            message:
+              err === 'NO_DISCORD_POST'
+                ? 'Kein Discord-Beitrag für diesen Raid vorhanden.'
+                : err === 'RAID_NOT_PUSHABLE'
+                  ? 'Abgeschlossene oder abgesagte Raids können nicht gepusht werden.'
+                  : 'Raid konnte nicht gepusht werden.',
+          },
+          { status: err === 'NO_DISCORD_POST' || err === 'RAID_NOT_PUSHABLE' ? 400 : 500 }
+        );
+      }
+      console.error('[discord-action push-raid-mention]', raidId, e);
+      return NextResponse.json(
+        { error: 'PUSH_FAILED', message: 'Push mit Erwähnung fehlgeschlagen.' },
         { status: 500 }
       );
     }
