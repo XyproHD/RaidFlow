@@ -79,9 +79,24 @@ export type RaidSelfSignupMutationInput = {
   note: string;
 };
 
+export type RaidSignupRowBeforeMutation = {
+  id: string;
+  type: string;
+  signedSpec: string | null;
+  punctuality: string | null;
+  note: string | null;
+  onlySignedSpec: boolean;
+  forbidReserve: boolean;
+  setConfirmed: boolean;
+};
+
 export async function commitRaidSelfSignupMutation(
   input: RaidSelfSignupMutationInput
-): Promise<{ signup: Record<string, unknown>; isCreate: boolean }> {
+): Promise<{
+  signup: Record<string, unknown>;
+  isCreate: boolean;
+  previous: RaidSignupRowBeforeMutation | null;
+}> {
   const {
     raidId,
     guildId,
@@ -145,7 +160,20 @@ export async function commitRaidSelfSignupMutation(
       oldValue: prevSnap,
       newValue: snapshotSignup(updated),
     });
-    return { signup: updated as unknown as Record<string, unknown>, isCreate: false };
+    return {
+      signup: updated as unknown as Record<string, unknown>,
+      isCreate: false,
+      previous: {
+        id: existing.id,
+        type: existing.type,
+        signedSpec: existing.signedSpec,
+        punctuality: existing.punctuality,
+        note: existing.note,
+        onlySignedSpec: existing.onlySignedSpec,
+        forbidReserve: existing.forbidReserve,
+        setConfirmed: existing.setConfirmed,
+      },
+    };
   }
 
   const created = await prisma.rfRaidSignup.create({
@@ -181,5 +209,9 @@ export async function commitRaidSelfSignupMutation(
     action: 'signup_create',
     newValue: snapshotSignup(created),
   });
-  return { signup: created as unknown as Record<string, unknown>, isCreate: true };
+  return {
+    signup: created as unknown as Record<string, unknown>,
+    isCreate: true,
+    previous: null,
+  };
 }

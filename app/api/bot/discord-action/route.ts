@@ -16,6 +16,14 @@ import {
   syncRaidThreadSummary,
 } from '@/lib/raid-thread-sync';
 import { getAppConfig } from '@/lib/app-config';
+import {
+  ANNOUNCED_SET_PLAYER_COMMENT_MIN,
+  requiresAnnouncedSetPlayerComment,
+  snapFromMutationResult,
+  snapFromSignupRow,
+  tryNotifyAnnouncedSetPlayerChange,
+  validateAnnouncedSetPlayerComment,
+} from '@/lib/raid-announced-set-player-notify';
 
 /**
  * Discord-Interaktions-API (aufgerufen durch discord-bot nach Button-/Modal-Interaktionen).
@@ -112,6 +120,7 @@ export async function GET(request: NextRequest) {
       punctuality: s.punctuality,
       note:        s.note,
       isLate:      s.isLate,
+      setConfirmed: s.setConfirmed,
       character:   s.character
         ? { id: s.character.id, name: s.character.name, mainSpec: s.character.mainSpec, offSpec: s.character.offSpec, isMain: s.character.isMain }
         : null,
@@ -122,6 +131,7 @@ export async function GET(request: NextRequest) {
       discordEmojis,
       signupUntil: raid.signupUntil.toISOString(),
       signupPhase,
+      raidStatus: raid.status,
     });
   }
 
@@ -325,6 +335,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: validation.error }, { status: validation.status });
     }
 
+    const existingBefore = await prisma.rfRaidSignup.findFirst({
+      where: { raidId, userId: user.id, characterId: char.id },
+      select: {
+        type: true,
+        signedSpec: true,
+        punctuality: true,
+        note: true,
+        onlySignedSpec: true,
+        forbidReserve: true,
+        setConfirmed: true,
+      },
+    });
+
+    if (raid.status === 'announced' && existingBefore?.setConfirmed) {
+      const commentRequired = requiresAnnouncedSetPlayerComment('edit', typeNorm);
+      const commentCheck = validateAnnouncedSetPlayerComment(noteRaw, commentRequired);
+      if (!commentCheck.ok) {
+        return NextResponse.json(
+          {
+            error: 'COMMENT_REQUIRED',
+            message: `Bei Änderung auf Reserve oder „Nicht da“ ist eine Begründung nötig (mind. ${ANNOUNCED_SET_PLAYER_COMMENT_MIN} Zeichen).`,
+          },
+          { status: commentCheck.status }
+        );
+      }
+    }
+
+    const discordUserLabel =
+      typeof body.discordUserLabel === 'string' ? body.discordUserLabel.trim() : '';
+
     const { signup, isCreate } = await commitRaidSelfSignupMutation({
       raidId,
       guildId:        raid.guildId,
@@ -346,6 +386,21 @@ export async function POST(request: NextRequest) {
       type:          typeNorm,
       punctuality,
     });
+
+    if (!isCreate && existingBefore?.setConfirmed && raid.status === 'announced') {
+      await tryNotifyAnnouncedSetPlayerChange({
+        raidId,
+        guildId: raid.guildId,
+        userId: user.id,
+        actorLabel: discordUserLabel || undefined,
+        kind: 'edit',
+        characterName: char.name,
+        previous: snapFromSignupRow(existingBefore),
+        next: snapFromMutationResult(signup),
+        comment: noteRaw,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       isCreate,
@@ -357,11 +412,30 @@ export async function POST(request: NextRequest) {
   // Nicht da (Declined)
   // -------------------------------------------------------------------------
   if (action === 'decline') {
+    const declineReason = typeof body.reason === 'string' ? body.reason.trim() : '';
+
     const removedRows = await prisma.rfRaidSignup.findMany({
       where:   { raidId, userId: user.id },
       include: { character: { select: { id: true, name: true, mainSpec: true, isMain: true } } },
       orderBy: { signedAt: 'asc' },
     });
+
+    const setConfirmedRemoved = removedRows.filter((r) => r.setConfirmed);
+    if (raid.status === 'announced' && setConfirmedRemoved.length > 0) {
+      const commentCheck = validateAnnouncedSetPlayerComment(declineReason, true);
+      if (!commentCheck.ok) {
+        return NextResponse.json(
+          {
+            error: 'COMMENT_REQUIRED',
+            message: `Als gesetzter Spieler ist eine Begründung nötig (mind. ${ANNOUNCED_SET_PLAYER_COMMENT_MIN} Zeichen).`,
+          },
+          { status: commentCheck.status }
+        );
+      }
+    }
+
+    const declineActorLabel =
+      typeof body.discordUserLabel === 'string' ? body.discordUserLabel.trim() : '';
 
     let markerChar = removedRows.find(r => r.character?.isMain)?.character ?? null;
     if (!markerChar) {
@@ -414,6 +488,21 @@ export async function POST(request: NextRequest) {
       punctuality:   'on_time',
     });
 
+    if (raid.status === 'announced') {
+      for (const row of setConfirmedRemoved) {
+        await tryNotifyAnnouncedSetPlayerChange({
+          raidId,
+          guildId: raid.guildId,
+          userId: user.id,
+          actorLabel: declineActorLabel || undefined,
+          kind: 'unsignup',
+          characterName: row.character?.name ?? '?',
+          previous: snapFromSignupRow(row),
+          comment: declineReason,
+        });
+      }
+    }
+
     return NextResponse.json({ ok: true, message: 'Du bist als „nicht da“ markiert.' });
   }
 
@@ -424,13 +513,6 @@ export async function POST(request: NextRequest) {
     const reason        = typeof body.reason    === 'string' ? body.reason.trim()    : '';
     const signupIdParam = typeof body.signupId  === 'string' ? body.signupId.trim()  : '';
     const isLateCancellation = new Date() > raid.signupUntil;
-
-    if (isLateCancellation && !reason) {
-      return NextResponse.json(
-        { error: 'REASON_REQUIRED', message: 'Nach dem Anmeldeschluss ist eine Begründung für die Abmeldung erforderlich.' },
-        { status: 400 }
-      );
-    }
 
     const whereUnreg = {
       raidId,
@@ -445,6 +527,25 @@ export async function POST(request: NextRequest) {
     if (removedRows.length === 0) {
       return NextResponse.json({ error: 'NOT_SIGNED_UP', message: 'Keine Anmeldung gefunden.' }, { status: 404 });
     }
+
+    const needsAnnouncedReason =
+      raid.status === 'announced' && removedRows.some((r) => r.setConfirmed);
+    if (needsAnnouncedReason || isLateCancellation) {
+      if (reason.length < ANNOUNCED_SET_PLAYER_COMMENT_MIN) {
+        return NextResponse.json(
+          {
+            error: 'REASON_REQUIRED',
+            message: needsAnnouncedReason
+              ? `Als gesetzter Spieler ist eine Begründung nötig (mind. ${ANNOUNCED_SET_PLAYER_COMMENT_MIN} Zeichen).`
+              : 'Nach dem Anmeldeschluss ist eine Begründung für die Abmeldung erforderlich.',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    const unregActorLabel =
+      typeof body.discordUserLabel === 'string' ? body.discordUserLabel.trim() : '';
 
     await prisma.rfRaidSignup.deleteMany({ where: whereUnreg });
 
@@ -470,6 +571,18 @@ export async function POST(request: NextRequest) {
         type:          row.type,
         punctuality:   row.punctuality,
       });
+      if (raid.status === 'announced' && row.setConfirmed) {
+        await tryNotifyAnnouncedSetPlayerChange({
+          raidId,
+          guildId: raid.guildId,
+          userId: user.id,
+          actorLabel: unregActorLabel || undefined,
+          kind: 'unsignup',
+          characterName: row.character?.name ?? '?',
+          previous: snapFromSignupRow(row),
+          comment: reason,
+        });
+      }
     }
     return NextResponse.json({ ok: true, message: 'Abmeldung erfolgreich.' });
   }

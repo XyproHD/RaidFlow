@@ -1091,6 +1091,7 @@ export function RaidDetailView({
                   <RaidSignupForm
                     guildId={guildId}
                     raidId={raidId}
+                    raidStatus={raid.status}
                     characters={characters}
                     signupPhase={signupPhase}
                     mySignups={mySignups}

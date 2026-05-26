@@ -10,6 +10,13 @@ import {
   validateRaidSignupBusinessRules,
 } from '@/lib/raid-self-signup-mutation';
 import { syncRaidThreadSummary, postSignupChangeThreadNotice } from '@/lib/raid-thread-sync';
+import {
+  requiresAnnouncedSetPlayerComment,
+  snapFromMutationResult,
+  snapFromSignupRow,
+  tryNotifyAnnouncedSetPlayerChange,
+  validateAnnouncedSetPlayerComment,
+} from '@/lib/raid-announced-set-player-notify';
 
 function readDiscordUserId(request: NextRequest, body: Record<string, unknown>): string {
   const q = request.nextUrl.searchParams.get('discordUserId')?.trim();
@@ -133,6 +140,27 @@ export async function POST(
     return NextResponse.json({ error: rules.error }, { status: rules.status });
   }
 
+  const existingBefore = await prisma.rfRaidSignup.findFirst({
+    where: { raidId, userId, characterId: character.id },
+    select: {
+      type: true,
+      signedSpec: true,
+      punctuality: true,
+      note: true,
+      onlySignedSpec: true,
+      forbidReserve: true,
+      setConfirmed: true,
+    },
+  });
+
+  if (raid.status === 'announced' && existingBefore?.setConfirmed) {
+    const commentRequired = requiresAnnouncedSetPlayerComment('edit', typeNorm);
+    const commentCheck = validateAnnouncedSetPlayerComment(note, commentRequired);
+    if (!commentCheck.ok) {
+      return NextResponse.json({ error: commentCheck.error }, { status: commentCheck.status });
+    }
+  }
+
   const { signup, isCreate } = await commitRaidSelfSignupMutation({
     raidId,
     guildId,
@@ -154,5 +182,19 @@ export async function POST(
     type:          typeNorm,
     punctuality,
   });
+
+  if (!isCreate && existingBefore?.setConfirmed && raid.status === 'announced') {
+    await tryNotifyAnnouncedSetPlayerChange({
+      raidId,
+      guildId,
+      userId,
+      kind: 'edit',
+      characterName: character.name,
+      previous: snapFromSignupRow(existingBefore),
+      next: snapFromMutationResult(signup),
+      comment: note,
+    });
+  }
+
   return NextResponse.json({ signup, signupPhase: phase }, { status: isCreate ? 201 : 200 });
 }
