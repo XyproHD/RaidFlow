@@ -3810,7 +3810,7 @@ export function RaidRosterPlanner({
                           <td className="py-2 pr-3 min-w-0">
                             <div className="flex items-center gap-1.5 min-w-0">
                               <SignupSpecIcons
-                                character={{ mainSpec: row.mainSpec, offSpec: row.offSpec }}
+                                character={{ mainSpec: row.mainSpec, offSpec: row.offSpec ?? null }}
                                 signedSpec={row.signedSpec}
                                 onlySignedSpec={row.onlySignedSpec ?? false}
                                 specLockTitle={tRoster('specLockHint')}
