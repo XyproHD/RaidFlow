@@ -254,6 +254,8 @@ export function DashboardClient({
   const [expandedSignupUntilRaidId, setExpandedSignupUntilRaidId] = useState<string | null>(null);
   const [calendarView, setCalendarView] = useState<'tiles' | 'list'>('tiles');
   const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => startOfWeekMonday(new Date()));
+  const [listCount, setListCount] = useState(5);
+  const [listStartIdx, setListStartIdx] = useState<number | null>(null);
   const [cancelDmPayload, setCancelDmPayload] = useState<{
     guildId: string;
     raidId: string;
@@ -376,6 +378,30 @@ export function DashboardClient({
     return [...visibleCalendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime());
   }, [visibleCalendarRaids]);
 
+  const allRaidsSorted = useMemo(
+    () => [...calendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime()),
+    [calendarRaids]
+  );
+
+  const todayIdx = useMemo(() => {
+    const ms = today.getTime();
+    const idx = allRaidsSorted.findIndex((r) => startOfDay(new Date(r.scheduledAtIso)).getTime() >= ms);
+    return idx === -1 ? allRaidsSorted.length : idx;
+  }, [allRaidsSorted, today]);
+
+  const effectiveListStart = useMemo(
+    () => (listStartIdx !== null ? listStartIdx : todayIdx),
+    [listStartIdx, todayIdx]
+  );
+
+  const listRaids = useMemo(
+    () => allRaidsSorted.slice(effectiveListStart, effectiveListStart + listCount),
+    [allRaidsSorted, effectiveListStart, listCount]
+  );
+
+  const canGoListPrev = effectiveListStart > 0;
+  const canGoListNext = effectiveListStart + listCount < allRaidsSorted.length;
+
   const shiftCalendarWeeks = (deltaWeeks: number) => {
     setCalendarAnchor((d) => addDays(startOfWeekMonday(d), deltaWeeks * 7));
   };
@@ -388,9 +414,11 @@ export function DashboardClient({
     <div className="p-4 sm:p-6 md:p-8 page-container space-y-6">
       <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('title')}</h1>
 
-      <div className="flex flex-col xl:flex-row xl:items-start gap-6">
-        <aside className="w-full xl:w-[min(100%,24rem)] xl:shrink-0 space-y-6 min-w-0">
-      <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border border-l-[3px] border-l-amber-400/40 shadow-sm overflow-hidden bg-amber-500/[0.025] dark:bg-amber-500/[0.04]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
+      <section
+        aria-labelledby="guild-memberships-heading"
+        className="order-1 lg:col-span-3 min-w-0 rounded-xl border border-border border-l-[3px] border-l-amber-400/40 shadow-sm overflow-hidden bg-amber-500/[0.025] dark:bg-amber-500/[0.04]"
+      >
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-amber-500/10 dark:bg-amber-500/[0.07]">
           <h2 id="guild-memberships-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('guildMemberships')}
@@ -475,7 +503,10 @@ export function DashboardClient({
         )}
       </section>
 
-      <section aria-labelledby="my-stats-heading" className="rounded-xl border border-border border-l-[3px] border-l-blue-400/40 shadow-sm overflow-hidden bg-blue-500/[0.025] dark:bg-blue-500/[0.04]">
+      <section
+        aria-labelledby="my-stats-heading"
+        className="order-3 lg:col-span-4 min-w-0 rounded-xl border border-border border-l-[3px] border-l-blue-400/40 shadow-sm overflow-hidden bg-blue-500/[0.025] dark:bg-blue-500/[0.04]"
+      >
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-blue-500/10 dark:bg-blue-500/[0.07]">
           <h2 id="my-stats-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('myStats')}
@@ -580,7 +611,10 @@ export function DashboardClient({
         />
       </section>
 
-      <section aria-labelledby="my-signups-heading" className="rounded-xl border border-border border-l-[3px] border-l-emerald-400/40 shadow-sm overflow-hidden bg-emerald-500/[0.025] dark:bg-emerald-500/[0.04]">
+      <section
+        aria-labelledby="my-signups-heading"
+        className="order-2 lg:col-span-5 min-w-0 rounded-xl border border-border border-l-[3px] border-l-emerald-400/40 shadow-sm overflow-hidden bg-emerald-500/[0.025] dark:bg-emerald-500/[0.04]"
+      >
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-emerald-500/10 dark:bg-emerald-500/[0.07]">
           <h2 id="my-signups-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('mySignups')}
@@ -731,7 +765,7 @@ export function DashboardClient({
           </div>
         )}
       </section>
-        </aside>
+      </div>
 
       {openCharMenuId && openCharMenuPos
         ? createPortal(
@@ -825,8 +859,7 @@ export function DashboardClient({
           )
         : null}
 
-        <div className="flex-1 min-w-0 w-full">
-      <section aria-labelledby="calendar-heading" className="rounded-xl border border-border border-l-[3px] border-l-violet-400/40 shadow-sm overflow-hidden bg-violet-500/[0.025] dark:bg-violet-500/[0.04]">
+      <section aria-labelledby="calendar-heading" className="w-full min-w-0 rounded-xl border border-border border-l-[3px] border-l-violet-400/40 shadow-sm overflow-hidden bg-violet-500/[0.025] dark:bg-violet-500/[0.04]">
         <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 border-b border-border bg-violet-500/10 dark:bg-violet-500/[0.07]">
           <h2 id="calendar-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('calendar')}
@@ -834,41 +867,102 @@ export function DashboardClient({
 
           {/* Filters centered */}
           <div className="flex flex-wrap items-center justify-center gap-2">
-            <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
-              <span className="text-xs text-muted-foreground">{t('calendarWeeksShown', { count: CALENDAR_WEEKS })}</span>
-            </div>
-
-            <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
-              <button
-                type="button"
-                className="h-8 w-8 rounded hover:bg-muted"
-                aria-label={t('prevWeek')}
-                title={t('prevWeek')}
-                onClick={() => shiftCalendarWeeks(-1)}
-              >
-                &lt;
-              </button>
-              <button
-                type="button"
-                className="rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60"
-                onClick={resetCalendarToCurrentWeek}
-              >
-                {t('calendarThisWeek')}
-              </button>
-              <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
-                {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
-                {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
-              </div>
-              <button
-                type="button"
-                className="h-8 w-8 rounded hover:bg-muted"
-                aria-label={t('nextWeek')}
-                title={t('nextWeek')}
-                onClick={() => shiftCalendarWeeks(1)}
-              >
-                &gt;
-              </button>
-            </div>
+            {calendarView === 'tiles' ? (
+              <>
+                <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                  <span className="text-xs text-muted-foreground">{t('calendarWeeksShown', { count: CALENDAR_WEEKS })}</span>
+                </div>
+                <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
+                  <button
+                    type="button"
+                    className="h-8 w-8 rounded hover:bg-muted"
+                    aria-label={t('prevWeek')}
+                    title={t('prevWeek')}
+                    onClick={() => shiftCalendarWeeks(-1)}
+                  >
+                    &lt;
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                    onClick={resetCalendarToCurrentWeek}
+                  >
+                    {t('calendarThisWeek')}
+                  </button>
+                  <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
+                    {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
+                    {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
+                  </div>
+                  <button
+                    type="button"
+                    className="h-8 w-8 rounded hover:bg-muted"
+                    aria-label={t('nextWeek')}
+                    title={t('nextWeek')}
+                    onClick={() => shiftCalendarWeeks(1)}
+                  >
+                    &gt;
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                  <span className="text-xs text-muted-foreground">{t('calendarListCount')}</span>
+                  {[5, 7, 10].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setListCount(n)}
+                      className={
+                        listCount === n
+                          ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
+                          : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                      }
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <span className="text-xs text-muted-foreground">{t('calendarListRaids')}</span>
+                </div>
+                <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
+                  <button
+                    type="button"
+                    className={cn('h-8 w-8 rounded', canGoListPrev ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
+                    disabled={!canGoListPrev}
+                    aria-label={t('calendarListPrev')}
+                    title={t('calendarListPrev')}
+                    onClick={() => setListStartIdx(Math.max(0, effectiveListStart - listCount))}
+                  >
+                    &lt;
+                  </button>
+                  <div className="px-2 text-xs text-muted-foreground min-w-[8rem] text-center">
+                    {listRaids.length > 0 ? (
+                      <span>
+                        {t('calendarListPosition', {
+                          from: effectiveListStart + 1,
+                          to: effectiveListStart + listRaids.length,
+                          total: allRaidsSorted.length,
+                        })}
+                      </span>
+                    ) : (
+                      <span>{t('calendarListEmpty')}</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className={cn('h-8 w-8 rounded', canGoListNext ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
+                    disabled={!canGoListNext}
+                    aria-label={t('calendarListNext')}
+                    title={t('calendarListNext')}
+                    onClick={() =>
+                      setListStartIdx(Math.min(allRaidsSorted.length - listCount, effectiveListStart + listCount))
+                    }
+                  >
+                    &gt;
+                  </button>
+                </div>
+              </>
+            )}
 
             <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
               <button
@@ -881,7 +975,10 @@ export function DashboardClient({
               <span className="text-muted-foreground text-xs">|</span>
               <button
                 type="button"
-                onClick={() => setCalendarView('list')}
+                onClick={() => {
+                  setCalendarView('list');
+                  setListStartIdx(null);
+                }}
                 className={calendarView === 'list' ? 'text-sm font-semibold text-foreground' : 'text-sm text-muted-foreground hover:text-foreground'}
               >
                 {t('calendarList')}
@@ -1081,8 +1178,8 @@ export function DashboardClient({
             );
           })}
         </div>
-        ) : calendarRaidsSorted.length === 0 ? (
-          <div className="px-5 py-8 text-center text-sm text-muted-foreground">{t('calendarEmptyRange')}</div>
+        ) : listRaids.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-muted-foreground">{t('calendarListEmpty')}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -1098,7 +1195,7 @@ export function DashboardClient({
                 </tr>
               </thead>
               <tbody>
-                {calendarRaidsSorted.map((r) => {
+                {listRaids.map((r) => {
                   const status = myStatusIcon(r.status, r.mySignup);
                   const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
                   const signupUntilLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
@@ -1214,8 +1311,6 @@ export function DashboardClient({
           </div>
         )}
       </section>
-      </div>
-      </div>
 
       {openCalendarActionRaidId && openCalendarActionPos
         ? createPortal(
