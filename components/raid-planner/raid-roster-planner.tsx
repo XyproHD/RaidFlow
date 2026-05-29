@@ -810,9 +810,7 @@ export function RaidRosterPlanner({
 
   const [blinkDiscordForIds, setBlinkDiscordForIds] = useState<Set<string>>(() => new Set());
 
-  const [filtersOpen, setFiltersOpen] = useState(true);
-  const [raidOptionsOpen, setRaidOptionsOpen] = useState(true);
-  const [comparisonOpen, setComparisonOpen] = useState(true);
+  const [plannerPanelOpen, setPlannerPanelOpen] = useState(true);
   const [comparisonEnabled, setComparisonEnabled] = useState(false);
   const [comparisonRaidId, setComparisonRaidId] = useState<string | null>(null);
   const [comparisonRaidLabel, setComparisonRaidLabel] = useState<string | null>(null);
@@ -876,9 +874,9 @@ export function RaidRosterPlanner({
   );
 
   useEffect(() => {
-    if (!comparisonOpen) return;
+    if (!plannerPanelOpen) return;
     void loadComparisonRaids({});
-  }, [comparisonOpen, loadComparisonRaids]);
+  }, [plannerPanelOpen, loadComparisonRaids]);
 
   useEffect(() => {
     if (!comparisonEnabled || !comparisonRaidId) {
@@ -904,15 +902,6 @@ export function RaidRosterPlanner({
   }, [comparisonEnabled, comparisonRaidId, guildId]);
 
   const [unsetPlayersMode, setUnsetPlayersMode] = useState<UnsetPlayersMode>('reserve');
-  const [botNotifyTargets, setBotNotifyTargets] = useState({
-    roster: true,
-    reserve: false,
-    decline: false,
-  });
-  const [changeNotifyTargets, setChangeNotifyTargets] = useState({
-    channel: true,
-    leader: false,
-  });
 
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState('');
@@ -3267,19 +3256,22 @@ export function RaidRosterPlanner({
             dragActive && 'opacity-35 pointer-events-none'
           )}
         >
-          {filtersOpen ? (
-            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
-                <p className="text-sm font-medium">{tPlanner('filters')}</p>
+          {plannerPanelOpen ? (
+            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 max-h-[min(calc(100vh-5rem),52rem)] overflow-y-auto space-y-0">
+              <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+                <p className="text-sm font-medium">{tPlanner('plannerSidebarPanel')}</p>
                 <button
                   type="button"
-                  onClick={() => setFiltersOpen(false)}
+                  onClick={() => setPlannerPanelOpen(false)}
                   className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
-                  aria-label={tPlanner('filters')}
+                  aria-label={tPlanner('plannerSidebarCollapse')}
                 >
                   ◀
                 </button>
               </div>
+
+              <div className="space-y-3 pt-3 pb-4 border-b border-border">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tPlanner('filters')}</p>
 
               <div className="space-y-1.5">
                 <span className="text-muted-foreground text-xs">{tPlanner('filterChars')}</span>
@@ -3448,36 +3440,11 @@ export function RaidRosterPlanner({
                   ))}
                 </div>
               </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setFiltersOpen(true)}
-              className="w-full xl:w-10 rounded-xl border border-border bg-muted/15 py-4 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/25"
-              aria-label={tPlanner('filters')}
-              title={tPlanner('filters')}
-            >
-              <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
-                {tPlanner('filters')}
-              </span>
-            </button>
-          )}
-
-          {raidOptionsOpen ? (
-            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-4">
-              <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
-                <p className="text-sm font-medium">{tPlanner('raidOptions')}</p>
-                <button
-                  type="button"
-                  onClick={() => setRaidOptionsOpen(false)}
-                  className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
-                  aria-label={tPlanner('raidOptions')}
-                >
-                  ◀
-                </button>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-3 py-4 border-b border-border">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tPlanner('raidOptions')}</p>
+                <div className="space-y-1.5">
                 <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsUnsetPlayers')}</span>
                 <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
                   <button
@@ -3507,94 +3474,11 @@ export function RaidRosterPlanner({
                     {tPlanner('raidOptionsUnsetDecline')}
                   </button>
                 </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsBotNotify')}</span>
-                <div className="grid grid-cols-3 gap-2">
-                  {(
-                    [
-                      ['roster', tPlanner('raidOptionsBotNotifyRoster')] as const,
-                      ['reserve', tPlanner('raidOptionsBotNotifyReserve')] as const,
-                      ['decline', tPlanner('raidOptionsBotNotifyDecline')] as const,
-                    ] as const
-                  ).map(([k, label]) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() =>
-                        setBotNotifyTargets((prev) => ({ ...prev, [k]: !prev[k] }))
-                      }
-                      className={cn(
-                        'rounded-lg border px-2 py-1.5 text-xs sm:text-sm flex items-center justify-center min-w-0',
-                        botNotifyTargets[k]
-                          ? 'border-primary/50 bg-primary/10 text-foreground'
-                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
-                      )}
-                      aria-pressed={botNotifyTargets[k]}
-                    >
-                      <span className="truncate">{label}</span>
-                    </button>
-                  ))}
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsNotifyChanges')}</span>
-                <div className="grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      ['channel', tPlanner('raidOptionsNotifyChannel')] as const,
-                      ['leader', tPlanner('raidOptionsNotifyLeader')] as const,
-                    ] as const
-                  ).map(([k, label]) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() =>
-                        setChangeNotifyTargets((prev) => ({ ...prev, [k]: !prev[k] }))
-                      }
-                      className={cn(
-                        'rounded-lg border px-2 py-1.5 text-xs sm:text-sm flex items-center justify-center min-w-0',
-                        changeNotifyTargets[k]
-                          ? 'border-primary/50 bg-primary/10 text-foreground'
-                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
-                      )}
-                      aria-pressed={changeNotifyTargets[k]}
-                    >
-                      <span className="truncate">{label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setRaidOptionsOpen(true)}
-              className="w-full xl:w-10 rounded-xl border border-border bg-muted/15 py-4 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/25"
-              aria-label={tPlanner('raidOptions')}
-              title={tPlanner('raidOptions')}
-            >
-              <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
-                {tPlanner('raidOptions')}
-              </span>
-            </button>
-          )}
-
-          {comparisonOpen ? (
-            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
-                <p className="text-sm font-medium">{tRoster('comparisonRaidTitle')}</p>
-                <button
-                  type="button"
-                  onClick={() => setComparisonOpen(false)}
-                  className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
-                  aria-label={tRoster('comparisonRaidTitle')}
-                >
-                  ◀
-                </button>
-              </div>
+              <div className="space-y-3 pt-4">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tRoster('comparisonRaidTitle')}</p>
 
               <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
                 <button
@@ -3724,17 +3608,18 @@ export function RaidRosterPlanner({
                   })
                 )}
               </div>
+              </div>
             </div>
           ) : (
             <button
               type="button"
-              onClick={() => setComparisonOpen(true)}
+              onClick={() => setPlannerPanelOpen(true)}
               className="w-full xl:w-10 rounded-xl border border-border bg-muted/15 py-4 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/25"
-              aria-label={tRoster('comparisonRaidTitle')}
-              title={tRoster('comparisonRaidTitle')}
+              aria-label={tPlanner('plannerSidebarExpand')}
+              title={tPlanner('plannerSidebarPanel')}
             >
               <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
-                {tRoster('comparisonRaidTitle')}
+                {tPlanner('plannerSidebarPanel')}
               </span>
             </button>
           )}
