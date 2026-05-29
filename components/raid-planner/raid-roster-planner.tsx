@@ -26,6 +26,7 @@ import {
 } from '@/components/raid-detail/raid-overview-summary';
 import { PlannerLeaderNotesCollapsible } from '@/components/raid-planner/planner-leader-notes-collapsible';
 import { GroupCharNamesExport } from '@/components/raid-planner/group-char-names-export';
+import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 import type { AnnounceRaidPayload } from '@/lib/raid-announce';
 import {
@@ -1148,21 +1149,49 @@ export function RaidRosterPlanner({
   }, [signups, plannerGroups, reserveBenchOrderedIds, declineBenchOrderedIds]);
 
   const signupsWithNotesList = useMemo(() => {
+    const rosterSet = new Set(allRosterIds(plannerGroups));
+    const reserveSet = new Set(reserveBenchOrderedIds);
+    const declineSet = new Set(declineBenchOrderedIds);
+
+    const listLabelForSignup = (signupId: string, s: RosterPlannerSignup): string => {
+      if (rosterSet.has(signupId)) return tRoster('listPlacementRoster');
+      if (reserveSet.has(signupId)) return tRoster('reserveTitle');
+      if (declineSet.has(signupId)) return tRoster('declineBlockTitle');
+      const tn = typeNorm(s.signupType);
+      if (tn === 'declined') return t('signupType_declined');
+      if (tn === 'uncertain') return t('signupType_uncertain');
+      if (tn === 'reserve') return t('signupType_reserve');
+      return tRoster('listPlacementPool');
+    };
+
     return signups
       .filter((s) => (s.note?.trim() ?? '').length > 0)
       .map((s) => {
         const p = punctualityOf(s);
         const punctLabel =
           p === 'on_time' ? t('punctualityOnTime') : p === 'tight' ? t('punctualityTight') : t('punctualityLate');
+        const signedSpec = (s.signedSpec?.trim() || s.originalSignedSpec?.trim() || s.mainSpec.trim()).trim();
         return {
           id: s.id,
-          playerLabel: resolveDiscordNameForSignup(s) || t('signupAnonymous'),
           charName: s.name,
-          punctualityLabel: punctLabel,
+          signedSpec,
+          mainSpec: s.mainSpec,
+          offSpec: s.offSpec,
+          onlySignedSpec: s.onlySignedSpec,
+          punctuality: p,
+          punctLabel,
+          listLabel: listLabelForSignup(s.id, s),
           note: (s.note ?? '').trim(),
         };
       });
-  }, [resolveDiscordNameForSignup, signups, t]);
+  }, [
+    plannerGroups,
+    reserveBenchOrderedIds,
+    declineBenchOrderedIds,
+    signups,
+    t,
+    tRoster,
+  ]);
 
   const usedCharacterIds = useMemo(() => {
     const set = new Set<string>();
@@ -3257,7 +3286,7 @@ export function RaidRosterPlanner({
           )}
         >
           {plannerPanelOpen ? (
-            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 max-h-[min(calc(100vh-5rem),52rem)] overflow-y-auto space-y-0">
+            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-0">
               <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
                 <p className="text-sm font-medium">{tPlanner('plannerSidebarPanel')}</p>
                 <button
@@ -3442,9 +3471,10 @@ export function RaidRosterPlanner({
               </div>
               </div>
 
-              <div className="space-y-3 py-4 border-b border-border">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tPlanner('raidOptions')}</p>
-                <div className="space-y-1.5">
+              <div className="space-y-3 pt-4">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tPlanner('raidCompareSection')}</p>
+
+                <div className="space-y-1.5 pt-1 border-t border-border">
                 <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsUnsetPlayers')}</span>
                 <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
                   <button
@@ -3475,11 +3505,8 @@ export function RaidRosterPlanner({
                   </button>
                 </div>
                 </div>
-              </div>
 
-              <div className="space-y-3 pt-4">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tRoster('comparisonRaidTitle')}</p>
-
+                <div className="space-y-3 pt-3 border-t border-border">
               <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
                 <button
                   type="button"
@@ -3743,7 +3770,7 @@ export function RaidRosterPlanner({
 
       {allSignupNotesOpen
         ? createPortal(
-            <div className="fixed inset-0 z-[1215] flex items-start justify-center p-4 sm:p-8 pt-14 sm:pt-20">
+            <div className="fixed inset-0 z-[1215] flex items-center justify-center p-4 sm:p-6">
               <button
                 type="button"
                 className="absolute inset-0 bg-black/45 cursor-default border-0 p-0"
@@ -3751,7 +3778,7 @@ export function RaidRosterPlanner({
                 onClick={() => setAllSignupNotesOpen(false)}
               />
               <div
-                className="relative w-full max-w-3xl max-h-[min(85vh,640px)] flex flex-col rounded-xl border border-border bg-background shadow-2xl overflow-hidden"
+                className="relative w-full max-w-4xl max-h-[min(85vh,720px)] flex flex-col rounded-xl border border-border bg-background shadow-2xl overflow-hidden"
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 shrink-0">
@@ -3770,19 +3797,34 @@ export function RaidRosterPlanner({
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                        <th className="py-2 pr-3 font-medium">{tRoster('columnPlayer')}</th>
                         <th className="py-2 pr-3 font-medium">{tRoster('columnChar')}</th>
-                        <th className="py-2 pr-3 font-medium whitespace-nowrap">{tRoster('columnPunctuality')}</th>
+                        <th className="py-2 pr-2 font-medium w-10 text-center">{tRoster('columnPunctuality')}</th>
+                        <th className="py-2 pr-3 font-medium whitespace-nowrap">{tRoster('columnPlacement')}</th>
                         <th className="py-2 font-medium">{tRoster('columnNote')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {signupsWithNotesList.map((row) => (
                         <tr key={row.id} className="border-b border-border/70 align-top">
-                          <td className="py-2 pr-3 break-words max-w-[140px]">{row.playerLabel}</td>
-                          <td className="py-2 pr-3 break-words max-w-[140px]">{row.charName}</td>
-                          <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">{row.punctualityLabel}</td>
-                          <td className="py-2 whitespace-pre-wrap break-words">{row.note}</td>
+                          <td className="py-2 pr-3 min-w-0">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <SignupSpecIcons
+                                character={{ mainSpec: row.mainSpec, offSpec: row.offSpec }}
+                                signedSpec={row.signedSpec}
+                                onlySignedSpec={row.onlySignedSpec}
+                                specLockTitle={tRoster('specLockHint')}
+                                size={18}
+                              />
+                              <span className="font-medium text-foreground truncate" title={row.charName}>
+                                {row.charName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2 pr-2 text-center align-top">
+                            <CharacterSignupPunctualityMark kind={row.punctuality} label={row.punctLabel} />
+                          </td>
+                          <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground text-xs">{row.listLabel}</td>
+                          <td className="py-2 whitespace-pre-wrap break-words text-sm">{row.note}</td>
                         </tr>
                       ))}
                     </tbody>

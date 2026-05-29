@@ -617,6 +617,7 @@ export function DashboardClient({
                   <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('scheduledAt')}</th>
                   <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('raid')}</th>
                   <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('character')}</th>
+                  <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide w-8">{t('myStatus')}</th>
                   <th className="px-2 py-1 w-8" aria-hidden />
                 </tr>
               </thead>
@@ -675,19 +676,23 @@ export function DashboardClient({
                           <span className="font-medium text-foreground truncate text-xs" title={s.signedCharacterName ?? undefined}>
                             {s.signedCharacterName ?? '–'}
                           </span>
-                          {statusIcon ? (
-                            <span
-                              className="cursor-help text-sm shrink-0"
-                              title={myStatusIconTooltip(
-                                s.raidStatus,
-                                { id: 'x', leaderPlacement: s.leaderPlacement, setConfirmed: s.setConfirmed },
-                                tRaidDetail
-                              )}
-                            >
-                              {statusIcon}
-                            </span>
-                          ) : null}
                         </button>
+                      </td>
+                      <td className="px-2 py-1.5 align-top text-center">
+                        {statusIcon ? (
+                          <span
+                            className="cursor-help text-sm inline-block"
+                            title={myStatusIconTooltip(
+                              s.raidStatus,
+                              { id: 'x', leaderPlacement: s.leaderPlacement, setConfirmed: s.setConfirmed },
+                              tRaidDetail
+                            )}
+                          >
+                            {statusIcon}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/40">–</span>
+                        )}
                       </td>
                       <td className="px-1 py-1.5 align-top text-right">
                         <button
