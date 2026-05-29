@@ -63,6 +63,7 @@
     "toggleNote": "Notiz anzeigen",
     "noteHint": "Notiz ist im Raid sichtbar.",
     "myStatus": "Meine Anmeldung",
+    "signupStatusColumn": "Status",
     "notSignedUp": "Nicht angemeldet",
     "signupStart": "Anmeldung starten",
     "signupShort": "Anmelden",

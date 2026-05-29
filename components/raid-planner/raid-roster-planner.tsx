@@ -3471,42 +3471,45 @@ export function RaidRosterPlanner({
               </div>
               </div>
 
-              <div className="space-y-3 pt-4">
+              <div className="space-y-3 pt-4 border-t border-border">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tPlanner('raidOptions')}</p>
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsUnsetPlayers')}</span>
+                  <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+                    <button
+                      type="button"
+                      onClick={() => setUnsetPlayersMode('reserve')}
+                      className={cn(
+                        'rounded-md px-2.5 py-1.5 text-sm flex-1',
+                        unsetPlayersMode === 'reserve'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
+                      )}
+                      aria-pressed={unsetPlayersMode === 'reserve'}
+                    >
+                      {tPlanner('raidOptionsUnsetReserve')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUnsetPlayersMode('decline')}
+                      className={cn(
+                        'rounded-md px-2.5 py-1.5 text-sm flex-1',
+                        unsetPlayersMode === 'decline'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
+                      )}
+                      aria-pressed={unsetPlayersMode === 'decline'}
+                    >
+                      {tPlanner('raidOptionsUnsetDecline')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-4 border-t border-border">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tPlanner('raidCompareSection')}</p>
 
-                <div className="space-y-1.5 pt-1 border-t border-border">
-                <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsUnsetPlayers')}</span>
-                <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
-                  <button
-                    type="button"
-                    onClick={() => setUnsetPlayersMode('reserve')}
-                    className={cn(
-                      'rounded-md px-2.5 py-1.5 text-sm flex-1',
-                      unsetPlayersMode === 'reserve'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted'
-                    )}
-                    aria-pressed={unsetPlayersMode === 'reserve'}
-                  >
-                    {tPlanner('raidOptionsUnsetReserve')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUnsetPlayersMode('decline')}
-                    className={cn(
-                      'rounded-md px-2.5 py-1.5 text-sm flex-1',
-                      unsetPlayersMode === 'decline'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted'
-                    )}
-                    aria-pressed={unsetPlayersMode === 'decline'}
-                  >
-                    {tPlanner('raidOptionsUnsetDecline')}
-                  </button>
-                </div>
-                </div>
-
-                <div className="space-y-3 pt-3 border-t border-border">
+                <div className="space-y-3">
               <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
                 <button
                   type="button"

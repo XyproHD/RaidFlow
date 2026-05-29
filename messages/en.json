@@ -63,6 +63,7 @@
     "toggleNote": "Show note",
     "noteHint": "The note is visible in the raid view.",
     "myStatus": "My Signup",
+    "signupStatusColumn": "Status",
     "notSignedUp": "Not signed up",
     "signupStart": "Start signup",
     "signupShort": "Sign up",

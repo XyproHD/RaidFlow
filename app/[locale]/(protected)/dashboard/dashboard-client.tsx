@@ -617,7 +617,7 @@ export function DashboardClient({
                   <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('scheduledAt')}</th>
                   <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('raid')}</th>
                   <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('character')}</th>
-                  <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide w-8">{t('myStatus')}</th>
+                  <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide w-8">{t('signupStatusColumn')}</th>
                   <th className="px-2 py-1 w-8" aria-hidden />
                 </tr>
               </thead>
