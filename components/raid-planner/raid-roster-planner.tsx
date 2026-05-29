@@ -3812,7 +3812,7 @@ export function RaidRosterPlanner({
                               <SignupSpecIcons
                                 character={{ mainSpec: row.mainSpec, offSpec: row.offSpec }}
                                 signedSpec={row.signedSpec}
-                                onlySignedSpec={row.onlySignedSpec}
+                                onlySignedSpec={row.onlySignedSpec ?? false}
                                 specLockTitle={tRoster('specLockHint')}
                                 size={18}
                               />
