@@ -992,7 +992,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
         {list.length === 0 && (
           <p className="text-muted-foreground text-sm py-2">{t('noCharacters')}</p>
         )}
-        <div className="space-y-2 max-w-[44rem] min-w-0">
+        <div className="space-y-2 w-full min-w-0">
           {groupedCharacters.map((group) => (
             <div key={group.guildId ?? '__no_guild__'} className="space-y-2">
               <div className="pt-2">
@@ -1127,7 +1127,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
       {list.length === 0 && (
         <p className="text-muted-foreground text-sm mb-2">{t('noCharacters')}</p>
       )}
-      <div className="mb-4 space-y-2 max-w-[44rem] min-w-0">
+      <div className="mb-4 space-y-2 w-full min-w-0">
         {groupedCharacters.map((group) => (
           <div key={group.guildId ?? '__no_guild__'} className="space-y-2">
             <div className="pt-3">

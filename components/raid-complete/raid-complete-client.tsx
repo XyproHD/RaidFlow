@@ -506,7 +506,7 @@ export function RaidCompleteClient({
   const rosterEmpty = groups.every((g) => g.length === 0);
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 w-full">
       <div className="flex flex-wrap items-center gap-3">
         <Link
           href={`/${locale}/guild/${guildId}/raid/${raidId}`}

@@ -38,7 +38,7 @@ export default async function RaidCompletePage(props: {
     const msg =
       ctx.reason === 'guild_not_found' ? t('forbiddenGuild') : t('forbiddenAccess');
     return (
-      <div className="p-6 md:p-8 max-w-3xl mx-auto space-y-4">
+      <div className="p-6 md:p-8 page-container space-y-4">
         <p className="text-muted-foreground">{msg}</p>
         <Link
           href={`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`}
@@ -52,7 +52,7 @@ export default async function RaidCompletePage(props: {
 
   if (!ctx.canEdit) {
     return (
-      <div className="p-6 md:p-8 max-w-3xl mx-auto space-y-4">
+      <div className="p-6 md:p-8 page-container space-y-4">
         <h1 className="text-2xl font-bold text-foreground">{ctx.raid.name}</h1>
         <p className="text-muted-foreground text-sm">{t('forbiddenEdit')}</p>
         <Link href={`/${locale}/guild/${guildId}/raid/${raidId}`} className="text-sm text-primary hover:underline">
@@ -168,7 +168,7 @@ export default async function RaidCompletePage(props: {
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-6 md:p-8 page-container">
       <RaidCompleteClient
         guildId={guildId}
         raidId={raidId}

@@ -274,7 +274,7 @@ export function RaidSignupForm({
   const hasExistingSignup = mySignups.length > 0;
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6 max-w-2xl">
+    <form onSubmit={onSubmit} className="space-y-6 w-full">
       {reserveOnly && (
         <p className="text-sm text-amber-600 dark:text-amber-500">{t('signupReserveOnlyPhase')}</p>
       )}

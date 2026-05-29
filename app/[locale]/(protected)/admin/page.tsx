@@ -16,7 +16,7 @@ export default async function AdminPage() {
   } catch (e) {
     if (e instanceof AdminDatabaseError) {
       return (
-        <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
+        <div className="p-4 sm:p-6 md:p-8 page-container">
           <h1 className="text-2xl font-bold text-foreground mb-4">{t('title')}</h1>
           <p className="text-muted-foreground">{t('dbUnavailable')}</p>
         </div>
@@ -27,7 +27,7 @@ export default async function AdminPage() {
 
   if (!admin) {
     return (
-      <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
+      <div className="p-4 sm:p-6 md:p-8 page-container">
         <h1 className="text-2xl font-bold text-foreground mb-6">{t('title')}</h1>
         <p className="text-muted-foreground">{t('forbidden')}</p>
       </div>
@@ -37,7 +37,7 @@ export default async function AdminPage() {
   const isOwner = admin.discordId === OWNER_DISCORD_ID;
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-6 md:p-8 page-container">
       <h1 className="text-2xl font-bold text-foreground mb-6">{t('title')}</h1>
       <AdminContent locale={locale} isOwner={isOwner} />
     </div>

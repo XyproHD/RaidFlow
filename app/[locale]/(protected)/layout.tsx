@@ -41,7 +41,7 @@ export default async function ProtectedLayout({
       <div className="flex flex-col items-center justify-center flex-1 px-6 py-12 text-center">
         <h2 className="text-2xl font-bold text-foreground mb-4">{t('title')}</h2>
         {config.statusMessage.trim() && (
-          <p className="text-muted-foreground max-w-md whitespace-pre-wrap">{config.statusMessage.trim()}</p>
+          <p className="text-muted-foreground page-container whitespace-pre-wrap">{config.statusMessage.trim()}</p>
         )}
       </div>
     );

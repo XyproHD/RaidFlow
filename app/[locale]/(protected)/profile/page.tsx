@@ -151,7 +151,7 @@ export default async function ProfilePage() {
     }));
 
     return (
-      <div className="p-6 md:p-8 max-w-5xl mx-auto">
+      <div className="p-6 md:p-8 page-container">
         <h1 className="text-2xl font-bold text-foreground mb-6">{t('title')}</h1>
 
         <ProfilePageTabs

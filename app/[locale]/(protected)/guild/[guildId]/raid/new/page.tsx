@@ -30,7 +30,7 @@ export default async function NewRaidPage({
   const g = guilds.find((x) => x.id === guildId);
   if (!g || (g.role !== 'raidleader' && g.role !== 'guildmaster')) {
     return (
-      <div className="p-6 md:p-8 max-w-3xl mx-auto">
+      <div className="p-6 md:p-8 page-container">
         <h1 className="text-2xl font-bold text-foreground mb-4">{t('title')}</h1>
         <p className="text-muted-foreground">{t('forbidden')}</p>
       </div>
@@ -38,7 +38,7 @@ export default async function NewRaidPage({
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-5xl mx-auto">
+    <div className="p-4 sm:p-6 md:p-8 page-container">
       <h1 className="text-2xl font-bold text-foreground mb-6">{t('title')}</h1>
       <NewRaidWizard guildId={guildId} currentUserId={userId} />
     </div>

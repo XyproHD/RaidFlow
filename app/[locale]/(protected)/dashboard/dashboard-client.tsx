@@ -394,7 +394,7 @@ export function DashboardClient({
   const canGoListNext = effectiveListStart + listCount < allRaidsSorted.length;
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 md:p-8 page-container space-y-6">
       <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('title')}</h1>
 
       <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border border-l-[3px] border-l-amber-400/40 shadow-sm overflow-hidden bg-amber-500/[0.025] dark:bg-amber-500/[0.04]">
@@ -535,7 +535,7 @@ export function DashboardClient({
                       gearScore={c.gearScore}
                     />
                   </div>
-                  <span className="text-xs text-muted-foreground hidden sm:block shrink-0 truncate max-w-[110px]" title={c.guildName ?? undefined}>{c.guildName ?? '–'}</span>
+                  <span className="text-xs text-muted-foreground hidden sm:block shrink-0 truncate max-w-[min(12rem,20vw)]" title={c.guildName ?? undefined}>{c.guildName ?? '–'}</span>
                   <span className="text-xs text-muted-foreground tabular-nums shrink-0" title={t('participatedRaids')}>
                     {c.participatedRaids}× Raids
                   </span>

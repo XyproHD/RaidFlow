@@ -61,6 +61,13 @@
   }
 }
 
+@layer components {
+  /** Desktop-oriented content width (~90% viewport); replaces fixed max-w-*xl page caps. */
+  .page-container {
+    @apply w-[90%] max-w-none mx-auto;
+  }
+}
+
 @layer utilities {
   .bg-hero-gradient {
     background-image: radial-gradient(ellipse 80% 60% at 50% 0%, hsl(var(--primary) / 0.08), transparent);

@@ -44,11 +44,11 @@ export async function LandingPage({
         {/* Subtiler radialer Hintergrundgradient */}
         <div className="pointer-events-none absolute inset-0 bg-hero-gradient" aria-hidden />
 
-        <div className="relative z-10 flex flex-col items-center max-w-md text-center space-y-5">
+        <div className="relative z-10 page-container flex flex-col items-center text-center space-y-5">
           <h1 className="text-5xl md:text-6xl font-bold tracking-tight text-foreground">
             {tCommon('appName')}
           </h1>
-          <p className="text-base text-muted-foreground leading-relaxed max-w-xs">
+          <p className="text-base text-muted-foreground leading-relaxed max-w-3xl">
             {t('welcome')}
           </p>
 
@@ -59,7 +59,7 @@ export async function LandingPage({
             </div>
           )}
           {!maintenanceMode && hasStatusText && (
-            <p className="max-w-sm text-center text-sm text-muted-foreground whitespace-pre-wrap">
+            <p className="w-full text-center text-sm text-muted-foreground whitespace-pre-wrap">
               {statusMessage.trim()}
             </p>
           )}

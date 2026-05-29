@@ -97,7 +97,8 @@ export function Topbar({
 
   return (
     <>
-      <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-border bg-background/95 backdrop-blur-sm px-4 md:px-6">
+      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-sm">
+        <div className="page-container flex h-14 items-center gap-2">
         {/* Brand */}
         <Link
           href={isLoggedIn ? `/${locale}/dashboard` : `/${locale}`}
@@ -111,7 +112,7 @@ export function Topbar({
         {/* Center: aktive Gilde */}
         {showGuildInTopbar && activeGuild && (
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
-            <span className="text-sm font-medium text-muted-foreground truncate max-w-[160px] md:max-w-[220px]" title={activeGuild.name}>
+            <span className="text-sm font-medium text-muted-foreground truncate max-w-[200px] md:max-w-[min(24rem,40vw)]" title={activeGuild.name}>
               {activeGuild.name}
             </span>
             {hasMultipleGuilds && (
@@ -376,6 +377,7 @@ export function Topbar({
               )}
             </div>
           )}
+        </div>
         </div>
       </header>
     </>
