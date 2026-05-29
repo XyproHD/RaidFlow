@@ -39,12 +39,15 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
     const discordId = (session as { discordId?: string } | null)?.discordId;
 
     const now = new Date();
-    // Load a wider window so the dashboard calendar can paginate +/-7 days.
-    const rangeStart = new Date(now);
-    rangeStart.setDate(rangeStart.getDate() - 28);
-    rangeStart.setHours(0, 0, 0, 0);
-    const rangeEnd = new Date(now);
-    rangeEnd.setDate(rangeEnd.getDate() + 28);
+    const monday = new Date(now);
+    monday.setHours(0, 0, 0, 0);
+    const dow = monday.getDay();
+    monday.setDate(monday.getDate() + (dow === 0 ? -6 : 1 - dow));
+    // Load a wider window so the dashboard calendar can paginate by week (3-week tiles view).
+    const rangeStart = new Date(monday);
+    rangeStart.setDate(rangeStart.getDate() - 35);
+    const rangeEnd = new Date(monday);
+    rangeEnd.setDate(rangeEnd.getDate() + 63);
     rangeEnd.setHours(23, 59, 59, 999);
 
     let guilds: Awaited<ReturnType<typeof getGuildsForUserCached>> = [];

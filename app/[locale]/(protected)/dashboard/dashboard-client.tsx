@@ -100,6 +100,16 @@ function addDays(d: Date, days: number) {
   return x;
 }
 
+/** Montag 00:00 der Woche, die `d` enthält (ISO-Wochenstart). */
+function startOfWeekMonday(d: Date) {
+  const x = startOfDay(d);
+  const dow = x.getDay();
+  return addDays(x, dow === 0 ? -6 : 1 - dow);
+}
+
+const CALENDAR_WEEKS = 3;
+const CALENDAR_DAY_COUNT = CALENDAR_WEEKS * 7;
+
 function formatDayLabel(locale: string, d: Date) {
   return new Intl.DateTimeFormat(locale, { weekday: 'short', day: '2-digit', month: '2-digit' }).format(d);
 }
@@ -243,10 +253,7 @@ export function DashboardClient({
   const [openCalendarActionPos, setOpenCalendarActionPos] = useState<{ top: number; left: number } | null>(null);
   const [expandedSignupUntilRaidId, setExpandedSignupUntilRaidId] = useState<string | null>(null);
   const [calendarView, setCalendarView] = useState<'tiles' | 'list'>('tiles');
-  const [showDays, setShowDays] = useState<7 | 14 | 21>(14);
-  const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => startOfDay(new Date()));
-  const [listCount, setListCount] = useState(5);
-  const [listStartIdx, setListStartIdx] = useState<number | null>(null);
+  const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => startOfWeekMonday(new Date()));
   const [cancelDmPayload, setCancelDmPayload] = useState<{
     guildId: string;
     raidId: string;
@@ -255,9 +262,9 @@ export function DashboardClient({
   const [cancelDmBusy, setCancelDmBusy] = useState(false);
 
   const today = useMemo(() => startOfDay(new Date()), []);
-  const rangeStart = useMemo(() => startOfDay(addDays(calendarAnchor, -1)), [calendarAnchor]);
-  const tilesCount = useMemo(() => showDays + 1, [showDays]);
-  const rangeEnd = useMemo(() => startOfDay(addDays(rangeStart, tilesCount - 1)), [rangeStart, tilesCount]);
+  const weekStart = useMemo(() => startOfWeekMonday(calendarAnchor), [calendarAnchor]);
+  const rangeStart = weekStart;
+  const rangeEnd = useMemo(() => startOfDay(addDays(weekStart, CALENDAR_DAY_COUNT - 1)), [weekStart]);
   const defaultCreateGuildId = canCreateGuildIds[0] ?? null;
   const canCreateGuilds = useMemo(
     () => guilds.filter((g) => (g.role === 'raidleader' || g.role === 'guildmaster') && canCreateGuildIds.includes(g.id)),
@@ -336,9 +343,9 @@ export function DashboardClient({
 
   const days = useMemo(() => {
     const list: Date[] = [];
-    for (let i = 0; i < tilesCount; i++) list.push(addDays(rangeStart, i));
+    for (let i = 0; i < CALENDAR_DAY_COUNT; i++) list.push(addDays(rangeStart, i));
     return list;
-  }, [rangeStart, tilesCount]);
+  }, [rangeStart]);
 
   const visibleCalendarRaids = useMemo(() => {
     const startMs = startOfDay(rangeStart).getTime();
@@ -369,34 +376,20 @@ export function DashboardClient({
     return [...visibleCalendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime());
   }, [visibleCalendarRaids]);
 
-  const allRaidsSorted = useMemo(
-    () => [...calendarRaids].sort((a, b) => new Date(a.scheduledAtIso).getTime() - new Date(b.scheduledAtIso).getTime()),
-    [calendarRaids]
-  );
+  const shiftCalendarWeeks = (deltaWeeks: number) => {
+    setCalendarAnchor((d) => addDays(startOfWeekMonday(d), deltaWeeks * 7));
+  };
 
-  const todayIdx = useMemo(() => {
-    const ms = today.getTime();
-    const idx = allRaidsSorted.findIndex((r) => startOfDay(new Date(r.scheduledAtIso)).getTime() >= ms);
-    return idx === -1 ? allRaidsSorted.length : idx;
-  }, [allRaidsSorted, today]);
-
-  const effectiveListStart = useMemo(
-    () => (listStartIdx !== null ? listStartIdx : todayIdx),
-    [listStartIdx, todayIdx]
-  );
-
-  const listRaids = useMemo(
-    () => allRaidsSorted.slice(effectiveListStart, effectiveListStart + listCount),
-    [allRaidsSorted, effectiveListStart, listCount]
-  );
-
-  const canGoListPrev = effectiveListStart > 0;
-  const canGoListNext = effectiveListStart + listCount < allRaidsSorted.length;
+  const resetCalendarToCurrentWeek = () => {
+    setCalendarAnchor(startOfWeekMonday(new Date()));
+  };
 
   return (
     <div className="p-4 sm:p-6 md:p-8 page-container space-y-6">
       <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('title')}</h1>
 
+      <div className="flex flex-col xl:flex-row xl:items-start gap-6">
+        <aside className="w-full xl:w-[min(100%,24rem)] xl:shrink-0 space-y-6 min-w-0">
       <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border border-l-[3px] border-l-amber-400/40 shadow-sm overflow-hidden bg-amber-500/[0.025] dark:bg-amber-500/[0.04]">
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-amber-500/10 dark:bg-amber-500/[0.07]">
           <h2 id="guild-memberships-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
@@ -738,6 +731,7 @@ export function DashboardClient({
           </div>
         )}
       </section>
+        </aside>
 
       {openCharMenuId && openCharMenuPos
         ? createPortal(
@@ -831,6 +825,7 @@ export function DashboardClient({
           )
         : null}
 
+        <div className="flex-1 min-w-0 w-full">
       <section aria-labelledby="calendar-heading" className="rounded-xl border border-border border-l-[3px] border-l-violet-400/40 shadow-sm overflow-hidden bg-violet-500/[0.025] dark:bg-violet-500/[0.04]">
         <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 border-b border-border bg-violet-500/10 dark:bg-violet-500/[0.07]">
           <h2 id="calendar-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
@@ -839,104 +834,41 @@ export function DashboardClient({
 
           {/* Filters centered */}
           <div className="flex flex-wrap items-center justify-center gap-2">
-            {calendarView === 'tiles' ? (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
-                <span className="text-xs text-muted-foreground">{t('showDays')}</span>
-                {[7, 14, 21].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setShowDays(n as 7 | 14 | 21)}
-                    className={
-                      showDays === n
-                        ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
-                        : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                    }
-                  >
-                    {n}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
-                <span className="text-xs text-muted-foreground">Nächste</span>
-                {[5, 7, 10].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setListCount(n)}
-                    className={
-                      listCount === n
-                        ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
-                        : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                    }
-                  >
-                    {n}
-                  </button>
-                ))}
-                <span className="text-xs text-muted-foreground">Raids</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+              <span className="text-xs text-muted-foreground">{t('calendarWeeksShown', { count: CALENDAR_WEEKS })}</span>
+            </div>
 
-            {calendarView === 'tiles' ? (
-              <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
-                <button
-                  type="button"
-                  className="h-8 w-8 rounded hover:bg-muted"
-                  aria-label={t('prevWeek')}
-                  title={t('prevWeek')}
-                  onClick={() => setCalendarAnchor((d) => addDays(d, -7))}
-                >
-                  &lt;
-                </button>
-                <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
-                  {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
-                  {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
-                </div>
-                <button
-                  type="button"
-                  className="h-8 w-8 rounded hover:bg-muted"
-                  aria-label={t('nextWeek')}
-                  title={t('nextWeek')}
-                  onClick={() => setCalendarAnchor((d) => addDays(d, 7))}
-                >
-                  &gt;
-                </button>
+            <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
+              <button
+                type="button"
+                className="h-8 w-8 rounded hover:bg-muted"
+                aria-label={t('prevWeek')}
+                title={t('prevWeek')}
+                onClick={() => shiftCalendarWeeks(-1)}
+              >
+                &lt;
+              </button>
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                onClick={resetCalendarToCurrentWeek}
+              >
+                {t('calendarThisWeek')}
+              </button>
+              <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
+                {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
+                {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
               </div>
-            ) : (
-              <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
-                <button
-                  type="button"
-                  className={cn('h-8 w-8 rounded', canGoListPrev ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
-                  disabled={!canGoListPrev}
-                  aria-label="Vorherige Raids"
-                  title="Vorherige Raids"
-                  onClick={() => setListStartIdx(Math.max(0, effectiveListStart - listCount))}
-                >
-                  &lt;
-                </button>
-                <div className="px-2 text-xs text-muted-foreground min-w-[8rem] text-center">
-                  {listRaids.length > 0 ? (
-                    <span>
-                      Raid {effectiveListStart + 1}–{effectiveListStart + listRaids.length}
-                      {allRaidsSorted.length > 0 ? <span className="opacity-60"> / {allRaidsSorted.length}</span> : null}
-                    </span>
-                  ) : (
-                    <span>Keine Raids</span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className={cn('h-8 w-8 rounded', canGoListNext ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
-                  disabled={!canGoListNext}
-                  aria-label="Nächste Raids"
-                  title="Nächste Raids"
-                  onClick={() => setListStartIdx(Math.min(allRaidsSorted.length - listCount, effectiveListStart + listCount))}
-                >
-                  &gt;
-                </button>
-              </div>
-            )}
+              <button
+                type="button"
+                className="h-8 w-8 rounded hover:bg-muted"
+                aria-label={t('nextWeek')}
+                title={t('nextWeek')}
+                onClick={() => shiftCalendarWeeks(1)}
+              >
+                &gt;
+              </button>
+            </div>
 
             <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
               <button
@@ -949,7 +881,7 @@ export function DashboardClient({
               <span className="text-muted-foreground text-xs">|</span>
               <button
                 type="button"
-                onClick={() => { setCalendarView('list'); setListStartIdx(null); }}
+                onClick={() => setCalendarView('list')}
                 className={calendarView === 'list' ? 'text-sm font-semibold text-foreground' : 'text-sm text-muted-foreground hover:text-foreground'}
               >
                 {t('calendarList')}
@@ -977,7 +909,7 @@ export function DashboardClient({
         </div>
 
         {calendarView === 'tiles' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
           {days.map((day) => {
             const key = startOfDay(day).toISOString();
             const raids = raidsByDay.get(key) ?? [];
@@ -1149,8 +1081,8 @@ export function DashboardClient({
             );
           })}
         </div>
-        ) : listRaids.length === 0 ? (
-          <div className="px-5 py-8 text-center text-sm text-muted-foreground">Keine Raids in diesem Zeitraum</div>
+        ) : calendarRaidsSorted.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-muted-foreground">{t('calendarEmptyRange')}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -1166,7 +1098,7 @@ export function DashboardClient({
                 </tr>
               </thead>
               <tbody>
-                {listRaids.map((r) => {
+                {calendarRaidsSorted.map((r) => {
                   const status = myStatusIcon(r.status, r.mySignup);
                   const timeLabel = formatTime(locale, new Date(r.scheduledAtIso));
                   const signupUntilLabel = new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(
@@ -1282,6 +1214,8 @@ export function DashboardClient({
           </div>
         )}
       </section>
+      </div>
+      </div>
 
       {openCalendarActionRaidId && openCalendarActionPos
         ? createPortal(

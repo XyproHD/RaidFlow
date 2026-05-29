@@ -83,8 +83,11 @@
     "calendarList": "Liste"
     ,
     "showDays": "Zeige Tage",
-    "prevWeek": "7 Tage zurück",
-    "nextWeek": "7 Tage vor",
+    "calendarWeeksShown": "{count} Wochen",
+    "calendarThisWeek": "Aktuelle Woche",
+    "calendarEmptyRange": "Keine Raids in diesem Zeitraum",
+    "prevWeek": "Eine Woche zurück",
+    "nextWeek": "Eine Woche vor",
     "todayShort": "heut",
     "signupOpenUntil": "Anmeldung offen bis"
   },

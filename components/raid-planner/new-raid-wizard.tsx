@@ -1341,7 +1341,7 @@ export function NewRaidWizard({
               }}
             >
               <div
-                className="my-4 w-full max-w-[90vw] space-y-4 rounded-xl border border-border bg-background shadow-xl"
+                className="my-4 w-full max-w-[75vw] space-y-4 rounded-xl border border-border bg-background shadow-xl"
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <div className="border-b border-border px-4 py-3 md:px-5">

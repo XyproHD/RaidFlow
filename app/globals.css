@@ -62,9 +62,9 @@
 }
 
 @layer components {
-  /** Desktop-oriented content width (~90% viewport); replaces fixed max-w-*xl page caps. */
+  /** Desktop-oriented content width (~75% viewport); replaces fixed max-w-*xl page caps. */
   .page-container {
-    @apply w-[90%] max-w-none mx-auto;
+    @apply w-[75%] max-w-none mx-auto;
   }
 }
 
