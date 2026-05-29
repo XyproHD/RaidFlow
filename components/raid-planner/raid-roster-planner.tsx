@@ -3636,6 +3636,7 @@ export function RaidRosterPlanner({
                 )}
               </div>
               </div>
+              </div>
             </div>
           ) : (
             <button
