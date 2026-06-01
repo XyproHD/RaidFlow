@@ -88,13 +88,18 @@
   animation: rf-feedback-pulse 5s ease-in-out infinite;
 }
 
-/* Ko-fi Widget (btn-container kommt vom CDN-Script) */
-.rf-kofi-fab {
-  transform: scale(0.8);
+/* Kaffee-Spende FAB (Hauptbutton + Ko-fi/BMAC-Widgets) */
+.rf-coffee-fab {
+  transform: scale(0.9);
   transform-origin: left bottom;
 }
 
-@keyframes rf-kofi-wiggle {
+.rf-coffee-fab--open {
+  padding: 0.75rem;
+  margin: -0.75rem;
+}
+
+@keyframes rf-coffee-wiggle {
   0%,
   88%,
   100% {
@@ -114,7 +119,60 @@
   }
 }
 
-.rf-kofi-fab .btn-container {
+.rf-coffee-fab-main {
   transform-origin: center bottom;
-  animation: rf-kofi-wiggle 10s ease-in-out infinite;
+  animation: rf-coffee-wiggle 10s ease-in-out infinite;
+}
+
+@keyframes rf-coffee-bubble-pop {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  35% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1.45);
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(1.85);
+    opacity: 0;
+  }
+}
+
+.rf-coffee-fab-main--popping {
+  animation: rf-coffee-bubble-pop 320ms ease-out forwards;
+}
+
+@keyframes rf-coffee-expand-in {
+  0% {
+    transform: scale(0.35);
+    opacity: 0;
+  }
+  65% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.rf-coffee-fab-expanded {
+  transform-origin: left bottom;
+  animation: rf-coffee-expand-in 280ms ease-out forwards;
+}
+
+.rf-coffee-fab-expanded .btn-container {
+  transform-origin: center bottom;
+  animation: rf-coffee-wiggle 10s ease-in-out infinite;
+}
+
+.rf-coffee-fab-bmc a,
+.rf-coffee-fab-bmc iframe {
+  display: block;
 }
