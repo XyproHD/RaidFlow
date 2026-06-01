@@ -3,7 +3,10 @@
 import { useMemo, useState } from 'react';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { RoleIcon } from '@/components/role-icon';
-import { RAID_DETAIL_ICON_SIZE } from '@/components/raid-detail/raid-detail-display';
+import {
+  RAID_DETAIL_ICON_SIZE,
+  RAID_PARTY_COLUMN_MIN_WIDTH,
+} from '@/components/raid-detail/raid-detail-display';
 import { TBC_CLASS_IDS } from '@/lib/wow-tbc-classes';
 import type { AnmeldungRow } from '@/components/raid-detail/raid-signup-player-row';
 import {
@@ -107,7 +110,7 @@ export function PublishedPartyInlineTable({
   while (padded.length < 5) padded.push(null);
 
   return (
-    <table className="w-full min-w-[17rem] text-sm border-collapse">
+    <table className="w-full text-sm border-collapse" style={{ minWidth: RAID_PARTY_COLUMN_MIN_WIDTH }}>
       <tbody>
         {padded.map((row, index) => {
           const position = index + 1;
