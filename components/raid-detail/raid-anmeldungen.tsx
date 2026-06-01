@@ -48,6 +48,64 @@ function splitTwoColumns<T>(items: T[]): [T[], T[]] {
   return [items.slice(0, mid), items.slice(mid)];
 }
 
+function renderSignupTableBody(
+  rows: AnmeldungRow[],
+  raidStatus: string,
+  canSeeNotes: boolean,
+  openNoteId: string | null,
+  setOpenNoteId: (id: string | null) => void
+) {
+  return rows.map((r) => {
+    const classId = classIdForAnmeldungRow(r);
+    const punctuality = punctualityForAnmeldungRow(r);
+    const gs = r.character?.gearScore;
+    const note = r.note?.trim() ?? '';
+    return (
+      <RaidDetailSignupTableRow
+        key={r.id}
+        row={r}
+        raidStatus={raidStatus}
+        extras={{
+          punctuality,
+          classId,
+          gearScore: typeof gs === 'number' ? gs : null,
+        }}
+        canSeeNotes={canSeeNotes}
+        noteExpanded={openNoteId === r.id}
+        onToggleNote={
+          canSeeNotes && note.length > 0
+            ? () => setOpenNoteId(openNoteId === r.id ? null : r.id)
+            : undefined
+        }
+      />
+    );
+  });
+}
+
+/** Kompakte Inline-Tabelle (z. B. veröffentlichter Kader, Reserve). */
+export function SignupInlineTable({
+  rows,
+  canEdit,
+  raidStatus,
+}: {
+  rows: AnmeldungRow[];
+  canEdit: boolean;
+  raidStatus: string;
+}) {
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
+  const canSeeNotes = canEdit;
+
+  if (rows.length === 0) {
+    return <p className="text-sm text-muted-foreground px-3 py-2">—</p>;
+  }
+
+  return (
+    <table className="w-full text-sm border-collapse">
+      <tbody>{renderSignupTableBody(rows, raidStatus, canSeeNotes, openNoteId, setOpenNoteId)}</tbody>
+    </table>
+  );
+}
+
 function SignupTableBlock({
   rows,
   canSeeNotes,
@@ -64,41 +122,15 @@ function SignupTableBlock({
   const [left, right] = useMemo(() => splitTwoColumns(rows), [rows]);
 
   const renderTable = (chunk: AnmeldungRow[]) => (
-    <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
-      <tbody>
-        {chunk.map((r) => {
-          const classId = classIdForAnmeldungRow(r);
-          const punctuality = punctualityForAnmeldungRow(r);
-          const gs = r.character?.gearScore;
-          const note = r.note?.trim() ?? '';
-          return (
-            <RaidDetailSignupTableRow
-              key={r.id}
-              row={r}
-              raidStatus={raidStatus}
-              extras={{
-                punctuality,
-                classId,
-                gearScore: typeof gs === 'number' ? gs : null,
-              }}
-              canSeeNotes={canSeeNotes}
-              noteExpanded={openNoteId === r.id}
-              onToggleNote={
-                canSeeNotes && note.length > 0
-                  ? () => setOpenNoteId(openNoteId === r.id ? null : r.id)
-                  : undefined
-              }
-            />
-          );
-        })}
-      </tbody>
+    <table className="w-full text-sm border-collapse">
+      <tbody>{renderSignupTableBody(chunk, raidStatus, canSeeNotes, openNoteId, setOpenNoteId)}</tbody>
     </table>
   );
 
   return (
-    <div className="grid grid-cols-1 gap-3 max-w-3xl">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-0 md:divide-x divide-border min-w-0">
       <div className="min-w-0">
-        {left.length > 0 ? renderTable(left) : <p className="text-xs text-muted-foreground py-2">—</p>}
+        {left.length > 0 ? renderTable(left) : <p className="text-xs text-muted-foreground px-3 py-2">—</p>}
       </div>
       {right.length > 0 ? <div className="min-w-0">{renderTable(right)}</div> : null}
     </div>
@@ -139,16 +171,13 @@ export function RaidAnmeldungen({
   const canSeeNotes = canEdit;
 
   return (
-    <div className="space-y-3">
+    <div className="divide-y divide-border border-t border-border">
       {ROLE_ORDER.map((role) => {
         const list = groups[role];
         if (!list || list.length === 0) return null;
         return (
-          <section
-            key={role}
-            className="rounded-md border border-border/70 bg-background/40 p-3 space-y-2 min-w-0"
-          >
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <section key={role} className="min-w-0">
+            <div className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-foreground bg-muted/15 border-b border-border">
               <RoleIcon role={role} size={18} />
               <span>{role}</span>
               <span className="text-muted-foreground font-normal tabular-nums">({list.length})</span>
@@ -165,8 +194,8 @@ export function RaidAnmeldungen({
       })}
 
       {groups.Unknown.length > 0 ? (
-        <section className="rounded-md border border-border/70 bg-background/40 p-3 space-y-2 min-w-0">
-          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <section className="min-w-0">
+          <div className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-foreground bg-muted/15 border-b border-border">
             <span
               className="inline-flex items-center justify-center w-[18px] h-[18px] text-muted-foreground"
               aria-hidden

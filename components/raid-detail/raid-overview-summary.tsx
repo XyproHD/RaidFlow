@@ -58,7 +58,7 @@ function RoleClassGrid({
 }) {
   if (rows.length === 0) return null;
   return (
-    <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 pt-2 mt-1 border-t border-border/70 w-full">
+    <div className="grid grid-cols-2 gap-x-2 gap-y-1 pt-1.5 mt-1 border-t border-border/60 w-full">
       {rows.map(({ classId, total }) => (
         <span
           key={classId}
@@ -73,7 +73,7 @@ function RoleClassGrid({
   );
 }
 
-function RoleTile({
+function RoleCell({
   roleKey,
   children,
   classRows,
@@ -86,25 +86,33 @@ function RoleTile({
 }) {
   const icon = ROLE_ICONS[roleKey];
   return (
-    <div
-      className="flex flex-col rounded-md border border-border/80 bg-background px-2 py-2 text-sm min-w-0"
-      title={roleKey}
-    >
-      <div className="inline-flex flex-wrap items-center justify-center gap-1.5 tabular-nums w-full">
+    <td className="align-top border-r border-border/60 last:border-r-0 px-2 py-2 min-w-0 bg-background">
+      <div className="inline-flex flex-wrap items-center justify-center gap-1.5 tabular-nums w-full text-sm" title={roleKey}>
         <Image src={icon.src} alt="" width={18} height={18} unoptimized />
         {children}
       </div>
       <RoleClassGrid rows={classRows} tProfile={tProfile} />
-    </div>
+    </td>
   );
 }
 
-function OverviewRowBox({ label, children }: { label: string; children: ReactNode }) {
+function OverviewTableRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-border/80 bg-background/60 p-3 space-y-2 min-w-0">
-      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</div>
-      <div className="grid grid-cols-2 gap-2 min-w-0">{children}</div>
-    </div>
+    <tr className="border-b border-border last:border-b-0">
+      <th
+        scope="row"
+        className="align-top text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide py-2.5 pr-3 w-[7.5rem] min-w-[7.5rem] font-normal"
+      >
+        {label}
+      </th>
+      <td className="py-1.5 pl-0 pr-0">
+        <table className="w-full text-sm border-collapse border border-border/80 rounded overflow-hidden">
+          <tbody>
+            <tr>{children}</tr>
+          </tbody>
+        </table>
+      </td>
+    </tr>
   );
 }
 
@@ -129,65 +137,67 @@ export function RaidOverviewSummaryRows({
       : [];
 
   return (
-    <div className="flex flex-col gap-3 min-w-0 w-full">
-      <OverviewRowBox label={t('overviewRowSignups')}>
-        {ROLE_KEYS.map((key) => {
-          const slice = roleAttendance[key];
-          const classRows = roleClassByRole[key] ?? [];
-          return (
-            <RoleTile key={key} roleKey={key} classRows={classRows} tProfile={tProfile}>
-              <AttendanceCounts {...slice} />
-            </RoleTile>
-          );
-        })}
-      </OverviewRowBox>
-
-      <OverviewRowBox label={t('overviewRowMinRoles')}>
-        {ROLE_KEYS.map((key) => {
-          const min = roleMinByKey[key];
-          const slice = roleAttendance[key];
-          const classRows = roleClassByRole[key] ?? [];
-          return (
-            <RoleTile key={key} roleKey={key} classRows={classRows} tProfile={tProfile}>
-              <span className={cn('font-semibold', statusToneClassForMin(min, slice.clear, slice.unclear))}>
-                {min}
-              </span>
-              <span className="text-muted-foreground">·</span>
-              <AttendanceCounts {...slice} />
-            </RoleTile>
-          );
-        })}
-      </OverviewRowBox>
-
-      {minSpecEntries.length > 0 ? (
-        <OverviewRowBox label={t('overviewRowMinSpecs')}>
-          {minSpecEntries.map(([spec, need]) => {
-            const slice = specAttendanceByKey[spec] ?? { clear: 0, unclear: 0 };
-            const classId = parseMinSpecClassKey(spec);
-            const title = minSpecKeyTitle(spec, tProfile);
+    <table className="w-full text-sm border-collapse min-w-0">
+      <tbody>
+        <OverviewTableRow label={t('overviewRowSignups')}>
+          {ROLE_KEYS.map((key) => {
+            const slice = roleAttendance[key];
+            const classRows = roleClassByRole[key] ?? [];
             return (
-              <span
-                key={spec}
-                className="flex flex-col rounded-md border border-border/80 bg-background px-2 py-2 text-sm min-w-0"
-                title={title}
-              >
-                <span className="inline-flex flex-wrap items-center justify-center gap-1.5 tabular-nums w-full">
-                  {classId ? (
-                    <ClassIcon classId={classId} size={18} title={title} />
-                  ) : (
-                    <SpecIcon spec={spec} size={18} />
-                  )}
-                  <span className={cn('font-semibold', statusToneClassForMin(need, slice.clear, slice.unclear))}>
-                    {need}
-                  </span>
-                  <span className="text-muted-foreground">·</span>
-                  <AttendanceCounts {...slice} />
-                </span>
-              </span>
+              <RoleCell key={key} roleKey={key} classRows={classRows} tProfile={tProfile}>
+                <AttendanceCounts {...slice} />
+              </RoleCell>
             );
           })}
-        </OverviewRowBox>
-      ) : null}
-    </div>
+        </OverviewTableRow>
+
+        <OverviewTableRow label={t('overviewRowMinRoles')}>
+          {ROLE_KEYS.map((key) => {
+            const min = roleMinByKey[key];
+            const slice = roleAttendance[key];
+            const classRows = roleClassByRole[key] ?? [];
+            return (
+              <RoleCell key={key} roleKey={key} classRows={classRows} tProfile={tProfile}>
+                <span className={cn('font-semibold', statusToneClassForMin(min, slice.clear, slice.unclear))}>
+                  {min}
+                </span>
+                <span className="text-muted-foreground">·</span>
+                <AttendanceCounts {...slice} />
+              </RoleCell>
+            );
+          })}
+        </OverviewTableRow>
+
+        {minSpecEntries.length > 0 ? (
+          <OverviewTableRow label={t('overviewRowMinSpecs')}>
+            {minSpecEntries.map(([spec, need]) => {
+              const slice = specAttendanceByKey[spec] ?? { clear: 0, unclear: 0 };
+              const classId = parseMinSpecClassKey(spec);
+              const title = minSpecKeyTitle(spec, tProfile);
+              return (
+                <td
+                  key={spec}
+                  className="align-top border-r border-border/60 last:border-r-0 px-2 py-2 min-w-0 bg-background"
+                  title={title}
+                >
+                  <span className="inline-flex flex-wrap items-center justify-center gap-1.5 tabular-nums w-full text-sm">
+                    {classId ? (
+                      <ClassIcon classId={classId} size={18} title={title} />
+                    ) : (
+                      <SpecIcon spec={spec} size={18} />
+                    )}
+                    <span className={cn('font-semibold', statusToneClassForMin(need, slice.clear, slice.unclear))}>
+                      {need}
+                    </span>
+                    <span className="text-muted-foreground">·</span>
+                    <AttendanceCounts {...slice} />
+                  </span>
+                </td>
+              );
+            })}
+          </OverviewTableRow>
+        ) : null}
+      </tbody>
+    </table>
   );
 }
