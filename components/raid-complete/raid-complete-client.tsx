@@ -21,14 +21,14 @@ import {
 } from '@/components/character-display-parts';
 import type { GuildCharacterOption } from '@/components/raid-planner/raid-roster-planner';
 import { normalizeParticipationWeight } from '@/lib/raid-participation-weight';
-import { parseCombatLogFile } from '@/lib/combat-log';
 import {
-  buildWeightMapFromInstance,
-  pickRaidInstance,
-  summarizeInstanceForUi,
+  buildWeightMapFromInstances,
+  summarizeInstancesForUi,
 } from '@/lib/combat-log-raid-apply';
-import { setCombatLogFileMeta } from '@/lib/combat-log-file-prefs';
-import { CombatLogPickerOverlay } from '@/components/raid-complete/combat-log-picker-overlay';
+import {
+  CombatLogPickerOverlay,
+  type CombatLogApplyPayload,
+} from '@/components/raid-complete/combat-log-picker-overlay';
 
 export type RaidCompleteSignupRow = {
   id: string;
@@ -506,20 +506,18 @@ export function RaidCompleteClient({
     }
   }
 
-  const applyCombatLogFile = useCallback(
-    async (file: File) => {
+  const applyCombatLogPayload = useCallback(
+    async ({ selectedInstances }: CombatLogApplyPayload) => {
       setCombatLogBusy(true);
       setFormError(null);
       setCombatLogInfo(t('combatLogApplying'));
       try {
-        setCombatLogFileMeta(userId, file.name);
-        const analysis = await parseCombatLogFile(file, { fileName: file.name });
-        const instance = pickRaidInstance(analysis, raid.dungeonLabel);
-        if (!instance || instance.totalEncounters === 0) {
+        const instances = selectedInstances.filter((i) => i.totalEncounters > 0);
+        if (instances.length === 0) {
           throw new Error(t('combatLogNoInstance'));
         }
 
-        const weightByName = buildWeightMapFromInstance(instance);
+        const weightByName = buildWeightMapFromInstances(instances);
         const rosterIds = initialRosterIdsRef.current;
         const signupIds = groups.flat();
         const nextWeights: Record<string, number> = { ...weights };
@@ -570,7 +568,9 @@ export function RaidCompleteClient({
         setWeights(nextWeights);
         setCombatLogMissingIds(missing);
         setCombatLogInfo(
-          t('combatLogApplied', { instance: summarizeInstanceForUi(instance) })
+          t('combatLogApplied', {
+            instance: summarizeInstancesForUi(instances),
+          })
         );
         router.refresh();
       } catch (e) {
@@ -583,14 +583,12 @@ export function RaidCompleteClient({
     [
       groups,
       guildCharacters,
-      raid.dungeonLabel,
       raid.maxPlayers,
       raidId,
       guildId,
       router,
       signupRows,
       t,
-      userId,
       weights,
     ]
   );
@@ -950,7 +948,8 @@ export function RaidCompleteClient({
         userId={userId}
         raidScheduledAtIso={raid.scheduledAt}
         raidScheduledEndAtIso={raid.scheduledEndAt}
-        onFileChosen={(file) => void applyCombatLogFile(file)}
+        dungeonLabel={raid.dungeonLabel}
+        onApply={(payload) => void applyCombatLogPayload(payload)}
       />
     </div>
   );

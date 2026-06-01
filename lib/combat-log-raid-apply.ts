@@ -53,24 +53,67 @@ export function pickRaidInstance(
 export function buildWeightMapFromInstance(
   instance: InstanceSummary
 ): CombatLogWeightByCharacterName {
+  return buildWeightMapFromInstances([instance]);
+}
+
+export function buildWeightMapFromInstances(
+  instances: InstanceSummary[]
+): CombatLogWeightByCharacterName {
   const map = new Map<string, number>();
-  for (const p of instance.players) {
-    const w = encounterRatioToWeight(p.encountersPresent, p.encountersTotal);
-    const key = normName(p.name);
-    if (!key) continue;
-    const prev = map.get(key);
-    if (prev == null || w > prev) map.set(key, w);
+  if (instances.length === 0) return map;
+
+  const totalEncounters = instances.reduce((s, i) => s + i.totalEncounters, 0);
+  if (totalEncounters <= 0) return map;
+
+  const presentByName = new Map<string, number>();
+  for (const inst of instances) {
+    for (const p of inst.players) {
+      const key = normName(p.name);
+      if (!key) continue;
+      presentByName.set(key, (presentByName.get(key) ?? 0) + p.encountersPresent);
+    }
+  }
+
+  for (const [name, present] of presentByName) {
+    map.set(name, encounterRatioToWeight(present, totalEncounters));
   }
   return map;
 }
 
-export function combatLogPlayerNames(instance: InstanceSummary): Set<string> {
-  const set = new Set<string>();
-  for (const p of instance.players) {
-    const n = normName(p.name);
-    if (n) set.add(n);
+export function defaultSelectedInstanceKeys(
+  analysis: CombatLogAnalysis,
+  dungeonLabel: string
+): Set<string> {
+  const keys = new Set<string>();
+  if (analysis.instances.length === 0) return keys;
+
+  const parts = dungeonLabel
+    .split(/[/|+]/)
+    .map((p) => p.trim().toLowerCase())
+    .filter(Boolean);
+
+  const matched = analysis.instances.filter((inst) => {
+    const name = inst.instanceName.toLowerCase();
+    return parts.some(
+      (part) => part && (name.includes(part) || part.includes(name))
+    );
+  });
+
+  if (matched.length > 0) {
+    for (const inst of matched) keys.add(inst.instanceKey);
+    return keys;
   }
-  return set;
+
+  const best = [...analysis.instances].sort(
+    (a, b) => b.totalEncounters - a.totalEncounters
+  )[0];
+  if (best) keys.add(best.instanceKey);
+  return keys;
+}
+
+export function summarizeInstancesForUi(instances: InstanceSummary[]): string {
+  if (instances.length === 0) return '—';
+  return instances.map(summarizeInstanceForUi).join('; ');
 }
 
 export function summarizeInstanceForUi(instance: InstanceSummary): string {

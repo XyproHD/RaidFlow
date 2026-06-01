@@ -35,6 +35,13 @@ export function isSameLocalCalendarDay(a: Date, b: Date): boolean {
   );
 }
 
+export function formatCombatLogFileDateTime(date: Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
 export function combatLogDateMatchesRaid(
   fileName: string,
   raidScheduledAtIso: string,
