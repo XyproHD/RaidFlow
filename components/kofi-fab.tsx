@@ -239,7 +239,7 @@ export function KofiFab() {
         ) : null}
 
         {expanded ? (
-          <div className="rf-coffee-fab-expanded flex flex-col items-center gap-2.5">
+          <div className="rf-coffee-fab-expanded rf-coffee-fab-donate-stack">
             <div ref={kofiHostRef} className="rf-coffee-fab-kofi" />
             <div ref={bmcHostRef} className="rf-coffee-fab-bmc" />
           </div>

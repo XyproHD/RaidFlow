@@ -165,28 +165,90 @@
 .rf-coffee-fab-expanded {
   transform-origin: center bottom;
   animation: rf-coffee-expand-in 280ms ease-out forwards;
-  width: max-content;
+}
+
+.rf-coffee-fab-donate-stack {
+  --rf-donate-btn-width: 200px;
+  --rf-donate-btn-height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: var(--rf-donate-btn-width);
 }
 
 .rf-coffee-fab-kofi,
 .rf-coffee-fab-bmc {
-  display: flex;
-  justify-content: center;
   width: 100%;
 }
 
-.rf-coffee-fab-expanded .btn-container {
-  display: flex;
-  justify-content: center;
+.rf-coffee-fab-kofi .btn-container,
+.rf-coffee-fab-bmc .bmc-btn-container {
   width: 100%;
+  margin: 0;
+}
+
+.rf-coffee-fab-kofi .btn-container {
   transform-origin: center bottom;
   animation: rf-coffee-wiggle 10s ease-in-out infinite;
 }
 
+.rf-coffee-fab-kofi .btn-container a {
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: var(--rf-donate-btn-height) !important;
+  height: var(--rf-donate-btn-height) !important;
+  padding: 0 12px !important;
+  line-height: 1.2 !important;
+  text-decoration: none !important;
+}
+
+.rf-coffee-fab-kofi .btn-container img {
+  display: block !important;
+  height: 26px !important;
+  width: auto !important;
+  margin: 0 8px 0 0 !important;
+  flex-shrink: 0;
+}
+
 .rf-coffee-fab-bmc .bmc-btn-container {
-  display: flex;
-  justify-content: center;
-  width: 100%;
-  transform: scale(0.9);
-  transform-origin: center center;
+  display: block;
+}
+
+.rf-coffee-fab-bmc .bmc-btn {
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: var(--rf-donate-btn-height) !important;
+  height: var(--rf-donate-btn-height) !important;
+  padding: 0 12px !important;
+  font-size: 14px !important;
+  line-height: 1.2 !important;
+  border-radius: 10px !important;
+}
+
+.rf-coffee-fab-bmc .bmc-btn svg {
+  display: block !important;
+  height: 26px !important;
+  width: 26px !important;
+  margin: 0 !important;
+  flex-shrink: 0 !important;
+  transform: none !important;
+}
+
+.rf-coffee-fab-bmc .bmc-btn-text {
+  line-height: 1.2 !important;
+  width: auto !important;
+  flex: 0 1 auto !important;
+  text-align: left !important;
 }
