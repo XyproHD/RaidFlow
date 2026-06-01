@@ -187,4 +187,6 @@
   display: flex;
   justify-content: center;
   width: 100%;
+  transform: scale(0.9);
+  transform-origin: center center;
 }
