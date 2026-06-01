@@ -23,7 +23,13 @@ import {
   CharacterSignupPunctualityMark,
 } from '@/components/character-display-parts';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
-import { RaidAnmeldungen, SignupInlineTable, type AnmeldungRow } from '@/components/raid-detail/raid-anmeldungen';
+import {
+  RaidAnmeldungen,
+  PublishedPartyInlineTable,
+  SignupInlineTable,
+  type AnmeldungRow,
+} from '@/components/raid-detail/raid-anmeldungen';
+import { RAID_DETAIL_ICON_SIZE } from '@/components/raid-detail/raid-detail-display';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
 import {
   RaidOverviewSummaryRows,
@@ -505,7 +511,7 @@ export function RaidDetailView({
     <div className="space-y-8">
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-2 lg:divide-x divide-border">
-          <div className={cn('relative min-w-0 divide-y divide-border', canEdit && 'pr-12 sm:pr-14')}>
+          <div className={cn('relative min-w-0', canEdit && 'pr-12 sm:pr-14')}>
             {canEdit ? (
               <button
                 type="button"
@@ -522,72 +528,58 @@ export function RaidDetailView({
                 <span className="text-lg leading-none">☰</span>
               </button>
             ) : null}
-            <div className="px-4 py-4 sm:px-5 min-w-0 space-y-1.5 pr-1">
-              <h1 className="text-2xl font-bold text-foreground tracking-tight">{raid.name}</h1>
-              <p className="text-sm text-foreground/90">{dungeonLabel}</p>
-              <p className="text-sm text-foreground/90">
-                <span className="text-muted-foreground">{tRoster('metaTermin')}</span>{' '}
-                {raidTermin}
-              </p>
-              <p className="text-sm text-foreground/90">
-                <span className="text-muted-foreground">{tRoster('metaOrganizer')}</span>{' '}
-                {organizerLabel ?? tRoster('organizerUnset')}
-              </p>
-            </div>
+            <div className="px-4 py-4 sm:px-5 min-w-0 space-y-3 pr-1">
+              <div className="space-y-1.5">
+                <h1 className="text-2xl font-bold text-foreground tracking-tight">{raid.name}</h1>
+                <p className="text-sm text-foreground/90">{dungeonLabel}</p>
+                <p className="text-sm text-foreground/90">
+                  <span className="text-muted-foreground">{tRoster('metaTermin')}</span>{' '}
+                  {raidTermin}
+                </p>
+                <p className="text-sm text-foreground/90">
+                  <span className="text-muted-foreground">{tRoster('metaOrganizer')}</span>{' '}
+                  {organizerLabel ?? tRoster('organizerUnset')}
+                </p>
+              </div>
 
-            <div className="px-4 pb-4 sm:px-5">
-              <table className="w-full text-sm border-collapse border border-border/80 rounded overflow-hidden">
-                <tbody>
-                  <tr className="border-b border-border">
-                    <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2 w-[42%] sm:w-36">
-                      {tDash('signupOpenUntil')}
-                    </th>
-                    <td className="px-3 py-2">
-                      <span className="inline-flex items-center gap-2 min-w-0">
-                        <span className="shrink-0" title={tDash('signupOpenUntil')}>
-                          {signupState.icon}
-                        </span>
-                        <span className="tabular-nums">
-                          {new Intl.DateTimeFormat(intlLocale, {
-                            dateStyle: 'short',
-                            timeStyle: 'short',
-                          }).format(signupUntil)}
-                        </span>
-                      </span>
-                    </td>
-                  </tr>
-                  <tr className="border-b border-border">
-                    <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">
-                      {t('maxPlayers')}
-                    </th>
-                    <td className="px-3 py-2 font-medium tabular-nums">
-                      {raid._count.signups} / {raid.maxPlayers}
-                    </td>
-                  </tr>
-                  <tr className="border-b border-border">
-                    <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">{t('status')}</th>
-                    <td className="px-3 py-2 font-medium">{raidStatusLabel(t, raid.status)}</td>
-                  </tr>
-                  <tr className={raid.raidGroupRestriction ? 'border-b border-border' : undefined}>
-                    <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">
-                      {t('visibility')}
-                    </th>
-                    <td className="px-3 py-2 font-medium">{visibilityLabel}</td>
-                  </tr>
-                  {raid.raidGroupRestriction ? (
-                    <tr>
-                      <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">
-                        {t('restriction')}
-                      </th>
-                      <td className="px-3 py-2 font-medium">{raid.raidGroupRestriction.name}</td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
+              <ul className="text-sm space-y-2 list-none m-0 p-0">
+                <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="text-muted-foreground shrink-0 min-w-[7.5rem]">{tDash('signupOpenUntil')}</span>
+                  <span className="inline-flex items-center gap-2 font-medium tabular-nums">
+                    <span className="shrink-0 leading-none" title={tDash('signupOpenUntil')}>
+                      {signupState.icon}
+                    </span>
+                    {new Intl.DateTimeFormat(intlLocale, {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    }).format(signupUntil)}
+                  </span>
+                </li>
+                <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="text-muted-foreground shrink-0 min-w-[7.5rem]">{t('maxPlayers')}</span>
+                  <span className="font-medium tabular-nums">
+                    {raid._count.signups} / {raid.maxPlayers}
+                  </span>
+                </li>
+                <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="text-muted-foreground shrink-0 min-w-[7.5rem]">{t('status')}</span>
+                  <span className="font-medium">{raidStatusLabel(t, raid.status)}</span>
+                </li>
+                <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span className="text-muted-foreground shrink-0 min-w-[7.5rem]">{t('visibility')}</span>
+                  <span className="font-medium">{visibilityLabel}</span>
+                </li>
+                {raid.raidGroupRestriction ? (
+                  <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className="text-muted-foreground shrink-0 min-w-[7.5rem]">{t('restriction')}</span>
+                    <span className="font-medium">{raid.raidGroupRestriction.name}</span>
+                  </li>
+                ) : null}
+              </ul>
             </div>
 
             {raid.note ? (
-              <aside className="px-4 pb-4 sm:px-5 border-t border-primary/20 bg-primary/[0.04] dark:bg-primary/[0.08]">
+              <aside className="px-4 pb-4 sm:px-5 bg-primary/[0.04] dark:bg-primary/[0.08]">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-primary pt-3 mb-2 flex items-center gap-2">
                   <span aria-hidden>📌</span>
                   {t('note')}
@@ -613,61 +605,57 @@ export function RaidDetailView({
           <div className="border-b border-border bg-muted/20 px-4 py-3">
             <h2 className="text-sm font-semibold text-foreground">{t('sectionPublishedRoster')}</h2>
           </div>
-          <div className="divide-y divide-border">
+          <div className="p-4 space-y-4">
             {announcedLayout.groupMeta.map((meta, gi) => (
-              <div key={`g-${gi}`} className="min-w-0">
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-muted/20 border-b border-border">
-                      <th
-                        colSpan={2}
-                        className="text-left font-semibold text-foreground px-4 py-2.5"
-                        scope="colgroup"
-                      >
-                        {t('publishedGroupTitle', { n: gi + 1 })}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {meta.raidLeaderLabel || meta.lootmasterLabel ? (
-                      <tr className="border-b border-border bg-muted/10">
-                        <td colSpan={2} className="px-4 py-2 text-xs text-muted-foreground">
-                          {meta.raidLeaderLabel ? (
-                            <span className="mr-4">
-                              {t('raidLeaderShort')}:{' '}
-                              <span className="text-foreground">{meta.raidLeaderLabel}</span>
-                            </span>
-                          ) : null}
-                          {meta.lootmasterLabel ? (
-                            <span>
-                              {t('lootmasterShort')}:{' '}
-                              <span className="text-foreground">{meta.lootmasterLabel}</span>
-                            </span>
-                          ) : null}
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
+              <div
+                key={`g-${gi}`}
+                className="rounded-lg border border-border overflow-hidden min-w-0"
+              >
+                <div className="px-4 py-2.5 bg-muted/20 border-b border-border">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {t('publishedGroupTitle', { n: gi + 1 })}
+                  </h3>
+                  {meta.raidLeaderLabel || meta.lootmasterLabel ? (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {meta.raidLeaderLabel ? (
+                        <span className="mr-4">
+                          {t('raidLeaderShort')}:{' '}
+                          <span className="text-foreground">{meta.raidLeaderLabel}</span>
+                        </span>
+                      ) : null}
+                      {meta.lootmasterLabel ? (
+                        <span>
+                          {t('lootmasterShort')}:{' '}
+                          <span className="text-foreground">{meta.lootmasterLabel}</span>
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : null}
+                </div>
                 {(meta.partySlots ?? []).length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-border border-b border-border">
-                    {(meta.partySlots ?? []).map((row, pi) => {
-                      const ids = row.filter((sid) => !!sid?.trim());
-                      const partyRows: AnmeldungRow[] = ids
-                        .map((sid) => signupById.get(sid))
-                        .filter((s): s is NonNullable<typeof s> => !!s)
-                        .map((s) => raidSignupToAnmeldungRow(s));
+                  <div className="flex flex-nowrap overflow-x-auto divide-x divide-border">
+                    {(meta.partySlots ?? []).map((partyRow, pi) => {
+                      const idsPadded = [...partyRow];
+                      while (idsPadded.length < 5) idsPadded.push('');
+                      const partySlotRows: (AnmeldungRow | null)[] = idsPadded.map((sid) => {
+                        const id = sid?.trim() ?? '';
+                        if (!id) return null;
+                        const s = signupById.get(id);
+                        return s ? raidSignupToAnmeldungRow(s) : null;
+                      });
                       return (
                         <div
                           key={`pub-party-${gi}-${pi}`}
-                          className="min-w-0 flex flex-col border-border bg-background"
+                          className="shrink-0 min-w-[17rem] flex-1 flex flex-col bg-background"
                         >
-                          <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide border-b border-border bg-muted/15 shrink-0">
+                          <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide border-b border-border bg-muted/10">
                             {t('publishedPartyTitle', { n: pi + 1 })}
                           </div>
-                          <div className="flex-1 min-w-0 overflow-x-auto">
-                            <SignupInlineTable rows={partyRows} canEdit={false} raidStatus={raid.status} />
-                          </div>
+                          <PublishedPartyInlineTable
+                            slots={partySlotRows}
+                            raidStatus={raid.status}
+                            emptyLabel="—"
+                          />
                         </div>
                       );
                     })}
@@ -676,36 +664,36 @@ export function RaidDetailView({
               </div>
             ))}
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 lg:divide-x divide-border">
-              <div className="min-w-0 flex flex-col">
+            <div className="rounded-lg border border-border overflow-hidden min-w-0">
+              <div className="px-4 py-2.5 text-sm font-semibold text-foreground bg-muted/20 border-b border-border">
+                {t('publishedReserveHeading')}
+              </div>
+              <SignupInlineTable
+                compact
+                rows={publishedReserveOrderedIds
+                  .map((sid) => signupById.get(sid))
+                  .filter((s): s is NonNullable<typeof s> => !!s)
+                  .map((s) => raidSignupToAnmeldungRow(s))}
+                canEdit={false}
+                raidStatus={raid.status}
+              />
+            </div>
+
+            {raid.signups.some((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined') ? (
+              <div className="rounded-lg border border-border overflow-hidden min-w-0">
                 <div className="px-4 py-2.5 text-sm font-semibold text-foreground bg-muted/20 border-b border-border">
-                  {t('publishedReserveHeading')}
+                  {t('publishedDeclinedHeading')}
                 </div>
                 <SignupInlineTable
-                  rows={publishedReserveOrderedIds
-                    .map((sid) => signupById.get(sid))
-                    .filter((s): s is NonNullable<typeof s> => !!s)
+                  compact
+                  rows={raid.signups
+                    .filter((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined')
                     .map((s) => raidSignupToAnmeldungRow(s))}
                   canEdit={false}
                   raidStatus={raid.status}
                 />
               </div>
-
-              {raid.signups.some((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined') ? (
-                <div className="min-w-0 flex flex-col border-t lg:border-t-0 border-border">
-                  <div className="px-4 py-2.5 text-sm font-semibold text-foreground bg-muted/20 border-b border-border">
-                    {t('publishedDeclinedHeading')}
-                  </div>
-                  <SignupInlineTable
-                    rows={raid.signups
-                      .filter((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined')
-                      .map((s) => raidSignupToAnmeldungRow(s))}
-                    canEdit={false}
-                    raidStatus={raid.status}
-                  />
-                </div>
-              ) : null}
-            </div>
+            ) : null}
           </div>
         </section>
       ) : null}
@@ -760,12 +748,24 @@ export function RaidDetailView({
                       return (
                         <Fragment key={signup.id}>
                           <tr className="hover:bg-muted/15 transition-colors">
-                            <td className="px-3 py-2.5 align-middle">
-                              <div className="inline-flex flex-wrap items-center gap-2 min-w-0">
-                                {role ? <RoleIcon role={role} size={18} /> : null}
+                            <td className="px-3 py-2 align-middle">
+                              <div className="inline-flex flex-nowrap items-center gap-1.5 min-w-0">
+                                {role ? <RoleIcon role={role} size={RAID_DETAIL_ICON_SIZE} /> : null}
+                                {myChar ? (
+                                  <CharacterMainStar
+                                    isMain={!!myChar.isMain}
+                                    titleMain={tProfile('mainLabel')}
+                                    titleAlt={tProfile('altLabel')}
+                                    sizePx={RAID_DETAIL_ICON_SIZE}
+                                  />
+                                ) : null}
                                 <span className="inline-flex items-center gap-1 shrink-0">
                                   {derivedClassId ? (
-                                    <ClassIcon classId={derivedClassId} size={22} title={specForIcon ?? undefined} />
+                                    <ClassIcon
+                                      classId={derivedClassId}
+                                      size={RAID_DETAIL_ICON_SIZE}
+                                      title={specForIcon ?? undefined}
+                                    />
                                   ) : null}
                                   {myChar ? (
                                     <SignupSpecIcons
@@ -776,7 +776,7 @@ export function RaidDetailView({
                                       signedSpec={signup.signedSpec}
                                       onlySignedSpec={!!signup.onlySignedSpec}
                                       specLockTitle={t('badgeOnlySignedSpec')}
-                                      size={20}
+                                      size={RAID_DETAIL_ICON_SIZE}
                                     />
                                   ) : specForIcon ? (
                                     <SignupSpecIcons
@@ -784,18 +784,10 @@ export function RaidDetailView({
                                       signedSpec={specForIcon}
                                       onlySignedSpec={!!signup.onlySignedSpec}
                                       specLockTitle={t('badgeOnlySignedSpec')}
-                                      size={20}
+                                      size={RAID_DETAIL_ICON_SIZE}
                                     />
                                   ) : null}
                                 </span>
-                                {myChar ? (
-                                  <CharacterMainStar
-                                    isMain={!!myChar.isMain}
-                                    titleMain={tProfile('mainLabel')}
-                                    titleAlt={tProfile('altLabel')}
-                                    sizePx={16}
-                                  />
-                                ) : null}
                                 {myChar ? (
                                   <CharacterNameWithDiscordInline
                                     name={myChar.name}
@@ -806,7 +798,7 @@ export function RaidDetailView({
                                   <span className="text-muted-foreground">{t('signupAnonymous')}</span>
                                 )}
                                 {myChar?.hasBattlenet ? (
-                                  <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} />
+                                  <BattlenetLogo size={RAID_DETAIL_ICON_SIZE} title={tProfile('bnetLinkedBadgeTitle')} />
                                 ) : null}
                                 {myChar ? (
                                   <CharacterGearscoreBadge
@@ -816,12 +808,16 @@ export function RaidDetailView({
                                   />
                                 ) : null}
                                 <span className="inline-flex items-center gap-1 shrink-0">
-                                  <CharacterSignupPunctualityMark kind={punct} label={punctLabel} />
+                                  <CharacterSignupPunctualityMark
+                                    kind={punct}
+                                    label={punctLabel}
+                                    className="h-[18px] items-center"
+                                  />
                                   <span
                                     role="img"
                                     aria-label={attKind.title}
                                     title={attKind.title}
-                                    className="inline-flex shrink-0 text-sm leading-none cursor-default select-none"
+                                    className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center text-sm leading-none cursor-default select-none"
                                   >
                                     {attKind.sym}
                                   </span>
@@ -829,7 +825,7 @@ export function RaidDetailView({
                                 {hasNote ? (
                                   <button
                                     type="button"
-                                    className="shrink-0 text-base leading-none opacity-80 hover:opacity-100"
+                                    className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center text-sm leading-none opacity-80 hover:opacity-100"
                                     aria-label={tDash('toggleNote')}
                                     title={tDash('toggleNote')}
                                     onClick={() =>
@@ -841,20 +837,20 @@ export function RaidDetailView({
                                 ) : null}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 align-middle w-[min(14rem,32%)]">
-                              <div className="inline-flex flex-wrap items-center gap-1.5 text-sm text-foreground">
+                            <td className="px-3 py-2 align-middle w-[min(14rem,32%)]">
+                              <div className="inline-flex flex-nowrap items-center gap-1.5 text-sm text-foreground">
                                 <span className="text-muted-foreground shrink-0">{t('myStatusColumnLabel')}</span>
                                 <span
                                   role="img"
                                   aria-label={placement.title}
                                   title={placement.title}
-                                  className="inline-flex shrink-0 text-base leading-none cursor-default select-none"
+                                  className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center text-base leading-none cursor-default select-none"
                                 >
                                   {placement.sym}
                                 </span>
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 align-middle text-right w-12">
+                            <td className="px-3 py-2 align-middle text-right w-12">
                               {showRowMenu ? (
                                 <button
                                   type="button"

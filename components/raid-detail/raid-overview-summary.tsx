@@ -87,7 +87,7 @@ function RoleCell({
   const icon = ROLE_ICONS[roleKey];
   return (
     <td className="align-top border-r border-border/60 last:border-r-0 px-2 py-2 min-w-0 bg-background">
-      <div className="inline-flex flex-wrap items-center justify-center gap-1.5 tabular-nums w-full text-sm" title={roleKey}>
+      <div className="inline-flex flex-wrap items-center justify-start gap-1.5 tabular-nums w-full text-sm" title={roleKey}>
         <Image src={icon.src} alt="" width={18} height={18} unoptimized />
         {children}
       </div>
@@ -180,7 +180,7 @@ export function RaidOverviewSummaryRows({
                   className="align-top border-r border-border/60 last:border-r-0 px-2 py-2 min-w-0 bg-background"
                   title={title}
                 >
-                  <span className="inline-flex flex-wrap items-center justify-center gap-1.5 tabular-nums w-full text-sm">
+                  <span className="inline-flex flex-wrap items-center justify-start gap-1.5 tabular-nums w-full text-sm">
                     {classId ? (
                       <ClassIcon classId={classId} size={18} title={title} />
                     ) : (

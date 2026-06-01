@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { RoleIcon } from '@/components/role-icon';
+import { RAID_DETAIL_ICON_SIZE } from '@/components/raid-detail/raid-detail-display';
 import { TBC_CLASS_IDS } from '@/lib/wow-tbc-classes';
 import type { AnmeldungRow } from '@/components/raid-detail/raid-signup-player-row';
 import {
@@ -48,23 +49,32 @@ function splitTwoColumns<T>(items: T[]): [T[], T[]] {
   return [items.slice(0, mid), items.slice(mid)];
 }
 
+type SignupRowRenderOptions = {
+  compact?: boolean;
+  slotNumbers?: number[];
+};
+
 function renderSignupTableBody(
   rows: AnmeldungRow[],
   raidStatus: string,
   canSeeNotes: boolean,
   openNoteId: string | null,
-  setOpenNoteId: (id: string | null) => void
+  setOpenNoteId: (id: string | null) => void,
+  options?: SignupRowRenderOptions
 ) {
-  return rows.map((r) => {
+  return rows.map((r, index) => {
     const classId = classIdForAnmeldungRow(r);
     const punctuality = punctualityForAnmeldungRow(r);
     const gs = r.character?.gearScore;
     const note = r.note?.trim() ?? '';
+    const slotNumber = options?.slotNumbers?.[index];
     return (
       <RaidDetailSignupTableRow
         key={r.id}
         row={r}
         raidStatus={raidStatus}
+        compact={options?.compact}
+        slotNumber={slotNumber}
         extras={{
           punctuality,
           classId,
@@ -82,15 +92,72 @@ function renderSignupTableBody(
   });
 }
 
+/** 5er-Gruppe mit festen Positionen 1–5, einzeilig. */
+export function PublishedPartyInlineTable({
+  slots,
+  raidStatus,
+  emptyLabel,
+}: {
+  /** Bis zu 5 Slots; `null` = leerer Platz. */
+  slots: (AnmeldungRow | null)[];
+  raidStatus: string;
+  emptyLabel: string;
+}) {
+  const padded: (AnmeldungRow | null)[] = [...slots];
+  while (padded.length < 5) padded.push(null);
+
+  return (
+    <table className="w-full min-w-[17rem] text-sm border-collapse">
+      <tbody>
+        {padded.map((row, index) => {
+          const position = index + 1;
+          if (!row) {
+            return (
+              <tr key={`empty-${position}`} className="border-b border-border last:border-b-0">
+                <td className="w-8 px-2 py-1.5 align-middle text-xs font-semibold text-muted-foreground tabular-nums text-center">
+                  {position}
+                </td>
+                <td className="px-2 py-1.5 align-middle text-sm text-muted-foreground whitespace-nowrap">
+                  {emptyLabel}
+                </td>
+              </tr>
+            );
+          }
+          const classId = classIdForAnmeldungRow(row);
+          const punctuality = punctualityForAnmeldungRow(row);
+          const gs = row.character?.gearScore;
+          return (
+            <RaidDetailSignupTableRow
+              key={row.id}
+              row={row}
+              raidStatus={raidStatus}
+              compact
+              slotNumber={position}
+              extras={{
+                punctuality,
+                classId,
+                gearScore: typeof gs === 'number' ? gs : null,
+              }}
+              canSeeNotes={false}
+            />
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 /** Kompakte Inline-Tabelle (z. B. veröffentlichter Kader, Reserve). */
 export function SignupInlineTable({
   rows,
   canEdit,
   raidStatus,
+  compact = false,
 }: {
   rows: AnmeldungRow[];
   canEdit: boolean;
   raidStatus: string;
+  compact?: boolean;
 }) {
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const canSeeNotes = canEdit;
@@ -101,7 +168,9 @@ export function SignupInlineTable({
 
   return (
     <table className="w-full text-sm border-collapse">
-      <tbody>{renderSignupTableBody(rows, raidStatus, canSeeNotes, openNoteId, setOpenNoteId)}</tbody>
+      <tbody>
+        {renderSignupTableBody(rows, raidStatus, canSeeNotes, openNoteId, setOpenNoteId, { compact })}
+      </tbody>
     </table>
   );
 }
@@ -178,7 +247,7 @@ export function RaidAnmeldungen({
         return (
           <section key={role} className="min-w-0">
             <div className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-foreground bg-muted/15 border-b border-border">
-              <RoleIcon role={role} size={18} />
+              <RoleIcon role={role} size={RAID_DETAIL_ICON_SIZE} />
               <span>{role}</span>
               <span className="text-muted-foreground font-normal tabular-nums">({list.length})</span>
             </div>

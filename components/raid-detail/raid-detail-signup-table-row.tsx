@@ -13,6 +13,7 @@ import {
   CharacterSignupPunctualityMark,
 } from '@/components/character-display-parts';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
+import { RAID_DETAIL_ICON_SIZE } from '@/components/raid-detail/raid-detail-display';
 import type { AnmeldungRow } from '@/components/raid-detail/raid-signup-player-row';
 
 function typeNorm(v: string) {
@@ -40,6 +41,8 @@ export function RaidDetailSignupTableRow({
   noteExpanded,
   onToggleNote,
   raidStatus = '',
+  slotNumber,
+  compact = false,
 }: {
   row: AnmeldungRow;
   extras: DetailSignupTableRowExtras;
@@ -47,6 +50,10 @@ export function RaidDetailSignupTableRow({
   noteExpanded?: boolean;
   onToggleNote?: () => void;
   raidStatus?: string;
+  /** Position in der 5er-Gruppe (1–5). */
+  slotNumber?: number;
+  /** Einzeilig ohne Umbruch (veröffentlichte 5er). */
+  compact?: boolean;
 }) {
   const t = useTranslations('raidDetail');
   const tProfile = useTranslations('profile');
@@ -57,6 +64,66 @@ export function RaidDetailSignupTableRow({
     punct === 'on_time' ? t('punctualityOnTime') : punct === 'tight' ? t('punctualityTight') : t('punctualityLate');
   const discordName = row.character?.guildDiscordDisplayName?.trim() ?? null;
   const note = row.note?.trim() ?? '';
+  const iconSize = RAID_DETAIL_ICON_SIZE;
+
+  const nameBlock = (
+    <div
+      className={cn(
+        'flex items-center gap-1.5 min-w-0',
+        compact ? 'flex-nowrap overflow-hidden' : 'flex-wrap'
+      )}
+    >
+      {row.character ? (
+        <CharacterMainStar
+          isMain={!!row.character.isMain}
+          titleMain={tProfile('mainLabel')}
+          titleAlt={tProfile('altLabel')}
+          sizePx={iconSize}
+        />
+      ) : null}
+      {extras.classId ? <ClassIcon classId={extras.classId} size={iconSize} title={main || undefined} /> : null}
+      <SignupSpecIcons
+        character={row.character}
+        signedSpec={row.signedSpec}
+        onlySignedSpec={!!row.onlySignedSpec}
+        specLockTitle={t('badgeOnlySignedSpec')}
+        size={iconSize}
+      />
+      <span className={cn('font-medium text-foreground', compact ? 'truncate min-w-0' : '')}>
+        {row.character?.name ?? t('signupAnonymous')}
+      </span>
+      {row.leaderMarkedTeilnehmer ? (
+        <span className="text-xs rounded bg-primary/15 text-primary px-1.5 py-0.5 shrink-0 whitespace-nowrap">
+          {t('badgeTeilnehmer')}
+        </span>
+      ) : null}
+      {!row.leaderAllowsReserve && !row.forbidReserve ? (
+        <span className="text-xs rounded bg-muted px-1.5 py-0.5 shrink-0 whitespace-nowrap">
+          {t('badgeReserveForbidden')}
+        </span>
+      ) : null}
+    </div>
+  );
+
+  const trailingBlock = (
+    <div className="inline-flex flex-nowrap items-center gap-1.5 shrink-0">
+      <CharacterSignupPunctualityMark kind={punct} label={punctLabel} className="h-[18px] items-center" />
+      {row.forbidReserve ? <CharacterForbidReserveBadge title={t('conditionForbidReserve')} /> : null}
+      <CharacterDiscordPill discordName={discordName} />
+      <CharacterGearscorePill gearScore={extras.gearScore} />
+      {canSeeNotes && note.length > 0 && onToggleNote ? (
+        <button
+          type="button"
+          className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center text-sm leading-none opacity-80 hover:opacity-100"
+          title={note}
+          aria-label={t('participantNotiz')}
+          onClick={onToggleNote}
+        >
+          📒
+        </button>
+      ) : null}
+    </div>
+  );
 
   return (
     <>
@@ -68,60 +135,31 @@ export function RaidDetailSignupTableRow({
           att === 'declined' && 'bg-red-500/[0.07] dark:bg-red-950/35'
         )}
       >
-        <td className="px-3 py-2 align-middle">
-          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-            {row.character ? (
-              <CharacterMainStar
-                isMain={!!row.character.isMain}
-                titleMain={tProfile('mainLabel')}
-                titleAlt={tProfile('altLabel')}
-                sizePx={16}
-              />
-            ) : null}
-            {extras.classId ? <ClassIcon classId={extras.classId} size={22} title={main || undefined} /> : null}
-            <SignupSpecIcons
-              character={row.character}
-              signedSpec={row.signedSpec}
-              onlySignedSpec={!!row.onlySignedSpec}
-              specLockTitle={t('badgeOnlySignedSpec')}
-              size={20}
-            />
-            <span className="font-medium text-foreground truncate">{row.character?.name ?? t('signupAnonymous')}</span>
-            {row.leaderMarkedTeilnehmer ? (
-              <span className="text-xs rounded bg-primary/15 text-primary px-1.5 py-0.5 shrink-0">
-                {t('badgeTeilnehmer')}
-              </span>
-            ) : null}
-            {!row.leaderAllowsReserve && !row.forbidReserve ? (
-              <span className="text-xs rounded bg-muted px-1.5 py-0.5 shrink-0">{t('badgeReserveForbidden')}</span>
-            ) : null}
-          </div>
+        {slotNumber != null ? (
+          <td className="w-8 px-2 py-1.5 align-middle text-xs font-semibold text-muted-foreground tabular-nums text-center">
+            {slotNumber}
+          </td>
+        ) : null}
+        <td
+          className={cn('align-middle', compact ? 'px-2 py-1.5 whitespace-nowrap' : 'px-3 py-2')}
+          colSpan={compact && slotNumber == null ? 2 : 1}
+        >
+          {compact ? (
+            <div className="flex flex-nowrap items-center gap-2 min-w-0">
+              {nameBlock}
+              {trailingBlock}
+            </div>
+          ) : (
+            nameBlock
+          )}
         </td>
-        <td className="px-3 py-2 align-middle text-right">
-          <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
-            <CharacterSignupPunctualityMark kind={punct} label={punctLabel} />
-            {row.forbidReserve ? (
-              <CharacterForbidReserveBadge title={t('conditionForbidReserve')} />
-            ) : null}
-            <CharacterDiscordPill discordName={discordName} />
-            <CharacterGearscorePill gearScore={extras.gearScore} />
-            {canSeeNotes && note.length > 0 && onToggleNote ? (
-              <button
-                type="button"
-                className="shrink-0 text-base leading-none opacity-80 hover:opacity-100"
-                title={note}
-                aria-label={t('participantNotiz')}
-                onClick={onToggleNote}
-              >
-                📒
-              </button>
-            ) : null}
-          </div>
-        </td>
+        {!compact ? (
+          <td className="px-3 py-2 align-middle text-right">{trailingBlock}</td>
+        ) : null}
       </tr>
       {noteExpanded && canSeeNotes && note.length > 0 ? (
         <tr className="border-b border-border bg-muted/30 last:border-b-0">
-          <td colSpan={2} className="px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap">
+          <td colSpan={slotNumber != null ? 3 : 2} className="px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap">
             {note}
           </td>
         </tr>
