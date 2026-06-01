@@ -130,6 +130,7 @@ export function RaidDetailSignupTableRow({
       <tr
         className={cn(
           'border-b border-border last:border-b-0',
+          compact && 'min-h-[34px]',
           att === 'default' && 'bg-background',
           att === 'uncertain' && 'bg-red-500/[0.04] dark:bg-red-950/20',
           att === 'declined' && 'bg-red-500/[0.07] dark:bg-red-950/35'

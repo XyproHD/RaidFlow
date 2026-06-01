@@ -841,7 +841,12 @@ export function RaidDetailView({
                   ) : null}
                 </div>
                 {(meta.partySlots ?? []).length > 0 ? (
-                  <div className="flex flex-nowrap overflow-x-auto divide-x divide-border">
+                  <div
+                    className="grid gap-3 p-3"
+                    style={{
+                      gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${RAID_PARTY_COLUMN_MIN_WIDTH}), 1fr))`,
+                    }}
+                  >
                     {(meta.partySlots ?? []).map((partyRow, pi) => {
                       const idsPadded = [...partyRow];
                       while (idsPadded.length < 5) idsPadded.push('');
@@ -854,8 +859,7 @@ export function RaidDetailView({
                       return (
                         <div
                           key={`pub-party-${gi}-${pi}`}
-                          className="shrink-0 flex-1 flex flex-col bg-background"
-                          style={{ minWidth: RAID_PARTY_COLUMN_MIN_WIDTH }}
+                          className="flex min-w-0 flex-col rounded-md border border-border bg-background overflow-hidden"
                         >
                           <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide border-b border-border bg-muted/10">
                             {t('publishedPartyTitle', { n: pi + 1 })}

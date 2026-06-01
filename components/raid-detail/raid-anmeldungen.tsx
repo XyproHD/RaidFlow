@@ -110,18 +110,24 @@ export function PublishedPartyInlineTable({
   while (padded.length < 5) padded.push(null);
 
   return (
-    <table className="w-full text-sm border-collapse" style={{ minWidth: RAID_PARTY_COLUMN_MIN_WIDTH }}>
+    <table className="w-full min-w-0 text-sm border-collapse">
       <tbody>
         {padded.map((row, index) => {
           const position = index + 1;
           if (!row) {
             return (
-              <tr key={`empty-${position}`} className="border-b border-border last:border-b-0">
+              <tr key={`empty-${position}`} className="border-b border-border last:border-b-0 bg-background min-h-[34px]">
                 <td className="w-8 px-2 py-1.5 align-middle text-xs font-semibold text-muted-foreground tabular-nums text-center">
                   {position}
                 </td>
-                <td className="px-2 py-1.5 align-middle text-sm text-muted-foreground whitespace-nowrap">
-                  {emptyLabel}
+                <td className="px-2 py-1.5 align-middle whitespace-nowrap">
+                  <div className="flex min-h-[18px] flex-nowrap items-center gap-2">
+                    <span
+                      className="inline-block h-[18px] w-[18px] shrink-0 opacity-0 pointer-events-none"
+                      aria-hidden
+                    />
+                    <span className="text-sm text-muted-foreground">{emptyLabel}</span>
+                  </div>
                 </td>
               </tr>
             );
