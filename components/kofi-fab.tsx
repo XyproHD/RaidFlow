@@ -61,7 +61,8 @@ function CoffeeCupIcon({ className }: { className?: string }) {
 function renderBmcButton(host: HTMLElement) {
   const build = window.bmcBtnWidget;
   if (!build) return false;
-  host.innerHTML = build(
+  // Widget-Styles setzen u. a. line-height: 0 auf .bmc-btn-text — Layout kommt aus globals.css
+  const html = build(
     BMC_WIDGET_TEXT,
     BMC_SLUG,
     '#FFDD00',
@@ -70,7 +71,8 @@ function renderBmcButton(host: HTMLElement) {
     '#000000',
     '#000000',
     '#ffffff',
-  );
+  ).replace(/<style[\s\S]*?<\/style>/gi, '');
+  host.innerHTML = html;
   return true;
 }
 
@@ -131,7 +133,7 @@ export function KofiFab() {
   const injectBmc = useCallback(async () => {
     const host = bmcHostRef.current;
     if (!host) return;
-    const fallback = `<a href="${BMC_URL}" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-14 min-w-[210px] items-center justify-center gap-2 rounded-xl bg-[#FFDD00] px-5 text-base font-bold text-black no-underline shadow-lg hover:brightness-95"><span aria-hidden="true" class="text-xl leading-none">☕</span><span>${BMC_WIDGET_TEXT}</span></a>`;
+    const fallback = `<a href="${BMC_URL}" target="_blank" rel="noopener noreferrer" class="rf-bmc-fallback inline-flex h-14 min-w-[260px] items-center justify-center gap-3 rounded-xl bg-[#FFDD00] px-6 text-[17px] font-bold leading-snug text-black no-underline shadow-lg hover:brightness-95"><span aria-hidden="true" class="text-2xl leading-none">☕</span><span>${BMC_WIDGET_TEXT}</span></a>`;
     try {
       await loadBmcScript();
       if (!renderBmcButton(host)) {
