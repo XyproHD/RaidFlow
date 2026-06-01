@@ -912,7 +912,7 @@ export function NewRaidWizard({
   const matchingCount = filteredPool.length;
 
   return (
-    <div className="max-w-6xl space-y-8">
+    <div className="w-full space-y-8">
       {isEdit ? (
         <section className="rounded-xl border border-border bg-card p-4 md:p-5 flex flex-wrap items-center gap-3 justify-between">
           <div className="text-sm text-muted-foreground">
@@ -1341,14 +1341,14 @@ export function NewRaidWizard({
               }}
             >
               <div
-                className="my-4 w-full max-w-6xl space-y-4 rounded-xl border border-border bg-background shadow-xl"
+                className="my-4 w-full max-w-[75vw] space-y-4 rounded-xl border border-border bg-background shadow-xl"
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <div className="border-b border-border px-4 py-3 md:px-5">
                   <h2 id="availability-dialog-title" className="text-base font-semibold text-foreground">
                     {t('openAvailabilityPlanner')}
                   </h2>
-                  <p className="text-sm text-muted-foreground max-w-2xl mt-1">{t('step2FromTerminHint')}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{t('step2FromTerminHint')}</p>
                 </div>
                 <div className="space-y-4 px-4 pb-5 md:px-5">
 

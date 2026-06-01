@@ -7,12 +7,10 @@ import { useLocale, useTranslations } from 'next-intl';
 import { createPortal } from 'react-dom';
 import { ProfileCharacters, type ProfileCharactersHandle, type CharacterRow as ProfileCharacterRow, type GuildOption as ProfileGuildOption } from '../profile/profile-characters';
 import { ClassIcon } from '@/components/class-icon';
-import { RoleIcon } from '@/components/role-icon';
-import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { CharacterGearscoreBadge } from '@/components/character-gearscore-badge';
 import { BattlenetLogo } from '@/components/battlenet-logo';
-import { CharacterNameBadges, CharacterSpecIconsInline } from '@/components/character-display-parts';
+import { CharacterSpecIconsInline } from '@/components/character-display-parts';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { cn } from '@/lib/utils';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
@@ -100,6 +98,16 @@ function addDays(d: Date, days: number) {
   return x;
 }
 
+/** Montag 00:00 der Woche, die `d` enthält (ISO-Wochenstart). */
+function startOfWeekMonday(d: Date) {
+  const x = startOfDay(d);
+  const dow = x.getDay();
+  return addDays(x, dow === 0 ? -6 : 1 - dow);
+}
+
+const CALENDAR_WEEKS = 3;
+const CALENDAR_DAY_COUNT = CALENDAR_WEEKS * 7;
+
 function formatDayLabel(locale: string, d: Date) {
   return new Intl.DateTimeFormat(locale, { weekday: 'short', day: '2-digit', month: '2-digit' }).format(d);
 }
@@ -154,15 +162,6 @@ function myStatusIconTooltip(
 function daysDiff(raidDate: Date, referenceDay: Date): number {
   const ms = startOfDay(raidDate).getTime() - startOfDay(referenceDay).getTime();
   return Math.round(ms / (1000 * 60 * 60 * 24));
-}
-
-function roleForSpecDisplayName(specDisplayName: string | null): string | null {
-  if (!specDisplayName) return null;
-  const parsed = getSpecByDisplayName(specDisplayName);
-  if (!parsed) return null;
-  const cls = TBC_CLASSES.find((c) => c.id === parsed.classId);
-  const spec = cls?.specs.find((s) => s.id === parsed.specId);
-  return spec?.role ?? null;
 }
 
 function signupIndicator(
@@ -243,8 +242,7 @@ export function DashboardClient({
   const [openCalendarActionPos, setOpenCalendarActionPos] = useState<{ top: number; left: number } | null>(null);
   const [expandedSignupUntilRaidId, setExpandedSignupUntilRaidId] = useState<string | null>(null);
   const [calendarView, setCalendarView] = useState<'tiles' | 'list'>('tiles');
-  const [showDays, setShowDays] = useState<7 | 14 | 21>(14);
-  const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => startOfDay(new Date()));
+  const [calendarAnchor, setCalendarAnchor] = useState<Date>(() => startOfWeekMonday(new Date()));
   const [listCount, setListCount] = useState(5);
   const [listStartIdx, setListStartIdx] = useState<number | null>(null);
   const [cancelDmPayload, setCancelDmPayload] = useState<{
@@ -255,9 +253,9 @@ export function DashboardClient({
   const [cancelDmBusy, setCancelDmBusy] = useState(false);
 
   const today = useMemo(() => startOfDay(new Date()), []);
-  const rangeStart = useMemo(() => startOfDay(addDays(calendarAnchor, -1)), [calendarAnchor]);
-  const tilesCount = useMemo(() => showDays + 1, [showDays]);
-  const rangeEnd = useMemo(() => startOfDay(addDays(rangeStart, tilesCount - 1)), [rangeStart, tilesCount]);
+  const weekStart = useMemo(() => startOfWeekMonday(calendarAnchor), [calendarAnchor]);
+  const rangeStart = weekStart;
+  const rangeEnd = useMemo(() => startOfDay(addDays(weekStart, CALENDAR_DAY_COUNT - 1)), [weekStart]);
   const defaultCreateGuildId = canCreateGuildIds[0] ?? null;
   const canCreateGuilds = useMemo(
     () => guilds.filter((g) => (g.role === 'raidleader' || g.role === 'guildmaster') && canCreateGuildIds.includes(g.id)),
@@ -336,9 +334,9 @@ export function DashboardClient({
 
   const days = useMemo(() => {
     const list: Date[] = [];
-    for (let i = 0; i < tilesCount; i++) list.push(addDays(rangeStart, i));
+    for (let i = 0; i < CALENDAR_DAY_COUNT; i++) list.push(addDays(rangeStart, i));
     return list;
-  }, [rangeStart, tilesCount]);
+  }, [rangeStart]);
 
   const visibleCalendarRaids = useMemo(() => {
     const startMs = startOfDay(rangeStart).getTime();
@@ -393,11 +391,23 @@ export function DashboardClient({
   const canGoListPrev = effectiveListStart > 0;
   const canGoListNext = effectiveListStart + listCount < allRaidsSorted.length;
 
+  const shiftCalendarWeeks = (deltaWeeks: number) => {
+    setCalendarAnchor((d) => addDays(startOfWeekMonday(d), deltaWeeks * 7));
+  };
+
+  const resetCalendarToCurrentWeek = () => {
+    setCalendarAnchor(startOfWeekMonday(new Date()));
+  };
+
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 md:p-8 page-container space-y-6">
       <h1 className="text-2xl font-bold text-foreground tracking-tight">{t('title')}</h1>
 
-      <section aria-labelledby="guild-memberships-heading" className="rounded-xl border border-border border-l-[3px] border-l-amber-400/40 shadow-sm overflow-hidden bg-amber-500/[0.025] dark:bg-amber-500/[0.04]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 items-start">
+      <section
+        aria-labelledby="guild-memberships-heading"
+        className="order-1 lg:col-span-3 min-w-0 rounded-xl border border-border border-l-[3px] border-l-amber-400/40 shadow-sm overflow-hidden bg-amber-500/[0.025] dark:bg-amber-500/[0.04]"
+      >
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-amber-500/10 dark:bg-amber-500/[0.07]">
           <h2 id="guild-memberships-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('guildMemberships')}
@@ -408,73 +418,71 @@ export function DashboardClient({
         ) : (
           <ul className="divide-y divide-border">
             {guilds.map((g) => (
-              <li key={g.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 hover:bg-muted/20 transition-colors">
-                <div className="min-w-0 flex items-center gap-2">
-                  <div className="min-w-0">
+              <li key={g.id} className="px-3 py-2 hover:bg-muted/20 transition-colors">
+                <div className="flex items-center justify-between gap-2 min-w-0">
+                  <div className="min-w-0 flex items-center gap-1.5">
                     {g.armoryUrl ? (
                       <a
                         href={g.armoryUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="font-semibold text-foreground hover:underline truncate block"
+                        className="text-sm font-semibold text-foreground hover:underline truncate"
                         title={g.name}
                       >
                         {g.name}
                       </a>
                     ) : (
-                      <span className="font-semibold text-foreground truncate block" title={g.name}>
+                      <span className="text-sm font-semibold text-foreground truncate" title={g.name}>
                         {g.name}
                       </span>
                     )}
-                    {g.realmLabel ? (
-                      <div className="text-xs text-muted-foreground truncate" title={g.realmLabel}>
-                        @ {g.realmLabel.includes('•') ? g.realmLabel.split('•').pop()?.trim() : g.realmLabel}
-                      </div>
+                    {g.armoryUrl ? (
+                      <a
+                        href={g.armoryUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex shrink-0 items-center justify-center rounded border border-border bg-background p-0.5 hover:bg-muted"
+                        aria-label="classic-armory.org"
+                        title="classic-armory.org"
+                      >
+                        <img src="https://favicon.pub/classic-armory.org" alt="" className="h-3.5 w-3.5" />
+                      </a>
                     ) : null}
                   </div>
-                  {g.armoryUrl ? (
-                    <a
-                      href={g.armoryUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center justify-center rounded border border-border bg-background px-1.5 py-1 hover:bg-muted"
-                      aria-label="classic-armory.org"
-                      title="classic-armory.org"
-                    >
-                      <img src="https://favicon.pub/classic-armory.org" alt="classic-armory.org favicon" className="h-4 w-4" />
-                    </a>
-                  ) : null}
-                  <div className="flex flex-wrap gap-1">
-                    {guildRoleBadges(t, g.role).map((b) => (
-                      <span
-                        key={`${g.id}:${b.key}`}
-                        className={cn(
-                          'text-xs rounded-full px-2 py-0.5 font-medium border',
-                          b.key === 'guildmaster'
-                            ? 'bg-amber-500/15 border-amber-500/30 text-amber-700 dark:text-amber-400'
-                            : b.key === 'raidleader'
-                              ? 'bg-primary/10 border-primary/30 text-primary'
-                              : 'bg-muted/50 border-border text-muted-foreground'
-                        )}
-                      >
-                        {b.label}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="ml-auto flex items-center gap-2">
                   {g.canManage ? (
                     <Link
                       href={`/${locale}/guilds?guild=${encodeURIComponent(g.id)}`}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors"
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border bg-card hover:bg-muted transition-colors"
                       aria-label={t('openGuildManagement')}
                       title={t('openGuildManagement')}
                     >
-                      <svg className="h-4 w-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <svg className="h-3.5 w-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                       </svg>
                     </Link>
                   ) : null}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1 min-w-0">
+                  {g.realmLabel ? (
+                    <span className="text-[10px] text-muted-foreground truncate" title={g.realmLabel}>
+                      @ {g.realmLabel.includes('•') ? g.realmLabel.split('•').pop()?.trim() : g.realmLabel}
+                    </span>
+                  ) : null}
+                  {guildRoleBadges(t, g.role).map((b) => (
+                    <span
+                      key={`${g.id}:${b.key}`}
+                      className={cn(
+                        'text-[10px] rounded-full px-1.5 py-0 font-medium border',
+                        b.key === 'guildmaster'
+                          ? 'bg-amber-500/15 border-amber-500/30 text-amber-700 dark:text-amber-400'
+                          : b.key === 'raidleader'
+                            ? 'bg-primary/10 border-primary/30 text-primary'
+                            : 'bg-muted/50 border-border text-muted-foreground'
+                      )}
+                    >
+                      {b.label}
+                    </span>
+                  ))}
                 </div>
               </li>
             ))}
@@ -482,7 +490,10 @@ export function DashboardClient({
         )}
       </section>
 
-      <section aria-labelledby="my-stats-heading" className="rounded-xl border border-border border-l-[3px] border-l-blue-400/40 shadow-sm overflow-hidden bg-blue-500/[0.025] dark:bg-blue-500/[0.04]">
+      <section
+        aria-labelledby="my-stats-heading"
+        className="order-3 lg:col-span-4 min-w-0 rounded-xl border border-border border-l-[3px] border-l-blue-400/40 shadow-sm overflow-hidden bg-blue-500/[0.025] dark:bg-blue-500/[0.04]"
+      >
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-blue-500/10 dark:bg-blue-500/[0.07]">
           <h2 id="my-stats-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('myStats')}
@@ -535,7 +546,7 @@ export function DashboardClient({
                       gearScore={c.gearScore}
                     />
                   </div>
-                  <span className="text-xs text-muted-foreground hidden sm:block shrink-0 truncate max-w-[110px]" title={c.guildName ?? undefined}>{c.guildName ?? '–'}</span>
+                  <span className="text-xs text-muted-foreground hidden sm:block shrink-0 truncate max-w-[min(12rem,20vw)]" title={c.guildName ?? undefined}>{c.guildName ?? '–'}</span>
                   <span className="text-xs text-muted-foreground tabular-nums shrink-0" title={t('participatedRaids')}>
                     {c.participatedRaids}× Raids
                   </span>
@@ -587,7 +598,10 @@ export function DashboardClient({
         />
       </section>
 
-      <section aria-labelledby="my-signups-heading" className="rounded-xl border border-border border-l-[3px] border-l-emerald-400/40 shadow-sm overflow-hidden bg-emerald-500/[0.025] dark:bg-emerald-500/[0.04]">
+      <section
+        aria-labelledby="my-signups-heading"
+        className="order-2 lg:col-span-5 min-w-0 rounded-xl border border-border border-l-[3px] border-l-emerald-400/40 shadow-sm overflow-hidden bg-emerald-500/[0.025] dark:bg-emerald-500/[0.04]"
+      >
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border bg-emerald-500/10 dark:bg-emerald-500/[0.07]">
           <h2 id="my-signups-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('mySignups')}
@@ -597,15 +611,14 @@ export function DashboardClient({
           <p className="px-5 py-4 text-muted-foreground text-sm">{t('mySignupsEmpty')}</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted/30">
+            <table className="w-full text-xs">
+              <thead className="border-b border-border bg-muted/20">
                 <tr className="text-left">
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('scheduledAt')}</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('status')}</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('raid')}</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('character')}</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('myStatus')}</th>
-                  <th className="px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide text-right">{t('actions')}</th>
+                  <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('scheduledAt')}</th>
+                  <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('raid')}</th>
+                  <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('character')}</th>
+                  <th className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide w-8">{t('signupStatusColumn')}</th>
+                  <th className="px-2 py-1 w-8" aria-hidden />
                 </tr>
               </thead>
               <tbody>
@@ -617,9 +630,6 @@ export function DashboardClient({
                     setConfirmed: s.setConfirmed,
                   });
                   const specForIcon = s.signedSpec ?? s.characterMainSpec ?? null;
-                  // We rely on SpecIcon's own lookup; ClassIcon needs classId, derive from signedSpec/mainSpec if present.
-                  const derivedClassId = specForIcon ? (getSpecByDisplayName(specForIcon)?.classId ?? null) : null;
-                  const role = roleForSpecDisplayName(specForIcon);
                   const menuOpen = openSignupMenuKey === key;
 
                   return (
@@ -627,82 +637,51 @@ export function DashboardClient({
                       key={key}
                       className="border-b border-border last:border-b-0 hover:bg-muted/20 transition-colors"
                     >
-                      <td className="px-4 py-3 align-top text-muted-foreground tabular-nums text-sm">
+                      <td className="px-2 py-1.5 align-top text-muted-foreground tabular-nums whitespace-nowrap">
                         {new Intl.DateTimeFormat(locale, { dateStyle: 'short', timeStyle: 'short' }).format(new Date(s.scheduledAtIso))}
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground align-top">
-                        <span className="text-xs capitalize">{s.raidStatus}</span>
-                      </td>
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-2 py-1.5 align-top min-w-0">
                         <Link
                           href={`/${locale}/guild/${s.guildId}/raid/${s.raidId}`}
                           className="block min-w-0"
                         >
-                          <div className="font-medium text-foreground hover:underline truncate" title={s.raidName}>
+                          <div className="font-medium text-foreground hover:underline truncate text-xs" title={s.raidName}>
                             {s.raidName}
                           </div>
-                          <div className="text-xs text-muted-foreground truncate" title={s.dungeonName}>
+                          <div className="text-[10px] text-muted-foreground truncate" title={s.dungeonName}>
                             {s.dungeonName}
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate" title={s.guildName}>
-                            {s.guildName}
                           </div>
                         </Link>
                       </td>
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-2 py-1.5 align-top min-w-0">
                         <button
                           type="button"
-                          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 hover:bg-muted min-w-0 transition-colors"
+                          className="inline-flex items-center gap-1 min-w-0 max-w-full text-left hover:opacity-90"
                           onClick={() => router.push(`/${locale}/guild/${s.guildId}/raid/${s.raidId}?mode=signup`)}
                           title={t('signupEdit')}
                         >
-                          {role ? <RoleIcon role={role} size={18} /> : null}
-                          <span className="flex items-center gap-1 shrink-0">
-                            {derivedClassId ? <ClassIcon classId={derivedClassId} size={22} title={specForIcon ?? undefined} /> : null}
-                            {s.characterMainSpec ? (
-                              <SignupSpecIcons
-                                character={{
-                                  mainSpec: s.characterMainSpec,
-                                  offSpec: s.characterOffSpec,
-                                }}
-                                signedSpec={s.signedSpec}
-                                onlySignedSpec={false}
-                                specLockTitle={tRaidDetail('badgeOnlySignedSpec')}
-                                size={20}
-                              />
-                            ) : specForIcon ? (
-                              <SignupSpecIcons
-                                character={null}
-                                signedSpec={specForIcon}
-                                onlySignedSpec={false}
-                                specLockTitle={tRaidDetail('badgeOnlySignedSpec')}
-                                size={20}
-                              />
-                            ) : null}
-                          </span>
-                          {s.characterIsMain != null ? (
-                            <CharacterMainStar
-                              isMain={!!s.characterIsMain}
-                              titleMain={tProfile('mainLabel')}
-                              titleAlt={tProfile('altLabel')}
-                              sizePx={16}
+                          {specForIcon ? (
+                            <SignupSpecIcons
+                              character={
+                                s.characterMainSpec
+                                  ? { mainSpec: s.characterMainSpec, offSpec: s.characterOffSpec }
+                                  : null
+                              }
+                              signedSpec={specForIcon}
+                              onlySignedSpec
+                              specLockTitle={tRaidDetail('badgeOnlySignedSpec')}
+                              size={16}
                             />
                           ) : null}
-                          <CharacterNameBadges
-                            name={s.signedCharacterName ?? '–'}
-                            hasBattlenet={s.characterHasBattlenet}
-                            characterId={s.signedCharacterId ?? ''}
-                            gearScore={s.characterGearScore}
-                            wrapperClassName="contents"
-                            nameClassName="font-medium text-foreground truncate"
-                            bnetTitle={t('bnetLinkedBadgeTitle')}
-                          />
+                          <span className="font-medium text-foreground truncate text-xs" title={s.signedCharacterName ?? undefined}>
+                            {s.signedCharacterName ?? '–'}
+                          </span>
                         </button>
                       </td>
-                      <td className="px-4 py-3 align-top">
+                      <td className="px-2 py-1.5 align-top text-center">
                         {statusIcon ? (
                           <span
-                            className="cursor-help text-base"
+                            className="cursor-help text-sm inline-block"
                             title={myStatusIconTooltip(
                               s.raidStatus,
                               { id: 'x', leaderPlacement: s.leaderPlacement, setConfirmed: s.setConfirmed },
@@ -711,12 +690,14 @@ export function DashboardClient({
                           >
                             {statusIcon}
                           </span>
-                        ) : null}
+                        ) : (
+                          <span className="text-muted-foreground/40">–</span>
+                        )}
                       </td>
-                      <td className="px-4 py-3 align-top text-right">
+                      <td className="px-1 py-1.5 align-top text-right">
                         <button
                           type="button"
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors text-muted-foreground"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded border border-border bg-card hover:bg-muted text-muted-foreground"
                           aria-label={t('actions')}
                           title={t('actions')}
                           onClick={(e) => {
@@ -738,6 +719,7 @@ export function DashboardClient({
           </div>
         )}
       </section>
+      </div>
 
       {openCharMenuId && openCharMenuPos
         ? createPortal(
@@ -831,7 +813,7 @@ export function DashboardClient({
           )
         : null}
 
-      <section aria-labelledby="calendar-heading" className="rounded-xl border border-border border-l-[3px] border-l-violet-400/40 shadow-sm overflow-hidden bg-violet-500/[0.025] dark:bg-violet-500/[0.04]">
+      <section aria-labelledby="calendar-heading" className="w-full min-w-0 rounded-xl border border-border border-l-[3px] border-l-violet-400/40 shadow-sm overflow-hidden bg-violet-500/[0.025] dark:bg-violet-500/[0.04]">
         <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-5 py-4 border-b border-border bg-violet-500/10 dark:bg-violet-500/[0.07]">
           <h2 id="calendar-heading" className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
             {t('calendar')}
@@ -840,102 +822,100 @@ export function DashboardClient({
           {/* Filters centered */}
           <div className="flex flex-wrap items-center justify-center gap-2">
             {calendarView === 'tiles' ? (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
-                <span className="text-xs text-muted-foreground">{t('showDays')}</span>
-                {[7, 14, 21].map((n) => (
+              <>
+                <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                  <span className="text-xs text-muted-foreground">{t('calendarWeeksShown', { count: CALENDAR_WEEKS })}</span>
+                </div>
+                <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
                   <button
-                    key={n}
                     type="button"
-                    onClick={() => setShowDays(n as 7 | 14 | 21)}
-                    className={
-                      showDays === n
-                        ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
-                        : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                    className="h-8 w-8 rounded hover:bg-muted"
+                    aria-label={t('prevWeek')}
+                    title={t('prevWeek')}
+                    onClick={() => shiftCalendarWeeks(-1)}
+                  >
+                    &lt;
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                    onClick={resetCalendarToCurrentWeek}
+                  >
+                    {t('calendarThisWeek')}
+                  </button>
+                  <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
+                    {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
+                    {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
+                  </div>
+                  <button
+                    type="button"
+                    className="h-8 w-8 rounded hover:bg-muted"
+                    aria-label={t('nextWeek')}
+                    title={t('nextWeek')}
+                    onClick={() => shiftCalendarWeeks(1)}
+                  >
+                    &gt;
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                  <span className="text-xs text-muted-foreground">{t('calendarListCount')}</span>
+                  {[5, 7, 10].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setListCount(n)}
+                      className={
+                        listCount === n
+                          ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
+                          : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                      }
+                    >
+                      {n}
+                    </button>
+                  ))}
+                  <span className="text-xs text-muted-foreground">{t('calendarListRaids')}</span>
+                </div>
+                <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
+                  <button
+                    type="button"
+                    className={cn('h-8 w-8 rounded', canGoListPrev ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
+                    disabled={!canGoListPrev}
+                    aria-label={t('calendarListPrev')}
+                    title={t('calendarListPrev')}
+                    onClick={() => setListStartIdx(Math.max(0, effectiveListStart - listCount))}
+                  >
+                    &lt;
+                  </button>
+                  <div className="px-2 text-xs text-muted-foreground min-w-[8rem] text-center">
+                    {listRaids.length > 0 ? (
+                      <span>
+                        {t('calendarListPosition', {
+                          from: effectiveListStart + 1,
+                          to: effectiveListStart + listRaids.length,
+                          total: allRaidsSorted.length,
+                        })}
+                      </span>
+                    ) : (
+                      <span>{t('calendarListEmpty')}</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className={cn('h-8 w-8 rounded', canGoListNext ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
+                    disabled={!canGoListNext}
+                    aria-label={t('calendarListNext')}
+                    title={t('calendarListNext')}
+                    onClick={() =>
+                      setListStartIdx(Math.min(allRaidsSorted.length - listCount, effectiveListStart + listCount))
                     }
                   >
-                    {n}
+                    &gt;
                   </button>
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
-                <span className="text-xs text-muted-foreground">Nächste</span>
-                {[5, 7, 10].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setListCount(n)}
-                    className={
-                      listCount === n
-                        ? 'rounded px-2 py-1 text-xs font-semibold bg-muted text-foreground'
-                        : 'rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60'
-                    }
-                  >
-                    {n}
-                  </button>
-                ))}
-                <span className="text-xs text-muted-foreground">Raids</span>
-              </div>
-            )}
-
-            {calendarView === 'tiles' ? (
-              <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
-                <button
-                  type="button"
-                  className="h-8 w-8 rounded hover:bg-muted"
-                  aria-label={t('prevWeek')}
-                  title={t('prevWeek')}
-                  onClick={() => setCalendarAnchor((d) => addDays(d, -7))}
-                >
-                  &lt;
-                </button>
-                <div className="px-2 text-xs text-muted-foreground min-w-[10rem] text-center">
-                  {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeStart)} –{' '}
-                  {new Intl.DateTimeFormat(locale, { dateStyle: 'short' }).format(rangeEnd)}
                 </div>
-                <button
-                  type="button"
-                  className="h-8 w-8 rounded hover:bg-muted"
-                  aria-label={t('nextWeek')}
-                  title={t('nextWeek')}
-                  onClick={() => setCalendarAnchor((d) => addDays(d, 7))}
-                >
-                  &gt;
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1 rounded-md border border-border bg-card px-1 py-1">
-                <button
-                  type="button"
-                  className={cn('h-8 w-8 rounded', canGoListPrev ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
-                  disabled={!canGoListPrev}
-                  aria-label="Vorherige Raids"
-                  title="Vorherige Raids"
-                  onClick={() => setListStartIdx(Math.max(0, effectiveListStart - listCount))}
-                >
-                  &lt;
-                </button>
-                <div className="px-2 text-xs text-muted-foreground min-w-[8rem] text-center">
-                  {listRaids.length > 0 ? (
-                    <span>
-                      Raid {effectiveListStart + 1}–{effectiveListStart + listRaids.length}
-                      {allRaidsSorted.length > 0 ? <span className="opacity-60"> / {allRaidsSorted.length}</span> : null}
-                    </span>
-                  ) : (
-                    <span>Keine Raids</span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className={cn('h-8 w-8 rounded', canGoListNext ? 'hover:bg-muted' : 'opacity-30 cursor-not-allowed')}
-                  disabled={!canGoListNext}
-                  aria-label="Nächste Raids"
-                  title="Nächste Raids"
-                  onClick={() => setListStartIdx(Math.min(allRaidsSorted.length - listCount, effectiveListStart + listCount))}
-                >
-                  &gt;
-                </button>
-              </div>
+              </>
             )}
 
             <div className="flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1.5">
@@ -949,7 +929,10 @@ export function DashboardClient({
               <span className="text-muted-foreground text-xs">|</span>
               <button
                 type="button"
-                onClick={() => { setCalendarView('list'); setListStartIdx(null); }}
+                onClick={() => {
+                  setCalendarView('list');
+                  setListStartIdx(null);
+                }}
                 className={calendarView === 'list' ? 'text-sm font-semibold text-foreground' : 'text-sm text-muted-foreground hover:text-foreground'}
               >
                 {t('calendarList')}
@@ -977,7 +960,7 @@ export function DashboardClient({
         </div>
 
         {calendarView === 'tiles' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
           {days.map((day) => {
             const key = startOfDay(day).toISOString();
             const raids = raidsByDay.get(key) ?? [];
@@ -1150,7 +1133,7 @@ export function DashboardClient({
           })}
         </div>
         ) : listRaids.length === 0 ? (
-          <div className="px-5 py-8 text-center text-sm text-muted-foreground">Keine Raids in diesem Zeitraum</div>
+          <div className="px-5 py-8 text-center text-sm text-muted-foreground">{t('calendarListEmpty')}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

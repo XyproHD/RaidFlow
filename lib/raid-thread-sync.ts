@@ -377,7 +377,7 @@ export async function pushRaidDiscordPost(raidId: string): Promise<void> {
   }
 }
 
-function formatRaidLeaderInfoDate(date: Date): string {
+export function formatRaidLeaderInfoDate(date: Date): string {
   return new Intl.DateTimeFormat('de-DE', {
     timeZone: 'Europe/Berlin',
     weekday: 'short',
@@ -391,27 +391,45 @@ function formatRaidLeaderInfoDate(date: Date): string {
 
 const LEADER_INFO_SEP = '━━━━━━━━━━━━━━━━━━━━━━';
 
+export type RaidLeaderChannelContentInput = {
+  title?: string;
+  discordUserLabel: string;
+  raidName: string;
+  dungeonName: string;
+  termin: string;
+  changeBlock?: string;
+  userMessage: string;
+  footerMention: string;
+};
+
 /** Baut den Discord-Text für den Raidleader-Kanal (max. 2000 Zeichen). */
-function buildRaidLeaderChannelContent(
-  discordUserLabel: string,
-  raidName: string,
-  dungeonName: string,
-  termin: string,
-  userMessage: string,
-  raidleaderMention: string
-): string {
-  const header = [
-    '📨 **Info an Raidleader**',
+export function buildRaidLeaderChannelContent(input: RaidLeaderChannelContentInput): string {
+  const {
+    title = '📨 **Info an Raidleader**',
+    discordUserLabel,
+    raidName,
+    dungeonName,
+    termin,
+    changeBlock,
+    userMessage,
+    footerMention,
+  } = input;
+
+  const headerParts = [
+    title,
     LEADER_INFO_SEP,
     `👤 **Von:** ${discordUserLabel}`,
     `⚔️ **Raid:** ${raidName}`,
     `🏰 **Dungeon:** ${dungeonName}`,
     `📅 **Termin:** ${termin}`,
-    '',
-    '💬 **Nachricht:**',
-  ].join('\n');
+  ];
+  if (changeBlock?.trim()) {
+    headerParts.push('', '📋 **Änderung:**', changeBlock.trim());
+  }
+  headerParts.push('', '💬 **Nachricht:**');
+  const header = headerParts.join('\n');
 
-  const footer = raidleaderMention ? `\n\n${LEADER_INFO_SEP}\n${raidleaderMention}` : '';
+  const footer = footerMention ? `\n\n${LEADER_INFO_SEP}\n${footerMention}` : '';
   const maxBody = Math.max(0, 2000 - header.length - footer.length - 8);
 
   let body = userMessage.replace(/```/g, '`\u200b``');
@@ -451,14 +469,14 @@ export async function postRaidLeaderChannelInfo(
   const rlRoleId = raid.guild.discordRoleRaidleaderId?.trim();
   const mention = rlRoleId ? `<@&${rlRoleId}>` : '';
 
-  const content = buildRaidLeaderChannelContent(
+  const content = buildRaidLeaderChannelContent({
     discordUserLabel,
-    raid.name,
-    raid.dungeon.name,
+    raidName: raid.name,
+    dungeonName: raid.dungeon.name,
     termin,
-    trimmed,
-    mention
-  );
+    userMessage: trimmed,
+    footerMention: mention,
+  });
 
   await createChannelMessageFull(raid.discordLeaderChannelId, {
     content,

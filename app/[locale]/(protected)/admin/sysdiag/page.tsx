@@ -25,7 +25,7 @@ export default async function OwnerSysdiagPage() {
   const data = await collectOwnerDiagnostics();
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-6 md:p-8 page-container">
       <p className="text-sm text-muted-foreground mb-4">
         <Link href={`/${locale}/admin`} className="underline hover:text-foreground">
           {t('backToAdmin')}

@@ -23,8 +23,16 @@ import {
   CharacterSignupPunctualityMark,
 } from '@/components/character-display-parts';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
-import { RaidAnmeldungen, type AnmeldungRow } from '@/components/raid-detail/raid-anmeldungen';
-import { RaidSignupPlayerRow } from '@/components/raid-detail/raid-signup-player-row';
+import {
+  RaidAnmeldungen,
+  PublishedPartyInlineTable,
+  SignupInlineTable,
+  type AnmeldungRow,
+} from '@/components/raid-detail/raid-anmeldungen';
+import {
+  RAID_DETAIL_ICON_SIZE,
+  RAID_PARTY_COLUMN_MIN_WIDTH,
+} from '@/components/raid-detail/raid-detail-display';
 import { RaidSignupForm } from '@/components/raid-detail/raid-signup-form';
 import {
   RaidOverviewSummaryRows,
@@ -504,94 +512,299 @@ export function RaidDetailView({
 
   return (
     <div className="space-y-8">
-      <header className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className={cn('relative px-4 py-3 sm:px-5 sm:py-4', canEdit && 'pr-14 sm:pr-16')}>
-          {canEdit ? (
-            <button
-              type="button"
-              className="absolute top-3 right-3 sm:top-4 sm:right-4 shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
-              aria-label={t('raidLeaderMenu')}
-              title={t('raidLeaderMenu')}
-              onClick={(e) => {
-                e.stopPropagation();
-                const pos = openMenuAtButton(e.currentTarget);
-                setLeaderMenuPos(pos);
-                setLeaderMenuOpen((o) => !o);
-              }}
-            >
-              <span className="text-lg leading-none">☰</span>
-            </button>
-          ) : null}
-          <div className="min-w-0 space-y-1.5 pr-1">
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">{raid.name}</h1>
-            <p className="text-sm text-foreground/90">{dungeonLabel}</p>
-            <p className="text-sm text-foreground/90">
-              <span className="text-muted-foreground">{tRoster('metaTermin')}</span>{' '}
-              {raidTermin}
-            </p>
-            <p className="text-sm text-foreground/90">
-              <span className="text-muted-foreground">{tRoster('metaOrganizer')}</span>{' '}
-              {organizerLabel ?? tRoster('organizerUnset')}
-            </p>
-          </div>
-        </div>
-      </header>
-
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <h2 className="text-sm font-semibold text-foreground shrink-0">
-            {t('sectionOverview')}
-          </h2>
-          <RaidOverviewSummaryRows {...overviewSummaryProps} />
-        </div>
-
-        <div className="p-4">
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-              <dt className="text-muted-foreground shrink-0">{tDash('signupOpenUntil')}</dt>
-              <dd className="flex items-center gap-2 text-right min-w-0">
-                <span className="shrink-0" title={tDash('signupOpenUntil')}>
-                  {signupState.icon}
-                </span>
-                <span>
-                  {new Intl.DateTimeFormat(intlLocale, {
-                    dateStyle: 'short',
-                    timeStyle: 'short',
-                  }).format(signupUntil)}
-                </span>
-              </dd>
-            </div>
-            <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-              <dt className="text-muted-foreground">{t('maxPlayers')}</dt>
-              <dd>
-                {raid._count.signups} / {raid.maxPlayers}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-              <dt className="text-muted-foreground">{t('status')}</dt>
-              <dd>{raidStatusLabel(t, raid.status)}</dd>
-            </div>
-            <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-              <dt className="text-muted-foreground">{t('visibility')}</dt>
-              <dd>{visibilityLabel}</dd>
-            </div>
-            {raid.raidGroupRestriction ? (
-              <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2 sm:col-span-2">
-                <dt className="text-muted-foreground">{t('restriction')}</dt>
-                <dd className="text-right">{raid.raidGroupRestriction.name}</dd>
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 lg:divide-x divide-border">
+          <div className={cn('relative min-w-0', canEdit && 'pr-12 sm:pr-14')}>
+            {canEdit ? (
+              <button
+                type="button"
+                className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+                aria-label={t('raidLeaderMenu')}
+                title={t('raidLeaderMenu')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const pos = openMenuAtButton(e.currentTarget);
+                  setLeaderMenuPos(pos);
+                  setLeaderMenuOpen((o) => !o);
+                }}
+              >
+                <span className="text-lg leading-none">☰</span>
+              </button>
             ) : null}
-          </dl>
+            <div className="px-4 py-4 sm:px-5 min-w-0 space-y-3 pr-1">
+              <div className="space-y-1.5">
+                <h1 className="text-2xl font-bold text-foreground tracking-tight">{raid.name}</h1>
+                <p className="text-sm text-foreground/90">{dungeonLabel}</p>
+                <dl className="text-sm m-0 grid gap-y-1.5">
+                  <div className="grid grid-cols-[10.5rem_1fr] gap-x-4 items-center">
+                    <dt className="text-muted-foreground m-0">{tRoster('metaTermin')}:</dt>
+                    <dd className="m-0 text-foreground/90">{raidTermin}</dd>
+                  </div>
+                  <div className="grid grid-cols-[10.5rem_1fr] gap-x-4 items-center">
+                    <dt className="text-muted-foreground m-0">{tRoster('metaOrganizer')}:</dt>
+                    <dd className="m-0 text-foreground/90">{organizerLabel ?? tRoster('organizerUnset')}</dd>
+                  </div>
+                </dl>
+              </div>
 
-          {raid.note ? (
-            <aside className="mt-5 rounded-xl border-2 border-primary/25 bg-primary/[0.06] dark:bg-primary/10 px-4 py-3 shadow-sm">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-primary mb-2 flex items-center gap-2">
-                <span aria-hidden>📌</span>
-                {t('note')}
-              </h3>
-              <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{raid.note}</p>
-            </aside>
-          ) : null}
+              <dl className="text-sm m-0 grid gap-y-2">
+                <div className="grid grid-cols-[10.5rem_1fr] gap-x-4 items-center">
+                  <dt className="text-muted-foreground m-0">{tDash('signupOpenUntil')}:</dt>
+                  <dd className="m-0 inline-flex items-center gap-2 font-medium tabular-nums min-w-0">
+                    <span className="shrink-0 leading-none" title={tDash('signupOpenUntil')}>
+                      {signupState.icon}
+                    </span>
+                    {new Intl.DateTimeFormat(intlLocale, {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    }).format(signupUntil)}
+                  </dd>
+                </div>
+                <div className="grid grid-cols-[10.5rem_1fr] gap-x-4 items-center">
+                  <dt className="text-muted-foreground m-0">{t('maxPlayers')}:</dt>
+                  <dd className="m-0 font-medium tabular-nums">
+                    {raid._count.signups} / {raid.maxPlayers}
+                  </dd>
+                </div>
+                <div className="grid grid-cols-[10.5rem_1fr] gap-x-4 items-center">
+                  <dt className="text-muted-foreground m-0">{t('status')}:</dt>
+                  <dd className="m-0 font-medium">{raidStatusLabel(t, raid.status)}</dd>
+                </div>
+                <div className="grid grid-cols-[10.5rem_1fr] gap-x-4 items-center">
+                  <dt className="text-muted-foreground m-0">{t('visibility')}:</dt>
+                  <dd className="m-0 font-medium">{visibilityLabel}</dd>
+                </div>
+                {raid.raidGroupRestriction ? (
+                  <div className="grid grid-cols-[10.5rem_1fr] gap-x-4 items-center">
+                    <dt className="text-muted-foreground m-0">{t('restriction')}:</dt>
+                    <dd className="m-0 font-medium">{raid.raidGroupRestriction.name}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            </div>
+
+            {raid.note ? (
+              <aside className="px-4 pb-4 sm:px-5 bg-primary/[0.04] dark:bg-primary/[0.08]">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-primary pt-3 mb-2 flex items-center gap-2">
+                  <span aria-hidden>📌</span>
+                  {t('note')}
+                </h3>
+                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap pb-1">{raid.note}</p>
+              </aside>
+            ) : null}
+          </div>
+
+          <div className="min-w-0 flex flex-col border-t lg:border-t-0 border-border bg-muted/5 divide-y divide-border">
+            <div>
+              <div className="px-4 py-3 border-b border-border bg-muted/20">
+                <h2 className="text-sm font-semibold text-foreground">{t('sectionOverview')}</h2>
+              </div>
+              <div className="px-4 py-3 overflow-x-auto">
+                <RaidOverviewSummaryRows {...overviewSummaryProps} />
+              </div>
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-center justify-between gap-2 px-4 py-3 bg-muted/20">
+                <h2 className="text-sm font-semibold text-foreground">{t('mySignupSection')}</h2>
+                {canSignup && (raid.status === 'open' || raid.status === 'announced') ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowSignup(true)}
+                    className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline shrink-0 transition-colors"
+                  >
+                    {hasMySignup ? t('signupLinkAnother') : t('signupLinkRegister')}
+                  </button>
+                ) : null}
+              </div>
+              <div className="px-4 py-3">
+                {hasMySignup ? (
+                  <div className="overflow-x-auto -mx-1">
+                    <table className="min-w-[560px] w-full text-sm border-collapse">
+                      <tbody>
+                        {[...mySignups]
+                          .sort((a, b) => {
+                            const ca = characters.find((c) => c.id === a.characterId)?.name ?? '';
+                            const cb = characters.find((c) => c.id === b.characterId)?.name ?? '';
+                            return ca.localeCompare(cb);
+                          })
+                          .map((signup) => {
+                            const myChar = signup.characterId
+                              ? characters.find((c) => c.id === signup.characterId)
+                              : null;
+                            const myDiscord = myChar?.guildDiscordDisplayName?.trim();
+                            const specForIcon = signup.signedSpec ?? myChar?.mainSpec ?? null;
+                            const role = roleFromSpecDisplayName(specForIcon?.trim() || null);
+                            const derivedClassId = specForIcon
+                              ? getSpecByDisplayName(specForIcon)?.classId ?? null
+                              : null;
+                            const punct = normalizeSignupPunctuality(signup.punctuality, signup.isLate);
+                            const punctLabel =
+                              punct === 'on_time'
+                                ? t('punctualityOnTime')
+                                : punct === 'tight'
+                                  ? t('punctualityTight')
+                                  : t('punctualityLate');
+                            const showRowMenu = raid.status === 'open' || raid.status === 'announced';
+                            const noteLine = signup.note?.trim() ?? '';
+                            const hasNote = noteLine.length > 0;
+                            const attKind = signupAttendanceKindMeta(signup, raid.status, t);
+                            const placement = myPlacementStatusMeta(signup, raid.status, t);
+
+                            return (
+                              <Fragment key={signup.id}>
+                                <tr className="hover:bg-muted/15 transition-colors">
+                                  <td className="px-3 py-2 align-middle">
+                                    <div className="inline-flex flex-nowrap items-center gap-1.5 min-w-0">
+                                      {role ? <RoleIcon role={role} size={RAID_DETAIL_ICON_SIZE} /> : null}
+                                      {myChar ? (
+                                        <CharacterMainStar
+                                          isMain={!!myChar.isMain}
+                                          titleMain={tProfile('mainLabel')}
+                                          titleAlt={tProfile('altLabel')}
+                                          sizePx={RAID_DETAIL_ICON_SIZE}
+                                        />
+                                      ) : null}
+                                      <span className="inline-flex items-center gap-1 shrink-0">
+                                        {derivedClassId ? (
+                                          <ClassIcon
+                                            classId={derivedClassId}
+                                            size={RAID_DETAIL_ICON_SIZE}
+                                            title={specForIcon ?? undefined}
+                                          />
+                                        ) : null}
+                                        {myChar ? (
+                                          <SignupSpecIcons
+                                            character={{
+                                              mainSpec: myChar.mainSpec,
+                                              offSpec: myChar.offSpec ?? null,
+                                            }}
+                                            signedSpec={signup.signedSpec}
+                                            onlySignedSpec={!!signup.onlySignedSpec}
+                                            specLockTitle={t('badgeOnlySignedSpec')}
+                                            size={RAID_DETAIL_ICON_SIZE}
+                                          />
+                                        ) : specForIcon ? (
+                                          <SignupSpecIcons
+                                            character={null}
+                                            signedSpec={specForIcon}
+                                            onlySignedSpec={!!signup.onlySignedSpec}
+                                            specLockTitle={t('badgeOnlySignedSpec')}
+                                            size={RAID_DETAIL_ICON_SIZE}
+                                          />
+                                        ) : null}
+                                      </span>
+                                      {myChar ? (
+                                        <CharacterNameWithDiscordInline
+                                          name={myChar.name}
+                                          discordName={myDiscord}
+                                          className="font-medium text-foreground truncate"
+                                        />
+                                      ) : (
+                                        <span className="text-muted-foreground">{t('signupAnonymous')}</span>
+                                      )}
+                                      {myChar?.hasBattlenet ? (
+                                        <BattlenetLogo
+                                          size={RAID_DETAIL_ICON_SIZE}
+                                          title={tProfile('bnetLinkedBadgeTitle')}
+                                        />
+                                      ) : null}
+                                      {myChar ? (
+                                        <CharacterGearscoreBadge
+                                          characterId={myChar.id}
+                                          hasBattlenet={myChar.hasBattlenet}
+                                          gearScore={myChar.gearScore}
+                                        />
+                                      ) : null}
+                                      <span className="inline-flex items-center gap-1 shrink-0">
+                                        <CharacterSignupPunctualityMark
+                                          kind={punct}
+                                          label={punctLabel}
+                                          className="h-[18px] items-center"
+                                        />
+                                        <span
+                                          role="img"
+                                          aria-label={attKind.title}
+                                          title={attKind.title}
+                                          className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center text-sm leading-none cursor-default select-none"
+                                        >
+                                          {attKind.sym}
+                                        </span>
+                                      </span>
+                                      {hasNote ? (
+                                        <button
+                                          type="button"
+                                          className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center text-sm leading-none opacity-80 hover:opacity-100"
+                                          aria-label={tDash('toggleNote')}
+                                          title={tDash('toggleNote')}
+                                          onClick={() =>
+                                            setMyNoteExpandedId((id) => (id === signup.id ? null : signup.id))
+                                          }
+                                        >
+                                          📒
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 align-middle w-[min(14rem,32%)]">
+                                    <div className="inline-flex flex-nowrap items-center gap-1.5 text-sm text-foreground">
+                                      <span className="text-muted-foreground shrink-0">
+                                        {t('myStatusColumnLabel')}
+                                      </span>
+                                      <span
+                                        role="img"
+                                        aria-label={placement.title}
+                                        title={placement.title}
+                                        className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center text-base leading-none cursor-default select-none"
+                                      >
+                                        {placement.sym}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 align-middle text-right w-12">
+                                    {showRowMenu ? (
+                                      <button
+                                        type="button"
+                                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors text-muted-foreground"
+                                        aria-label={tDash('actions')}
+                                        title={tDash('actions')}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const pos = openMenuAtButton(e.currentTarget);
+                                          setMySignupRowMenu((cur) =>
+                                            cur?.signupId === signup.id
+                                              ? null
+                                              : { signupId: signup.id, ...pos }
+                                          );
+                                        }}
+                                      >
+                                        ⋮
+                                      </button>
+                                    ) : null}
+                                  </td>
+                                </tr>
+                                {myNoteExpandedId === signup.id && hasNote ? (
+                                  <tr className="bg-muted/25">
+                                    <td
+                                      colSpan={3}
+                                      className="px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap"
+                                    >
+                                      {noteLine}
+                                    </td>
+                                  </tr>
+                                ) : null}
+                              </Fragment>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{tDash('notSignedUp')}</p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -600,338 +813,144 @@ export function RaidDetailView({
           <div className="border-b border-border bg-muted/20 px-4 py-3">
             <h2 className="text-sm font-semibold text-foreground">{t('sectionPublishedRoster')}</h2>
           </div>
-          <div className="p-4 space-y-6">
+          <div className="p-4 space-y-4">
             {announcedLayout.groupMeta.map((meta, gi) => (
-              <div key={`g-${gi}`} className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground">
-                  {t('publishedGroupTitle', { n: gi + 1 })}
-                </h3>
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  {meta.raidLeaderLabel ? (
-                    <p>
-                      {t('raidLeaderShort')}: <span className="text-foreground">{meta.raidLeaderLabel}</span>
-                    </p>
-                  ) : null}
-                  {meta.lootmasterLabel ? (
-                    <p>
-                      {t('lootmasterShort')}: <span className="text-foreground">{meta.lootmasterLabel}</span>
+              <div
+                key={`g-${gi}`}
+                className="rounded-lg border border-border overflow-hidden min-w-0"
+              >
+                <div className="px-4 py-2.5 bg-muted/20 border-b border-border">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {t('publishedGroupTitle', { n: gi + 1 })}
+                  </h3>
+                  {meta.raidLeaderLabel || meta.lootmasterLabel ? (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {meta.raidLeaderLabel ? (
+                        <span className="mr-4">
+                          {t('raidLeaderShort')}:{' '}
+                          <span className="text-foreground">{meta.raidLeaderLabel}</span>
+                        </span>
+                      ) : null}
+                      {meta.lootmasterLabel ? (
+                        <span>
+                          {t('lootmasterShort')}:{' '}
+                          <span className="text-foreground">{meta.lootmasterLabel}</span>
+                        </span>
+                      ) : null}
                     </p>
                   ) : null}
                 </div>
-                {(meta.partySlots ?? []).length > 0
-                  ? (meta.partySlots ?? []).map((row, pi) => {
-                      const ids = row.filter((sid) => !!sid?.trim());
+                {(meta.partySlots ?? []).length > 0 ? (
+                  <div
+                    className="grid gap-3 p-3"
+                    style={{
+                      gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${RAID_PARTY_COLUMN_MIN_WIDTH}), 1fr))`,
+                    }}
+                  >
+                    {(meta.partySlots ?? []).map((partyRow, pi) => {
+                      const idsPadded = [...partyRow];
+                      while (idsPadded.length < 5) idsPadded.push('');
+                      const partySlotRows: (AnmeldungRow | null)[] = idsPadded.map((sid) => {
+                        const id = sid?.trim() ?? '';
+                        if (!id) return null;
+                        const s = signupById.get(id);
+                        return s ? raidSignupToAnmeldungRow(s) : null;
+                      });
                       return (
-                        <div key={`pub-party-${gi}-${pi}`} className="space-y-1.5">
-                          <p className="text-[11px] font-medium text-muted-foreground">
+                        <div
+                          key={`pub-party-${gi}-${pi}`}
+                          className="flex min-w-0 flex-col rounded-md border border-border bg-background overflow-hidden"
+                        >
+                          <div className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wide border-b border-border bg-muted/10">
                             {t('publishedPartyTitle', { n: pi + 1 })}
-                          </p>
-                          {ids.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">—</p>
-                          ) : (
-                            <ul className="flex flex-col gap-2">
-                              {ids.map((sid) => {
-                                const s = signupById.get(sid);
-                                if (!s) {
-                                  return (
-                                    <li key={sid} className="text-sm text-muted-foreground">
-                                      {t('signupAnonymous')}
-                                    </li>
-                                  );
-                                }
-                                return (
-                                  <li
-                                    key={sid}
-                                    className="rounded-lg border border-border bg-card shadow-sm overflow-hidden"
-                                  >
-                                    <RaidSignupPlayerRow
-                                      row={raidSignupToAnmeldungRow(s)}
-                                      canEdit={false}
-                                      showTypeLabel={false}
-                                      raidStatus={raid.status}
-                                    />
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
+                          </div>
+                          <PublishedPartyInlineTable
+                            slots={partySlotRows}
+                            raidStatus={raid.status}
+                            emptyLabel="—"
+                          />
                         </div>
                       );
-                    })
-                  : null}
+                    })}
+                  </div>
+                ) : null}
               </div>
             ))}
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-foreground">{t('publishedReserveHeading')}</h3>
-              {publishedReserveOrderedIds.length === 0 ? (
-                <p className="text-sm text-muted-foreground">—</p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {publishedReserveOrderedIds.map((sid) => {
-                    const s = signupById.get(sid);
-                    if (!s) {
-                      return (
-                        <li key={sid} className="text-sm text-muted-foreground">
-                          {t('signupAnonymous')}
-                        </li>
-                      );
-                    }
-                    return (
-                      <li key={sid} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
-                        <RaidSignupPlayerRow
-                          row={raidSignupToAnmeldungRow(s)}
-                          canEdit={false}
-                          showTypeLabel
-                          raidStatus={raid.status}
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-            {raid.signups.some((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined') ? (
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground">{t('publishedDeclinedHeading')}</h3>
-                <ul className="flex flex-col gap-2">
-                  {raid.signups
-                    .filter((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined')
-                    .map((s) => (
-                      <li key={s.id} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
-                        <RaidSignupPlayerRow
-                          row={raidSignupToAnmeldungRow(s)}
-                          canEdit={false}
-                          showTypeLabel
-                          raidStatus={raid.status}
-                        />
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            ) : null}
+
+            {(() => {
+              const publishedDeclinedRows = raid.signups
+                .filter((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined')
+                .map((s) => raidSignupToAnmeldungRow(s));
+              const hasPublishedDeclined = publishedDeclinedRows.length > 0;
+              return (
+                <div
+                  className={cn(
+                    'grid gap-4',
+                    hasPublishedDeclined ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'
+                  )}
+                >
+                  <div className="rounded-lg border border-border overflow-hidden min-w-0">
+                    <div className="px-4 py-2.5 text-sm font-semibold text-foreground bg-muted/20 border-b border-border">
+                      {t('publishedReserveHeading')}
+                    </div>
+                    <SignupInlineTable
+                      compact
+                      rows={publishedReserveOrderedIds
+                        .map((sid) => signupById.get(sid))
+                        .filter((s): s is NonNullable<typeof s> => !!s)
+                        .map((s) => raidSignupToAnmeldungRow(s))}
+                      canEdit={false}
+                      raidStatus={raid.status}
+                    />
+                  </div>
+
+                  {hasPublishedDeclined ? (
+                    <div className="rounded-lg border border-border overflow-hidden min-w-0">
+                      <div className="px-4 py-2.5 text-sm font-semibold text-foreground bg-muted/20 border-b border-border">
+                        {t('publishedDeclinedHeading')}
+                      </div>
+                      <SignupInlineTable
+                        compact
+                        rows={publishedDeclinedRows}
+                        canEdit={false}
+                        raidStatus={raid.status}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()}
           </div>
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">{t('mySignupSection')}</h2>
-          {canSignup && (raid.status === 'open' || raid.status === 'announced') ? (
-            <button
-              type="button"
-              onClick={() => setShowSignup(true)}
-              className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline shrink-0 transition-colors"
-            >
-              {hasMySignup ? t('signupLinkAnother') : t('signupLinkRegister')}
-            </button>
-          ) : null}
-        </div>
-        <div className="p-4 space-y-3">
-          {hasMySignup ? (
-            <div className="overflow-x-auto -mx-1">
-              <table className="min-w-[560px] w-full text-sm border-collapse">
-                <tbody>
-                  {[...mySignups]
-                    .sort((a, b) => {
-                      const ca = characters.find((c) => c.id === a.characterId)?.name ?? '';
-                      const cb = characters.find((c) => c.id === b.characterId)?.name ?? '';
-                      return ca.localeCompare(cb);
-                    })
-                    .map((signup) => {
-                      const myChar = signup.characterId
-                        ? characters.find((c) => c.id === signup.characterId)
-                        : null;
-                      const myDiscord = myChar?.guildDiscordDisplayName?.trim();
-                      const specForIcon = signup.signedSpec ?? myChar?.mainSpec ?? null;
-                      const role = roleFromSpecDisplayName(specForIcon?.trim() || null);
-                      const derivedClassId = specForIcon
-                        ? getSpecByDisplayName(specForIcon)?.classId ?? null
-                        : null;
-                      const punct = normalizeSignupPunctuality(signup.punctuality, signup.isLate);
-                      const punctLabel =
-                        punct === 'on_time'
-                          ? t('punctualityOnTime')
-                          : punct === 'tight'
-                            ? t('punctualityTight')
-                            : t('punctualityLate');
-                      const showRowMenu = raid.status === 'open' || raid.status === 'announced';
-                      const noteLine = signup.note?.trim() ?? '';
-                      const hasNote = noteLine.length > 0;
-                      const attKind = signupAttendanceKindMeta(signup, raid.status, t);
-                      const placement = myPlacementStatusMeta(signup, raid.status, t);
-
-                      return (
-                        <Fragment key={signup.id}>
-                          <tr className="hover:bg-muted/15 transition-colors">
-                            <td className="px-3 py-2.5 align-middle">
-                              <div className="inline-flex flex-wrap items-center gap-2 min-w-0">
-                                {role ? <RoleIcon role={role} size={18} /> : null}
-                                <span className="inline-flex items-center gap-1 shrink-0">
-                                  {derivedClassId ? (
-                                    <ClassIcon classId={derivedClassId} size={22} title={specForIcon ?? undefined} />
-                                  ) : null}
-                                  {myChar ? (
-                                    <SignupSpecIcons
-                                      character={{
-                                        mainSpec: myChar.mainSpec,
-                                        offSpec: myChar.offSpec ?? null,
-                                      }}
-                                      signedSpec={signup.signedSpec}
-                                      onlySignedSpec={!!signup.onlySignedSpec}
-                                      specLockTitle={t('badgeOnlySignedSpec')}
-                                      size={20}
-                                    />
-                                  ) : specForIcon ? (
-                                    <SignupSpecIcons
-                                      character={null}
-                                      signedSpec={specForIcon}
-                                      onlySignedSpec={!!signup.onlySignedSpec}
-                                      specLockTitle={t('badgeOnlySignedSpec')}
-                                      size={20}
-                                    />
-                                  ) : null}
-                                </span>
-                                {myChar ? (
-                                  <CharacterMainStar
-                                    isMain={!!myChar.isMain}
-                                    titleMain={tProfile('mainLabel')}
-                                    titleAlt={tProfile('altLabel')}
-                                    sizePx={16}
-                                  />
-                                ) : null}
-                                {myChar ? (
-                                  <CharacterNameWithDiscordInline
-                                    name={myChar.name}
-                                    discordName={myDiscord}
-                                    className="font-medium text-foreground truncate"
-                                  />
-                                ) : (
-                                  <span className="text-muted-foreground">{t('signupAnonymous')}</span>
-                                )}
-                                {myChar?.hasBattlenet ? (
-                                  <BattlenetLogo size={18} title={tProfile('bnetLinkedBadgeTitle')} />
-                                ) : null}
-                                {myChar ? (
-                                  <CharacterGearscoreBadge
-                                    characterId={myChar.id}
-                                    hasBattlenet={myChar.hasBattlenet}
-                                    gearScore={myChar.gearScore}
-                                  />
-                                ) : null}
-                                <span className="inline-flex items-center gap-1 shrink-0">
-                                  <CharacterSignupPunctualityMark kind={punct} label={punctLabel} />
-                                  <span
-                                    role="img"
-                                    aria-label={attKind.title}
-                                    title={attKind.title}
-                                    className="inline-flex shrink-0 text-sm leading-none cursor-default select-none"
-                                  >
-                                    {attKind.sym}
-                                  </span>
-                                </span>
-                                {hasNote ? (
-                                  <button
-                                    type="button"
-                                    className="shrink-0 text-base leading-none opacity-80 hover:opacity-100"
-                                    aria-label={tDash('toggleNote')}
-                                    title={tDash('toggleNote')}
-                                    onClick={() =>
-                                      setMyNoteExpandedId((id) => (id === signup.id ? null : signup.id))
-                                    }
-                                  >
-                                    📒
-                                  </button>
-                                ) : null}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2.5 align-middle w-[min(14rem,32%)]">
-                              <div className="inline-flex flex-wrap items-center gap-1.5 text-sm text-foreground">
-                                <span className="text-muted-foreground shrink-0">{t('myStatusColumnLabel')}</span>
-                                <span
-                                  role="img"
-                                  aria-label={placement.title}
-                                  title={placement.title}
-                                  className="inline-flex shrink-0 text-base leading-none cursor-default select-none"
-                                >
-                                  {placement.sym}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2.5 align-middle text-right w-12">
-                              {showRowMenu ? (
-                                <button
-                                  type="button"
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted transition-colors text-muted-foreground"
-                                  aria-label={tDash('actions')}
-                                  title={tDash('actions')}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const pos = openMenuAtButton(e.currentTarget);
-                                    setMySignupRowMenu((cur) =>
-                                      cur?.signupId === signup.id ? null : { signupId: signup.id, ...pos }
-                                    );
-                                  }}
-                                >
-                                  ⋮
-                                </button>
-                              ) : null}
-                            </td>
-                          </tr>
-                          {myNoteExpandedId === signup.id && hasNote ? (
-                            <tr className="bg-muted/25">
-                              <td
-                                colSpan={3}
-                                className="px-3 py-2 text-xs text-muted-foreground whitespace-pre-wrap"
-                              >
-                                {noteLine}
-                              </td>
-                            </tr>
-                          ) : null}
-                        </Fragment>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">{tDash('notSignedUp')}</p>
-          )}
-        </div>
-      </section>
 
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className="border-b border-border bg-muted/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">{t('anmeldungenHeading')}</h2>
-        </div>
-        <div className="p-4 space-y-2">
-          {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
-            <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
-          ) : null}
-          <RaidAnmeldungen rows={rows} canEdit={canEdit} raidStatus={raid.status} />
-        </div>
-      </section>
+        {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
+          <p className="text-xs text-muted-foreground px-4 py-3 border-b border-border">{t('signupListHidden')}</p>
+        ) : null}
 
-      <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className="border-b border-border bg-muted/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">{t('signupsReserveHeading')}</h2>
-        </div>
-        <div className="p-4 space-y-2">
-          {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
-            <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
-          ) : null}
-          <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} raidStatus={raid.status} />
-        </div>
-      </section>
+        <div className="divide-y divide-border">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground px-4 py-2.5 bg-muted/20 border-b border-border">
+              {t('anmeldungenHeading')}
+            </h3>
+            <RaidAnmeldungen rows={rows} canEdit={canEdit} raidStatus={raid.status} />
+          </div>
 
-      <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className="border-b border-border bg-muted/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">{t('sectionAbsagen')}</h2>
-        </div>
-        <div className="p-4 space-y-2">
-          {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
-            <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
-          ) : null}
-          <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} raidStatus={raid.status} />
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground px-4 py-2.5 bg-muted/20 border-b border-border">
+              {t('signupsReserveHeading')}
+            </h3>
+            <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} raidStatus={raid.status} />
+          </div>
+
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground px-4 py-2.5 bg-muted/20 border-b border-border">
+              {t('sectionAbsagen')}
+            </h3>
+            <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} raidStatus={raid.status} />
+          </div>
         </div>
       </section>
 
@@ -1091,6 +1110,7 @@ export function RaidDetailView({
                   <RaidSignupForm
                     guildId={guildId}
                     raidId={raidId}
+                    raidStatus={raid.status}
                     characters={characters}
                     signupPhase={signupPhase}
                     mySignups={mySignups}

@@ -58,9 +58,12 @@ function buildSpecMap(
   return m;
 }
 
+const ANNOUNCED_SET_PLAYER_COMMENT_MIN = 10;
+
 export function RaidSignupForm({
   guildId,
   raidId,
+  raidStatus,
   characters,
   signupPhase,
   mySignups,
@@ -68,6 +71,7 @@ export function RaidSignupForm({
 }: {
   guildId: string;
   raidId: string;
+  raidStatus: string;
   characters: Char[];
   signupPhase: RaidSignupPhase;
   mySignups: RaidSignupSelfSnapshot[];
@@ -166,12 +170,23 @@ export function RaidSignupForm({
       return;
     }
 
+    const anySetConfirmed = mySignups.some((s) => s.setConfirmed);
+    const announcedLeaderComment =
+      raidStatus === 'announced' &&
+      anySetConfirmed &&
+      (isDeclined || effType === 'reserve');
+
     const noteRequired =
       !isDeclined && (isLate || effType === 'uncertain' || effType === 'reserve');
-    if (noteRequired) {
+    if (noteRequired || announcedLeaderComment) {
       const n = note.trim();
-      if (n.length < 3) {
-        setMessage(t('noteRequiredForState'));
+      const minLen = announcedLeaderComment ? ANNOUNCED_SET_PLAYER_COMMENT_MIN : 3;
+      if (n.length < minLen) {
+        setMessage(
+          announcedLeaderComment
+            ? t('withdrawReasonMin', { n: ANNOUNCED_SET_PLAYER_COMMENT_MIN })
+            : t('noteRequiredForState')
+        );
         setStatus('err');
         return;
       }
@@ -186,12 +201,23 @@ export function RaidSignupForm({
     setMessage(null);
     try {
       for (const characterId of toRemove) {
+        const removedSignup = mySignups.find((s) => s.characterId === characterId);
+        const deleteBody: { characterId: string; withdrawReason?: string } = { characterId };
+        if (raidStatus === 'announced' && removedSignup?.setConfirmed) {
+          const wr = note.trim();
+          if (wr.length < ANNOUNCED_SET_PLAYER_COMMENT_MIN) {
+            setMessage(t('withdrawReasonMin', { n: ANNOUNCED_SET_PLAYER_COMMENT_MIN }));
+            setStatus('err');
+            return;
+          }
+          deleteBody.withdrawReason = wr;
+        }
         const res = await fetch(
           `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups`,
           {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ characterId }),
+            body: JSON.stringify(deleteBody),
           }
         );
         if (!res.ok) {
@@ -248,7 +274,7 @@ export function RaidSignupForm({
   const hasExistingSignup = mySignups.length > 0;
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6 max-w-2xl">
+    <form onSubmit={onSubmit} className="space-y-6 w-full">
       {reserveOnly && (
         <p className="text-sm text-amber-600 dark:text-amber-500">{t('signupReserveOnlyPhase')}</p>
       )}

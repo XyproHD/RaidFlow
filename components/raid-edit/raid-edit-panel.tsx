@@ -567,7 +567,7 @@ export function RaidEditPanel({
   }
 
   return (
-    <div className="space-y-8 max-w-6xl">
+    <div className="space-y-8 w-full">
       <section className="rounded-xl border border-border bg-card p-4 md:p-6 space-y-4">
         <h3 className="text-lg font-semibold border-b border-border pb-2">{t('sectionBasics')}</h3>
         <div className="grid gap-3 sm:grid-cols-2">

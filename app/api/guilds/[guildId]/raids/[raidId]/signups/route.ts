@@ -11,6 +11,14 @@ import {
 } from '@/lib/raid-self-signup-mutation';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import { syncRaidThreadSummary, postSignupChangeThreadNotice } from '@/lib/raid-thread-sync';
+import {
+  ANNOUNCED_SET_PLAYER_COMMENT_MIN,
+  requiresAnnouncedSetPlayerComment,
+  snapFromMutationResult,
+  snapFromSignupRow,
+  tryNotifyAnnouncedSetPlayerChange,
+  validateAnnouncedSetPlayerComment,
+} from '@/lib/raid-announced-set-player-notify';
 
 /**
  * POST /api/guilds/[guildId]/raids/[raidId]/signups
@@ -119,6 +127,27 @@ export async function POST(
     return NextResponse.json({ error: rules.error }, { status: rules.status });
   }
 
+  const existingBefore = await prisma.rfRaidSignup.findFirst({
+    where: { raidId, userId, characterId: character.id },
+    select: {
+      type: true,
+      signedSpec: true,
+      punctuality: true,
+      note: true,
+      onlySignedSpec: true,
+      forbidReserve: true,
+      setConfirmed: true,
+    },
+  });
+
+  if (raid.status === 'announced' && existingBefore?.setConfirmed) {
+    const commentRequired = requiresAnnouncedSetPlayerComment('edit', typeNorm);
+    const commentCheck = validateAnnouncedSetPlayerComment(note, commentRequired);
+    if (!commentCheck.ok) {
+      return NextResponse.json({ error: commentCheck.error }, { status: commentCheck.status });
+    }
+  }
+
   const { signup, isCreate } = await commitRaidSelfSignupMutation({
     raidId,
     guildId,
@@ -139,10 +168,24 @@ export async function POST(
     type:          typeNorm,
     punctuality: typeNorm === 'declined' ? 'on_time' : punctuality,
   });
+
+  if (!isCreate && existingBefore?.setConfirmed && raid.status === 'announced') {
+    await tryNotifyAnnouncedSetPlayerChange({
+      raidId,
+      guildId,
+      userId,
+      kind: 'edit',
+      characterName: character.name,
+      previous: snapFromSignupRow(existingBefore),
+      next: snapFromMutationResult(signup),
+      comment: note,
+    });
+  }
+
   return NextResponse.json({ signup }, { status: isCreate ? 201 : 200 });
 }
 
-const WITHDRAW_REASON_MIN = 10;
+const WITHDRAW_REASON_MIN = ANNOUNCED_SET_PLAYER_COMMENT_MIN;
 
 /**
  * DELETE /api/guilds/[guildId]/raids/[raidId]/signups
@@ -251,6 +294,18 @@ export async function DELETE(
       type:          existing.type,
       punctuality:   existing.punctuality,
     });
+
+    if (raid.status === 'announced' && existing.setConfirmed) {
+      await tryNotifyAnnouncedSetPlayerChange({
+        raidId,
+        guildId,
+        userId,
+        kind: 'unsignup',
+        characterName: deletedChar?.name ?? '?',
+        previous: snapFromSignupRow(existing),
+        comment: withdrawReason,
+      });
+    }
   }
   await syncRaidThreadSummary(raidId);
   return NextResponse.json({ ok: true });

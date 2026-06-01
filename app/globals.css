@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Cookie&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -61,6 +63,13 @@
   }
 }
 
+@layer components {
+  /** Desktop-oriented content width (~75% viewport); replaces fixed max-w-*xl page caps. */
+  .page-container {
+    @apply w-[75%] max-w-none mx-auto;
+  }
+}
+
 @layer utilities {
   .bg-hero-gradient {
     background-image: radial-gradient(ellipse 80% 60% at 50% 0%, hsl(var(--primary) / 0.08), transparent);
@@ -81,13 +90,18 @@
   animation: rf-feedback-pulse 5s ease-in-out infinite;
 }
 
-/* Ko-fi Widget (btn-container kommt vom CDN-Script) */
-.rf-kofi-fab {
-  transform: scale(0.8);
+/* Kaffee-Spende FAB (Hauptbutton + Ko-fi/BMAC-Widgets) */
+.rf-coffee-fab {
+  transform: scale(0.9);
   transform-origin: left bottom;
 }
 
-@keyframes rf-kofi-wiggle {
+.rf-coffee-fab--open {
+  padding: 0.75rem;
+  margin: -0.75rem;
+}
+
+@keyframes rf-coffee-wiggle {
   0%,
   88%,
   100% {
@@ -107,7 +121,125 @@
   }
 }
 
-.rf-kofi-fab .btn-container {
+.rf-coffee-fab-main {
   transform-origin: center bottom;
-  animation: rf-kofi-wiggle 10s ease-in-out infinite;
+  animation: rf-coffee-wiggle 10s ease-in-out infinite;
+}
+
+@keyframes rf-coffee-bubble-pop {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  35% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1.45);
+    opacity: 0.45;
+  }
+  100% {
+    transform: scale(1.85);
+    opacity: 0;
+  }
+}
+
+.rf-coffee-fab-main--popping {
+  animation: rf-coffee-bubble-pop 320ms ease-out forwards;
+}
+
+@keyframes rf-coffee-expand-in {
+  0% {
+    transform: scale(0.35);
+    opacity: 0;
+  }
+  65% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.rf-coffee-fab-expanded {
+  transform-origin: center bottom;
+  animation: rf-coffee-expand-in 280ms ease-out forwards;
+}
+
+.rf-coffee-fab-donate-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  width: 200px;
+}
+
+.rf-donate-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.625rem;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18);
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.rf-donate-btn:hover {
+  filter: brightness(0.96);
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.22);
+}
+
+.rf-donate-btn--kofi {
+  color: #fff;
+  background-color: #72a4f2;
+  transform-origin: center bottom;
+  animation: rf-coffee-wiggle 10s ease-in-out infinite;
+}
+
+.rf-donate-btn--bmc {
+  color: #000;
+  background-color: #ffdd00;
+  font-family: 'Cookie', 'Segoe Script', cursive;
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.rf-donate-btn__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.rf-donate-btn__icon img {
+  display: block;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.rf-donate-btn__emoji {
+  font-size: 1.375rem;
+  line-height: 1;
+}
+
+.rf-donate-btn__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

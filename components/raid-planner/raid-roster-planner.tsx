@@ -26,6 +26,7 @@ import {
 } from '@/components/raid-detail/raid-overview-summary';
 import { PlannerLeaderNotesCollapsible } from '@/components/raid-planner/planner-leader-notes-collapsible';
 import { GroupCharNamesExport } from '@/components/raid-planner/group-char-names-export';
+import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 import type { AnnounceRaidPayload } from '@/lib/raid-announce';
 import {
@@ -810,9 +811,7 @@ export function RaidRosterPlanner({
 
   const [blinkDiscordForIds, setBlinkDiscordForIds] = useState<Set<string>>(() => new Set());
 
-  const [filtersOpen, setFiltersOpen] = useState(true);
-  const [raidOptionsOpen, setRaidOptionsOpen] = useState(true);
-  const [comparisonOpen, setComparisonOpen] = useState(true);
+  const [plannerPanelOpen, setPlannerPanelOpen] = useState(true);
   const [comparisonEnabled, setComparisonEnabled] = useState(false);
   const [comparisonRaidId, setComparisonRaidId] = useState<string | null>(null);
   const [comparisonRaidLabel, setComparisonRaidLabel] = useState<string | null>(null);
@@ -876,9 +875,9 @@ export function RaidRosterPlanner({
   );
 
   useEffect(() => {
-    if (!comparisonOpen) return;
+    if (!plannerPanelOpen) return;
     void loadComparisonRaids({});
-  }, [comparisonOpen, loadComparisonRaids]);
+  }, [plannerPanelOpen, loadComparisonRaids]);
 
   useEffect(() => {
     if (!comparisonEnabled || !comparisonRaidId) {
@@ -904,15 +903,6 @@ export function RaidRosterPlanner({
   }, [comparisonEnabled, comparisonRaidId, guildId]);
 
   const [unsetPlayersMode, setUnsetPlayersMode] = useState<UnsetPlayersMode>('reserve');
-  const [botNotifyTargets, setBotNotifyTargets] = useState({
-    roster: true,
-    reserve: false,
-    decline: false,
-  });
-  const [changeNotifyTargets, setChangeNotifyTargets] = useState({
-    channel: true,
-    leader: false,
-  });
 
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState('');
@@ -1159,21 +1149,49 @@ export function RaidRosterPlanner({
   }, [signups, plannerGroups, reserveBenchOrderedIds, declineBenchOrderedIds]);
 
   const signupsWithNotesList = useMemo(() => {
+    const rosterSet = new Set(allRosterIds(plannerGroups));
+    const reserveSet = new Set(reserveBenchOrderedIds);
+    const declineSet = new Set(declineBenchOrderedIds);
+
+    const listLabelForSignup = (signupId: string, s: RosterPlannerSignup): string => {
+      if (rosterSet.has(signupId)) return tRoster('listPlacementRoster');
+      if (reserveSet.has(signupId)) return tRoster('reserveTitle');
+      if (declineSet.has(signupId)) return tRoster('declineBlockTitle');
+      const tn = typeNorm(s.signupType);
+      if (tn === 'declined') return t('signupType_declined');
+      if (tn === 'uncertain') return t('signupType_uncertain');
+      if (tn === 'reserve') return t('signupType_reserve');
+      return tRoster('listPlacementPool');
+    };
+
     return signups
       .filter((s) => (s.note?.trim() ?? '').length > 0)
       .map((s) => {
         const p = punctualityOf(s);
         const punctLabel =
           p === 'on_time' ? t('punctualityOnTime') : p === 'tight' ? t('punctualityTight') : t('punctualityLate');
+        const signedSpec = (s.signedSpec?.trim() || s.originalSignedSpec?.trim() || s.mainSpec.trim()).trim();
         return {
           id: s.id,
-          playerLabel: resolveDiscordNameForSignup(s) || t('signupAnonymous'),
           charName: s.name,
-          punctualityLabel: punctLabel,
+          signedSpec,
+          mainSpec: s.mainSpec,
+          offSpec: s.offSpec,
+          onlySignedSpec: s.onlySignedSpec,
+          punctuality: p,
+          punctLabel,
+          listLabel: listLabelForSignup(s.id, s),
           note: (s.note ?? '').trim(),
         };
       });
-  }, [resolveDiscordNameForSignup, signups, t]);
+  }, [
+    plannerGroups,
+    reserveBenchOrderedIds,
+    declineBenchOrderedIds,
+    signups,
+    t,
+    tRoster,
+  ]);
 
   const usedCharacterIds = useMemo(() => {
     const set = new Set<string>();
@@ -3267,19 +3285,22 @@ export function RaidRosterPlanner({
             dragActive && 'opacity-35 pointer-events-none'
           )}
         >
-          {filtersOpen ? (
-            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
-                <p className="text-sm font-medium">{tPlanner('filters')}</p>
+          {plannerPanelOpen ? (
+            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-0">
+              <div className="flex items-center justify-between gap-2 pb-3 border-b border-border">
+                <p className="text-sm font-medium">{tPlanner('plannerSidebarPanel')}</p>
                 <button
                   type="button"
-                  onClick={() => setFiltersOpen(false)}
+                  onClick={() => setPlannerPanelOpen(false)}
                   className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
-                  aria-label={tPlanner('filters')}
+                  aria-label={tPlanner('plannerSidebarCollapse')}
                 >
                   ◀
                 </button>
               </div>
+
+              <div className="space-y-3 pt-3 pb-4 border-b border-border">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tPlanner('filters')}</p>
 
               <div className="space-y-1.5">
                 <span className="text-muted-foreground text-xs">{tPlanner('filterChars')}</span>
@@ -3448,154 +3469,47 @@ export function RaidRosterPlanner({
                   ))}
                 </div>
               </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setFiltersOpen(true)}
-              className="w-full xl:w-10 rounded-xl border border-border bg-muted/15 py-4 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/25"
-              aria-label={tPlanner('filters')}
-              title={tPlanner('filters')}
-            >
-              <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
-                {tPlanner('filters')}
-              </span>
-            </button>
-          )}
-
-          {raidOptionsOpen ? (
-            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-4">
-              <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
-                <p className="text-sm font-medium">{tPlanner('raidOptions')}</p>
-                <button
-                  type="button"
-                  onClick={() => setRaidOptionsOpen(false)}
-                  className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
-                  aria-label={tPlanner('raidOptions')}
-                >
-                  ◀
-                </button>
               </div>
 
-              <div className="space-y-1.5">
-                <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsUnsetPlayers')}</span>
-                <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
-                  <button
-                    type="button"
-                    onClick={() => setUnsetPlayersMode('reserve')}
-                    className={cn(
-                      'rounded-md px-2.5 py-1.5 text-sm flex-1',
-                      unsetPlayersMode === 'reserve'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted'
-                    )}
-                    aria-pressed={unsetPlayersMode === 'reserve'}
-                  >
-                    {tPlanner('raidOptionsUnsetReserve')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setUnsetPlayersMode('decline')}
-                    className={cn(
-                      'rounded-md px-2.5 py-1.5 text-sm flex-1',
-                      unsetPlayersMode === 'decline'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-muted'
-                    )}
-                    aria-pressed={unsetPlayersMode === 'decline'}
-                  >
-                    {tPlanner('raidOptionsUnsetDecline')}
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsBotNotify')}</span>
-                <div className="grid grid-cols-3 gap-2">
-                  {(
-                    [
-                      ['roster', tPlanner('raidOptionsBotNotifyRoster')] as const,
-                      ['reserve', tPlanner('raidOptionsBotNotifyReserve')] as const,
-                      ['decline', tPlanner('raidOptionsBotNotifyDecline')] as const,
-                    ] as const
-                  ).map(([k, label]) => (
+              <div className="space-y-3 pt-4 border-t border-border">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tPlanner('raidOptions')}</p>
+                <div className="space-y-1.5">
+                  <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsUnsetPlayers')}</span>
+                  <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
                     <button
-                      key={k}
                       type="button"
-                      onClick={() =>
-                        setBotNotifyTargets((prev) => ({ ...prev, [k]: !prev[k] }))
-                      }
+                      onClick={() => setUnsetPlayersMode('reserve')}
                       className={cn(
-                        'rounded-lg border px-2 py-1.5 text-xs sm:text-sm flex items-center justify-center min-w-0',
-                        botNotifyTargets[k]
-                          ? 'border-primary/50 bg-primary/10 text-foreground'
-                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                        'rounded-md px-2.5 py-1.5 text-sm flex-1',
+                        unsetPlayersMode === 'reserve'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
                       )}
-                      aria-pressed={botNotifyTargets[k]}
+                      aria-pressed={unsetPlayersMode === 'reserve'}
                     >
-                      <span className="truncate">{label}</span>
+                      {tPlanner('raidOptionsUnsetReserve')}
                     </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <span className="text-muted-foreground text-xs">{tPlanner('raidOptionsNotifyChanges')}</span>
-                <div className="grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      ['channel', tPlanner('raidOptionsNotifyChannel')] as const,
-                      ['leader', tPlanner('raidOptionsNotifyLeader')] as const,
-                    ] as const
-                  ).map(([k, label]) => (
                     <button
-                      key={k}
                       type="button"
-                      onClick={() =>
-                        setChangeNotifyTargets((prev) => ({ ...prev, [k]: !prev[k] }))
-                      }
+                      onClick={() => setUnsetPlayersMode('decline')}
                       className={cn(
-                        'rounded-lg border px-2 py-1.5 text-xs sm:text-sm flex items-center justify-center min-w-0',
-                        changeNotifyTargets[k]
-                          ? 'border-primary/50 bg-primary/10 text-foreground'
-                          : 'border-border bg-background text-muted-foreground hover:bg-muted/40'
+                        'rounded-md px-2.5 py-1.5 text-sm flex-1',
+                        unsetPlayersMode === 'decline'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
                       )}
-                      aria-pressed={changeNotifyTargets[k]}
+                      aria-pressed={unsetPlayersMode === 'decline'}
                     >
-                      <span className="truncate">{label}</span>
+                      {tPlanner('raidOptionsUnsetDecline')}
                     </button>
-                  ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setRaidOptionsOpen(true)}
-              className="w-full xl:w-10 rounded-xl border border-border bg-muted/15 py-4 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/25"
-              aria-label={tPlanner('raidOptions')}
-              title={tPlanner('raidOptions')}
-            >
-              <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
-                {tPlanner('raidOptions')}
-              </span>
-            </button>
-          )}
 
-          {comparisonOpen ? (
-            <div className="w-full xl:w-72 rounded-xl border border-border bg-muted/15 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
-                <p className="text-sm font-medium">{tRoster('comparisonRaidTitle')}</p>
-                <button
-                  type="button"
-                  onClick={() => setComparisonOpen(false)}
-                  className="rounded-md border border-border bg-background px-2 py-1 text-xs hover:bg-muted"
-                  aria-label={tRoster('comparisonRaidTitle')}
-                >
-                  ◀
-                </button>
-              </div>
+              <div className="space-y-3 pt-4 border-t border-border">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{tPlanner('raidCompareSection')}</p>
 
+                <div className="space-y-3">
               <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
                 <button
                   type="button"
@@ -3724,17 +3638,19 @@ export function RaidRosterPlanner({
                   })
                 )}
               </div>
+              </div>
+              </div>
             </div>
           ) : (
             <button
               type="button"
-              onClick={() => setComparisonOpen(true)}
+              onClick={() => setPlannerPanelOpen(true)}
               className="w-full xl:w-10 rounded-xl border border-border bg-muted/15 py-4 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted/25"
-              aria-label={tRoster('comparisonRaidTitle')}
-              title={tRoster('comparisonRaidTitle')}
+              aria-label={tPlanner('plannerSidebarExpand')}
+              title={tPlanner('plannerSidebarPanel')}
             >
               <span className="block xl:[writing-mode:vertical-rl] xl:rotate-180">
-                {tRoster('comparisonRaidTitle')}
+                {tPlanner('plannerSidebarPanel')}
               </span>
             </button>
           )}
@@ -3858,7 +3774,7 @@ export function RaidRosterPlanner({
 
       {allSignupNotesOpen
         ? createPortal(
-            <div className="fixed inset-0 z-[1215] flex items-start justify-center p-4 sm:p-8 pt-14 sm:pt-20">
+            <div className="fixed inset-0 z-[1215] flex items-center justify-center p-4 sm:p-6">
               <button
                 type="button"
                 className="absolute inset-0 bg-black/45 cursor-default border-0 p-0"
@@ -3866,7 +3782,7 @@ export function RaidRosterPlanner({
                 onClick={() => setAllSignupNotesOpen(false)}
               />
               <div
-                className="relative w-full max-w-3xl max-h-[min(85vh,640px)] flex flex-col rounded-xl border border-border bg-background shadow-2xl overflow-hidden"
+                className="relative w-full max-w-4xl max-h-[min(85vh,720px)] flex flex-col rounded-xl border border-border bg-background shadow-2xl overflow-hidden"
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <div className="flex items-center justify-between gap-3 border-b border-border bg-muted/20 px-4 py-3 shrink-0">
@@ -3885,19 +3801,34 @@ export function RaidRosterPlanner({
                   <table className="w-full text-sm border-collapse">
                     <thead>
                       <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                        <th className="py-2 pr-3 font-medium">{tRoster('columnPlayer')}</th>
                         <th className="py-2 pr-3 font-medium">{tRoster('columnChar')}</th>
-                        <th className="py-2 pr-3 font-medium whitespace-nowrap">{tRoster('columnPunctuality')}</th>
+                        <th className="py-2 pr-2 font-medium w-10 text-center">{tRoster('columnPunctuality')}</th>
+                        <th className="py-2 pr-3 font-medium whitespace-nowrap">{tRoster('columnPlacement')}</th>
                         <th className="py-2 font-medium">{tRoster('columnNote')}</th>
                       </tr>
                     </thead>
                     <tbody>
                       {signupsWithNotesList.map((row) => (
                         <tr key={row.id} className="border-b border-border/70 align-top">
-                          <td className="py-2 pr-3 break-words max-w-[140px]">{row.playerLabel}</td>
-                          <td className="py-2 pr-3 break-words max-w-[140px]">{row.charName}</td>
-                          <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">{row.punctualityLabel}</td>
-                          <td className="py-2 whitespace-pre-wrap break-words">{row.note}</td>
+                          <td className="py-2 pr-3 min-w-0">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <SignupSpecIcons
+                                character={{ mainSpec: row.mainSpec, offSpec: row.offSpec ?? null }}
+                                signedSpec={row.signedSpec}
+                                onlySignedSpec={row.onlySignedSpec ?? false}
+                                specLockTitle={tRoster('specLockHint')}
+                                size={18}
+                              />
+                              <span className="font-medium text-foreground truncate" title={row.charName}>
+                                {row.charName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="py-2 pr-2 text-center align-top">
+                            <CharacterSignupPunctualityMark kind={row.punctuality} label={row.punctLabel} />
+                          </td>
+                          <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground text-xs">{row.listLabel}</td>
+                          <td className="py-2 whitespace-pre-wrap break-words text-sm">{row.note}</td>
                         </tr>
                       ))}
                     </tbody>

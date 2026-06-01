@@ -1475,9 +1475,18 @@ function raidActionErrorText(err) {
     SIGNUP_CLOSED:     '🔒 Die Anmeldung ist geschlossen oder der Raid nicht mehr offen.',
     NOT_SIGNED_UP:     '⚠️ Du hast keine aktive Anmeldung.',
     REASON_REQUIRED:   '⚠️ Nach dem Anmeldeschluss ist eine Begründung für die Abmeldung erforderlich.',
+    COMMENT_REQUIRED:  '⚠️ Als gesetzter Spieler ist eine Begründung nötig (mind. 10 Zeichen).',
   };
   return map[err] ?? `❌ Fehler: ${String(err)}`;
 }
+
+function raidActionOutcome(ok, json, okFallback) {
+  if (ok) return `✅ ${json.message ?? okFallback}`;
+  if (json?.message) return `❌ ${json.message}`;
+  return raidActionErrorText(json.error);
+}
+
+const ANNOUNCED_SET_PLAYER_COMMENT_MIN = 10;
 
 // ---------------------------------------------------------------------------
 // Join-Flow State (mehrstufig: Char → Spec/Pünktlichkeit → Absenden)
@@ -1878,7 +1887,31 @@ async function handleRaidQuickjoin(interaction, raidId) {
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
-async function handleRaidDeclineButton(interaction, raidId) {
+async function showDeclineModal(interaction, raidId) {
+  const raidNoDash = raidId.replace(/-/g, '');
+  const modal = new ModalBuilder()
+    .setCustomId(`rfm:decline:${raidNoDash}`)
+    .setTitle('Nicht da — Begründung');
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(
+      new TextInputBuilder()
+        .setCustomId('reason')
+        .setLabel('Begründung (Pflicht als gesetzter Spieler)')
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(true)
+        .setMaxLength(500)
+        .setPlaceholder('z. B. kurzfristiger Terminkonflikt …'),
+    ),
+  );
+  await interaction.showModal(modal).catch(() => {});
+}
+
+async function handleRaidDeclineModal(interaction, raidId) {
+  const reason = interaction.fields.getTextInputValue('reason').trim();
+  await runRaidDecline(interaction, raidId, reason);
+}
+
+async function runRaidDecline(interaction, raidId, reason) {
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
   const raidPostMsg        = interaction.message;
   const originalComponents = raidPostMsg?.components ?? [];
@@ -1886,10 +1919,17 @@ async function handleRaidDeclineButton(interaction, raidId) {
     await disableRaidPostButtons(raidPostMsg).catch(() => {});
   }
 
+  const discordUserLabel =
+    interaction.member?.displayName?.trim() ||
+    interaction.user.globalName?.trim() ||
+    interaction.user.username;
+
   const { ok, json } = await callDiscordAction({
     action: 'decline',
     discordUserId: interaction.user.id,
     raidId,
+    reason: reason ?? '',
+    discordUserLabel,
   });
 
   if (raidPostMsg && originalComponents.length) {
@@ -1898,9 +1938,28 @@ async function handleRaidDeclineButton(interaction, raidId) {
 
   const outcome = ok
     ? `🚫 ${json.message ?? 'Du bist als „nicht da“ markiert.'}`
-    : raidActionErrorText(json.error);
+    : raidActionOutcome(false, json, '');
   await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
   scheduleDeleteSingleEphemeralReply(interaction);
+}
+
+async function handleRaidDeclineButton(interaction, raidId) {
+  const { ok, json } = await getDiscordAction({
+    action: 'get-signup', discordUserId: interaction.user.id, raidId,
+  });
+  if (!ok || json.linked === false) {
+    await interaction.reply({ content: raidActionErrorText('NOT_LINKED'), ephemeral: true }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+  const signups = Array.isArray(json.signups) ? json.signups : [];
+  const needsReason =
+    json.raidStatus === 'announced' && signups.some((s) => s.setConfirmed);
+  if (needsReason) {
+    await showDeclineModal(interaction, raidId);
+    return;
+  }
+  await runRaidDecline(interaction, raidId, '');
 }
 
 async function handleRaidJoinButton(interaction, raidId, guildId) {
@@ -2446,7 +2505,7 @@ async function handleJoin2NoteModal(interaction, raidId) {
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
-function loadEditFlowFromSignup(userId, raidId, signup, emojis, signupPhase = 'full') {
+function loadEditFlowFromSignup(userId, raidId, signup, emojis, signupPhase = 'full', raidStatus = 'open') {
   const char = signup.character;
   const storedType = signup.type ?? 'normal';
   const type = signupPhase === 'reserve_only' ? 'reserve' : storedType;
@@ -2458,6 +2517,8 @@ function loadEditFlowFromSignup(userId, raidId, signup, emojis, signupPhase = 'f
     existingNote: signup.note ?? '',
     emojis,
     signupPhase,
+    raidStatus,
+    setConfirmed: signup.setConfirmed === true,
     type, forbidReserve: false, onlySignedSpec: false,
   });
 }
@@ -2490,15 +2551,16 @@ async function handleRaidEditButton(interaction, raidId) {
   }
   await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
   const emojis = json.discordEmojis ?? {};
+  const raidStatus = json.raidStatus ?? 'open';
   if (signups.length === 1) {
-    loadEditFlowFromSignup(interaction.user.id, raidId, signups[0], emojis, signupPhase);
+    loadEditFlowFromSignup(interaction.user.id, raidId, signups[0], emojis, signupPhase, raidStatus);
     const msg = await buildEditConfigMessage(raidId, getEditFlow(interaction.user.id, raidId));
     await interaction.editReply({ content: msg.content, components: msg.components }).catch(() => {});
     return;
   }
   // Mehrere Anmeldungen → Charakter-Auswahl
   const { StringSelectMenuBuilder, ActionRowBuilder } = await import('discord.js');
-  setEditFlow(interaction.user.id, raidId, { _pendingSignups: signups, emojis, signupPhase });
+  setEditFlow(interaction.user.id, raidId, { _pendingSignups: signups, emojis, signupPhase, raidStatus });
   const raidNoDash = raidId.replace(/-/g, '');
   const select = new StringSelectMenuBuilder()
     .setCustomId(`rf:seleditchar:${raidNoDash}`)
@@ -2521,21 +2583,35 @@ async function handleEditCharSelect(interaction, raidId) {
   const signups = pending?._pendingSignups ?? [];
   const signup  = signups.find(s => s.id === signupId);
   if (!signup) { await interaction.reply({ content: '⚠️ Auswahl ungültig. Bitte erneut versuchen.', ephemeral: true }).catch(() => {}); return; }
-  loadEditFlowFromSignup(interaction.user.id, raidId, signup, pending?.emojis ?? {}, pending?.signupPhase ?? 'full');
+  loadEditFlowFromSignup(
+    interaction.user.id,
+    raidId,
+    signup,
+    pending?.emojis ?? {},
+    pending?.signupPhase ?? 'full',
+    pending?.raidStatus ?? 'open',
+  );
   const msg = await buildEditConfigMessage(raidId, getEditFlow(interaction.user.id, raidId));
   await interaction.update(msg).catch(() => {});
 }
 
-async function showUnregModal(interaction, raidNoDash, target) {
-  const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = await import('discord.js');
+async function showUnregModal(interaction, raidNoDash, target, reasonRequired = false) {
   const modal = new ModalBuilder()
     .setCustomId(`rfm:unreg:${raidNoDash}:${target}`)
     .setTitle('Abmeldung bestätigen');
   modal.addComponents(
     new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId('reason').setLabel('Begründung (Pflicht nach Anmeldeschluss)')
-        .setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(500)
-        .setPlaceholder('z. B. „Krankheit", „Arbeit" …')
+      new TextInputBuilder()
+        .setCustomId('reason')
+        .setLabel(
+          reasonRequired
+            ? 'Begründung (Pflicht als gesetzter Spieler)'
+            : 'Begründung (Pflicht nach Anmeldeschluss)',
+        )
+        .setStyle(TextInputStyle.Paragraph)
+        .setRequired(reasonRequired)
+        .setMaxLength(500)
+        .setPlaceholder('z. B. Krankheit, Terminkonflikt …'),
     ),
   );
   await interaction.showModal(modal).catch(() => {});
@@ -2552,6 +2628,8 @@ async function handleRaidUnregButton(interaction, raidId) {
   }
   const signups    = Array.isArray(json.signups) ? json.signups : [];
   const raidNoDash = raidId.replace(/-/g, '');
+  const reasonRequired =
+    json.raidStatus === 'announced' && signups.some((s) => s.setConfirmed);
 
   if (signups.length === 0) {
     await interaction.reply({ content: '⚠️ Du hast keine aktive Anmeldung.', ephemeral: true }).catch(() => {});
@@ -2559,7 +2637,7 @@ async function handleRaidUnregButton(interaction, raidId) {
     return;
   }
   if (signups.length === 1) {
-    await showUnregModal(interaction, raidNoDash, signups[0].id.replace(/-/g, ''));
+    await showUnregModal(interaction, raidNoDash, signups[0].id.replace(/-/g, ''), reasonRequired);
     return;
   }
   // Mehrere Anmeldungen → Auswahl anbieten
@@ -2588,7 +2666,17 @@ async function handleUnregCharSelect(interaction, raidId) {
   if (!target) { await interaction.reply({ content: '❌ Keine Auswahl.', ephemeral: true }).catch(() => {}); return; }
   const raidNoDash     = raidId.replace(/-/g, '');
   const targetEncoded  = target === 'alle' ? 'alle' : target.replace(/-/g, '');
-  await showUnregModal(interaction, raidNoDash, targetEncoded);
+  const { ok: okSu, json: jsonSu } = await getDiscordAction({
+    action: 'get-signup', discordUserId: interaction.user.id, raidId,
+  });
+  const su = okSu && Array.isArray(jsonSu.signups) ? jsonSu.signups : [];
+  const targetNorm = target === 'alle' ? 'alle' : target.replace(/-/g, '');
+  const reasonRequiredUnreg =
+    jsonSu?.raidStatus === 'announced' &&
+    (targetNorm === 'alle'
+      ? su.some((s) => s.setConfirmed)
+      : su.some((s) => s.setConfirmed && s.id.replace(/-/g, '') === targetNorm));
+  await showUnregModal(interaction, raidNoDash, targetEncoded, reasonRequiredUnreg);
 }
 
 // --- Select-Menü-Handler ----------------------------------------------------
@@ -2773,6 +2861,21 @@ async function handleSubmitEdit(interaction, raidId) {
     await interaction.update(msg).catch(() => {});
     return;
   }
+  const editType = state.type ?? 'normal';
+  if (
+    state.raidStatus === 'announced' &&
+    state.setConfirmed &&
+    (editType === 'reserve' || editType === 'declined') &&
+    (state.existingNote ?? '').trim().length < ANNOUNCED_SET_PLAYER_COMMENT_MIN
+  ) {
+    const msg = await buildEditConfigMessage(
+      raidId,
+      state,
+      `Als gesetzter Spieler ist bei Reserve oder „Nicht da“ eine Begründung nötig (mind. ${ANNOUNCED_SET_PLAYER_COMMENT_MIN} Zeichen). Bitte 📝 Notiz bearbeiten.`,
+    );
+    await interaction.update(msg).catch(() => {});
+    return;
+  }
   await interaction.deferUpdate().catch(() => {});
   await interaction.editReply({ content: MSG_LOADING_EDIT_SUBMIT, components: [] }).catch(() => {});
 
@@ -2782,8 +2885,15 @@ async function handleSubmitEdit(interaction, raidId) {
     await disableRaidPostButtons(raidPostMsg).catch(() => {});
   }
 
+  const discordUserLabel =
+    interaction.member?.displayName?.trim() ||
+    interaction.user.globalName?.trim() ||
+    interaction.user.username;
+
   const { ok, json } = await callDiscordAction({
-    action: 'edit-signup', discordUserId: interaction.user.id, raidId,
+    action: 'edit-signup',
+    discordUserId: interaction.user.id,
+    raidId,
     characterId:    state.charId,
     type:           state.type          ?? 'normal',
     signedSpec:     state.selectedSpec,
@@ -2791,12 +2901,13 @@ async function handleSubmitEdit(interaction, raidId) {
     note:           state.existingNote  ?? '',
     forbidReserve:  state.forbidReserve  ?? false,
     onlySignedSpec: state.onlySignedSpec ?? false,
+    discordUserLabel,
   });
   if (!ok) {
     if (raidPostMsg && raidPostComponents.length) {
       await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
     }
-    await interaction.editReply({ content: raidActionErrorText(json.error), components: [] }).catch(() => {});
+    await interaction.editReply({ content: raidActionOutcome(false, json, ''), components: [] }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
@@ -2859,8 +2970,17 @@ async function handleRaidUnregModal(interaction, raidId) {
     signupId = noDashToUuid(targetRaw);
   }
 
+  const discordUserLabel =
+    interaction.member?.displayName?.trim() ||
+    interaction.user.globalName?.trim() ||
+    interaction.user.username;
+
   const { ok, json } = await callDiscordAction({
-    action: 'unregister', discordUserId: interaction.user.id, raidId, reason,
+    action: 'unregister',
+    discordUserId: interaction.user.id,
+    raidId,
+    reason,
+    discordUserLabel,
     ...(signupId ? { signupId } : {}),
   });
   const outcome = ok
@@ -3434,6 +3554,7 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'editnote') { await handleEditNoteModal(interaction, raidId); return; }
         if (action === 'rlinfo')       { await handleRaidLeaderInfoModal(interaction, raidId); return; }
         if (action === 'pushmention')  { await handleRaidPushMentionModal(interaction, raidId); return; }
+        if (action === 'decline')      { await handleRaidDeclineModal(interaction, raidId); return; }
       } catch (e) {
         console.error('[RaidModal]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler beim Verarbeiten.', ephemeral: true }).catch(() => {});

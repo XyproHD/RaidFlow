@@ -47,7 +47,7 @@ export default async function RaidDetailPage(props: {
     const msg =
       ctx.reason === 'guild_not_found' ? t('forbiddenGuild') : t('forbiddenAccess');
     return (
-      <div className="p-6 md:p-8 max-w-3xl mx-auto space-y-4">
+      <div className="p-6 md:p-8 page-container space-y-4">
         <p className="text-muted-foreground">{msg}</p>
         <Link
           href={`/${locale}/dashboard?guild=${encodeURIComponent(guildId)}`}
@@ -73,7 +73,7 @@ export default async function RaidDetailPage(props: {
   }
   if (mode === 'edit' && !canEdit) {
     return (
-      <div className="p-6 md:p-8 max-w-3xl mx-auto space-y-4">
+      <div className="p-6 md:p-8 page-container space-y-4">
         <h1 className="text-2xl font-bold text-foreground">{raid.name}</h1>
         <p className="text-destructive text-sm">{t('forbiddenEdit')}</p>
         <Link href={base} className="text-sm text-primary hover:underline">
@@ -85,7 +85,7 @@ export default async function RaidDetailPage(props: {
 
   if (mode === 'signup' && !canSignup) {
     return (
-      <div className="p-6 md:p-8 max-w-3xl mx-auto space-y-4">
+      <div className="p-6 md:p-8 page-container space-y-4">
         <h1 className="text-2xl font-bold text-foreground">{raid.name}</h1>
         <p className="text-muted-foreground text-sm">{t('forbiddenSignupClosed')}</p>
         <Link href={base} className="text-sm text-primary hover:underline">
@@ -218,7 +218,7 @@ export default async function RaidDetailPage(props: {
   }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 md:p-8 page-container space-y-6">
       <RaidDetailView
         locale={locale}
         guildId={guildId}

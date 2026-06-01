@@ -3,6 +3,10 @@
 import { useMemo, useState } from 'react';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { RoleIcon } from '@/components/role-icon';
+import {
+  RAID_DETAIL_ICON_SIZE,
+  RAID_PARTY_COLUMN_MIN_WIDTH,
+} from '@/components/raid-detail/raid-detail-display';
 import { TBC_CLASS_IDS } from '@/lib/wow-tbc-classes';
 import type { AnmeldungRow } from '@/components/raid-detail/raid-signup-player-row';
 import {
@@ -48,6 +52,138 @@ function splitTwoColumns<T>(items: T[]): [T[], T[]] {
   return [items.slice(0, mid), items.slice(mid)];
 }
 
+type SignupRowRenderOptions = {
+  compact?: boolean;
+  slotNumbers?: number[];
+};
+
+function renderSignupTableBody(
+  rows: AnmeldungRow[],
+  raidStatus: string,
+  canSeeNotes: boolean,
+  openNoteId: string | null,
+  setOpenNoteId: (id: string | null) => void,
+  options?: SignupRowRenderOptions
+) {
+  return rows.map((r, index) => {
+    const classId = classIdForAnmeldungRow(r);
+    const punctuality = punctualityForAnmeldungRow(r);
+    const gs = r.character?.gearScore;
+    const note = r.note?.trim() ?? '';
+    const slotNumber = options?.slotNumbers?.[index];
+    return (
+      <RaidDetailSignupTableRow
+        key={r.id}
+        row={r}
+        raidStatus={raidStatus}
+        compact={options?.compact}
+        slotNumber={slotNumber}
+        extras={{
+          punctuality,
+          classId,
+          gearScore: typeof gs === 'number' ? gs : null,
+        }}
+        canSeeNotes={canSeeNotes}
+        noteExpanded={openNoteId === r.id}
+        onToggleNote={
+          canSeeNotes && note.length > 0
+            ? () => setOpenNoteId(openNoteId === r.id ? null : r.id)
+            : undefined
+        }
+      />
+    );
+  });
+}
+
+/** 5er-Gruppe mit festen Positionen 1–5, einzeilig. */
+export function PublishedPartyInlineTable({
+  slots,
+  raidStatus,
+  emptyLabel,
+}: {
+  /** Bis zu 5 Slots; `null` = leerer Platz. */
+  slots: (AnmeldungRow | null)[];
+  raidStatus: string;
+  emptyLabel: string;
+}) {
+  const padded: (AnmeldungRow | null)[] = [...slots];
+  while (padded.length < 5) padded.push(null);
+
+  return (
+    <table className="w-full min-w-0 text-sm border-collapse">
+      <tbody>
+        {padded.map((row, index) => {
+          const position = index + 1;
+          if (!row) {
+            return (
+              <tr key={`empty-${position}`} className="border-b border-border last:border-b-0 bg-background min-h-[34px]">
+                <td className="w-8 px-2 py-1.5 align-middle text-xs font-semibold text-muted-foreground tabular-nums text-center">
+                  {position}
+                </td>
+                <td className="px-2 py-1.5 align-middle whitespace-nowrap">
+                  <div className="flex min-h-[18px] flex-nowrap items-center gap-2">
+                    <span
+                      className="inline-block h-[18px] w-[18px] shrink-0 opacity-0 pointer-events-none"
+                      aria-hidden
+                    />
+                    <span className="text-sm text-muted-foreground">{emptyLabel}</span>
+                  </div>
+                </td>
+              </tr>
+            );
+          }
+          const classId = classIdForAnmeldungRow(row);
+          const punctuality = punctualityForAnmeldungRow(row);
+          const gs = row.character?.gearScore;
+          return (
+            <RaidDetailSignupTableRow
+              key={row.id}
+              row={row}
+              raidStatus={raidStatus}
+              compact
+              slotNumber={position}
+              extras={{
+                punctuality,
+                classId,
+                gearScore: typeof gs === 'number' ? gs : null,
+              }}
+              canSeeNotes={false}
+            />
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/** Kompakte Inline-Tabelle (z. B. veröffentlichter Kader, Reserve). */
+export function SignupInlineTable({
+  rows,
+  canEdit,
+  raidStatus,
+  compact = false,
+}: {
+  rows: AnmeldungRow[];
+  canEdit: boolean;
+  raidStatus: string;
+  compact?: boolean;
+}) {
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
+  const canSeeNotes = canEdit;
+
+  if (rows.length === 0) {
+    return <p className="text-sm text-muted-foreground px-3 py-2">—</p>;
+  }
+
+  return (
+    <table className="w-full text-sm border-collapse">
+      <tbody>
+        {renderSignupTableBody(rows, raidStatus, canSeeNotes, openNoteId, setOpenNoteId, { compact })}
+      </tbody>
+    </table>
+  );
+}
+
 function SignupTableBlock({
   rows,
   canSeeNotes,
@@ -64,43 +200,17 @@ function SignupTableBlock({
   const [left, right] = useMemo(() => splitTwoColumns(rows), [rows]);
 
   const renderTable = (chunk: AnmeldungRow[]) => (
-    <table className="w-full text-sm border border-border rounded-lg overflow-hidden">
-      <tbody>
-        {chunk.map((r) => {
-          const classId = classIdForAnmeldungRow(r);
-          const punctuality = punctualityForAnmeldungRow(r);
-          const gs = r.character?.gearScore;
-          const note = r.note?.trim() ?? '';
-          return (
-            <RaidDetailSignupTableRow
-              key={r.id}
-              row={r}
-              raidStatus={raidStatus}
-              extras={{
-                punctuality,
-                classId,
-                gearScore: typeof gs === 'number' ? gs : null,
-              }}
-              canSeeNotes={canSeeNotes}
-              noteExpanded={openNoteId === r.id}
-              onToggleNote={
-                canSeeNotes && note.length > 0
-                  ? () => setOpenNoteId(openNoteId === r.id ? null : r.id)
-                  : undefined
-              }
-            />
-          );
-        })}
-      </tbody>
+    <table className="w-full text-sm border-collapse">
+      <tbody>{renderSignupTableBody(chunk, raidStatus, canSeeNotes, openNoteId, setOpenNoteId)}</tbody>
     </table>
   );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-0 md:divide-x divide-border min-w-0">
       <div className="min-w-0">
-        {left.length > 0 ? renderTable(left) : <p className="text-xs text-muted-foreground py-2">—</p>}
+        {left.length > 0 ? renderTable(left) : <p className="text-xs text-muted-foreground px-3 py-2">—</p>}
       </div>
-      <div className="min-w-0">{right.length > 0 ? renderTable(right) : null}</div>
+      {right.length > 0 ? <div className="min-w-0">{renderTable(right)}</div> : null}
     </div>
   );
 }
@@ -139,14 +249,14 @@ export function RaidAnmeldungen({
   const canSeeNotes = canEdit;
 
   return (
-    <div className="space-y-6">
+    <div className="divide-y divide-border border-t border-border">
       {ROLE_ORDER.map((role) => {
         const list = groups[role];
         if (!list || list.length === 0) return null;
         return (
-          <section key={role} className="space-y-2">
-            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <RoleIcon role={role} size={18} />
+          <section key={role} className="min-w-0">
+            <div className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-foreground bg-muted/15 border-b border-border">
+              <RoleIcon role={role} size={RAID_DETAIL_ICON_SIZE} />
               <span>{role}</span>
               <span className="text-muted-foreground font-normal tabular-nums">({list.length})</span>
             </div>
@@ -162,8 +272,8 @@ export function RaidAnmeldungen({
       })}
 
       {groups.Unknown.length > 0 ? (
-        <section className="space-y-2">
-          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <section className="min-w-0">
+          <div className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-foreground bg-muted/15 border-b border-border">
             <span
               className="inline-flex items-center justify-center w-[18px] h-[18px] text-muted-foreground"
               aria-hidden
