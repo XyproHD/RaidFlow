@@ -100,8 +100,10 @@ export async function pickCombatLogFile(userId: string): Promise<File | null> {
   if (typeof window === 'undefined') return null;
 
   if (supportsCombatLogFilePicker()) {
+    const openPicker = window.showOpenFilePicker;
+    if (!openPicker) return null;
     try {
-      const [handle] = await window.showOpenFilePicker({
+      const [handle] = await openPicker({
         types: [
           {
             description: 'WoW Combat Log',
