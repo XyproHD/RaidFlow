@@ -131,7 +131,7 @@ export function KofiFab() {
   const injectBmc = useCallback(async () => {
     const host = bmcHostRef.current;
     if (!host) return;
-    const fallback = `<a href="${BMC_URL}" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-12 min-w-[168px] items-center justify-center gap-2 rounded-xl bg-[#FFDD00] px-4 text-sm font-bold text-black no-underline shadow-lg hover:brightness-95"><span aria-hidden="true">☕</span><span>${BMC_WIDGET_TEXT}</span></a>`;
+    const fallback = `<a href="${BMC_URL}" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-14 min-w-[210px] items-center justify-center gap-2 rounded-xl bg-[#FFDD00] px-5 text-base font-bold text-black no-underline shadow-lg hover:brightness-95"><span aria-hidden="true" class="text-xl leading-none">☕</span><span>${BMC_WIDGET_TEXT}</span></a>`;
     try {
       await loadBmcScript();
       if (!renderBmcButton(host)) {
@@ -203,7 +203,7 @@ export function KofiFab() {
       />
       <aside
         ref={rootRef}
-        className={`rf-coffee-fab fixed bottom-5 left-5 z-[69]${expanded ? ' rf-coffee-fab--open' : ''}`}
+        className={`rf-coffee-fab fixed bottom-5 left-5 z-[69]${expanded ? ' rf-coffee-fab--open flex flex-col items-center' : ''}`}
         aria-label={COFFEE_FAB_LABEL}
         onMouseEnter={clearLeaveTimer}
         onMouseLeave={() => {
@@ -234,8 +234,8 @@ export function KofiFab() {
         ) : null}
 
         {expanded ? (
-          <div className="rf-coffee-fab-expanded flex flex-col items-start gap-2">
-            <div ref={kofiHostRef} />
+          <div className="rf-coffee-fab-expanded flex flex-col items-center gap-2.5">
+            <div ref={kofiHostRef} className="rf-coffee-fab-kofi" />
             <div ref={bmcHostRef} className="rf-coffee-fab-bmc" />
           </div>
         ) : null}

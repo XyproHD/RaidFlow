@@ -163,22 +163,52 @@
 }
 
 .rf-coffee-fab-expanded {
-  transform-origin: left bottom;
+  transform-origin: center bottom;
   animation: rf-coffee-expand-in 280ms ease-out forwards;
+  width: max-content;
+  min-width: 210px;
+}
+
+.rf-coffee-fab-kofi,
+.rf-coffee-fab-bmc {
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 .rf-coffee-fab-expanded .btn-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
   transform-origin: center bottom;
   animation: rf-coffee-wiggle 10s ease-in-out infinite;
 }
 
 .rf-coffee-fab-bmc .bmc-btn-container {
-  display: block;
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 .rf-coffee-fab-bmc .bmc-btn {
-  min-width: 168px !important;
-  height: 48px !important;
-  font-size: 14px !important;
-  padding: 0 16px !important;
+  min-width: 210px !important;
+  height: 56px !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  padding: 0 20px !important;
+  line-height: 1.25 !important;
+  border-radius: 12px !important;
+}
+
+.rf-coffee-fab-bmc .bmc-btn svg {
+  height: 36px !important;
+  width: auto !important;
+  transform: none !important;
+  flex-shrink: 0;
+}
+
+.rf-coffee-fab-bmc .bmc-btn-text {
+  font-size: 16px !important;
+  line-height: 1.2 !important;
+  white-space: nowrap;
 }
