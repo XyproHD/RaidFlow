@@ -170,6 +170,7 @@ export default async function RaidCompletePage(props: {
   return (
     <div className="p-4 sm:p-6 md:p-8 page-container">
       <RaidCompleteClient
+        userId={userId}
         guildId={guildId}
         raidId={raidId}
         raid={{

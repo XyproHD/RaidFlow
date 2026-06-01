@@ -1,7 +1,7 @@
 'use client';
 
 import { createPortal } from 'react-dom';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
@@ -21,6 +21,14 @@ import {
 } from '@/components/character-display-parts';
 import type { GuildCharacterOption } from '@/components/raid-planner/raid-roster-planner';
 import { normalizeParticipationWeight } from '@/lib/raid-participation-weight';
+import { parseCombatLogFile } from '@/lib/combat-log';
+import {
+  buildWeightMapFromInstance,
+  pickRaidInstance,
+  summarizeInstanceForUi,
+} from '@/lib/combat-log-raid-apply';
+import { setCombatLogFileMeta } from '@/lib/combat-log-file-prefs';
+import { CombatLogPickerOverlay } from '@/components/raid-complete/combat-log-picker-overlay';
 
 export type RaidCompleteSignupRow = {
   id: string;
@@ -88,7 +96,29 @@ function effectiveSignedSpec(s: RaidCompleteSignupRow): string {
   return (s.signedSpec?.trim() || s.originalSignedSpec?.trim() || s.mainSpec.trim()).trim();
 }
 
+function normCharName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function combatLogParticipationRowClass(
+  signupId: string,
+  weight: number,
+  missingFromCombatLog: Set<string>
+): string | null {
+  if (missingFromCombatLog.has(signupId)) {
+    return 'border-red-500/70 bg-red-500/[0.12] dark:border-red-600/60 dark:bg-red-950/45';
+  }
+  if (weight >= 1) {
+    return 'border-green-500/60 bg-green-500/[0.1] dark:border-green-600/50 dark:bg-green-950/35';
+  }
+  if (weight > 0) {
+    return 'border-amber-400/65 bg-amber-500/[0.1] dark:border-amber-600/50 dark:bg-amber-950/30';
+  }
+  return null;
+}
+
 export function RaidCompleteClient({
+  userId,
   guildId,
   raidId,
   raid,
@@ -97,6 +127,7 @@ export function RaidCompleteClient({
   initialSignups,
   guildCharacters,
 }: {
+  userId: string;
   guildId: string;
   raidId: string;
   raid: RaidHeader;
@@ -129,6 +160,12 @@ export function RaidCompleteClient({
   const [submitBusy, setSubmitBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [specPatchingId, setSpecPatchingId] = useState<string | null>(null);
+  const [combatLogOpen, setCombatLogOpen] = useState(false);
+  const [combatLogBusy, setCombatLogBusy] = useState(false);
+  const [combatLogMissingIds, setCombatLogMissingIds] = useState<Set<string>>(() => new Set());
+  const [combatLogInfo, setCombatLogInfo] = useState<string | null>(null);
+
+  const initialRosterIdsRef = useRef<Set<string>>(new Set(initialGroups.flat()));
 
   const raidTermin = useMemo(() => {
     const start = new Date(raid.scheduledAt);
@@ -381,70 +418,83 @@ export function RaidCompleteClient({
     );
   }
 
+  async function createLeaderSignupForCharacter(
+    addSelected: GuildCharacterOption,
+    groupIndex: number,
+    initialWeight = 1,
+    usedCharIds?: Set<string>
+  ): Promise<string> {
+    const used = usedCharIds ?? usedCharacterIds;
+    if (used.has(addSelected.id)) {
+      throw new Error(t('alreadyInRoster'));
+    }
+    const signedSpecStart = addSelected.mainSpec.trim();
+    const res = await fetch(
+      `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups/leader`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: addSelected.userId,
+          characterId: addSelected.id,
+          type: 'normal',
+          signedSpec: signedSpecStart,
+          leaderPlacement: 'confirmed',
+        }),
+      }
+    );
+    const j = (await res.json().catch(() => ({}))) as {
+      signup?: {
+        id: string;
+        userId: string;
+        characterId: string | null;
+        signedSpec: string | null;
+      };
+    };
+    if (!res.ok || !j.signup?.id) {
+      throw new Error((j as { error?: string }).error || t('addError'));
+    }
+    const su = j.signup;
+    const eff = (su.signedSpec?.trim() || signedSpecStart).trim();
+    const row: RaidCompleteSignupRow = {
+      id: su.id,
+      userId: su.userId,
+      characterId: su.characterId,
+      name: addSelected.name,
+      mainSpec: addSelected.mainSpec,
+      offSpec: addSelected.offSpec,
+      classId: getSpecByDisplayName(eff)?.classId ?? addSelected.classId,
+      signedSpec: su.signedSpec ?? signedSpecStart,
+      originalSignedSpec: addSelected.mainSpec.trim(),
+      onlySignedSpec: false,
+      isMain: addSelected.isMain,
+      guildDiscordDisplayName: addSelected.guildDiscordDisplayName,
+      role: (roleFromSpecDisplayName(eff) ?? addSelected.role) as TbcRole,
+      signupType: 'normal',
+      punctuality: 'on_time',
+      isLate: false,
+      forbidReserve: false,
+      note: null,
+      gearScore:
+        typeof addSelected.gearScore === 'number'
+          ? addSelected.gearScore
+          : resolveGearScoreForCharacterOption(addSelected),
+    };
+    setSignupRows((prev) => ({ ...prev, [row.id]: row }));
+    setWeights((prev) => ({ ...prev, [row.id]: initialWeight }));
+    setGroups((prev) =>
+      prev.map((g, i) => (i === groupIndex ? [...g, row.id] : g))
+    );
+    if (usedCharIds) usedCharIds.add(addSelected.id);
+    return row.id;
+  }
+
   async function addManualSignup() {
     if (!addSelected) return;
-    if (usedCharacterIds.has(addSelected.id)) {
-      setFormError(t('alreadyInRoster'));
-      return;
-    }
     setAddBusy(true);
     setFormError(null);
     try {
-      const signedSpecStart = addSelected.mainSpec.trim();
-      const res = await fetch(
-        `/api/guilds/${encodeURIComponent(guildId)}/raids/${encodeURIComponent(raidId)}/signups/leader`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            targetUserId: addSelected.userId,
-            characterId: addSelected.id,
-            type: 'normal',
-            signedSpec: signedSpecStart,
-            leaderPlacement: 'confirmed',
-          }),
-        }
-      );
-      const j = (await res.json().catch(() => ({}))) as {
-        signup?: {
-          id: string;
-          userId: string;
-          characterId: string | null;
-          signedSpec: string | null;
-        };
-      };
-      if (!res.ok || !j.signup?.id) {
-        throw new Error((j as { error?: string }).error || t('addError'));
-      }
-      const su = j.signup;
-      const eff = (su.signedSpec?.trim() || signedSpecStart).trim();
-      const row: RaidCompleteSignupRow = {
-        id: su.id,
-        userId: su.userId,
-        characterId: su.characterId,
-        name: addSelected.name,
-        mainSpec: addSelected.mainSpec,
-        offSpec: addSelected.offSpec,
-        classId: getSpecByDisplayName(eff)?.classId ?? addSelected.classId,
-        signedSpec: su.signedSpec ?? signedSpecStart,
-        originalSignedSpec: addSelected.mainSpec.trim(),
-        onlySignedSpec: false,
-        isMain: addSelected.isMain,
-        guildDiscordDisplayName: addSelected.guildDiscordDisplayName,
-        role: (roleFromSpecDisplayName(eff) ?? addSelected.role) as TbcRole,
-        signupType: 'normal',
-        punctuality: 'on_time',
-        isLate: false,
-        forbidReserve: false,
-        note: null,
-        gearScore:
-          typeof addSelected.gearScore === 'number'
-            ? addSelected.gearScore
-            : resolveGearScoreForCharacterOption(addSelected),
-      };
-      setSignupRows((prev) => ({ ...prev, [row.id]: row }));
-      setWeights((prev) => ({ ...prev, [row.id]: 1 }));
-      setGroups((prev) => prev.map((g, i) => (i === addGroupIndex ? [...g, row.id] : g)));
+      await createLeaderSignupForCharacter(addSelected, addGroupIndex, 1);
       setAddOpen(false);
       setAddQuery('');
       setAddSelectedId(null);
@@ -455,6 +505,95 @@ export function RaidCompleteClient({
       setAddBusy(false);
     }
   }
+
+  const applyCombatLogFile = useCallback(
+    async (file: File) => {
+      setCombatLogBusy(true);
+      setFormError(null);
+      setCombatLogInfo(t('combatLogApplying'));
+      try {
+        setCombatLogFileMeta(userId, file.name);
+        const analysis = await parseCombatLogFile(file, { fileName: file.name });
+        const instance = pickRaidInstance(analysis, raid.dungeonLabel);
+        if (!instance || instance.totalEncounters === 0) {
+          throw new Error(t('combatLogNoInstance'));
+        }
+
+        const weightByName = buildWeightMapFromInstance(instance);
+        const rosterIds = initialRosterIdsRef.current;
+        const signupIds = groups.flat();
+        const nextWeights: Record<string, number> = { ...weights };
+        const missing = new Set<string>();
+        const matchedNames = new Set<string>();
+
+        for (const signupId of signupIds) {
+          const row = signupRows[signupId];
+          if (!row) continue;
+          const key = normCharName(row.name);
+          const w = weightByName.get(key);
+          if (w != null) {
+            nextWeights[signupId] = w;
+            matchedNames.add(key);
+          } else if (rosterIds.has(signupId)) {
+            nextWeights[signupId] = 0;
+            missing.add(signupId);
+          }
+        }
+
+        const usedCharIds = new Set<string>();
+        for (const id of signupIds) {
+          const cid = signupRows[id]?.characterId?.trim();
+          if (cid) usedCharIds.add(cid);
+        }
+
+        const addTargetGroup =
+          groups.findIndex((g) => g.length < raid.maxPlayers) >= 0
+            ? groups.findIndex((g) => g.length < raid.maxPlayers)
+            : Math.max(0, groups.length - 1);
+
+        for (const [nameKey, w] of weightByName) {
+          if (matchedNames.has(nameKey)) continue;
+          const gc = guildCharacters.find(
+            (c) => normCharName(c.name) === nameKey && !usedCharIds.has(c.id)
+          );
+          if (!gc) continue;
+          const newId = await createLeaderSignupForCharacter(
+            gc,
+            addTargetGroup,
+            w,
+            usedCharIds
+          );
+          matchedNames.add(nameKey);
+          nextWeights[newId] = w;
+        }
+
+        setWeights(nextWeights);
+        setCombatLogMissingIds(missing);
+        setCombatLogInfo(
+          t('combatLogApplied', { instance: summarizeInstanceForUi(instance) })
+        );
+        router.refresh();
+      } catch (e) {
+        setCombatLogInfo(null);
+        setFormError(e instanceof Error ? e.message : t('combatLogApplyError'));
+      } finally {
+        setCombatLogBusy(false);
+      }
+    },
+    [
+      groups,
+      guildCharacters,
+      raid.dungeonLabel,
+      raid.maxPlayers,
+      raidId,
+      guildId,
+      router,
+      signupRows,
+      t,
+      userId,
+      weights,
+    ]
+  );
 
   async function submitComplete() {
     const seen = new Set<string>();
@@ -533,9 +672,22 @@ export function RaidCompleteClient({
       </header>
 
       <div className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className="border-b border-border bg-muted/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
-          <p className="text-xs text-muted-foreground mt-1">{t('weightHint')}</p>
+        <div className="border-b border-border bg-muted/20 px-4 py-3 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
+            <p className="text-xs text-muted-foreground mt-1">{t('weightHint')}</p>
+            {combatLogInfo ? (
+              <p className="text-xs text-foreground/80 mt-1">{combatLogInfo}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            disabled={combatLogBusy || submitBusy}
+            className="shrink-0 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50"
+            onClick={() => setCombatLogOpen(true)}
+          >
+            {combatLogBusy ? '…' : t('useCombatLog')}
+          </button>
         </div>
         <div className="p-4 space-y-6">
           {rosterEmpty ? (
@@ -577,15 +729,25 @@ export function RaidCompleteClient({
                           : tDetail('punctualityLate');
                     const attVariant = attendanceRowVariant(s);
                     const note = s.note?.trim() ?? '';
+                    const rowWeight = weights[signupId] ?? 1;
+                    const combatLogClass = combatLogParticipationRowClass(
+                      signupId,
+                      rowWeight,
+                      combatLogMissingIds
+                    );
                     return (
                       <div
                         key={signupId}
                         role="listitem"
                         className={cn(
                           'flex flex-wrap items-center gap-2 rounded-lg border bg-background px-2 py-1.5 text-sm',
-                          attVariant === 'default' && 'border-border',
-                          attVariant === 'uncertain' && 'border-red-400/60 dark:border-red-700/55',
-                          attVariant === 'declined' &&
+                          combatLogClass ??
+                            (attVariant === 'default' && 'border-border'),
+                          !combatLogClass &&
+                            attVariant === 'uncertain' &&
+                            'border-red-400/60 dark:border-red-700/55',
+                          !combatLogClass &&
+                            attVariant === 'declined' &&
                             'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40'
                         )}
                       >
@@ -628,7 +790,7 @@ export function RaidCompleteClient({
                               max={1}
                               step={0.1}
                               className="w-16 rounded-md border border-input bg-background px-1.5 py-0.5 text-xs tabular-nums"
-                              value={weights[signupId] ?? 1}
+                              value={rowWeight}
                               onChange={(e) => setWeightFor(signupId, e.target.value)}
                             />
                           </label>
@@ -781,6 +943,15 @@ export function RaidCompleteClient({
             document.body
           )
         : null}
+
+      <CombatLogPickerOverlay
+        open={combatLogOpen}
+        onClose={() => setCombatLogOpen(false)}
+        userId={userId}
+        raidScheduledAtIso={raid.scheduledAt}
+        raidScheduledEndAtIso={raid.scheduledEndAt}
+        onFileChosen={(file) => void applyCombatLogFile(file)}
+      />
     </div>
   );
 }
