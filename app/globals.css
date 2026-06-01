@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Cookie&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -168,87 +170,76 @@
 }
 
 .rf-coffee-fab-donate-stack {
-  --rf-donate-btn-width: 200px;
-  --rf-donate-btn-height: 48px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0.5rem;
-  width: var(--rf-donate-btn-width);
+  width: 200px;
 }
 
-.rf-coffee-fab-kofi,
-.rf-coffee-fab-bmc {
+.rf-donate-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.625rem;
   width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18);
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
 }
 
-.rf-coffee-fab-kofi .btn-container,
-.rf-coffee-fab-bmc .bmc-btn-container {
-  width: 100%;
-  margin: 0;
+.rf-donate-btn:hover {
+  filter: brightness(0.96);
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.22);
 }
 
-.rf-coffee-fab-kofi .btn-container {
+.rf-donate-btn--kofi {
+  color: #fff;
+  background-color: #72a4f2;
   transform-origin: center bottom;
   animation: rf-coffee-wiggle 10s ease-in-out infinite;
 }
 
-.rf-coffee-fab-kofi .btn-container a {
-  box-sizing: border-box !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: 100% !important;
-  min-height: var(--rf-donate-btn-height) !important;
-  height: var(--rf-donate-btn-height) !important;
-  padding: 0 12px !important;
-  line-height: 1.2 !important;
-  text-decoration: none !important;
+.rf-donate-btn--bmc {
+  color: #000;
+  background-color: #ffdd00;
+  font-family: 'Cookie', 'Segoe Script', cursive;
+  font-size: 17px;
+  font-weight: 400;
 }
 
-.rf-coffee-fab-kofi .btn-container img {
-  display: block !important;
-  height: 26px !important;
-  width: auto !important;
-  margin: 0 8px 0 0 !important;
+.rf-donate-btn__icon {
+  display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
 }
 
-.rf-coffee-fab-bmc .bmc-btn-container {
+.rf-donate-btn__icon img {
   display: block;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
 }
 
-.rf-coffee-fab-bmc .bmc-btn {
-  box-sizing: border-box !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 8px !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: 100% !important;
-  min-height: var(--rf-donate-btn-height) !important;
-  height: var(--rf-donate-btn-height) !important;
-  padding: 0 12px !important;
-  font-size: 14px !important;
-  line-height: 1.2 !important;
-  border-radius: 10px !important;
+.rf-donate-btn__emoji {
+  font-size: 1.375rem;
+  line-height: 1;
 }
 
-.rf-coffee-fab-bmc .bmc-btn svg {
-  display: block !important;
-  height: 26px !important;
-  width: 26px !important;
-  margin: 0 !important;
-  flex-shrink: 0 !important;
-  transform: none !important;
-}
-
-.rf-coffee-fab-bmc .bmc-btn-text {
-  line-height: 1.2 !important;
-  width: auto !important;
-  flex: 0 1 auto !important;
-  text-align: left !important;
+.rf-donate-btn__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
