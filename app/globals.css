@@ -172,7 +172,13 @@
   animation: rf-coffee-wiggle 10s ease-in-out infinite;
 }
 
-.rf-coffee-fab-bmc a,
-.rf-coffee-fab-bmc iframe {
+.rf-coffee-fab-bmc .bmc-btn-container {
   display: block;
+}
+
+.rf-coffee-fab-bmc .bmc-btn {
+  min-width: 168px !important;
+  height: 48px !important;
+  font-size: 14px !important;
+  padding: 0 16px !important;
 }

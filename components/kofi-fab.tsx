@@ -15,6 +15,8 @@ import {
 } from '@/lib/support-links';
 
 const POP_MS = 320;
+const COLLAPSE_LOCK_MS = 550;
+const MOUSE_LEAVE_DELAY_MS = 400;
 
 declare global {
   interface Window {
@@ -26,6 +28,20 @@ declare global {
       getHTML: () => string;
       draw: () => void;
     };
+    /**
+     * Buy Me a Coffee button.prod.min.js — `document.writeln` nur beim Parsen;
+     * nach dynamischem Laden `bmcBtnWidget()` aufrufen.
+     */
+    bmcBtnWidget?: (
+      text: string,
+      slug: string,
+      color: string,
+      emoji: string,
+      font?: string,
+      fontColor?: string,
+      outlineColor?: string,
+      coffeeColor?: string,
+    ) => string;
   }
 }
 
@@ -42,29 +58,67 @@ function CoffeeCupIcon({ className }: { className?: string }) {
   );
 }
 
-function injectBmcButton(host: HTMLElement) {
-  host.innerHTML = '';
-  const script = document.createElement('script');
-  script.type = 'text/javascript';
-  script.src = BMC_BUTTON_SCRIPT;
-  script.setAttribute('data-name', 'bmc-button');
-  script.setAttribute('data-slug', BMC_SLUG);
-  script.setAttribute('data-color', '#FFDD00');
-  script.setAttribute('data-emoji', '☕');
-  script.setAttribute('data-font', 'Cookie');
-  script.setAttribute('data-text', BMC_WIDGET_TEXT);
-  script.setAttribute('data-outline-color', '#000000');
-  script.setAttribute('data-font-color', '#000000');
-  script.setAttribute('data-coffee-color', '#ffffff');
-  host.appendChild(script);
+function renderBmcButton(host: HTMLElement) {
+  const build = window.bmcBtnWidget;
+  if (!build) return false;
+  host.innerHTML = build(
+    BMC_WIDGET_TEXT,
+    BMC_SLUG,
+    '#FFDD00',
+    '☕',
+    'Cookie',
+    '#000000',
+    '#000000',
+    '#ffffff',
+  );
+  return true;
+}
+
+function loadBmcScript(): Promise<void> {
+  if (window.bmcBtnWidget) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[data-rf-bmc-loader]',
+    );
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(), { once: true });
+      if (window.bmcBtnWidget) resolve();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = BMC_BUTTON_SCRIPT;
+    script.async = true;
+    script.dataset.rfBmcLoader = 'true';
+    script.onload = () => resolve();
+    script.onerror = () => reject();
+    document.head.appendChild(script);
+  });
 }
 
 export function KofiFab() {
   const rootRef = useRef<HTMLElement>(null);
   const kofiHostRef = useRef<HTMLDivElement>(null);
   const bmcHostRef = useRef<HTMLDivElement>(null);
+  const collapseLockUntilRef = useRef(0);
+  const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [popping, setPopping] = useState(false);
+
+  const canCollapse = useCallback(() => Date.now() >= collapseLockUntilRef.current, []);
+
+  const lockCollapse = useCallback(() => {
+    collapseLockUntilRef.current = Date.now() + COLLAPSE_LOCK_MS;
+  }, []);
+
+  const clearLeaveTimer = useCallback(() => {
+    if (leaveTimerRef.current) {
+      clearTimeout(leaveTimerRef.current);
+      leaveTimerRef.current = null;
+    }
+  }, []);
 
   const injectKofi = useCallback(() => {
     const host = kofiHostRef.current;
@@ -74,32 +128,59 @@ export function KofiFab() {
     host.innerHTML = widget.getHTML();
   }, []);
 
+  const injectBmc = useCallback(async () => {
+    const host = bmcHostRef.current;
+    if (!host) return;
+    const fallback = `<a href="${BMC_URL}" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-12 min-w-[168px] items-center justify-center gap-2 rounded-xl bg-[#FFDD00] px-4 text-sm font-bold text-black no-underline shadow-lg hover:brightness-95"><span aria-hidden="true">☕</span><span>${BMC_WIDGET_TEXT}</span></a>`;
+    try {
+      await loadBmcScript();
+      if (!renderBmcButton(host)) {
+        host.innerHTML = fallback;
+      }
+    } catch {
+      host.innerHTML = fallback;
+    }
+  }, []);
+
   const collapse = useCallback(() => {
+    if (!canCollapse()) return;
+    clearLeaveTimer();
     setExpanded(false);
     setPopping(false);
     if (kofiHostRef.current) kofiHostRef.current.innerHTML = '';
     if (bmcHostRef.current) bmcHostRef.current.innerHTML = '';
-  }, []);
+  }, [canCollapse, clearLeaveTimer]);
+
+  const scheduleCollapseOnLeave = useCallback(() => {
+    if (!canCollapse()) return;
+    clearLeaveTimer();
+    leaveTimerRef.current = setTimeout(() => {
+      leaveTimerRef.current = null;
+      collapse();
+    }, MOUSE_LEAVE_DELAY_MS);
+  }, [canCollapse, clearLeaveTimer, collapse]);
 
   const expand = useCallback(() => {
     if (expanded || popping) return;
+    clearLeaveTimer();
     setPopping(true);
     window.setTimeout(() => {
       setPopping(false);
       setExpanded(true);
+      lockCollapse();
     }, POP_MS);
-  }, [expanded, popping]);
+  }, [expanded, popping, clearLeaveTimer, lockCollapse]);
 
   useEffect(() => {
     if (!expanded) return;
     injectKofi();
-    const bmcHost = bmcHostRef.current;
-    if (bmcHost) injectBmcButton(bmcHost);
-  }, [expanded, injectKofi]);
+    void injectBmc();
+  }, [expanded, injectKofi, injectBmc]);
 
   useEffect(() => {
     if (!expanded) return;
     const onPointerDown = (event: PointerEvent) => {
+      if (!canCollapse()) return;
       const root = rootRef.current;
       if (root && !root.contains(event.target as Node)) {
         collapse();
@@ -107,7 +188,9 @@ export function KofiFab() {
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
-  }, [expanded, collapse]);
+  }, [expanded, collapse, canCollapse]);
+
+  useEffect(() => () => clearLeaveTimer(), [clearLeaveTimer]);
 
   const showMain = !expanded && !popping;
 
@@ -122,8 +205,9 @@ export function KofiFab() {
         ref={rootRef}
         className={`rf-coffee-fab fixed bottom-5 left-5 z-[69]${expanded ? ' rf-coffee-fab--open' : ''}`}
         aria-label={COFFEE_FAB_LABEL}
+        onMouseEnter={clearLeaveTimer}
         onMouseLeave={() => {
-          if (expanded) collapse();
+          if (expanded) scheduleCollapseOnLeave();
         }}
       >
         {showMain ? (
