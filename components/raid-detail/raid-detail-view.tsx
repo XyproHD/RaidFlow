@@ -504,94 +504,92 @@ export function RaidDetailView({
 
   return (
     <div className="space-y-8">
-      <header className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className={cn('relative px-4 py-3 sm:px-5 sm:py-4', canEdit && 'pr-14 sm:pr-16')}>
-          {canEdit ? (
-            <button
-              type="button"
-              className="absolute top-3 right-3 sm:top-4 sm:right-4 shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
-              aria-label={t('raidLeaderMenu')}
-              title={t('raidLeaderMenu')}
-              onClick={(e) => {
-                e.stopPropagation();
-                const pos = openMenuAtButton(e.currentTarget);
-                setLeaderMenuPos(pos);
-                setLeaderMenuOpen((o) => !o);
-              }}
-            >
-              <span className="text-lg leading-none">☰</span>
-            </button>
-          ) : null}
-          <div className="min-w-0 space-y-1.5 pr-1">
-            <h1 className="text-2xl font-bold text-foreground tracking-tight">{raid.name}</h1>
-            <p className="text-sm text-foreground/90">{dungeonLabel}</p>
-            <p className="text-sm text-foreground/90">
-              <span className="text-muted-foreground">{tRoster('metaTermin')}</span>{' '}
-              {raidTermin}
-            </p>
-            <p className="text-sm text-foreground/90">
-              <span className="text-muted-foreground">{tRoster('metaOrganizer')}</span>{' '}
-              {organizerLabel ?? tRoster('organizerUnset')}
-            </p>
-          </div>
-        </div>
-      </header>
-
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-border bg-muted/20 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <h2 className="text-sm font-semibold text-foreground shrink-0">
-            {t('sectionOverview')}
-          </h2>
-          <RaidOverviewSummaryRows {...overviewSummaryProps} />
-        </div>
-
-        <div className="p-4">
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-              <dt className="text-muted-foreground shrink-0">{tDash('signupOpenUntil')}</dt>
-              <dd className="flex items-center gap-2 text-right min-w-0">
-                <span className="shrink-0" title={tDash('signupOpenUntil')}>
-                  {signupState.icon}
-                </span>
-                <span>
-                  {new Intl.DateTimeFormat(intlLocale, {
-                    dateStyle: 'short',
-                    timeStyle: 'short',
-                  }).format(signupUntil)}
-                </span>
-              </dd>
-            </div>
-            <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-              <dt className="text-muted-foreground">{t('maxPlayers')}</dt>
-              <dd>
-                {raid._count.signups} / {raid.maxPlayers}
-              </dd>
-            </div>
-            <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-              <dt className="text-muted-foreground">{t('status')}</dt>
-              <dd>{raidStatusLabel(t, raid.status)}</dd>
-            </div>
-            <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2">
-              <dt className="text-muted-foreground">{t('visibility')}</dt>
-              <dd>{visibilityLabel}</dd>
-            </div>
-            {raid.raidGroupRestriction ? (
-              <div className="flex justify-between gap-4 rounded-lg border border-border/60 bg-background/50 px-3 py-2 sm:col-span-2">
-                <dt className="text-muted-foreground">{t('restriction')}</dt>
-                <dd className="text-right">{raid.raidGroupRestriction.name}</dd>
-              </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 lg:divide-x divide-border">
+          <div className={cn('relative p-4 sm:p-5 space-y-4 min-w-0', canEdit && 'pr-14 sm:pr-16')}>
+            {canEdit ? (
+              <button
+                type="button"
+                className="absolute top-3 right-3 sm:top-4 sm:right-4 shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background hover:bg-muted"
+                aria-label={t('raidLeaderMenu')}
+                title={t('raidLeaderMenu')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const pos = openMenuAtButton(e.currentTarget);
+                  setLeaderMenuPos(pos);
+                  setLeaderMenuOpen((o) => !o);
+                }}
+              >
+                <span className="text-lg leading-none">☰</span>
+              </button>
             ) : null}
-          </dl>
+            <div className="min-w-0 space-y-1.5 pr-1">
+              <h1 className="text-2xl font-bold text-foreground tracking-tight">{raid.name}</h1>
+              <p className="text-sm text-foreground/90">{dungeonLabel}</p>
+              <p className="text-sm text-foreground/90">
+                <span className="text-muted-foreground">{tRoster('metaTermin')}</span>{' '}
+                {raidTermin}
+              </p>
+              <p className="text-sm text-foreground/90">
+                <span className="text-muted-foreground">{tRoster('metaOrganizer')}</span>{' '}
+                {organizerLabel ?? tRoster('organizerUnset')}
+              </p>
+            </div>
 
-          {raid.note ? (
-            <aside className="mt-5 rounded-xl border-2 border-primary/25 bg-primary/[0.06] dark:bg-primary/10 px-4 py-3 shadow-sm">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-primary mb-2 flex items-center gap-2">
-                <span aria-hidden>📌</span>
-                {t('note')}
-              </h3>
-              <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{raid.note}</p>
-            </aside>
-          ) : null}
+            <div className="rounded-lg border border-border/70 bg-muted/15 p-3 space-y-2">
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-background/50 px-3 py-2 min-w-0">
+                  <span className="text-xs text-muted-foreground">{tDash('signupOpenUntil')}</span>
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="shrink-0" title={tDash('signupOpenUntil')}>
+                      {signupState.icon}
+                    </span>
+                    <span className="tabular-nums">
+                      {new Intl.DateTimeFormat(intlLocale, {
+                        dateStyle: 'short',
+                        timeStyle: 'short',
+                      }).format(signupUntil)}
+                    </span>
+                  </span>
+                </div>
+                <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                  <span className="text-xs text-muted-foreground">{t('maxPlayers')}</span>
+                  <span className="font-medium tabular-nums">
+                    {raid._count.signups} / {raid.maxPlayers}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                  <span className="text-xs text-muted-foreground">{t('status')}</span>
+                  <span className="font-medium">{raidStatusLabel(t, raid.status)}</span>
+                </div>
+                <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-background/50 px-3 py-2">
+                  <span className="text-xs text-muted-foreground">{t('visibility')}</span>
+                  <span className="font-medium">{visibilityLabel}</span>
+                </div>
+                {raid.raidGroupRestriction ? (
+                  <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-background/50 px-3 py-2 sm:col-span-2">
+                    <span className="text-xs text-muted-foreground">{t('restriction')}</span>
+                    <span className="font-medium">{raid.raidGroupRestriction.name}</span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            {raid.note ? (
+              <aside className="rounded-lg border-2 border-primary/25 bg-primary/[0.06] dark:bg-primary/10 px-4 py-3 shadow-sm">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-primary mb-2 flex items-center gap-2">
+                  <span aria-hidden>📌</span>
+                  {t('note')}
+                </h3>
+                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{raid.note}</p>
+              </aside>
+            ) : null}
+          </div>
+
+          <div className="p-4 sm:p-5 space-y-3 min-w-0 bg-muted/10 border-t lg:border-t-0 border-border">
+            <h2 className="text-sm font-semibold text-foreground">{t('sectionOverview')}</h2>
+            <RaidOverviewSummaryRows {...overviewSummaryProps} />
+          </div>
         </div>
       </section>
 
@@ -600,115 +598,135 @@ export function RaidDetailView({
           <div className="border-b border-border bg-muted/20 px-4 py-3">
             <h2 className="text-sm font-semibold text-foreground">{t('sectionPublishedRoster')}</h2>
           </div>
-          <div className="p-4 space-y-6">
-            {announcedLayout.groupMeta.map((meta, gi) => (
-              <div key={`g-${gi}`} className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground">
-                  {t('publishedGroupTitle', { n: gi + 1 })}
-                </h3>
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  {meta.raidLeaderLabel ? (
-                    <p>
-                      {t('raidLeaderShort')}: <span className="text-foreground">{meta.raidLeaderLabel}</span>
-                    </p>
-                  ) : null}
-                  {meta.lootmasterLabel ? (
-                    <p>
-                      {t('lootmasterShort')}: <span className="text-foreground">{meta.lootmasterLabel}</span>
-                    </p>
-                  ) : null}
-                </div>
-                {(meta.partySlots ?? []).length > 0
-                  ? (meta.partySlots ?? []).map((row, pi) => {
-                      const ids = row.filter((sid) => !!sid?.trim());
-                      return (
-                        <div key={`pub-party-${gi}-${pi}`} className="space-y-1.5">
-                          <p className="text-[11px] font-medium text-muted-foreground">
-                            {t('publishedPartyTitle', { n: pi + 1 })}
-                          </p>
-                          {ids.length === 0 ? (
-                            <p className="text-sm text-muted-foreground">—</p>
-                          ) : (
-                            <ul className="flex flex-col gap-2">
-                              {ids.map((sid) => {
-                                const s = signupById.get(sid);
-                                if (!s) {
+          <div className="p-4 space-y-4">
+            <div className="grid gap-4 xl:grid-cols-2">
+              {announcedLayout.groupMeta.map((meta, gi) => (
+                <div
+                  key={`g-${gi}`}
+                  className="rounded-lg border border-border bg-muted/15 p-4 space-y-3 min-w-0"
+                >
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {t('publishedGroupTitle', { n: gi + 1 })}
+                  </h3>
+                  <div className="text-xs text-muted-foreground space-y-0.5 rounded-md border border-border/60 bg-background/40 px-3 py-2">
+                    {meta.raidLeaderLabel ? (
+                      <p>
+                        {t('raidLeaderShort')}: <span className="text-foreground">{meta.raidLeaderLabel}</span>
+                      </p>
+                    ) : null}
+                    {meta.lootmasterLabel ? (
+                      <p>
+                        {t('lootmasterShort')}: <span className="text-foreground">{meta.lootmasterLabel}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                  {(meta.partySlots ?? []).length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {(meta.partySlots ?? []).map((row, pi) => {
+                        const ids = row.filter((sid) => !!sid?.trim());
+                        return (
+                          <div
+                            key={`pub-party-${gi}-${pi}`}
+                            className="rounded-md border border-border/70 bg-background/50 p-3 space-y-2 min-w-0"
+                          >
+                            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                              {t('publishedPartyTitle', { n: pi + 1 })}
+                            </p>
+                            {ids.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">—</p>
+                            ) : (
+                              <ul className="grid gap-2 grid-cols-1">
+                                {ids.map((sid) => {
+                                  const s = signupById.get(sid);
+                                  if (!s) {
+                                    return (
+                                      <li key={sid} className="text-sm text-muted-foreground">
+                                        {t('signupAnonymous')}
+                                      </li>
+                                    );
+                                  }
                                   return (
-                                    <li key={sid} className="text-sm text-muted-foreground">
-                                      {t('signupAnonymous')}
+                                    <li
+                                      key={sid}
+                                      className="rounded-md border border-border bg-card shadow-sm overflow-hidden min-w-0"
+                                    >
+                                      <RaidSignupPlayerRow
+                                        row={raidSignupToAnmeldungRow(s)}
+                                        canEdit={false}
+                                        showTypeLabel={false}
+                                        raidStatus={raid.status}
+                                      />
                                     </li>
                                   );
-                                }
-                                return (
-                                  <li
-                                    key={sid}
-                                    className="rounded-lg border border-border bg-card shadow-sm overflow-hidden"
-                                  >
-                                    <RaidSignupPlayerRow
-                                      row={raidSignupToAnmeldungRow(s)}
-                                      canEdit={false}
-                                      showTypeLabel={false}
-                                      raidStatus={raid.status}
-                                    />
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
-                        </div>
-                      );
-                    })
-                  : null}
-              </div>
-            ))}
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-foreground">{t('publishedReserveHeading')}</h3>
-              {publishedReserveOrderedIds.length === 0 ? (
-                <p className="text-sm text-muted-foreground">—</p>
-              ) : (
-                <ul className="flex flex-col gap-2">
-                  {publishedReserveOrderedIds.map((sid) => {
-                    const s = signupById.get(sid);
-                    if (!s) {
+                                })}
+                              </ul>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-lg border border-border bg-muted/15 p-4 space-y-3 min-w-0">
+                <h3 className="text-sm font-semibold text-foreground">{t('publishedReserveHeading')}</h3>
+                {publishedReserveOrderedIds.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">—</p>
+                ) : (
+                  <ul className="grid gap-2 sm:grid-cols-2">
+                    {publishedReserveOrderedIds.map((sid) => {
+                      const s = signupById.get(sid);
+                      if (!s) {
+                        return (
+                          <li key={sid} className="text-sm text-muted-foreground">
+                            {t('signupAnonymous')}
+                          </li>
+                        );
+                      }
                       return (
-                        <li key={sid} className="text-sm text-muted-foreground">
-                          {t('signupAnonymous')}
+                        <li
+                          key={sid}
+                          className="rounded-md border border-border bg-card shadow-sm overflow-hidden min-w-0"
+                        >
+                          <RaidSignupPlayerRow
+                            row={raidSignupToAnmeldungRow(s)}
+                            canEdit={false}
+                            showTypeLabel
+                            raidStatus={raid.status}
+                          />
                         </li>
                       );
-                    }
-                    return (
-                      <li key={sid} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
-                        <RaidSignupPlayerRow
-                          row={raidSignupToAnmeldungRow(s)}
-                          canEdit={false}
-                          showTypeLabel
-                          raidStatus={raid.status}
-                        />
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </div>
-            {raid.signups.some((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined') ? (
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-foreground">{t('publishedDeclinedHeading')}</h3>
-                <ul className="flex flex-col gap-2">
-                  {raid.signups
-                    .filter((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined')
-                    .map((s) => (
-                      <li key={s.id} className="rounded-lg border border-border bg-card shadow-sm overflow-hidden">
-                        <RaidSignupPlayerRow
-                          row={raidSignupToAnmeldungRow(s)}
-                          canEdit={false}
-                          showTypeLabel
-                          raidStatus={raid.status}
-                        />
-                      </li>
-                    ))}
-                </ul>
+                    })}
+                  </ul>
+                )}
               </div>
-            ) : null}
+
+              {raid.signups.some((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined') ? (
+                <div className="rounded-lg border border-border bg-muted/15 p-4 space-y-3 min-w-0">
+                  <h3 className="text-sm font-semibold text-foreground">{t('publishedDeclinedHeading')}</h3>
+                  <ul className="grid gap-2 sm:grid-cols-2">
+                    {raid.signups
+                      .filter((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined')
+                      .map((s) => (
+                        <li
+                          key={s.id}
+                          className="rounded-md border border-border bg-card shadow-sm overflow-hidden min-w-0"
+                        >
+                          <RaidSignupPlayerRow
+                            row={raidSignupToAnmeldungRow(s)}
+                            canEdit={false}
+                            showTypeLabel
+                            raidStatus={raid.status}
+                          />
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
           </div>
         </section>
       ) : null}
@@ -900,38 +918,25 @@ export function RaidDetailView({
       </section>
 
       <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className="border-b border-border bg-muted/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">{t('anmeldungenHeading')}</h2>
-        </div>
-        <div className="p-4 space-y-2">
+        <div className="p-4 space-y-4">
           {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
             <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
           ) : null}
-          <RaidAnmeldungen rows={rows} canEdit={canEdit} raidStatus={raid.status} />
-        </div>
-      </section>
 
-      <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className="border-b border-border bg-muted/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">{t('signupsReserveHeading')}</h2>
-        </div>
-        <div className="p-4 space-y-2">
-          {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
-            <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
-          ) : null}
-          <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} raidStatus={raid.status} />
-        </div>
-      </section>
+          <div className="rounded-lg border border-border bg-muted/15 p-4 space-y-3 min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">{t('anmeldungenHeading')}</h3>
+            <RaidAnmeldungen rows={rows} canEdit={canEdit} raidStatus={raid.status} />
+          </div>
 
-      <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        <div className="border-b border-border bg-muted/20 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">{t('sectionAbsagen')}</h2>
-        </div>
-        <div className="p-4 space-y-2">
-          {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
-            <p className="text-xs text-muted-foreground">{t('signupListHidden')}</p>
-          ) : null}
-          <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} raidStatus={raid.status} />
+          <div className="rounded-lg border border-border bg-muted/15 p-4 space-y-3 min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">{t('signupsReserveHeading')}</h3>
+            <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} raidStatus={raid.status} />
+          </div>
+
+          <div className="rounded-lg border border-border bg-muted/15 p-4 space-y-3 min-w-0">
+            <h3 className="text-sm font-semibold text-foreground">{t('sectionAbsagen')}</h3>
+            <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} raidStatus={raid.status} />
+          </div>
         </div>
       </section>
 

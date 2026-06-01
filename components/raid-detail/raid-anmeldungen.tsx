@@ -96,11 +96,11 @@ function SignupTableBlock({
   );
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 gap-3 max-w-3xl">
       <div className="min-w-0">
         {left.length > 0 ? renderTable(left) : <p className="text-xs text-muted-foreground py-2">—</p>}
       </div>
-      <div className="min-w-0">{right.length > 0 ? renderTable(right) : null}</div>
+      {right.length > 0 ? <div className="min-w-0">{renderTable(right)}</div> : null}
     </div>
   );
 }
@@ -139,12 +139,15 @@ export function RaidAnmeldungen({
   const canSeeNotes = canEdit;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       {ROLE_ORDER.map((role) => {
         const list = groups[role];
         if (!list || list.length === 0) return null;
         return (
-          <section key={role} className="space-y-2">
+          <section
+            key={role}
+            className="rounded-md border border-border/70 bg-background/40 p-3 space-y-2 min-w-0"
+          >
             <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <RoleIcon role={role} size={18} />
               <span>{role}</span>
@@ -162,7 +165,7 @@ export function RaidAnmeldungen({
       })}
 
       {groups.Unknown.length > 0 ? (
-        <section className="space-y-2">
+        <section className="rounded-md border border-border/70 bg-background/40 p-3 space-y-2 min-w-0">
           <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
             <span
               className="inline-flex items-center justify-center w-[18px] h-[18px] text-muted-foreground"

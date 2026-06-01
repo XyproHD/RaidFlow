@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { ROLE_ICONS } from '@/lib/role-spec-icons';
@@ -72,6 +73,41 @@ function RoleClassGrid({
   );
 }
 
+function RoleTile({
+  roleKey,
+  children,
+  classRows,
+  tProfile,
+}: {
+  roleKey: (typeof ROLE_KEYS)[number];
+  children: ReactNode;
+  classRows: RoleClassCountRow[];
+  tProfile: (key: string) => string;
+}) {
+  const icon = ROLE_ICONS[roleKey];
+  return (
+    <div
+      className="flex flex-col rounded-md border border-border/80 bg-background px-2 py-2 text-sm min-w-0"
+      title={roleKey}
+    >
+      <div className="inline-flex flex-wrap items-center justify-center gap-1.5 tabular-nums w-full">
+        <Image src={icon.src} alt="" width={18} height={18} unoptimized />
+        {children}
+      </div>
+      <RoleClassGrid rows={classRows} tProfile={tProfile} />
+    </div>
+  );
+}
+
+function OverviewRowBox({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border/80 bg-background/60 p-3 space-y-2 min-w-0">
+      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{label}</div>
+      <div className="grid grid-cols-2 gap-2 min-w-0">{children}</div>
+    </div>
+  );
+}
+
 /**
  * Übersichtszeilen (Anmeldungen / Min. Rollen / Min. Specs) — Raid-Detail & Planer.
  */
@@ -85,92 +121,73 @@ export function RaidOverviewSummaryRows({
   const t = useTranslations('raidDetail');
   const tProfile = useTranslations('profile');
 
-  return (
-    <div className="grid gap-y-3 gap-x-3 sm:gap-x-4 sm:ml-auto w-full sm:w-auto">
-      <div className="grid grid-cols-[7.5rem_1fr] items-start gap-x-3">
-        <div className="text-xs font-medium text-muted-foreground pt-1">{t('overviewRowSignups')}</div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 justify-items-stretch min-w-0">
-          {ROLE_KEYS.map((key) => {
-            const slice = roleAttendance[key];
-            const icon = ROLE_ICONS[key];
-            const classRows = roleClassByRole[key] ?? [];
-            return (
-              <div
-                key={key}
-                className="flex flex-col rounded-md border border-border bg-background px-2 py-2 text-sm min-w-0"
-                title={key}
-              >
-                <div className="inline-flex flex-wrap items-center justify-center gap-1.5 tabular-nums w-full">
-                  <Image src={icon.src} alt="" width={18} height={18} unoptimized />
-                  <AttendanceCounts {...slice} />
-                </div>
-                <RoleClassGrid rows={classRows} tProfile={tProfile} />
-              </div>
-            );
-          })}
-        </div>
-      </div>
+  const minSpecEntries =
+    minSpecsObj && Object.keys(minSpecsObj).length > 0
+      ? Object.entries(minSpecsObj).filter(
+          ([, need]) => typeof need === 'number' && Number.isFinite(need) && need > 0
+        )
+      : [];
 
-      <div className="grid grid-cols-[7.5rem_1fr] items-start gap-x-3">
-        <div className="text-xs font-medium text-muted-foreground pt-1">{t('overviewRowMinRoles')}</div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 justify-items-stretch min-w-0">
-          {ROLE_KEYS.map((key) => {
-            const min = roleMinByKey[key];
-            const slice = roleAttendance[key];
-            const classRows = roleClassByRole[key] ?? [];
+  return (
+    <div className="flex flex-col gap-3 min-w-0 w-full">
+      <OverviewRowBox label={t('overviewRowSignups')}>
+        {ROLE_KEYS.map((key) => {
+          const slice = roleAttendance[key];
+          const classRows = roleClassByRole[key] ?? [];
+          return (
+            <RoleTile key={key} roleKey={key} classRows={classRows} tProfile={tProfile}>
+              <AttendanceCounts {...slice} />
+            </RoleTile>
+          );
+        })}
+      </OverviewRowBox>
+
+      <OverviewRowBox label={t('overviewRowMinRoles')}>
+        {ROLE_KEYS.map((key) => {
+          const min = roleMinByKey[key];
+          const slice = roleAttendance[key];
+          const classRows = roleClassByRole[key] ?? [];
+          return (
+            <RoleTile key={key} roleKey={key} classRows={classRows} tProfile={tProfile}>
+              <span className={cn('font-semibold', statusToneClassForMin(min, slice.clear, slice.unclear))}>
+                {min}
+              </span>
+              <span className="text-muted-foreground">·</span>
+              <AttendanceCounts {...slice} />
+            </RoleTile>
+          );
+        })}
+      </OverviewRowBox>
+
+      {minSpecEntries.length > 0 ? (
+        <OverviewRowBox label={t('overviewRowMinSpecs')}>
+          {minSpecEntries.map(([spec, need]) => {
+            const slice = specAttendanceByKey[spec] ?? { clear: 0, unclear: 0 };
+            const classId = parseMinSpecClassKey(spec);
+            const title = minSpecKeyTitle(spec, tProfile);
             return (
-              <div
-                key={key}
-                className="flex flex-col rounded-md border border-border bg-background px-2 py-2 text-sm min-w-0"
-                title={key}
+              <span
+                key={spec}
+                className="flex flex-col rounded-md border border-border/80 bg-background px-2 py-2 text-sm min-w-0"
+                title={title}
               >
-                <div className="inline-flex flex-wrap items-center justify-center gap-1.5 tabular-nums w-full">
-                  <Image src={ROLE_ICONS[key].src} alt="" width={18} height={18} unoptimized />
-                  <span className={cn('font-semibold', statusToneClassForMin(min, slice.clear, slice.unclear))}>
-                    {min}
+                <span className="inline-flex flex-wrap items-center justify-center gap-1.5 tabular-nums w-full">
+                  {classId ? (
+                    <ClassIcon classId={classId} size={18} title={title} />
+                  ) : (
+                    <SpecIcon spec={spec} size={18} />
+                  )}
+                  <span className={cn('font-semibold', statusToneClassForMin(need, slice.clear, slice.unclear))}>
+                    {need}
                   </span>
                   <span className="text-muted-foreground">·</span>
                   <AttendanceCounts {...slice} />
-                </div>
-                <RoleClassGrid rows={classRows} tProfile={tProfile} />
-              </div>
+                </span>
+              </span>
             );
           })}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-[7.5rem_1fr] items-start gap-x-3">
-        <div className="text-xs font-medium text-muted-foreground pt-1">{t('overviewRowMinSpecs')}</div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 justify-items-stretch">
-          {minSpecsObj && Object.keys(minSpecsObj).length > 0
-            ? Object.entries(minSpecsObj)
-                .filter(([, need]) => typeof need === 'number' && Number.isFinite(need) && need > 0)
-                .map(([spec, need]) => {
-                  const slice = specAttendanceByKey[spec] ?? { clear: 0, unclear: 0 };
-                  const classId = parseMinSpecClassKey(spec);
-                  const title = minSpecKeyTitle(spec, tProfile);
-                  return (
-                    <span
-                      key={spec}
-                      className="w-full inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-sm tabular-nums"
-                      title={title}
-                    >
-                      {classId ? (
-                        <ClassIcon classId={classId} size={18} title={title} />
-                      ) : (
-                        <SpecIcon spec={spec} size={18} />
-                      )}
-                      <span className={cn('font-semibold', statusToneClassForMin(need, slice.clear, slice.unclear))}>
-                        {need}
-                      </span>
-                      <span className="text-muted-foreground">·</span>
-                      <AttendanceCounts {...slice} />
-                    </span>
-                  );
-                })
-            : null}
-        </div>
-      </div>
+        </OverviewRowBox>
+      ) : null}
     </div>
   );
 }
