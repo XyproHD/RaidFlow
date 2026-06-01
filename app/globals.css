@@ -166,7 +166,6 @@
   transform-origin: center bottom;
   animation: rf-coffee-expand-in 280ms ease-out forwards;
   width: max-content;
-  min-width: 260px;
 }
 
 .rf-coffee-fab-kofi,
@@ -188,48 +187,4 @@
   display: flex;
   justify-content: center;
   width: 100%;
-}
-
-.rf-coffee-fab-bmc .bmc-btn {
-  box-sizing: border-box !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 10px !important;
-  min-width: 260px !important;
-  width: 100% !important;
-  height: 56px !important;
-  padding: 0 22px !important;
-  font-family: 'Cookie', cursive !important;
-  font-size: 17px !important;
-  font-weight: 700 !important;
-  line-height: 1.35 !important;
-  color: #000 !important;
-  background-color: #ffdd00 !important;
-  border-radius: 12px !important;
-  text-decoration: none !important;
-}
-
-.rf-coffee-fab-bmc .bmc-btn svg {
-  display: block !important;
-  height: 32px !important;
-  width: 32px !important;
-  margin: 0 !important;
-  flex-shrink: 0 !important;
-  transform: none !important;
-}
-
-.rf-coffee-fab-bmc .bmc-btn-text {
-  display: block !important;
-  flex: 1 1 auto !important;
-  width: auto !important;
-  min-width: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  font-family: inherit !important;
-  font-size: 17px !important;
-  font-weight: 700 !important;
-  line-height: 1.35 !important;
-  text-align: center !important;
-  white-space: nowrap !important;
 }

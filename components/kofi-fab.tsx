@@ -28,10 +28,7 @@ declare global {
       getHTML: () => string;
       draw: () => void;
     };
-    /**
-     * Buy Me a Coffee button.prod.min.js — `document.writeln` nur beim Parsen;
-     * nach dynamischem Laden `bmcBtnWidget()` aufrufen.
-     */
+    /** Buy Me a Coffee button.prod.min.js */
     bmcBtnWidget?: (
       text: string,
       slug: string,
@@ -58,46 +55,60 @@ function CoffeeCupIcon({ className }: { className?: string }) {
   );
 }
 
-function renderBmcButton(host: HTMLElement) {
-  const build = window.bmcBtnWidget;
-  if (!build) return false;
-  // Widget-Styles setzen u. a. line-height: 0 auf .bmc-btn-text — Layout kommt aus globals.css
-  const html = build(
-    BMC_WIDGET_TEXT,
-    BMC_SLUG,
-    '#FFDD00',
-    '☕',
-    'Cookie',
-    '#000000',
-    '#000000',
-    '#ffffff',
-  ).replace(/<style[\s\S]*?<\/style>/gi, '');
-  host.innerHTML = html;
-  return true;
+function createOfficialBmcScriptElement(): HTMLScriptElement {
+  const script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.setAttribute('data-name', 'bmc-button');
+  script.setAttribute('data-slug', BMC_SLUG);
+  script.setAttribute('data-color', '#FFDD00');
+  script.setAttribute('data-emoji', '☕');
+  script.setAttribute('data-font', 'Cookie');
+  script.setAttribute('data-text', BMC_WIDGET_TEXT);
+  script.setAttribute('data-outline-color', '#000000');
+  script.setAttribute('data-font-color', '#000000');
+  script.setAttribute('data-coffee-color', '#ffffff');
+  return script;
 }
 
-function loadBmcScript(): Promise<void> {
-  if (window.bmcBtnWidget) return Promise.resolve();
+/** Offizielles BMAC-Script; bei SPA nachlädt ggf. dieselbe Ausgabe wie document.writeln. */
+function appendOfficialBmcWidget(host: HTMLElement) {
+  const build = window.bmcBtnWidget;
+  if (!build) return;
+  host.insertAdjacentHTML(
+    'beforeend',
+    build(
+      BMC_WIDGET_TEXT,
+      BMC_SLUG,
+      '#FFDD00',
+      '☕',
+      'Cookie',
+      '#000000',
+      '#000000',
+      '#ffffff',
+    ),
+  );
+}
 
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector<HTMLScriptElement>(
-      'script[data-rf-bmc-loader]',
-    );
-    if (existing) {
-      existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(), { once: true });
-      if (window.bmcBtnWidget) resolve();
-      return;
+function injectOfficialBmc(host: HTMLElement) {
+  host.innerHTML = '';
+  const script = createOfficialBmcScriptElement();
+
+  if (window.bmcBtnWidget) {
+    host.appendChild(script);
+    appendOfficialBmcWidget(host);
+    return;
+  }
+
+  script.src = BMC_BUTTON_SCRIPT;
+  script.onload = () => {
+    if (!host.querySelector('.bmc-btn-container')) {
+      appendOfficialBmcWidget(host);
     }
-
-    const script = document.createElement('script');
-    script.src = BMC_BUTTON_SCRIPT;
-    script.async = true;
-    script.dataset.rfBmcLoader = 'true';
-    script.onload = () => resolve();
-    script.onerror = () => reject();
-    document.head.appendChild(script);
-  });
+  };
+  script.onerror = () => {
+    host.innerHTML = `<a href="${BMC_URL}" target="_blank" rel="noopener noreferrer" class="inline-flex min-h-12 min-w-[168px] items-center justify-center rounded-lg bg-[#FFDD00] px-5 text-sm font-bold text-black no-underline">${BMC_WIDGET_TEXT}</a>`;
+  };
+  host.appendChild(script);
 }
 
 export function KofiFab() {
@@ -130,18 +141,10 @@ export function KofiFab() {
     host.innerHTML = widget.getHTML();
   }, []);
 
-  const injectBmc = useCallback(async () => {
+  const injectBmc = useCallback(() => {
     const host = bmcHostRef.current;
     if (!host) return;
-    const fallback = `<a href="${BMC_URL}" target="_blank" rel="noopener noreferrer" class="rf-bmc-fallback inline-flex h-14 min-w-[260px] items-center justify-center gap-3 rounded-xl bg-[#FFDD00] px-6 text-[17px] font-bold leading-snug text-black no-underline shadow-lg hover:brightness-95"><span aria-hidden="true" class="text-2xl leading-none">☕</span><span>${BMC_WIDGET_TEXT}</span></a>`;
-    try {
-      await loadBmcScript();
-      if (!renderBmcButton(host)) {
-        host.innerHTML = fallback;
-      }
-    } catch {
-      host.innerHTML = fallback;
-    }
+    injectOfficialBmc(host);
   }, []);
 
   const collapse = useCallback(() => {
@@ -176,7 +179,7 @@ export function KofiFab() {
   useEffect(() => {
     if (!expanded) return;
     injectKofi();
-    void injectBmc();
+    injectBmc();
   }, [expanded, injectKofi, injectBmc]);
 
   useEffect(() => {
