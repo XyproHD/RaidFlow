@@ -20,6 +20,14 @@ export function signupTypeNorm(raw: string): string {
   return raw === 'main' ? 'normal' : raw;
 }
 
+/** Für Planer-Kader: abgemeldete Spieler nicht im Kader/Reserve platzierbar. */
+export function isPlannableRaidSignup(row: {
+  type: string;
+  originalSignupType?: string | null;
+}): boolean {
+  return signupTypeNorm(row.originalSignupType ?? row.type) !== 'declined';
+}
+
 /** „Unklar“ / „Nicht da“ — bei Ankündigung/Speichern nicht durch Reserve ersetzen. */
 export function isPreservedAttendanceSignupType(raw: string): boolean {
   const t = signupTypeNorm(raw);

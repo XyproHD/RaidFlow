@@ -89,6 +89,7 @@ export async function resolveRaidAccess(
       raidGroupRestrictionId: true,
       status: true,
       signupUntil: true,
+      scheduledAt: true,
     },
   });
   if (!raid) {

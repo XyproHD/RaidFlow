@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import type { RaidSignupPhase } from '@/lib/raid-detail-shared';
 import type { RaidSignupPunctuality, RaidSignupType } from '@/lib/raid-signup-constants';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
+import { effectiveTypeForSelfSignup } from '@/lib/raid-signup-withdraw';
 
 const NOTE_MIN = 3;
 
@@ -111,9 +112,17 @@ export async function commitRaidSelfSignupMutation(
     note,
   } = input;
   const isLate = punctuality === 'late';
+  const raid = await prisma.rfRaid.findUnique({
+    where: { id: raidId },
+    select: { status: true },
+  });
+  const raidStatus = raid?.status ?? 'open';
+  const typeFields = effectiveTypeForSelfSignup(raidStatus, typeNorm);
+
   const data = {
     characterId,
-    type: typeNorm,
+    type: typeFields.type,
+    originalSignupType: typeFields.originalSignupType,
     signedSpec: signedSpecRaw,
     onlySignedSpec,
     forbidReserve,
@@ -138,6 +147,7 @@ export async function commitRaidSelfSignupMutation(
       select: {
         id: true,
         type: true,
+        originalSignupType: true,
         characterId: true,
         signedSpec: true,
         onlySignedSpec: true,

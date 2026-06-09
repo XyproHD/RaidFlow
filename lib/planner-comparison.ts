@@ -1,32 +1,16 @@
+import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 import {
-  leaderPlacementFromAnnounceLayout,
-  parseStoredAnnouncedPlannerJson,
-  type AnnounceRaidPayload,
-} from '@/lib/raid-announce';
+  comparisonPlacementFromLayouts,
+  type SignupDisplayRow,
+} from '@/lib/raid-signup-display';
 
 export type ComparisonPlacement = 'confirmed' | 'reserve' | 'uncertain' | 'signup';
 
-function signupTypeNorm(v: string): string {
-  return v === 'main' ? 'normal' : v;
-}
-
 export function comparisonPlacementForSignup(
-  signup: { id: string; type: string; leaderPlacement?: string | null; setConfirmed?: boolean },
-  layout: AnnounceRaidPayload | null
+  signup: SignupDisplayRow,
+  layout: import('@/lib/raid-announce').AnnounceRaidPayload | null
 ): ComparisonPlacement {
-  const tn = signupTypeNorm(signup.type);
-  if (tn === 'uncertain') return 'uncertain';
-
-  if (layout) {
-    const lp = leaderPlacementFromAnnounceLayout(signup.id, layout);
-    if (lp === 'confirmed') return 'confirmed';
-    if (lp === 'substitute') return 'reserve';
-    return 'signup';
-  }
-
-  if (signup.leaderPlacement === 'confirmed' || signup.setConfirmed) return 'confirmed';
-  if (signup.leaderPlacement === 'substitute' || tn === 'reserve') return 'reserve';
-  return 'signup';
+  return comparisonPlacementFromLayouts(signup, layout);
 }
 
 export function buildComparisonPlacementByUserId(

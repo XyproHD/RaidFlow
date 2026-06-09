@@ -117,6 +117,7 @@ export default async function RaidDetailPage(props: {
       id: s.id,
       characterId: s.characterId ?? null,
       type: s.type,
+      originalSignupType: s.originalSignupType ?? s.type,
       isLate: s.isLate,
       punctuality: normalizeSignupPunctuality(s.punctuality, s.isLate),
       note: s.note,
@@ -192,6 +193,9 @@ export default async function RaidDetailPage(props: {
     scheduledAt: raid.scheduledAt.toISOString(),
     scheduledEndAt: raid.scheduledEndAt?.toISOString() ?? null,
     signupUntil: raid.signupUntil.toISOString(),
+    draftPlannerGroupsJson: (raid as { draftPlannerGroupsJson?: unknown }).draftPlannerGroupsJson,
+    announcedPlannerGroupsJson: (raid as { announcedPlannerGroupsJson?: unknown })
+      .announcedPlannerGroupsJson,
   };
 
   const dungeonLabel =

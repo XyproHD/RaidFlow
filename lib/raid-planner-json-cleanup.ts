@@ -5,6 +5,7 @@ import {
   sanitizeAnnounceRaidPayload,
   type PlannerSanitizeResult,
 } from '@/lib/planner-roster-sanitize';
+import { isPlannableRaidSignup } from '@/lib/raid-signup-constants';
 
 /**
  * Entfernt gelöschte Signup-IDs aus Draft- und Ankündigungs-Planer-JSON am Raid.
@@ -64,11 +65,15 @@ export async function sanitizeRaidPlannerStorageAgainstSignups(
         status: true,
       },
     }),
-    prisma.rfRaidSignup.findMany({ where: { raidId }, select: { id: true } }),
+    prisma.rfRaidSignup.findMany({
+      where: { raidId },
+      select: { id: true, type: true, originalSignupType: true },
+    }),
   ]);
   if (!raid) return null;
 
   const known = new Set(signupRows.map((s) => s.id));
+  const plannable = new Set(signupRows.filter(isPlannableRaidSignup).map((s) => s.id));
   const maxPlayers = raid.maxPlayers;
   const combinedRemoved: PlannerSanitizeResult['removed'] = [];
   let combinedPayload: PlannerSanitizeResult['payload'] | null = null;
@@ -81,7 +86,7 @@ export async function sanitizeRaidPlannerStorageAgainstSignups(
 
   const draft = parseStoredAnnouncedPlannerJson(raid.draftPlannerGroupsJson);
   if (draft) {
-    const s = sanitizeAnnounceRaidPayload(draft, known, maxPlayers);
+    const s = sanitizeAnnounceRaidPayload(draft, known, maxPlayers, plannable);
     if (s.hadInvalid) {
       hadInvalid = true;
       combinedRemoved.push(...s.removed);
@@ -92,7 +97,7 @@ export async function sanitizeRaidPlannerStorageAgainstSignups(
 
   const announced = parseStoredAnnouncedPlannerJson(raid.announcedPlannerGroupsJson);
   if (announced) {
-    const s = sanitizeAnnounceRaidPayload(announced, known, maxPlayers);
+    const s = sanitizeAnnounceRaidPayload(announced, known, maxPlayers, plannable);
     if (s.hadInvalid) {
       hadInvalid = true;
       combinedRemoved.push(...s.removed);

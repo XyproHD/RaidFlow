@@ -78,7 +78,7 @@ export async function POST(
 
   const raid = await prisma.rfRaid.findFirst({
     where: { id: raidId, guildId },
-    select: { id: true, status: true, signupUntil: true },
+    select: { id: true, status: true, signupUntil: true, scheduledAt: true },
   });
   if (!raid) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

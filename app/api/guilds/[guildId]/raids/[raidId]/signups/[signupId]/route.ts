@@ -184,6 +184,7 @@ export async function PATCH(
       setConfirmed,
       ...(usesAnnouncedPlacementRules ? { type: nextType } : {}),
       signedSpec: signedSpec || undefined,
+      // originalSignupType: nur User-Mutationen — Planer ändert ihn nicht
     },
     select: {
       id: true,

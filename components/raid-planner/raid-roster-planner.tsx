@@ -506,6 +506,18 @@ export function RaidRosterPlanner({
 
   const byId = useMemo(() => new Map(signups.map((s) => [s.id, s])), [signups]);
   const knownSignupIds = useMemo(() => new Set(signups.map((s) => s.id)), [signups]);
+  const plannableSignupIds = useMemo(
+    () =>
+      new Set(
+        signups
+          .filter((s) => {
+            const t = s.signupType === 'main' ? 'normal' : s.signupType;
+            return t !== 'declined';
+          })
+          .map((s) => s.id)
+      ),
+    [signups]
+  );
 
   const [plannerGroups, setPlannerGroups] = useState<PlannerGroup[]>(() => [
     applyPartyLayoutToGroup(
@@ -720,7 +732,8 @@ export function RaidRosterPlanner({
       const layoutSanitized = sanitizeAnnounceRaidPayload(
         { groups: nextGroups, reserveOrder: nextReserve, declineOrder: nextDecline },
         idsSet,
-        maxPlayers
+        maxPlayers,
+        plannableSignupIds
       );
       if (layoutSanitized.hadInvalid) {
         nextGroups = layoutSanitized.payload.groups as PlannerGroup[];
@@ -2124,7 +2137,8 @@ export function RaidRosterPlanner({
     const r = sanitizeAnnounceRaidPayload(
       { groups, reserveOrder: reserve, declineOrder: decline },
       knownSignupIds,
-      raid.maxPlayers
+      raid.maxPlayers,
+      plannableSignupIds
     );
     if (!r.hadInvalid) return { groups, reserve, decline };
     return {
@@ -2209,7 +2223,8 @@ export function RaidRosterPlanner({
           declineOrder,
         },
         knownSignupIds,
-        raid.maxPlayers
+        raid.maxPlayers,
+        plannableSignupIds
       );
       if (preSaveSanitize.hadInvalid) {
         plannerGroupsForSave = preSaveSanitize.payload.groups as PlannerGroup[];
@@ -2387,7 +2402,12 @@ export function RaidRosterPlanner({
           declineOrder: snapshotDecline,
         },
         new Set(snapshotSignups.map((s) => s.id)),
-        raid.maxPlayers
+        raid.maxPlayers,
+        new Set(
+          snapshotSignups
+            .filter((s) => typeNorm(s.signupType) !== 'declined')
+            .map((s) => s.id)
+        )
       );
       if (snapSanitized.hadInvalid) {
         snapshotGroups = snapSanitized.payload.groups as PlannerGroup[];

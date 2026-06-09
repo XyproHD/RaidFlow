@@ -8,6 +8,7 @@ import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import type { LeaderPlacement } from '@/lib/raid-leader-placement';
 import type { UnsetPlayersMode } from '@/lib/planner-unset-policy';
 import {
+  isPlannableRaidSignup,
   isPreservedAttendanceSignupType,
   normalizeSignupType,
   signupTypeNorm,
@@ -280,8 +281,9 @@ export async function executeRaidAnnounceTransaction(args: {
   /** Einmal laden: Validierung + Audit-Vorher + keine findUnique-Schleife in der Transaktion (Vercel/5s-Timeout). */
   const signupRows = await prisma.rfRaidSignup.findMany({ where: { raidId } });
   const known = new Set(signupRows.map((s) => s.id));
+  const plannable = new Set(signupRows.filter(isPlannableRaidSignup).map((s) => s.id));
   const { sanitizeAnnounceRaidPayload } = await import('@/lib/planner-roster-sanitize');
-  const sanitized = sanitizeAnnounceRaidPayload(args.payload, known, maxPlayers);
+  const sanitized = sanitizeAnnounceRaidPayload(args.payload, known, maxPlayers, plannable);
   if (sanitized.hadInvalid) {
     console.warn(
       `[raid announce] removed ${sanitized.removed.length} invalid signup id(s) from planner layout`,
@@ -306,6 +308,7 @@ export async function executeRaidAnnounceTransaction(args: {
             type: next.type,
             leaderPlacement: next.leaderPlacement,
             setConfirmed: next.setConfirmed,
+            // originalSignupType bleibt unverändert (Selbstanmeldung)
           },
         });
       }

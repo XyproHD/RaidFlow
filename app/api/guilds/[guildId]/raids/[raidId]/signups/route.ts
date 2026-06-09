@@ -59,7 +59,7 @@ export async function POST(
 
   const raid = await prisma.rfRaid.findFirst({
     where: { id: raidId, guildId },
-    select: { id: true, status: true, signupUntil: true },
+    select: { id: true, status: true, signupUntil: true, scheduledAt: true },
   });
   if (!raid) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -217,6 +217,9 @@ export async function DELETE(
     const status = access.reason === 'raid_not_found' ? 404 : 403;
     return NextResponse.json({ error: 'Forbidden' }, { status });
   }
+  if (!access.canSignup) {
+    return NextResponse.json({ error: 'Signup is closed for this raid' }, { status: 403 });
+  }
 
   const raid = await prisma.rfRaid.findFirst({
     where: { id: raidId, guildId },
@@ -260,39 +263,42 @@ export async function DELETE(
     );
   }
 
+  const { withdrawRaidSignupRows } = await import('@/lib/raid-signup-withdraw');
+  await withdrawRaidSignupRows(prisma, {
+    raidId,
+    signupIds: toRemove.map((s) => s.id),
+    changedByUserId: userId,
+    guildId,
+  });
+
   for (const existing of toRemove) {
     const deletedChar = existing.characterId
       ? await prisma.rfCharacter.findUnique({
-          where:  { id: existing.characterId },
+          where: { id: existing.characterId },
           select: { name: true },
         })
       : null;
-    const prevSnap = snapshotSignup(existing);
-    await prisma.rfRaidSignup.delete({ where: { id: existing.id } });
-    const { purgeSignupIdsFromRaidPlannerStorage } = await import(
-      '@/lib/raid-planner-json-cleanup'
-    );
-    await purgeSignupIdsFromRaidPlannerStorage(prisma, raidId, [existing.id]).catch((e) =>
-      console.error('[DELETE signup] planner json cleanup:', e)
-    );
-    const auditNewValue =
-      raid.status === 'announced' && existing.setConfirmed && withdrawReason.length >= WITHDRAW_REASON_MIN
-        ? JSON.stringify({ withdrawReason })
-        : null;
-    await logRaidSignupAudit({
-      signupId: existing.id,
-      raidId,
-      guildId,
-      changedByUserId: userId,
-      action: 'signup_delete',
-      oldValue: prevSnap,
-      newValue: auditNewValue,
-    });
+
+    if (
+      raid.status === 'announced' &&
+      existing.setConfirmed &&
+      withdrawReason.length >= WITHDRAW_REASON_MIN
+    ) {
+      await logRaidSignupAudit({
+        signupId: existing.id,
+        raidId,
+        guildId,
+        changedByUserId: userId,
+        action: 'signup_withdraw_reason',
+        newValue: JSON.stringify({ withdrawReason }),
+      });
+    }
+
     await postSignupChangeThreadNotice(raidId, 'unsignup', {
       characterName: deletedChar?.name ?? null,
-      signedSpec:    existing.signedSpec,
-      type:          existing.type,
-      punctuality:   existing.punctuality,
+      signedSpec: existing.signedSpec,
+      type: 'declined',
+      punctuality: existing.punctuality,
     });
 
     if (raid.status === 'announced' && existing.setConfirmed) {

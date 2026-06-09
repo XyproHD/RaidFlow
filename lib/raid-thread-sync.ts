@@ -19,7 +19,8 @@ import {
   fetchAllChannelMessages,
   type DiscordFetchedMessage,
 } from '@/lib/discord-guild-api';
-import { buildRaidEmbeds, buildRaidActionButtons } from '@/lib/raid-embed-builder';
+import { buildRaidActionButtons } from '@/lib/raid-embed-builder';
+import { buildRaidDiscordEmbedsForRaid } from '@/lib/raid-discord-display-snapshot';
 import { getAppConfig } from '@/lib/app-config';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
@@ -27,16 +28,6 @@ import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 // ---------------------------------------------------------------------------
 // Hilfsfunktionen
 // ---------------------------------------------------------------------------
-
-function getAppUrl(): string {
-  // User-sichtbare Links in Discord-Embeds müssen auf die öffentliche Webapp-URL
-  // (NEXTAUTH_URL) zeigen. WEBAPP_URL ist nur für Bot→Backend-Calls gedacht und
-  // kann auf eine interne/Preview-URL zeigen.
-  return (
-    process.env.NEXTAUTH_URL?.replace(/\/$/, '') ||
-    'http://localhost:3000'
-  );
-}
 
 async function loadRaidForSync(raidId: string) {
   return prisma.rfRaid.findUnique({
@@ -123,49 +114,7 @@ export async function syncRaidThreadSummary(
 
     const threadTitle = `${dungeonNames[0]} – ${raid.name}`.slice(0, 100);
 
-    const appConfig = await getAppConfig().catch(() => null);
-    const discordEmojis = appConfig?.discordEmojis ?? {};
-
-    const draftPlannerReserveOrder =
-      parseStoredAnnouncedPlannerJson(
-        (raid as { draftPlannerGroupsJson?: unknown }).draftPlannerGroupsJson
-      )?.reserveOrder ?? null;
-
-    const embedInput = {
-      raidId:             raid.id,
-      guildId:            raid.guildId,
-      raidName:           raid.name,
-      publicNote:         raid.note,
-      dungeonNames,
-      scheduledAt:        raid.scheduledAt,
-      signupUntil:        raid.signupUntil,
-      status:             raid.status,
-      maxPlayers:         raid.maxPlayers,
-      minTanks:           raid.minTanks,
-      minMelee:           raid.minMelee,
-      minRange:           raid.minRange,
-      minHealers:         raid.minHealers,
-      signupVisibility:   raid.signupVisibility,
-      announcedGroupsJson: raid.announcedPlannerGroupsJson,
-      draftPlannerReserveOrder,
-      discordEmojis,
-      signups: raid.signups.map(s => ({
-        id:              s.id,
-        userId:          s.userId,
-        characterName:   s.character?.name ?? null,
-        mainSpec:        s.character?.mainSpec ?? null,
-        signedSpec:      s.signedSpec,
-        isMain:          s.character?.isMain ?? null,
-        leaderPlacement: s.leaderPlacement,
-        isLate:          s.isLate,
-        punctuality:     s.punctuality,
-        type:            s.type,
-      })),
-      appUrl: getAppUrl(),
-      locale: 'de',
-    };
-
-    const embeds     = buildRaidEmbeds(embedInput);
+    const embeds     = await buildRaidDiscordEmbedsForRaid(raid);
     const components = buildRaidActionButtons(raid.id, raid.guildId);
 
     // --- Nachricht bearbeiten ---

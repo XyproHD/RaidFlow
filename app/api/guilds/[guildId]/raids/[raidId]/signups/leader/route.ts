@@ -163,6 +163,9 @@ export async function POST(
       data: {
         characterId,
         type: typeForDb,
+        ...(usesAnnouncedPlacementRules
+          ? {}
+          : { originalSignupType: existing.originalSignupType }),
         signedSpec: signedSpecRaw,
         note,
         leaderAllowsReserve: existing.forbidReserve ? false : existing.leaderAllowsReserve,
@@ -189,6 +192,7 @@ export async function POST(
       userId: targetUserId,
       characterId,
       type: typeForDb,
+      originalSignupType: typeNorm,
       signedSpec: signedSpecRaw,
       allowReserve: false,
       isLate: false,

@@ -92,28 +92,46 @@ function groupsWithPartySlots(payload: AnnounceRaidPayload): GroupWithParties[] 
 }
 
 /**
- * Entfernt Signup-IDs, die nicht in `knownSignupIds` vorkommen (z. B. gelöschte Anmeldung).
- * Synchronisiert partySlots und rosterOrder pro Gruppe.
+ * Entfernt ungültige Signup-IDs aus dem Layout:
+ * - nicht in `knownSignupIds` (gelöscht / existiert nicht)
+ * - nicht in `plannableSignupIds` (z. B. abgemeldet) aus Kader, Reserve und 5er-Slots
+ *   — im Absage-Block bleiben abgemeldete IDs erlaubt, wenn sie noch in der DB sind.
  */
 export function sanitizeAnnounceRaidPayload(
   payload: AnnounceRaidPayload,
   knownSignupIds: Set<string>,
-  maxPlayers: number
+  maxPlayers: number,
+  plannableSignupIds?: Set<string>
 ): PlannerSanitizeResult {
-  const referenced = allPayloadSignupIds(payload);
-  const unknownIds = new Set<string>();
-  for (const id of referenced) {
-    if (!knownSignupIds.has(id)) unknownIds.add(id);
+  const placeable = plannableSignupIds ?? knownSignupIds;
+  const stripRosterReserveParty = new Set<string>();
+  const stripDecline = new Set<string>();
+
+  for (const id of allPayloadSignupIds(payload)) {
+    if (!knownSignupIds.has(id)) {
+      stripRosterReserveParty.add(id);
+      stripDecline.add(id);
+      continue;
+    }
+    if (!placeable.has(id)) {
+      stripRosterReserveParty.add(id);
+    }
   }
 
-  if (unknownIds.size === 0) {
+  if (stripRosterReserveParty.size === 0 && stripDecline.size === 0) {
     return { payload, removed: [], hadInvalid: false };
   }
 
-  const removed = collectRemovalsForUnknownIds(payload, unknownIds);
+  const removed = [
+    ...collectRemovalsForUnknownIds(payload, stripRosterReserveParty).filter(
+      (r) => r.location !== 'decline'
+    ),
+    ...collectRemovalsForUnknownIds(payload, stripDecline).filter((r) => r.location === 'decline'),
+  ];
+
   const strippedGroups = stripSignupIdsFromPlannerGroups(
     groupsWithPartySlots(payload),
-    unknownIds,
+    stripRosterReserveParty,
     maxPlayers
   );
   const groups: AnnouncedGroupPayload[] = strippedGroups.map((g) => ({
@@ -126,8 +144,8 @@ export function sanitizeAnnounceRaidPayload(
   return {
     payload: {
       groups,
-      reserveOrder: payload.reserveOrder.filter((id) => !unknownIds.has(id)),
-      declineOrder: payload.declineOrder.filter((id) => !unknownIds.has(id)),
+      reserveOrder: payload.reserveOrder.filter((id) => !stripRosterReserveParty.has(id)),
+      declineOrder: payload.declineOrder.filter((id) => !stripDecline.has(id)),
     },
     removed,
     hadInvalid: removed.length > 0,

@@ -34,6 +34,7 @@ import {
   TextInputStyle,
 } from 'discord.js';
 import { handleAppHomeInteraction } from './app-home.js';
+import { scheduleRaidPostReconcile } from './raid-post-reconcile.js';
 
 const DISCORD_ADMINISTRATOR = Number(PermissionFlagsBits.Administrator);
 const DISCORD_MANAGE_GUILD = Number(PermissionFlagsBits.ManageGuild);
@@ -1864,6 +1865,11 @@ function scheduleDeleteSingleEphemeralReply(interaction) {
   setTimeout(() => interaction.deleteReply().catch(() => {}), RAID_EPHEMERAL_TTL_MS);
 }
 
+/** Stiller Hintergrund-Abgleich Raid-Post-Embed ↔ Backend (nach erfolgreicher Mutation). */
+function triggerRaidPostReconcile(raidId, message) {
+  scheduleRaidPostReconcile(client, getWebappJson, raidId, message ?? null);
+}
+
 async function handleRaidQuickjoin(interaction, raidId) {
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
   const raidPostMsg        = interaction.message;
@@ -1884,6 +1890,7 @@ async function handleRaidQuickjoin(interaction, raidId) {
     ? `⚡ ${json.message ?? 'Quickjoin erfolgreich!'}`
     : raidActionErrorText(json.error);
   await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -1940,6 +1947,7 @@ async function runRaidDecline(interaction, raidId, reason) {
     ? `🚫 ${json.message ?? 'Du bist als „nicht da“ markiert.'}`
     : raidActionOutcome(false, json, '');
   await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -2491,6 +2499,7 @@ async function handleJoin2NoteModal(interaction, raidId) {
       content: `⚠️ ${okCount} von ${selectedCharIds.length} Anmeldungen gespeichert.\n${errors.slice(0, 4).join('\n')}`,
       components: [],
     }).catch(() => {});
+    if (okCount > 0) triggerRaidPostReconcile(raidId, raidPostMsg);
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
@@ -2502,6 +2511,7 @@ async function handleJoin2NoteModal(interaction, raidId) {
     content: `✅ ${okCount} Charakter${okCount === 1 ? '' : 'e'} erfolgreich angemeldet.`,
     components: [],
   }).catch(() => {});
+  triggerRaidPostReconcile(raidId, raidPostMsg);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -2845,6 +2855,7 @@ async function handleSubmitJoin(interaction, raidId, charId) {
     await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
   }
   await interaction.editReply({ content: `✅ ${json.message ?? 'Anmeldung erfolgreich!'}`, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -2917,6 +2928,7 @@ async function handleSubmitEdit(interaction, raidId) {
     await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
   }
   await interaction.editReply({ content: `✅ ${json.message ?? 'Anmeldung aktualisiert!'}`, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -2987,6 +2999,7 @@ async function handleRaidUnregModal(interaction, raidId) {
     ? `✅ ${json.message ?? 'Abmeldung erfolgreich.'}`
     : raidActionErrorText(json.error);
   await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, null);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 

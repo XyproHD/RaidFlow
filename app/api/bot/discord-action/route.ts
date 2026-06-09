@@ -15,6 +15,7 @@ import {
   pushRaidDiscordPost,
   syncRaidThreadSummary,
 } from '@/lib/raid-thread-sync';
+import { getRaidDiscordDisplaySnapshot } from '@/lib/raid-discord-display-snapshot';
 import { getAppConfig } from '@/lib/app-config';
 import {
   ANNOUNCED_SET_PLAYER_COMMENT_MIN,
@@ -47,6 +48,9 @@ import {
  * GET /api/bot/discord-action?action=get-chars&discordUserId=...&raidId=...
  *   Gibt Charaktere des Users für die Gilde des Raids zurück.
  *
+ * GET /api/bot/discord-action?action=get-raid-display&raidId=...
+ *   Embed-Snapshot + Fingerprint für stillen Bot-Abgleich (nur Bot-Secret).
+ *
  * Auth: BOT_SETUP_SECRET (Bearer-Token).
  */
 
@@ -63,6 +67,17 @@ export async function GET(request: NextRequest) {
   const discordUserId = searchParams.get('discordUserId')?.trim() ?? '';
   const raidId        = searchParams.get('raidId')?.trim() ?? '';
 
+  if (action === 'get-raid-display') {
+    if (!raidId) {
+      return NextResponse.json({ error: 'Missing raidId' }, { status: 400 });
+    }
+    const snapshot = await getRaidDiscordDisplaySnapshot(raidId);
+    if (!snapshot) {
+      return NextResponse.json({ error: 'Raid display not available' }, { status: 404 });
+    }
+    return NextResponse.json(snapshot);
+  }
+
   if (!discordUserId || !raidId) {
     return NextResponse.json({ error: 'Missing discordUserId or raidId' }, { status: 400 });
   }
@@ -73,6 +88,7 @@ export async function GET(request: NextRequest) {
       id: true,
       guildId: true,
       signupUntil: true,
+      scheduledAt: true,
       status: true,
       discordLeaderChannelId: true,
     },
@@ -195,7 +211,7 @@ export async function POST(request: NextRequest) {
   // Raid-Lookup (guildId aus raidId ableiten)
   const raid = await prisma.rfRaid.findUnique({
     where:  { id: raidId },
-    select: { id: true, guildId: true, status: true, signupUntil: true },
+    select: { id: true, guildId: true, status: true, signupUntil: true, scheduledAt: true },
   });
   if (!raid) {
     return NextResponse.json({ error: 'Raid not found' }, { status: 404 });
@@ -284,7 +300,7 @@ export async function POST(request: NextRequest) {
   // Join / Edit-Signup
   // -------------------------------------------------------------------------
   if (action === 'join' || action === 'edit-signup') {
-    if (action === 'join' && !access.canSignup) {
+    if (!access.canSignup) {
       return NextResponse.json(
         { error: 'SIGNUP_CLOSED', message: 'Anmeldung ist geschlossen oder Raid nicht mehr offen.' },
         { status: 403 }
@@ -412,6 +428,12 @@ export async function POST(request: NextRequest) {
   // Nicht da (Declined)
   // -------------------------------------------------------------------------
   if (action === 'decline') {
+    if (!access.canSignup) {
+      return NextResponse.json(
+        { error: 'SIGNUP_CLOSED', message: 'Anmeldung ist geschlossen oder Raid nicht mehr offen.' },
+        { status: 403 }
+      );
+    }
     const declineReason = typeof body.reason === 'string' ? body.reason.trim() : '';
 
     const removedRows = await prisma.rfRaidSignup.findMany({
@@ -456,37 +478,49 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'NO_CHARACTER', message: 'Kein Charakter in dieser Gilde gefunden.' }, { status: 400 });
     }
 
-    await prisma.rfRaidSignup.deleteMany({ where: { raidId, userId: user.id } });
-
-    const { isCreate } = await commitRaidSelfSignupMutation({
-      raidId,
-      guildId:         raid.guildId,
-      userId:          user.id,
-      changedByUserId: user.id,
-      characterId:     markerChar.id,
-      typeNorm:        'declined',
-      signedSpecRaw:   markerChar.mainSpec,
-      onlySignedSpec:  false,
-      forbidReserve:   false,
-      punctuality:     'on_time',
-      note:            '',
-    });
+    const { withdrawRaidSignupRows } = await import('@/lib/raid-signup-withdraw');
+    let isCreate = false;
+    if (removedRows.length === 0) {
+      const result = await commitRaidSelfSignupMutation({
+        raidId,
+        guildId: raid.guildId,
+        userId: user.id,
+        changedByUserId: user.id,
+        characterId: markerChar.id,
+        typeNorm: 'declined',
+        signedSpecRaw: markerChar.mainSpec,
+        onlySignedSpec: false,
+        forbidReserve: false,
+        punctuality: 'on_time',
+        note: '',
+      });
+      isCreate = result.isCreate;
+    } else {
+      await withdrawRaidSignupRows(prisma, {
+        raidId,
+        signupIds: removedRows.map((r) => r.id),
+        changedByUserId: user.id,
+        guildId: raid.guildId,
+      });
+    }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
     for (const row of removedRows) {
       await postSignupChangeThreadNotice(raidId, 'unsignup', {
         characterName: row.character?.name ?? null,
-        signedSpec:    row.signedSpec,
-        type:          row.type,
-        punctuality:   row.punctuality,
+        signedSpec: row.signedSpec,
+        type: 'declined',
+        punctuality: row.punctuality,
       });
     }
-    await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
-      characterName: markerChar.name,
-      signedSpec:    markerChar.mainSpec,
-      type:          'declined',
-      punctuality:   'on_time',
-    });
+    if (removedRows.length === 0) {
+      await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
+        characterName: markerChar.name,
+        signedSpec: markerChar.mainSpec,
+        type: 'declined',
+        punctuality: 'on_time',
+      });
+    }
 
     if (raid.status === 'announced') {
       for (const row of setConfirmedRemoved) {
@@ -510,6 +544,12 @@ export async function POST(request: NextRequest) {
   // Abmelden (Unregister)
   // -------------------------------------------------------------------------
   if (action === 'unregister') {
+    if (!access.canSignup) {
+      return NextResponse.json(
+        { error: 'SIGNUP_CLOSED', message: 'Anmeldung ist geschlossen oder Raid nicht mehr offen.' },
+        { status: 403 }
+      );
+    }
     const reason        = typeof body.reason    === 'string' ? body.reason.trim()    : '';
     const signupIdParam = typeof body.signupId  === 'string' ? body.signupId.trim()  : '';
     const isLateCancellation = new Date() > raid.signupUntil;
@@ -547,29 +587,35 @@ export async function POST(request: NextRequest) {
     const unregActorLabel =
       typeof body.discordUserLabel === 'string' ? body.discordUserLabel.trim() : '';
 
-    await prisma.rfRaidSignup.deleteMany({ where: whereUnreg });
+    const { withdrawRaidSignupRows } = await import('@/lib/raid-signup-withdraw');
+    await withdrawRaidSignupRows(prisma, {
+      raidId,
+      signupIds: removedRows.map((r) => r.id),
+      changedByUserId: user.id,
+      guildId: raid.guildId,
+    });
 
     if (reason) {
       await prisma.rfAuditLog.create({
         data: {
-          entityType:     'raid_signup',
-          entityId:       raidId,
-          action:         'discord_unregister',
+          entityType: 'raid_signup',
+          entityId: raidId,
+          action: 'discord_unregister',
           changedByUserId: user.id,
-          guildId:        raid.guildId,
+          guildId: raid.guildId,
           raidId,
-          newValue:       JSON.stringify({ reason, isLateCancellation }),
+          newValue: JSON.stringify({ reason, isLateCancellation }),
         },
-      }).catch(() => { /* Audit-Fehler sind nicht kritisch */ });
+      }).catch(() => {});
     }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
     for (const row of removedRows) {
       await postSignupChangeThreadNotice(raidId, 'unsignup', {
         characterName: row.character?.name ?? null,
-        signedSpec:    row.signedSpec,
-        type:          row.type,
-        punctuality:   row.punctuality,
+        signedSpec: row.signedSpec,
+        type: 'declined',
+        punctuality: row.punctuality,
       });
       if (raid.status === 'announced' && row.setConfirmed) {
         await tryNotifyAnnouncedSetPlayerChange({

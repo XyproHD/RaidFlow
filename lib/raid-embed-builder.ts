@@ -11,7 +11,13 @@ import {
 import { TBC_CLASSES, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import type { AnnouncedGroupPayload } from '@/lib/raid-announce';
 import { PLANNER_PARTY_SIZE } from '@/lib/planner-party-slots';
-import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
+import {
+  filterSignupsByPublicBucket,
+  isPublishedRaidStatus,
+  orderedPublicReserveIds,
+  signupsForPublicRoleCounts,
+  type RaidDisplayContext,
+} from '@/lib/raid-signup-display';
 import type { DiscordEmbed, DiscordMessageComponent } from '@/lib/discord-guild-api';
 import { KOFI_URL } from '@/lib/support-links';
 
@@ -52,6 +58,8 @@ export type RaidEmbedSignup = {
   /** on_time | tight | late */
   punctuality?: string | null;
   type: string;
+  originalSignupType?: string | null;
+  setConfirmed?: boolean;
 };
 
 export type StoredAnnouncedGroups = {
@@ -547,16 +555,16 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
 
   const announcedGroups = parseStoredGroups(announcedGroupsJson);
 
+  const raidDisplayContext: RaidDisplayContext = {
+    status,
+    announcedPlannerGroupsJson: announcedGroupsJson,
+  };
   const signupByIdForReserve = new Map(signups.map(s => [s.id, s]));
-  const openReserveOrdered: RaidEmbedSignup[] =
-    !isAnnounced
-      ? orderedReserveSignupIdsForDisplay(
-          input.draftPlannerReserveOrder ?? null,
-          signups.map(s => ({ id: s.id, type: s.type })),
-        )
-          .map(id => signupByIdForReserve.get(id))
-          .filter((s): s is RaidEmbedSignup => !!s)
-      : [];
+  const openReserveOrdered: RaidEmbedSignup[] = !isAnnounced
+    ? orderedPublicReserveIds(signups, raidDisplayContext)
+        .map(id => signupByIdForReserve.get(id))
+        .filter((s): s is RaidEmbedSignup => !!s)
+    : [];
 
   const title = `⚔️ ${raidName} — ${dungeonNames.join(' + ')}`.slice(0, 256);
   const color = embedColor(status, signupUntil);
@@ -582,8 +590,10 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
     color,
   });
 
-  const mainSignups    = signups.filter(s => s.type !== 'reserve' && s.type !== 'declined');
-  const uniquePlayers  = new Set(mainSignups.map(s => s.userId)).size;
+  const mainSignups = filterSignupsByPublicBucket(signups, raidDisplayContext, 'main');
+  const uniquePlayers = isPublishedRaidStatus(status)
+    ? new Set(signupsForPublicRoleCounts(signups, raidDisplayContext).map(s => s.userId)).size
+    : new Set(mainSignups.map(s => s.userId)).size;
 
   const groupCount = announcedGroups?.groups.length ?? 1;
   const totalMax   = maxPlayers * groupCount;
@@ -671,11 +681,10 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
 
     packer.push({ name: '\u200b', value: '\u200b', inline: false });
     {
-      const rosterSet = new Set(announcedGroups.groups.flatMap(g => g.rosterOrder));
-      const reserveIds = orderedReserveSignupIdsForDisplay(
-        announcedGroups.reserveOrder,
-        signups.map(s => ({ id: s.id, type: s.type })),
-      ).filter(id => !rosterSet.has(id));
+      const reserveIds = orderedPublicReserveIds(signups, {
+        status,
+        announcedPlannerGroupsJson: announcedGroupsJson,
+      });
       const signupById2 = new Map(signups.map(s => [s.id, s]));
       const resLines = reserveIds
         .map(id => signupById2.get(id))
