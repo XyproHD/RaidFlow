@@ -61,6 +61,7 @@ export type DashboardSignupRow = {
   characterGearScore: number | null;
   characterIsMain: boolean | null;
   type: string;
+  onlySignedSpec: boolean;
 };
 
 export type DashboardCalendarRaid = {
@@ -668,7 +669,7 @@ export function DashboardClient({
                                   : null
                               }
                               signedSpec={specForIcon}
-                              onlySignedSpec
+                              onlySignedSpec={s.onlySignedSpec}
                               specLockTitle={tRaidDetail('badgeOnlySignedSpec')}
                               size={16}
                             />
