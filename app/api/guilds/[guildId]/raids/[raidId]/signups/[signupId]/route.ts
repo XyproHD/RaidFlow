@@ -5,7 +5,6 @@ import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 import {
   parseLeaderPlacement,
-  setConfirmedForPlacement,
   type LeaderPlacement,
 } from '@/lib/raid-leader-placement';
 import {
@@ -160,7 +159,7 @@ export async function PATCH(
   }
 
   let nextType = signup.type;
-  let setConfirmed = setConfirmedForPlacement(leaderPlacement);
+  let setConfirmed = false;
 
   const plannerDeclined = body.plannerDeclined === true;
 

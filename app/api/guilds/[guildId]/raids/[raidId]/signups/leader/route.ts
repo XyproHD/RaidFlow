@@ -6,7 +6,6 @@ import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 import {
   parseLeaderPlacement,
-  setConfirmedForPlacement,
   type LeaderPlacement,
 } from '@/lib/raid-leader-placement';
 import {
@@ -121,7 +120,7 @@ export async function POST(
   const displayName = displayNameForSignupRow({ character });
 
   let typeForDb = typeNorm;
-  let setConfirmed = setConfirmedForPlacement(leaderPlacement);
+  let setConfirmed = false;
 
   const plannerDeclined = body.plannerDeclined === true;
 
@@ -134,8 +133,6 @@ export async function POST(
       unsetPlayersMode,
     });
     setConfirmed = setConfirmedForAnnouncedPlacement(leaderPlacement, typeForDb);
-  } else {
-    setConfirmed = setConfirmedForPlacement(leaderPlacement);
   }
 
   if (existing) {

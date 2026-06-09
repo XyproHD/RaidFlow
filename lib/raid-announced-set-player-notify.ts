@@ -197,8 +197,6 @@ export async function notifyAnnouncedSetPlayerChange(args: {
   next?: SetPlayerSignupSnap | null;
   comment: string;
 }): Promise<void> {
-  if (!args.previous.setConfirmed) return;
-
   const raid = await prisma.rfRaid.findUnique({
     where: { id: args.raidId },
     select: {
@@ -211,6 +209,7 @@ export async function notifyAnnouncedSetPlayerChange(args: {
     },
   });
   if (!raid || raid.status !== 'announced') return;
+  if (!args.previous.setConfirmed) return;
   const channelId = raid.discordLeaderChannelId?.trim();
   if (!channelId) return;
 

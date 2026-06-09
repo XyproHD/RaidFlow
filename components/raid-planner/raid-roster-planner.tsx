@@ -31,6 +31,7 @@ import { sanitizePlannerLeaderHtml } from '@/lib/sanitize-planner-html';
 import type { AnnounceRaidPayload } from '@/lib/raid-announce';
 import {
   applyPlannerUnsetPolicy,
+  leaderPlacementForDraftPlanner,
   leaderPlacementForPlannerSlot,
   type UnsetPlayersMode,
 } from '@/lib/planner-unset-policy';
@@ -2241,14 +2242,33 @@ export function RaidRosterPlanner({
         reserveOrderWorking,
         signups.map((s) => ({ id: s.id, type: s.signupType }))
       ).filter((id) => !rosterSetForPlacement.has(id));
-      const policyApplied = applyPlannerUnsetPolicy({
-        allSignupIds: signups.map((s) => s.id),
-        rosterIdSet: rosterSetForPlacement,
-        reserveOrder: baseReserve,
-        declineOrder: declineOrderWorking,
-        forbidReserveById,
-        unsetPlayersMode,
-      });
+      const draftOnlySave = raidStatus === 'open';
+      const draftReserveOrder = draftOnlySave
+        ? baseReserve.filter((id) => {
+            const row = byId.get(id);
+            if (!row || rosterSetForPlacement.has(id)) return false;
+            const tn = typeNorm(row.signupType);
+            if (tn === 'reserve') return true;
+            return row.leaderPlacement === 'substitute';
+          })
+        : baseReserve;
+      const draftDeclineOrder = draftOnlySave
+        ? declineOrderWorking.filter((id) => {
+            const row = byId.get(id);
+            if (!row || rosterSetForPlacement.has(id)) return false;
+            return typeNorm(row.signupType) === 'declined';
+          })
+        : declineOrderWorking;
+      const policyApplied = draftOnlySave
+        ? { reserveOrder: draftReserveOrder, declineOrder: draftDeclineOrder }
+        : applyPlannerUnsetPolicy({
+            allSignupIds: signups.map((s) => s.id),
+            rosterIdSet: rosterSetForPlacement,
+            reserveOrder: baseReserve,
+            declineOrder: declineOrderWorking,
+            forbidReserveById,
+            unsetPlayersMode,
+          });
       const effectiveReserveOrder = policyApplied.reserveOrder;
       const effectiveDeclineOrder = policyApplied.declineOrder;
       const reservePlacementSet = new Set(effectiveReserveOrder);
@@ -2266,11 +2286,21 @@ export function RaidRosterPlanner({
       }
 
       const placementForId = (id: string): 'signup' | 'substitute' | 'confirmed' => {
+        const onRoster = rosterFlat.includes(id);
+        const onReserveBench = reservePlacementSet.has(id);
+        const onDeclineBlock = declinePlacementSet.has(id);
+        if (draftOnlySave) {
+          return leaderPlacementForDraftPlanner({
+            onRoster,
+            onReserveBench,
+            onDeclineBlock,
+          });
+        }
         const row = byId.get(id);
         return leaderPlacementForPlannerSlot({
-          onRoster: rosterFlat.includes(id),
-          onReserveBench: reservePlacementSet.has(id),
-          onDeclineBlock: declinePlacementSet.has(id),
+          onRoster,
+          onReserveBench,
+          onDeclineBlock,
           forbidReserve: !!row?.forbidReserve,
           unsetPlayersMode,
         });
@@ -2355,12 +2385,10 @@ export function RaidRosterPlanner({
         snapshotSignups = signups.map((row) => {
           const nid = map.get(row.id);
           if (!nid) return row;
-          const declined = effectiveDeclineOrder.includes(row.id);
           return {
             ...row,
             id: nid,
             leaderPlacement: placementForId(row.id),
-            signupType: declined ? 'declined' : row.signupType,
           };
         });
         snapshotGroups = plannerGroupsForSave.map((g) => ({
@@ -2377,19 +2405,21 @@ export function RaidRosterPlanner({
       const snapRosterFlat = allRosterIds(snapshotGroups);
       const snapRosterSet = new Set(snapRosterFlat);
       const snapForbid = new Map(snapshotSignups.map((s) => [s.id, !!s.forbidReserve]));
-      const snapPolicy = applyPlannerUnsetPolicy({
-        allSignupIds: snapshotSignups.map((s) => s.id),
-        rosterIdSet: snapRosterSet,
-        reserveOrder: orderedReserveSignupIdsForDisplay(
-          snapshotReserve,
-          snapshotSignups.map((s) => ({ id: s.id, type: s.signupType }))
-        ).filter((id) => !snapRosterSet.has(id)),
-        declineOrder: snapshotDecline,
-        forbidReserveById: snapForbid,
-        unsetPlayersMode,
-      });
-      snapshotReserve = snapPolicy.reserveOrder;
-      snapshotDecline = snapPolicy.declineOrder;
+      if (!draftOnlySave) {
+        const snapPolicy = applyPlannerUnsetPolicy({
+          allSignupIds: snapshotSignups.map((s) => s.id),
+          rosterIdSet: snapRosterSet,
+          reserveOrder: orderedReserveSignupIdsForDisplay(
+            snapshotReserve,
+            snapshotSignups.map((s) => ({ id: s.id, type: s.signupType }))
+          ).filter((id) => !snapRosterSet.has(id)),
+          declineOrder: snapshotDecline,
+          forbidReserveById: snapForbid,
+          unsetPlayersMode,
+        });
+        snapshotReserve = snapPolicy.reserveOrder;
+        snapshotDecline = snapPolicy.declineOrder;
+      }
       snapshotGroups = stripSignupIdsFromPlannerGroups(
         snapshotGroups,
         new Set(snapshotDecline),
@@ -2465,7 +2495,11 @@ export function RaidRosterPlanner({
       const reserveSnapSet = new Set(snapshotReserve);
       snapshotSignups = snapshotSignups.map((s) => {
         if (declineSnapSet.has(s.id)) {
-          return { ...s, leaderPlacement: 'signup' as const, signupType: 'declined' };
+          return {
+            ...s,
+            leaderPlacement: 'signup' as const,
+            ...(draftOnlySave ? {} : { signupType: 'declined' as const }),
+          };
         }
         if (rosterSnapSet.has(s.id)) {
           return { ...s, leaderPlacement: 'confirmed' as const };
