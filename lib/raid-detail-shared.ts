@@ -3,6 +3,8 @@
  * Client-Komponenten nur hier importieren — nicht @/lib/raid-detail-access.
  */
 
+import { isRaidPlayerSignupLocked } from '@/lib/raid-player-signup-lock';
+
 export type RaidPageMode = 'view' | 'edit' | 'signup';
 
 /** Nach Ablauf „Anmeldung bis“ nur noch Reserve; sonst volle Typen. */
@@ -13,6 +15,7 @@ export type RaidSignupSelfSnapshot = {
   id: string;
   characterId: string | null;
   type: string;
+  originalSignupType?: string | null;
   isLate: boolean;
   punctuality: 'on_time' | 'tight' | 'late';
   note: string | null;
@@ -26,7 +29,14 @@ export type RaidSignupSelfSnapshot = {
 export function computeRaidSignupPhase(raid: {
   status: string;
   signupUntil: Date;
+  scheduledAt: Date;
 }): RaidSignupPhase {
+  if (raid.status === 'cancelled' || raid.status === 'completed' || raid.status === 'locked') {
+    return 'closed';
+  }
+  if (isRaidPlayerSignupLocked(raid)) {
+    return 'closed';
+  }
   if (raid.status === 'announced') return 'reserve_only';
   if (raid.status !== 'open') return 'closed';
   if (Date.now() <= raid.signupUntil.getTime()) return 'full';

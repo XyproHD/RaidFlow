@@ -41,7 +41,16 @@ import {
 import type { RaidSignupPhase, RaidSignupSelfSnapshot } from '@/lib/raid-detail-shared';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 import { normalizeSignupPunctuality } from '@/lib/raid-signup-constants';
-import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
+import {
+  effectiveOriginalSignupType,
+  filterSignupsByPublicBucket,
+  isPublishedRaidStatus,
+  orderedPublicReserveIds,
+  publishedDeclineIds,
+  signupsForPublicRoleCounts,
+  type RaidDisplayContext,
+} from '@/lib/raid-signup-display';
+import { isRaidPlayerSignupLocked } from '@/lib/raid-player-signup-lock';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
@@ -76,11 +85,14 @@ export type RaidDetailRaid = {
   dungeon: { name: string; names: { name: string }[] };
   dungeonNames?: string[];
   raidGroupRestriction: { name: string } | null;
+  draftPlannerGroupsJson?: unknown;
+  announcedPlannerGroupsJson?: unknown;
   signups: {
     id: string;
     userId: string;
     characterId?: string | null;
     type: string;
+    originalSignupType?: string | null;
     isLate: boolean;
     punctuality?: string | null;
     note: string | null;
@@ -122,7 +134,7 @@ function signupTypeNorm(v: string) {
 
 /** Bin da / Unklar / Reserve / Nicht da — Icon nach Pünktlichkeit, Erklärung im title. */
 function signupAttendanceKindMeta(
-  signup: { type: string },
+  signup: { type: string; originalSignupType?: string | null },
   raidStatus: string,
   t: (key: string) => string
 ): { sym: string; title: string } {
@@ -132,7 +144,9 @@ function signupAttendanceKindMeta(
   if (raidStatus === 'completed') {
     return { sym: '✓', title: t('raidStatus_completed') };
   }
-  const tn = signupTypeNorm(signup.type);
+  const rawType =
+    raidStatus === 'open' ? (signup.originalSignupType ?? signup.type) : signup.type;
+  const tn = signupTypeNorm(rawType);
   if (tn === 'declined') return { sym: '✕', title: t('signupType_declined') };
   if (tn === 'uncertain') return { sym: '?', title: t('signupType_uncertain') };
   if (tn === 'reserve') return { sym: '🪑', title: t('signupType_reserve') };
@@ -182,7 +196,13 @@ function signupIndicator(
   return { icon: '🟢', isClosed: false };
 }
 
-function raidSignupToAnmeldungRow(s: RaidDetailRaid['signups'][number]): AnmeldungRow {
+function raidSignupToAnmeldungRow(
+  s: RaidDetailRaid['signups'][number],
+  opts?: { useOriginalSignupType?: boolean }
+): AnmeldungRow {
+  const displayType = opts?.useOriginalSignupType
+    ? (s.originalSignupType ?? s.type)
+    : s.type;
   return {
     id: s.id,
     userId: s.userId,
@@ -194,7 +214,7 @@ function raidSignupToAnmeldungRow(s: RaidDetailRaid['signups'][number]): Anmeldu
         }
       : null,
     signedSpec: s.signedSpec,
-    type: s.type,
+    type: displayType,
     isLate: s.isLate,
     note: s.note,
     leaderAllowsReserve: s.leaderAllowsReserve,
@@ -350,38 +370,54 @@ export function RaidDetailView({
 
   const signupById = useMemo(() => new Map(raid.signups.map((s) => [s.id, s])), [raid.signups]);
 
-  const rows: AnmeldungRow[] = visibleSignups
-    .filter((s) => {
-      const tn = signupTypeNorm(s.type);
-      return tn !== 'declined' && tn !== 'reserve';
-    })
-    .map(raidSignupToAnmeldungRow);
+  const raidDisplayContext: RaidDisplayContext = useMemo(
+    () => ({
+      status: raid.status,
+      draftPlannerGroupsJson: raid.draftPlannerGroupsJson,
+      announcedPlannerGroupsJson: raid.announcedPlannerGroupsJson,
+    }),
+    [raid.status, raid.draftPlannerGroupsJson, raid.announcedPlannerGroupsJson]
+  );
+
+  const showRawSignupLists = !isPublishedRaidStatus(raid.status);
+
+  const rows: AnmeldungRow[] = useMemo(
+    () =>
+      filterSignupsByPublicBucket(visibleSignups, raidDisplayContext, 'main').map((s) =>
+        raidSignupToAnmeldungRow(s, { useOriginalSignupType: true })
+      ),
+    [visibleSignups, raidDisplayContext]
+  );
 
   const reserveRows: AnmeldungRow[] = useMemo(() => {
     const byId = new Map(visibleSignups.map((s) => [s.id, s]));
-    const orderedIds = orderedReserveSignupIdsForDisplay(
-      plannerReserveOrder,
-      visibleSignups.map((s) => ({ id: s.id, type: s.type }))
-    );
-    return orderedIds
+    return orderedPublicReserveIds(visibleSignups, raidDisplayContext)
       .map((id) => byId.get(id))
       .filter(Boolean)
-      .map((s) => raidSignupToAnmeldungRow(s!));
-  }, [plannerReserveOrder, visibleSignups]);
+      .map((s) => raidSignupToAnmeldungRow(s!, { useOriginalSignupType: true }));
+  }, [visibleSignups, raidDisplayContext]);
 
-  /** Veröffentlichter Stand: gleiche Reserve-Logik wie „Reserve Kader“, ohne Spieler aus den Gruppen-Rostern. */
-  const publishedReserveOrderedIds = useMemo(() => {
-    if (!announcedLayout) return [];
-    const rosterSet = new Set(announcedLayout.groupMeta.flatMap((g) => g.rosterOrder));
-    return orderedReserveSignupIdsForDisplay(
-      announcedLayout.reserveOrder,
-      visibleSignups.map((s) => ({ id: s.id, type: s.type }))
-    ).filter((id) => !rosterSet.has(id));
-  }, [announcedLayout, visibleSignups]);
+  const publishedReserveOrderedIds = useMemo(
+    () => orderedPublicReserveIds(raid.signups, raidDisplayContext),
+    [raid.signups, raidDisplayContext]
+  );
 
-  const absagenRows: AnmeldungRow[] = visibleSignups
-    .filter((s) => signupTypeNorm(s.type) === 'declined')
-    .map(raidSignupToAnmeldungRow);
+  const absagenRows: AnmeldungRow[] = useMemo(() => {
+    if (isPublishedRaidStatus(raid.status)) {
+      const declineIds = new Set(publishedDeclineIds(raidDisplayContext));
+      return visibleSignups
+        .filter(
+          (s) =>
+            declineIds.has(s.id) ||
+            effectiveOriginalSignupType(s) === 'declined' ||
+            signupTypeNorm(s.type) === 'declined'
+        )
+        .map((s) => raidSignupToAnmeldungRow(s));
+    }
+    return filterSignupsByPublicBucket(visibleSignups, raidDisplayContext, 'declined').map(
+      (s) => raidSignupToAnmeldungRow(s, { useOriginalSignupType: true })
+    );
+  }, [visibleSignups, raidDisplayContext, raid.status]);
 
   const visibilityLabel =
     raid.signupVisibility === 'raid_leader_only' ? t('visibilityLeaders') : t('visibilityPublic');
@@ -394,18 +430,20 @@ export function RaidDetailView({
   };
 
   const overviewSummaryProps: RaidOverviewSummaryProps = useMemo(() => {
-    const roleAttendance = computeRoleAttendanceFromSignups(raid.signups);
-    const roleClassByRole = computeRoleClassCountsByRole(raid.signups);
-    const specAttendanceByKey = buildSpecAttendanceByMinKeys(
-      raid.signups.map((s) => ({
-        type: s.type,
+    const overviewSignups = signupsForPublicRoleCounts(raid.signups, raidDisplayContext).map(
+      (s) => ({
+        type: isPublishedRaidStatus(raid.status)
+          ? s.type
+          : effectiveOriginalSignupType(s),
         signedSpec: s.signedSpec,
         character: s.character ? { mainSpec: s.character.mainSpec } : null,
         punctuality: s.punctuality,
         isLate: s.isLate,
-      })),
-      minSpecsObj
+      })
     );
+    const roleAttendance = computeRoleAttendanceFromSignups(overviewSignups);
+    const roleClassByRole = computeRoleClassCountsByRole(overviewSignups);
+    const specAttendanceByKey = buildSpecAttendanceByMinKeys(overviewSignups, minSpecsObj);
     return {
       roleAttendance,
       roleClassByRole,
@@ -415,6 +453,8 @@ export function RaidDetailView({
     };
   }, [
     raid.signups,
+    raid.status,
+    raidDisplayContext,
     minSpecsObj,
     raid.minTanks,
     raid.minMelee,
@@ -617,6 +657,14 @@ export function RaidDetailView({
                   </button>
                 ) : null}
               </div>
+              {!canSignup &&
+              (raid.status === 'open' || raid.status === 'announced') &&
+              isRaidPlayerSignupLocked({
+                status: raid.status,
+                scheduledAt: new Date(raid.scheduledAt),
+              }) ? (
+                <p className="px-4 pb-2 text-xs text-muted-foreground">{t('signupLockedAfterRaidStart')}</p>
+              ) : null}
               <div className="px-4 py-3">
                 {hasMySignup ? (
                   <div className="overflow-x-auto -mx-1">
@@ -645,7 +693,8 @@ export function RaidDetailView({
                                 : punct === 'tight'
                                   ? t('punctualityTight')
                                   : t('punctualityLate');
-                            const showRowMenu = raid.status === 'open' || raid.status === 'announced';
+                            const showRowMenu =
+                              canSignup && (raid.status === 'open' || raid.status === 'announced');
                             const noteLine = signup.note?.trim() ?? '';
                             const hasNote = noteLine.length > 0;
                             const attKind = signupAttendanceKindMeta(signup, raid.status, t);
@@ -878,8 +927,14 @@ export function RaidDetailView({
             ))}
 
             {(() => {
+              const publishedDeclineIdSet = new Set(publishedDeclineIds(raidDisplayContext));
               const publishedDeclinedRows = raid.signups
-                .filter((s) => (s.type === 'main' ? 'normal' : s.type) === 'declined')
+                .filter(
+                  (s) =>
+                    publishedDeclineIdSet.has(s.id) ||
+                    effectiveOriginalSignupType(s) === 'declined' ||
+                    signupTypeNorm(s.type) === 'declined'
+                )
                 .map((s) => raidSignupToAnmeldungRow(s));
               const hasPublishedDeclined = publishedDeclinedRows.length > 0;
               return (
@@ -925,34 +980,38 @@ export function RaidDetailView({
       ) : null}
 
 
-      <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
-        {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
-          <p className="text-xs text-muted-foreground px-4 py-3 border-b border-border">{t('signupListHidden')}</p>
-        ) : null}
+      {showRawSignupLists ? (
+        <section className="rounded-xl border border-border bg-card/40 shadow-sm overflow-hidden">
+          {raid.signupVisibility === 'raid_leader_only' && !canEdit ? (
+            <p className="text-xs text-muted-foreground px-4 py-3 border-b border-border">
+              {t('signupListHidden')}
+            </p>
+          ) : null}
 
-        <div className="divide-y divide-border">
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground px-4 py-2.5 bg-muted/20 border-b border-border">
-              {t('anmeldungenHeading')}
-            </h3>
-            <RaidAnmeldungen rows={rows} canEdit={canEdit} raidStatus={raid.status} />
-          </div>
+          <div className="divide-y divide-border">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-foreground px-4 py-2.5 bg-muted/20 border-b border-border">
+                {t('anmeldungenHeading')}
+              </h3>
+              <RaidAnmeldungen rows={rows} canEdit={canEdit} raidStatus={raid.status} />
+            </div>
 
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground px-4 py-2.5 bg-muted/20 border-b border-border">
-              {t('signupsReserveHeading')}
-            </h3>
-            <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} raidStatus={raid.status} />
-          </div>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-foreground px-4 py-2.5 bg-muted/20 border-b border-border">
+                {t('signupsReserveHeading')}
+              </h3>
+              <RaidAnmeldungen rows={reserveRows} canEdit={canEdit} raidStatus={raid.status} />
+            </div>
 
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground px-4 py-2.5 bg-muted/20 border-b border-border">
-              {t('sectionAbsagen')}
-            </h3>
-            <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} raidStatus={raid.status} />
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-foreground px-4 py-2.5 bg-muted/20 border-b border-border">
+                {t('sectionAbsagen')}
+              </h3>
+              <RaidAnmeldungen rows={absagenRows} canEdit={canEdit} raidStatus={raid.status} />
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       {leaderMenuOpen && leaderMenuPos
         ? createPortal(

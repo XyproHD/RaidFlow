@@ -291,6 +291,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       characterGearScore: s.character?.gearScore ?? null,
       characterIsMain: s.character?.isMain ?? null,
       type: s.type,
+      onlySignedSpec: s.onlySignedSpec ?? false,
     }));
 
     return (

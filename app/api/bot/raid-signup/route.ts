@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     const status = access.reason === 'raid_not_found' ? 404 : 403;
     return NextResponse.json({ error: 'Forbidden' }, { status });
   }
-  if (!access.canSignup && action !== 'delete') {
+  if (!access.canSignup) {
     return NextResponse.json({ error: 'Signup is closed for this raid' }, { status: 403 });
   }
 
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
   const raid = await prisma.rfRaid.findFirst({
     where: { id: raidId, guildId },
-    select: { id: true, guildId: true, status: true, signupUntil: true },
+    select: { id: true, guildId: true, status: true, signupUntil: true, scheduledAt: true },
   });
   if (!raid) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });

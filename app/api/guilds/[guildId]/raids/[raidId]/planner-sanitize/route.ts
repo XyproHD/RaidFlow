@@ -10,6 +10,7 @@ import {
   type PlannerSanitizeRemoval,
 } from '@/lib/planner-roster-sanitize';
 import { sanitizeRaidPlannerStorageAgainstSignups } from '@/lib/raid-planner-json-cleanup';
+import { isPlannableRaidSignup } from '@/lib/raid-signup-constants';
 
 /**
  * POST /api/guilds/[guildId]/raids/[raidId]/planner-sanitize
@@ -49,9 +50,10 @@ export async function POST(
   const persist = body.persist === true;
   const signupRows = await prisma.rfRaidSignup.findMany({
     where: { raidId },
-    select: { id: true, characterId: true },
+    select: { id: true, characterId: true, type: true, originalSignupType: true },
   });
   const known = new Set(signupRows.map((s) => s.id));
+  const plannable = new Set(signupRows.filter(isPlannableRaidSignup).map((s) => s.id));
   const characterBySignupId = new Map(
     signupRows.map((s) => [s.id, s.characterId] as const)
   );
@@ -64,7 +66,7 @@ export async function POST(
     const parsed = parseStoredAnnouncedPlannerJson(clientLayout);
     if (parsed) {
       layoutsChecked.push('client');
-      const s = sanitizeAnnounceRaidPayload(parsed, known, raid.maxPlayers);
+      const s = sanitizeAnnounceRaidPayload(parsed, known, raid.maxPlayers, plannable);
       removed.push(...s.removed);
       if (persist && s.hadInvalid) {
         if (raid.status === 'open') {
@@ -114,7 +116,7 @@ export async function POST(
     const parsed = parseStoredAnnouncedPlannerJson(raw);
     if (!parsed) continue;
     layoutsChecked.push(key);
-    const s = sanitizeAnnounceRaidPayload(parsed, known, raid.maxPlayers);
+    const s = sanitizeAnnounceRaidPayload(parsed, known, raid.maxPlayers, plannable);
     removed.push(...s.removed);
   }
 

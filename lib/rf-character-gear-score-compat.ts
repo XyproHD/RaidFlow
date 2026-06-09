@@ -134,6 +134,7 @@ type SignupForDashboard = Prisma.RfRaidSignupGetPayload<{
     raidId: true;
     type: true;
     signedSpec: true;
+    onlySignedSpec: true;
     leaderPlacement: true;
     setConfirmed: true;
     character: {
@@ -202,6 +203,7 @@ export async function findManyRaidSignupsForDashboard(
     raidId: true,
     type: true,
     signedSpec: true,
+    onlySignedSpec: true,
     leaderPlacement: true,
     setConfirmed: true,
     character: {
@@ -234,6 +236,7 @@ export async function findManyRaidSignupsForDashboard(
     raidId: true,
     type: true,
     signedSpec: true,
+    onlySignedSpec: true,
     leaderPlacement: true,
     setConfirmed: true,
     character: {

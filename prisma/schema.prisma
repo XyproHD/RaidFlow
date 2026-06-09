@@ -275,8 +275,10 @@ model RfRaidSignup {
   raidId        String    @map("raid_id")
   userId        String    @map("user_id")
   characterId   String?   @map("character_id")
-  /// normal | uncertain | reserve | declined (ältere DB: main → normal)
+  /// normal | uncertain | reserve | declined (ältere DB: main → normal); Effektiv-Status nach Ankündigung
   type          String
+  /// Unveränderte Selbstanmeldung des Spielers (nur User-Mutationen)
+  originalSignupType String @default("normal") @map("original_signup_type")
   allowReserve  Boolean   @default(false) @map("allow_reserve")
   note          String?   @db.Text
   /// „Komme verspätet“ – dann Notiz mit Verspätungstext verpflichtend (spiegelt punctuality === late)

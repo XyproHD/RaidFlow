@@ -7,6 +7,20 @@ export function parseUnsetPlayersMode(raw: unknown): UnsetPlayersMode | undefine
   return undefined;
 }
 
+/**
+ * Planer-Entwurf (offener Raid): nur explizite Slots.
+ * Die Raid-Option „Nicht gesetzte Spieler“ greift erst bei der Ankündigung.
+ */
+export function leaderPlacementForDraftPlanner(params: {
+  onRoster: boolean;
+  onReserveBench: boolean;
+  onDeclineBlock: boolean;
+}): LeaderPlacement {
+  if (params.onRoster) return 'confirmed';
+  if (params.onReserveBench) return 'substitute';
+  return 'signup';
+}
+
 /** Platzierung für Speichern/Ankündigen aus Kader, Ersatzbank, Absage-Block und Raid-Option. */
 export function leaderPlacementForPlannerSlot(params: {
   onRoster: boolean;

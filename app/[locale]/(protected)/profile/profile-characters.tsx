@@ -74,7 +74,12 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
   const t = useTranslations('profile');
   const locale = useLocale();
   const router = useRouter();
-  const singleGuild = guilds.length === 1 ? guilds[0] : null;
+  const [guildOptions, setGuildOptions] = useState(guilds);
+  useEffect(() => {
+    setGuildOptions(guilds);
+  }, [guilds]);
+
+  const singleGuild = guildOptions.length === 1 ? guildOptions[0] : null;
   const [list, setList] = useState(initialData);
   const [modalOpen, setModalOpen] = useState<'add' | 'edit' | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -143,16 +148,46 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
     setEditHadBnetAtOpen(false);
   }, []);
 
-  const openAdd = useCallback(() => {
+  const [guildSyncOnAdd, setGuildSyncOnAdd] = useState(false);
+
+  const openAdd = useCallback(async () => {
     setEditingId(null);
     resetForm();
+    if (guildOptions.length === 0) {
+      setGuildSyncOnAdd(true);
+      try {
+        const res = await fetch('/api/user/sync-guild-membership', {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            guilds?: Array<{ id: string; name: string; battlenetRealmId?: string | null }>;
+          };
+          if (Array.isArray(data.guilds) && data.guilds.length > 0) {
+            setGuildOptions(
+              data.guilds.map((g) => ({
+                id: g.id,
+                name: g.name,
+                battlenetRealmId: g.battlenetRealmId ?? null,
+              }))
+            );
+            router.refresh();
+          }
+        }
+      } catch (e) {
+        console.error('[ProfileCharacters] guild sync on add', e);
+      } finally {
+        setGuildSyncOnAdd(false);
+      }
+    }
     setModalOpen('add');
-  }, [resetForm]);
+  }, [guildOptions.length, resetForm, router]);
 
   const openEdit = useCallback((c: CharacterRow) => {
     setEditingId(c.id);
     setName(c.name);
-    setGuildId(c.guildId || (guilds.length === 1 ? guilds[0].id : ''));
+    setGuildId(c.guildId || (guildOptions.length === 1 ? guildOptions[0].id : ''));
     const parsed = getSpecByDisplayName(c.mainSpec);
     if (parsed) {
       setClassId(parsed.classId);
@@ -179,7 +214,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
     setEditHadBnetAtOpen(!!c.hasBattlenet);
     setBnetValidatedName(c.hasBattlenet ? c.name.trim() : null);
     setModalOpen('edit');
-  }, [guilds]);
+  }, [guildOptions]);
 
   const closeModal = useCallback(() => {
     setModalOpen(null);
@@ -321,7 +356,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
       return;
     }
     if (!autoRealmId) return;
-    if (guilds.length > 0 && !guildId) return;
+    if (guildOptions.length > 0 && !guildId) return;
     if (!name.trim() || !classId || !mainSpecId) return;
     const mainSpec = getSpecDisplayName(classId, mainSpecId);
     setLoading(true);
@@ -393,7 +428,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
     e.preventDefault();
     setError(null);
     if (!editingId || !name.trim() || !classId || !mainSpecId) return;
-    if (guilds.length > 0 && !guildId) return;
+    if (guildOptions.length > 0 && !guildId) return;
     const editBnetOk =
       name.trim() === initialEditName ||
       (!!pendingBattlenetProfile &&
@@ -557,7 +592,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
     if (modalOpen !== 'edit') return;
     if (realmOptions.length === 0) return;
     if (!guildId) return;
-    const g = guilds.find((x) => x.id === guildId);
+    const g = guildOptions.find((x) => x.id === guildId);
     const rid = g?.battlenetRealmId;
     if (!rid) return;
     const realm = realmOptions.find((r) => r.id === rid);
@@ -565,14 +600,14 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
       setAutoRealmId(realm.id);
       setRealmComboInput(formatRealmLabel(realm));
     }
-  }, [guildId, guilds, realmOptions, modalOpen]);
+  }, [guildId, guildOptions, realmOptions, modalOpen]);
 
   useEffect(() => {
     if (modalOpen !== 'add' || !pendingBattlenetProfile) return;
-    if (guilds.length === 1) {
-      setGuildId(guilds[0].id);
+    if (guildOptions.length === 1) {
+      setGuildId(guildOptions[0].id);
     }
-  }, [modalOpen, pendingBattlenetProfile, guilds]);
+  }, [modalOpen, pendingBattlenetProfile, guildOptions]);
 
   useEffect(() => {
     if (modalOpen !== 'edit' || !editingId) return;
@@ -641,7 +676,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
     };
   }, [modalOpen, t, locale]);
 
-  const userHasGuilds = guilds.length > 0;
+  const userHasGuilds = guildOptions.length > 0;
   const addBnetAligned =
     modalOpen === 'add' &&
     !!pendingBattlenetProfile &&
@@ -815,7 +850,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
                 {name.trim() || '…'}
               </span>
               <span className="text-sm text-muted-foreground text-center truncate min-w-0">
-                {guildId ? (guilds.find((g) => g.id === guildId)?.name ?? '–') : '–'}
+                {guildId ? (guildOptions.find((g) => g.id === guildId)?.name ?? '–') : '–'}
               </span>
             </div>
           )}
@@ -823,7 +858,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
           <>
             {!userHasGuilds ? (
               <p className="text-sm text-muted-foreground">{t('noRaidFlowGuildMembership')}</p>
-            ) : guilds.length > 1 ? (
+            ) : guildOptions.length > 1 ? (
               <>
                 <label className="text-sm font-medium">
                   {t('guild')} <span className="text-destructive">*</span>
@@ -835,7 +870,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
                   required
                 >
                   <option value="">{t('guildSelectPlaceholder')}</option>
-                  {guilds.map((g) => (
+                  {guildOptions.map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}
                     </option>
@@ -943,7 +978,7 @@ export const ProfileCharacters = forwardRef<ProfileCharactersHandle, {
                 !mainSpecId ||
                 (modalOpen === 'add' && !addBnetAligned) ||
                 (modalOpen === 'add' && !autoRealmId) ||
-                (guilds.length > 0 && !guildId)
+                (guildOptions.length > 0 && !guildId)
               }
               className="rounded-lg bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
             >

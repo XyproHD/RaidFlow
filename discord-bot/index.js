@@ -34,6 +34,7 @@ import {
   TextInputStyle,
 } from 'discord.js';
 import { handleAppHomeInteraction } from './app-home.js';
+import { scheduleRaidPostReconcile } from './raid-post-reconcile.js';
 
 const DISCORD_ADMINISTRATOR = Number(PermissionFlagsBits.Administrator);
 const DISCORD_MANAGE_GUILD = Number(PermissionFlagsBits.ManageGuild);
@@ -1467,10 +1468,13 @@ async function getDiscordAction(params) {
   return { ok: res.ok, status: res.status, json };
 }
 
-function raidActionErrorText(err) {
+function raidActionErrorText(err, json) {
   const map = {
     NOT_LINKED:        '❌ Dein Discord-Konto ist noch nicht mit RaidFlow verknüpft. Nutze die RaidFlow-Startansicht (App Home), um dein Konto zu verbinden.',
-    NO_CHARACTER:      '❌ Kein Charakter für diese Gilde gefunden. Bitte erst einen Charakter anlegen.',
+    NOT_GUILD_MEMBER:  '❌ Du bist kein RaidFlow-Mitglied dieser Gilde.',
+    NO_CHARACTER:      json?.profileUrl
+      ? `❌ Kein Charakter für diese Gilde. Lege einen Charakter in der WebApp an: ${json.profileUrl}`
+      : '❌ Kein Charakter für diese Gilde gefunden. Bitte erst einen Charakter in der WebApp anlegen.',
     ALREADY_SIGNED_UP: '⚠️ Du bist bereits angemeldet.',
     SIGNUP_CLOSED:     '🔒 Die Anmeldung ist geschlossen oder der Raid nicht mehr offen.',
     NOT_SIGNED_UP:     '⚠️ Du hast keine aktive Anmeldung.',
@@ -1478,6 +1482,80 @@ function raidActionErrorText(err) {
     COMMENT_REQUIRED:  '⚠️ Als gesetzter Spieler ist eine Begründung nötig (mind. 10 Zeichen).',
   };
   return map[err] ?? `❌ Fehler: ${String(err)}`;
+}
+
+async function fetchRaidParticipantState(interaction, raidId) {
+  const params = {
+    action: 'raid-participant-state',
+    discordUserId: interaction.user.id,
+    raidId,
+  };
+  if (interaction.guildId) params.discordGuildId = interaction.guildId;
+  return getDiscordAction(params);
+}
+
+async function showAssignCharacterMenu(interaction, raidId, assignableChars, purpose) {
+  const { StringSelectMenuBuilder, ActionRowBuilder } = await import('discord.js');
+  const raidNoDash = raidId.replace(/-/g, '');
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(`rf:assignchar:${raidNoDash}:${purpose}`)
+    .setPlaceholder('Charakter der Gilde zuordnen…')
+    .addOptions(assignableChars.slice(0, 25).map((c) => ({
+      label: truncateDiscordLabel(`${c.name} (${c.mainSpec})`, 100),
+      value: c.id,
+      description: c.isMain ? 'Hauptcharakter' : 'Twink',
+    })));
+  await interaction.editReply({
+    content:
+      '**Du bist Mitglied, aber kein Charakter ist dieser Gilde zugeordnet.**\nWähle einen bestehenden Charakter:',
+    components: [new ActionRowBuilder().addComponents(select)],
+  }).catch(() => {});
+}
+
+/**
+ * Sync + Teilnehmerstatus. Bei Fehler wird bereits geantwortet.
+ * @returns {Promise<{ ok: true, state: object } | { ok: false }>}
+ */
+async function ensureRaidParticipant(interaction, raidId, opts = {}) {
+  const { requireCharacters = false, raidPostMsg = null, raidPostOrig = [] } = opts;
+  const { ok, json } = await fetchRaidParticipantState(interaction, raidId);
+  if (!ok) {
+    if (raidPostMsg && raidPostOrig.length) await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
+    await interaction.editReply({ content: '❌ Verbindung zum Backend fehlgeschlagen.', components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return { ok: false };
+  }
+  if (!json.linked) {
+    if (raidPostMsg && raidPostOrig.length) await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
+    await interaction.editReply({ content: raidActionErrorText('NOT_LINKED'), components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return { ok: false };
+  }
+  if (!json.guildMember) {
+    if (raidPostMsg && raidPostOrig.length) await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
+    await interaction.editReply({ content: raidActionErrorText('NOT_GUILD_MEMBER'), components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return { ok: false };
+  }
+  if (requireCharacters) {
+    const chars = Array.isArray(json.characters) ? json.characters : [];
+    const assignable = Array.isArray(json.assignableCharacters) ? json.assignableCharacters : [];
+    if (chars.length === 0 && assignable.length > 0) {
+      if (raidPostMsg && raidPostOrig.length) await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
+      await showAssignCharacterMenu(interaction, raidId, assignable, opts.assignPurpose ?? 'join');
+      return { ok: false };
+    }
+    if (chars.length === 0) {
+      if (raidPostMsg && raidPostOrig.length) await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
+      await interaction.editReply({
+        content: raidActionErrorText('NO_CHARACTER', json),
+        components: [],
+      }).catch(() => {});
+      scheduleDeleteSingleEphemeralReply(interaction);
+      return { ok: false };
+    }
+  }
+  return { ok: true, state: json };
 }
 
 function raidActionOutcome(ok, json, okFallback) {
@@ -1864,6 +1942,11 @@ function scheduleDeleteSingleEphemeralReply(interaction) {
   setTimeout(() => interaction.deleteReply().catch(() => {}), RAID_EPHEMERAL_TTL_MS);
 }
 
+/** Stiller Hintergrund-Abgleich Raid-Post-Embed ↔ Backend (nach erfolgreicher Mutation). */
+function triggerRaidPostReconcile(raidId, message) {
+  scheduleRaidPostReconcile(client, getWebappJson, raidId, message ?? null);
+}
+
 async function handleRaidQuickjoin(interaction, raidId) {
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
   const raidPostMsg        = interaction.message;
@@ -1872,8 +1955,19 @@ async function handleRaidQuickjoin(interaction, raidId) {
     await disableRaidPostButtons(raidPostMsg).catch(() => {});
   }
 
+  const prep = await ensureRaidParticipant(interaction, raidId, {
+    requireCharacters: true,
+    assignPurpose: 'qj',
+    raidPostMsg,
+    raidPostOrig: originalComponents,
+  });
+  if (!prep.ok) return;
+
   const { ok, json } = await callDiscordAction({
-    action: 'quickjoin', discordUserId: interaction.user.id, raidId,
+    action: 'quickjoin',
+    discordUserId: interaction.user.id,
+    raidId,
+    discordGuildId: interaction.guildId ?? '',
   });
 
   if (raidPostMsg && originalComponents.length) {
@@ -1882,8 +1976,9 @@ async function handleRaidQuickjoin(interaction, raidId) {
 
   const outcome = ok
     ? `⚡ ${json.message ?? 'Quickjoin erfolgreich!'}`
-    : raidActionErrorText(json.error);
+    : raidActionErrorText(json.error, json);
   await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -1930,6 +2025,7 @@ async function runRaidDecline(interaction, raidId, reason) {
     raidId,
     reason: reason ?? '',
     discordUserLabel,
+    discordGuildId: interaction.guildId ?? '',
   });
 
   if (raidPostMsg && originalComponents.length) {
@@ -1940,10 +2036,27 @@ async function runRaidDecline(interaction, raidId, reason) {
     ? `🚫 ${json.message ?? 'Du bist als „nicht da“ markiert.'}`
     : raidActionOutcome(false, json, '');
   await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
 async function handleRaidDeclineButton(interaction, raidId) {
+  const { ok: stateOk, json: state } = await fetchRaidParticipantState(interaction, raidId);
+  if (!stateOk) {
+    await interaction.reply({ content: '❌ Verbindung zum Backend fehlgeschlagen.', ephemeral: true }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+  if (!state.linked) {
+    await interaction.reply({ content: raidActionErrorText('NOT_LINKED'), ephemeral: true }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+  if (!state.guildMember) {
+    await interaction.reply({ content: raidActionErrorText('NOT_GUILD_MEMBER'), ephemeral: true }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
   const { ok, json } = await getDiscordAction({
     action: 'get-signup', discordUserId: interaction.user.id, raidId,
   });
@@ -1962,34 +2075,10 @@ async function handleRaidDeclineButton(interaction, raidId) {
   await runRaidDecline(interaction, raidId, '');
 }
 
-async function handleRaidJoinButton(interaction, raidId, guildId) {
-  // Raid-Post merken damit handleSubmitJoin die Buttons sperren/entsperren kann
-  raidPostMessages.set(`${interaction.user.id}:${raidId}`, interaction.message);
-  const raidPostMsg = interaction.message;
-  const raidPostOrig = raidPostMsg?.components ?? [];
-  await interaction.deferReply({ ephemeral: true }).catch(() => {});
-  if (raidPostMsg && raidPostOrig.length) {
-    await disableRaidPostButtons(raidPostMsg).catch(() => {});
-  }
-  const { ok, json } = await getDiscordAction({
-    action: 'get-chars', discordUserId: interaction.user.id, raidId,
-  });
-  if (!ok || json.linked === false) {
-    await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
-    await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
-    scheduleDeleteSingleEphemeralReply(interaction);
-    return;
-  }
+async function continueRaidJoinFlow(interaction, raidId, guildId, json) {
   const chars       = Array.isArray(json.characters) ? json.characters : [];
   const emojis      = json.discordEmojis ?? {};
   const signupPhase = json.signupPhase ?? 'full';
-  if (chars.length === 0) {
-    await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
-    await interaction.editReply({ content: raidActionErrorText('NO_CHARACTER') }).catch(() => {});
-    scheduleDeleteSingleEphemeralReply(interaction);
-    return;
-  }
-  await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
   if (chars.length === 1) {
     const c = chars[0];
     const initialType = signupPhase === 'reserve_only' ? 'reserve' : 'normal';
@@ -2021,6 +2110,102 @@ async function handleRaidJoinButton(interaction, raidId, guildId) {
     content:    '**Welchen Charakter möchtest du anmelden?**',
     components: [new ActionRowBuilder().addComponents(select)],
   }).catch(() => {});
+}
+
+async function handleRaidJoinButton(interaction, raidId, guildId) {
+  raidPostMessages.set(`${interaction.user.id}:${raidId}`, interaction.message);
+  const raidPostMsg = interaction.message;
+  const raidPostOrig = raidPostMsg?.components ?? [];
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  if (raidPostMsg && raidPostOrig.length) {
+    await disableRaidPostButtons(raidPostMsg).catch(() => {});
+  }
+  const prep = await ensureRaidParticipant(interaction, raidId, {
+    requireCharacters: true,
+    assignPurpose: 'join',
+    raidPostMsg,
+    raidPostOrig,
+  });
+  if (!prep.ok) return;
+  await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
+  const flowGuildId = guildId || prep.state.raidGuildId;
+  await continueRaidJoinFlow(interaction, raidId, flowGuildId, prep.state);
+}
+
+async function continueRaidJoin2Flow(interaction, raidId, json) {
+  const chars = Array.isArray(json.characters) ? json.characters : [];
+  const signupPhase = json.signupPhase ?? 'full';
+  setJoin2Flow(interaction.user.id, raidId, {
+    chars,
+    signupPhase,
+    type: signupPhase === 'reserve_only' ? 'reserve' : 'normal',
+    punctuality: 'on_time',
+    selectedCharIds: [],
+    perChar: {},
+    step2Index: 0,
+    note: '',
+    replyMessageId: null,
+  });
+
+  const msg = await buildJoin2Step1Message(raidId, getJoin2Flow(interaction.user.id, raidId));
+  const reply = await interaction.editReply(msg).catch(() => null);
+  if (reply?.id) {
+    const flow = getJoin2Flow(interaction.user.id, raidId);
+    if (flow) flow.replyMessageId = reply.id;
+  }
+}
+
+async function handleAssignCharSelect(interaction, raidId, purpose) {
+  const characterId = interaction.values[0];
+  await interaction.deferUpdate().catch(() => {});
+  const { ok, json } = await callDiscordAction({
+    action: 'assign-character-guild',
+    discordUserId: interaction.user.id,
+    raidId,
+    characterId,
+    discordGuildId: interaction.guildId ?? '',
+  });
+  if (!ok) {
+    await interaction.editReply({
+      content: raidActionErrorText(json?.error, json) || json?.message || '❌ Zuordnung fehlgeschlagen.',
+      components: [],
+    }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  const { ok: stateOk, json: state } = await fetchRaidParticipantState(interaction, raidId);
+  if (!stateOk || !state.guildMember) {
+    await interaction.editReply({ content: '❌ Charakter zugeordnet, aber Gildenstatus unklar.', components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  if (purpose === 'qj') {
+    const raidPostMsg = interaction.message;
+    const { ok: qjOk, json: qjJson } = await callDiscordAction({
+      action: 'quickjoin',
+      discordUserId: interaction.user.id,
+      raidId,
+      discordGuildId: interaction.guildId ?? '',
+    });
+    const outcome = qjOk
+      ? `⚡ ${qjJson.message ?? 'Quickjoin erfolgreich!'}`
+      : raidActionErrorText(qjJson.error, qjJson);
+    await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+    if (qjOk) triggerRaidPostReconcile(raidId, raidPostMsg);
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  if (purpose === 'join2') {
+    await interaction.editReply({ content: '✅ Charakter zugeordnet.', components: [] }).catch(() => {});
+    await continueRaidJoin2Flow(interaction, raidId, state);
+    return;
+  }
+
+  await interaction.editReply({ content: '✅ Charakter zugeordnet.', components: [] }).catch(() => {});
+  await continueRaidJoinFlow(interaction, raidId, state.raidGuildId, state);
 }
 
 async function buildJoin2Step1Message(raidId, flow, errorHint) {
@@ -2208,44 +2393,22 @@ async function handleRaidJoin2Button(interaction, raidId) {
     await disableRaidPostButtons(raidPostMsg).catch(() => {});
   }
 
-  const { ok, json } = await getDiscordAction({
-    action: 'get-chars',
-    discordUserId: interaction.user.id,
-    raidId,
+  const prep = await ensureRaidParticipant(interaction, raidId, {
+    requireCharacters: true,
+    assignPurpose: 'join2',
+    raidPostMsg,
+    raidPostOrig,
   });
-
-  if (!ok || json.linked === false) {
-    await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
-    await interaction.editReply({ content: raidActionErrorText('NOT_LINKED') }).catch(() => {});
-    scheduleDeleteSingleEphemeralReply(interaction);
-    return;
-  }
-
-  const chars = Array.isArray(json.characters) ? json.characters : [];
-  if (chars.length === 0) {
-    await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
-    await interaction.editReply({ content: raidActionErrorText('NO_CHARACTER') }).catch(() => {});
-    scheduleDeleteSingleEphemeralReply(interaction);
-    return;
-  }
+  if (!prep.ok) return;
 
   await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
+  await continueRaidJoin2Flow(interaction, raidId, prep.state);
 
-  const signupPhase = json.signupPhase ?? 'full';
-  setJoin2Flow(interaction.user.id, raidId, {
-    chars,
-    signupPhase,
-    type: signupPhase === 'reserve_only' ? 'reserve' : 'normal',
-    punctuality: 'on_time',
-    selectedCharIds: [],
-    perChar: {},
-    step2Index: 0,
-    note: '',
-    replyMessageId: null,
-  });
-
-  const msg = await buildJoin2Step1Message(raidId, getJoin2Flow(interaction.user.id, raidId));
-  const reply = await interaction.editReply(msg).catch(() => null);
+  const reply = { id: null };
+  {
+    const flow = getJoin2Flow(interaction.user.id, raidId);
+    if (flow?.replyMessageId) reply.id = flow.replyMessageId;
+  }
   if (reply?.id) {
     const current = getJoin2Flow(interaction.user.id, raidId);
     if (current) {
@@ -2491,6 +2654,7 @@ async function handleJoin2NoteModal(interaction, raidId) {
       content: `⚠️ ${okCount} von ${selectedCharIds.length} Anmeldungen gespeichert.\n${errors.slice(0, 4).join('\n')}`,
       components: [],
     }).catch(() => {});
+    if (okCount > 0) triggerRaidPostReconcile(raidId, raidPostMsg);
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
@@ -2502,6 +2666,7 @@ async function handleJoin2NoteModal(interaction, raidId) {
     content: `✅ ${okCount} Charakter${okCount === 1 ? '' : 'e'} erfolgreich angemeldet.`,
     components: [],
   }).catch(() => {});
+  triggerRaidPostReconcile(raidId, raidPostMsg);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -2532,6 +2697,12 @@ async function handleRaidEditButton(interaction, raidId) {
   if (raidPostMsg && raidPostOrig.length) {
     await disableRaidPostButtons(raidPostMsg).catch(() => {});
   }
+  const prep = await ensureRaidParticipant(interaction, raidId, {
+    requireCharacters: false,
+    raidPostMsg,
+    raidPostOrig,
+  });
+  if (!prep.ok) return;
   const { ok, json } = await getDiscordAction({
     action: 'get-signup', discordUserId: interaction.user.id, raidId,
   });
@@ -2845,6 +3016,7 @@ async function handleSubmitJoin(interaction, raidId, charId) {
     await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
   }
   await interaction.editReply({ content: `✅ ${json.message ?? 'Anmeldung erfolgreich!'}`, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -2917,6 +3089,7 @@ async function handleSubmitEdit(interaction, raidId) {
     await raidPostMsg.edit({ components: raidPostComponents }).catch(() => {});
   }
   await interaction.editReply({ content: `✅ ${json.message ?? 'Anmeldung aktualisiert!'}`, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -2987,6 +3160,7 @@ async function handleRaidUnregModal(interaction, raidId) {
     ? `✅ ${json.message ?? 'Abmeldung erfolgreich.'}`
     : raidActionErrorText(json.error);
   await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, null);
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -3316,6 +3490,18 @@ client.on('interactionCreate', async (interaction) => {
   // Select-Menüs (Setup-Flow + Raid-Aktionen)
   if (interaction.isStringSelectMenu()) {
     const customId = interaction.customId;
+    if (customId.startsWith('rf:assignchar:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      const purpose = parts[3] ?? 'join';
+      try {
+        await handleAssignCharSelect(interaction, raidId, purpose);
+      } catch (e) {
+        console.error('[AssignCharSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
     if (customId.startsWith('rf:j2chars:')) {
       const parts = customId.split(':');
       const raidId = noDashToUuid(parts[2]);

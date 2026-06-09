@@ -18,7 +18,12 @@
     "themeLabel": "Display mode",
     "themeLight": "Light",
     "themeDark": "Dark",
-    "language": "Language"
+    "language": "Language",
+    "checkGuildMembership": "Check guild membership",
+    "guildSyncChecking": "Checking…",
+    "guildSyncSuccess": "Guild membership updated.",
+    "guildSyncNone": "No guild membership found.",
+    "guildSyncFailed": "Sync failed. Please try again later."
   },
   "shell": {
     "logout": "Log out",
@@ -114,7 +119,8 @@
     "modeSignup": "Sign up",
     "modeQueryHint": "URL query: mode or modus = view | edit | signup (German aliases: anzeigen, bearbeiten, anmelden). Default: view.",
     "forbiddenEdit": "You are not allowed to edit this raid.",
-    "forbiddenSignupClosed": "Signup is not available (status or deadline).",
+    "forbiddenSignupClosed": "Signup is not available (status, deadline, or more than 30 minutes after raid start).",
+    "signupLockedAfterRaidStart": "Signups are locked (more than 30 minutes after raid start). Only raid leaders can still change the roster in the planner.",
     "forbiddenAccess": "You do not have access to this raid.",
     "forbiddenGuild": "You are not a member of this guild in RaidFlow.",
     "notFound": "Raid not found.",
@@ -271,7 +277,7 @@
     "announceSaveManualFirst": "Please save first: there are unsaved manual signups.",
     "announceError": "Announce failed.",
     "sanitizeRoster": "Check roster",
-    "sanitizeRosterHint": "Remove invalid signup IDs from the saved layout (e.g. after someone withdrew).",
+    "sanitizeRosterHint": "Remove invalid or withdrawn players from roster, reserve, and party slots.",
     "sanitizeRosterClean": "Roster is OK — no invalid entries found.",
     "sanitizeRosterFixed": "Removed and saved {count} invalid entries:",
     "sanitizeRosterError": "Roster check failed.",

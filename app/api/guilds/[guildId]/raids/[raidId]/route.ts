@@ -11,6 +11,7 @@ import {
   parseAnnounceRaidPayload,
 } from '@/lib/raid-announce';
 import { sanitizeAnnounceRaidPayload } from '@/lib/planner-roster-sanitize';
+import { isPlannableRaidSignup } from '@/lib/raid-signup-constants';
 import { parseUnsetPlayersMode } from '@/lib/planner-unset-policy';
 import { RAID_CANCEL_DM_MAX_LENGTH } from '@/lib/raid-cancel-message';
 
@@ -389,10 +390,18 @@ export async function PATCH(
       }
       const knownRows = await prisma.rfRaidSignup.findMany({
         where: { raidId },
-        select: { id: true },
+        select: { id: true, type: true, originalSignupType: true },
       });
       const known = new Set(knownRows.map((r) => r.id));
-      const sanitized = sanitizeAnnounceRaidPayload(parsed.data, known, raid.maxPlayers);
+      const plannable = new Set(
+        knownRows.filter((r) => isPlannableRaidSignup(r)).map((r) => r.id)
+      );
+      const sanitized = sanitizeAnnounceRaidPayload(
+        parsed.data,
+        known,
+        raid.maxPlayers,
+        plannable
+      );
       announcedPlannerGroupsJsonUpdate = announceLayoutToStoredJson(
         sanitized.payload,
         raid.maxPlayers
@@ -416,10 +425,18 @@ export async function PATCH(
       }
       const knownRows = await prisma.rfRaidSignup.findMany({
         where: { raidId },
-        select: { id: true },
+        select: { id: true, type: true, originalSignupType: true },
       });
       const known = new Set(knownRows.map((r) => r.id));
-      const sanitized = sanitizeAnnounceRaidPayload(parsed.data, known, raid.maxPlayers);
+      const plannable = new Set(
+        knownRows.filter((r) => isPlannableRaidSignup(r)).map((r) => r.id)
+      );
+      const sanitized = sanitizeAnnounceRaidPayload(
+        parsed.data,
+        known,
+        raid.maxPlayers,
+        plannable
+      );
       draftPlannerGroupsJsonUpdate = announceLayoutToStoredJson(
         sanitized.payload,
         raid.maxPlayers
