@@ -18,7 +18,12 @@
     "themeLabel": "Display mode",
     "themeLight": "Light",
     "themeDark": "Dark",
-    "language": "Language"
+    "language": "Language",
+    "checkGuildMembership": "Check guild membership",
+    "guildSyncChecking": "Checking…",
+    "guildSyncSuccess": "Guild membership updated.",
+    "guildSyncNone": "No guild membership found.",
+    "guildSyncFailed": "Sync failed. Please try again later."
   },
   "shell": {
     "logout": "Log out",

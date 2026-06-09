@@ -16,6 +16,11 @@ import {
   syncRaidThreadSummary,
 } from '@/lib/raid-thread-sync';
 import { getRaidDiscordDisplaySnapshot } from '@/lib/raid-discord-display-snapshot';
+import {
+  assignCharacterToRaidGuild,
+  buildRaidParticipantState,
+} from '@/lib/discord-raid-participant';
+import { syncDiscordUserGuildMemberships } from '@/lib/sync-user-guild-memberships';
 import { getAppConfig } from '@/lib/app-config';
 import {
   ANNOUNCED_SET_PLAYER_COMMENT_MIN,
@@ -151,6 +156,17 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  if (action === 'raid-participant-state') {
+    const discordGuildId = searchParams.get('discordGuildId')?.trim() ?? '';
+    const state = await buildRaidParticipantState(discordUserId, raidId, {
+      syncDiscordGuildId: discordGuildId || null,
+    });
+    if (!state) {
+      return NextResponse.json({ error: 'Raid not found' }, { status: 404 });
+    }
+    return NextResponse.json(state);
+  }
+
   if (action === 'get-chars') {
     const [chars, appCfg] = await Promise.all([
       prisma.rfCharacter.findMany({
@@ -196,7 +212,51 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Missing action / discordUserId / raidId' }, { status: 400 });
   }
 
-  // User-Lookup
+  const discordGuildId =
+    typeof body.discordGuildId === 'string' ? body.discordGuildId.trim() : '';
+
+  // Raid-Lookup (guildId aus raidId ableiten)
+  const raid = await prisma.rfRaid.findUnique({
+    where:  { id: raidId },
+    select: {
+      id: true,
+      guildId: true,
+      status: true,
+      signupUntil: true,
+      scheduledAt: true,
+      guild: { select: { discordGuildId: true } },
+    },
+  });
+  if (!raid) {
+    return NextResponse.json({ error: 'Raid not found' }, { status: 404 });
+  }
+
+  if (action === 'assign-character-guild') {
+    const characterId =
+      typeof body.characterId === 'string' ? body.characterId.trim() : '';
+    if (!characterId) {
+      return NextResponse.json({ error: 'Missing characterId' }, { status: 400 });
+    }
+    const result = await assignCharacterToRaidGuild({
+      discordUserId,
+      raidId,
+      characterId,
+    });
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.error, message: result.message },
+        { status: result.status }
+      );
+    }
+    return NextResponse.json({ ok: true, characterId: result.characterId });
+  }
+
+  const syncGuildDiscordId = discordGuildId || raid.guild.discordGuildId || undefined;
+  const syncResult = await syncDiscordUserGuildMemberships({
+    discordUserId,
+    discordGuildId: syncGuildDiscordId,
+  });
+
   const user = await prisma.rfUser.findUnique({
     where:  { discordId: discordUserId },
     select: { id: true },
@@ -208,19 +268,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Raid-Lookup (guildId aus raidId ableiten)
-  const raid = await prisma.rfRaid.findUnique({
-    where:  { id: raidId },
-    select: { id: true, guildId: true, status: true, signupUntil: true, scheduledAt: true },
-  });
-  if (!raid) {
-    return NextResponse.json({ error: 'Raid not found' }, { status: 404 });
-  }
-
   // Zugriff prüfen
-  const access = await resolveRaidAccess(user.id, discordUserId, raid.guildId, raidId);
+  const access = await resolveRaidAccess(syncResult.userId, discordUserId, raid.guildId, raidId);
   if (!access.ok) {
-    return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+    return NextResponse.json(
+      {
+        error: 'NOT_GUILD_MEMBER',
+        message: 'Du bist kein RaidFlow-Mitglied dieser Gilde.',
+      },
+      { status: 403 }
+    );
   }
 
   // -------------------------------------------------------------------------

@@ -44,6 +44,8 @@ export function Topbar({
   const [langOpen, setLangOpen] = useState(false);
   const [guildMenuOpen, setGuildMenuOpen] = useState(false);
   const [userGuilds, setUserGuilds] = useState<UserGuildInfo[]>(initialUserGuilds);
+  const [guildSyncLoading, setGuildSyncLoading] = useState(false);
+  const [guildSyncMessage, setGuildSyncMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setUserGuilds(initialUserGuilds);
@@ -56,7 +58,39 @@ export function Topbar({
     ? userGuilds.find((g) => g.id === guildParam) ?? userGuilds[0]
     : userGuilds[0] ?? null;
   const showGuildInTopbar = isLoggedIn && (isDashboard || isGuildsPage) && userGuilds.length > 0;
+  const showGuildSyncInTopbar = isLoggedIn && (isDashboard || isGuildsPage) && userGuilds.length === 0;
   const hasMultipleGuilds = userGuilds.length > 1;
+
+  const handleGuildMembershipSync = useCallback(async () => {
+    setGuildSyncLoading(true);
+    setGuildSyncMessage(null);
+    try {
+      const res = await fetch('/api/user/sync-guild-membership', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        guilds?: UserGuildInfo[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setGuildSyncMessage(tTopbar('guildSyncFailed'));
+        return;
+      }
+      if (Array.isArray(data.guilds) && data.guilds.length > 0) {
+        setUserGuilds(data.guilds);
+        setGuildSyncMessage(tTopbar('guildSyncSuccess'));
+        router.refresh();
+      } else {
+        setGuildSyncMessage(tTopbar('guildSyncNone'));
+      }
+    } catch (e) {
+      console.error('[Topbar] guild sync', e);
+      setGuildSyncMessage(tTopbar('guildSyncFailed'));
+    } finally {
+      setGuildSyncLoading(false);
+    }
+  }, [router, tTopbar]);
 
   const basePath = pathname?.replace(/^\/[a-z]{2}/, '') || '';
   const switchLocaleUrl = (newLocale: string) => `/${newLocale}${basePath || (isLoggedIn ? 'dashboard' : '')}`;
@@ -110,6 +144,24 @@ export function Topbar({
         <div className="flex-1 min-w-0" />
 
         {/* Center: aktive Gilde */}
+        {showGuildSyncInTopbar && (
+          <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5 max-w-[min(24rem,70vw)]">
+            <button
+              type="button"
+              onClick={() => void handleGuildMembershipSync()}
+              disabled={guildSyncLoading}
+              className="text-sm font-medium text-primary hover:text-primary/80 disabled:opacity-60 transition-colors truncate"
+            >
+              {guildSyncLoading ? tTopbar('guildSyncChecking') : tTopbar('checkGuildMembership')}
+            </button>
+            {guildSyncMessage && (
+              <span className="text-xs text-muted-foreground text-center truncate w-full" title={guildSyncMessage}>
+                {guildSyncMessage}
+              </span>
+            )}
+          </div>
+        )}
+
         {showGuildInTopbar && activeGuild && (
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
             <span className="text-sm font-medium text-muted-foreground truncate max-w-[200px] md:max-w-[min(24rem,40vw)]" title={activeGuild.name}>

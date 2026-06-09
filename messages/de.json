@@ -18,7 +18,12 @@
     "themeLabel": "Anzeige-Modus",
     "themeLight": "Hell",
     "themeDark": "Dunkel",
-    "language": "Sprache"
+    "language": "Sprache",
+    "checkGuildMembership": "Gildenmitgliedschaft prüfen",
+    "guildSyncChecking": "Prüfe …",
+    "guildSyncSuccess": "Gildenmitgliedschaft aktualisiert.",
+    "guildSyncNone": "Keine Gildenmitgliedschaft gefunden.",
+    "guildSyncFailed": "Sync fehlgeschlagen. Bitte später erneut versuchen."
   },
   "shell": {
     "logout": "Abmelden",
