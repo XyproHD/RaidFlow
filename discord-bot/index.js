@@ -2142,8 +2142,21 @@ async function handleRaidDeclineModal(interaction, raidId) {
   await runRaidDecline(interaction, raidId, reason);
 }
 
+/** Nutzer per DM benachrichtigen (z. B. wenn eine Aktion im Nachgang fehlschlägt). */
+async function sendRaidActionFailureDM(interaction, message) {
+  try {
+    await interaction.user.send(message);
+  } catch {
+    /* Nutzer hat DMs für den Server deaktiviert – ignorieren. */
+  }
+}
+
 async function runRaidDecline(interaction, raidId, reason) {
-  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  // Interaktion sofort bestätigen (falls noch nicht geschehen), damit der 3-Sekunden-Timeout
+  // von Discord nicht überschritten wird ("Diese Interaktion ist fehlgeschlagen.").
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  }
   const raidPostMsg        = interaction.message;
   const originalComponents = raidPostMsg?.components ?? [];
   if (originalComponents.length) {
@@ -2168,34 +2181,53 @@ async function runRaidDecline(interaction, raidId, reason) {
     await raidPostMsg.edit({ components: originalComponents }).catch(() => {});
   }
 
-  const outcome = ok
-    ? `🚫 ${json.message ?? 'Du bist als „nicht da“ markiert.'}`
-    : raidActionOutcome(false, json, '');
-  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
-  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
+  if (ok) {
+    await interaction.editReply({
+      content: `🚫 ${json.message ?? 'Du bist als „nicht da“ markiert.'}`,
+      components: [],
+    }).catch(() => {});
+    triggerRaidPostReconcile(raidId, raidPostMsg);
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  // Gesetzter Spieler ohne Begründung → Folge-Button anbieten (Modal nach deferReply nicht direkt möglich).
+  if (json?.error === 'COMMENT_REQUIRED') {
+    const raidNoDash = raidId.replace(/-/g, '');
+    const { ButtonBuilder, ButtonStyle, ActionRowBuilder } = await import('discord.js');
+    const btn = new ButtonBuilder()
+      .setCustomId(`rf:declreason:${raidNoDash}`)
+      .setLabel('Begründung eingeben')
+      .setStyle(ButtonStyle.Danger);
+    await interaction.editReply({
+      content: '⚠️ Als gesetzter Spieler ist eine kurze Begründung nötig. Bitte klicke auf „Begründung eingeben“.',
+      components: [new ActionRowBuilder().addComponents(btn)],
+    }).catch(() => {});
+    return;
+  }
+
+  // Sonstiger Fehler: Ephemer-Antwort schließen und Nutzer im Nachgang per DM informieren.
+  const errText = raidActionOutcome(false, json, '');
+  await interaction.editReply({ content: errText, components: [] }).catch(() => {});
+  await sendRaidActionFailureDM(
+    interaction,
+    `⚠️ Deine „Nicht da“-Meldung konnte nicht verarbeitet werden.\n${errText}\nBitte versuche es später erneut oder wende dich an einen Raidleader.`,
+  );
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
 async function handleRaidDeclineButton(interaction, raidId) {
-  // Nur EIN Backend-Call vor der Interaktions-Bestätigung, damit der 3-Sekunden-Timeout
+  // Interaktion SOFORT bestätigen – ohne vorherigen Backend-Call – damit der 3-Sekunden-Timeout
   // von Discord nicht überschritten wird ("Diese Interaktion ist fehlgeschlagen.").
-  // Gildenmitgliedschaft/Verknüpfung werden beim eigentlichen decline-POST geprüft.
-  const { ok, json } = await getDiscordAction({
-    action: 'get-signup', discordUserId: interaction.user.id, raidId,
-  });
-  if (!ok || json.linked === false) {
-    await interaction.reply({ content: raidActionErrorText('NOT_LINKED'), ephemeral: true }).catch(() => {});
-    scheduleDeleteSingleEphemeralReply(interaction);
-    return;
-  }
-  const signups = Array.isArray(json.signups) ? json.signups : [];
-  const needsReason =
-    json.raidStatus === 'announced' && signups.some((s) => s.setConfirmed);
-  if (needsReason) {
-    await showDeclineModal(interaction, raidId);
-    return;
-  }
+  // Die eigentliche Verarbeitung läuft danach; ob eine Begründung nötig ist (gesetzter Spieler),
+  // entscheidet das Backend (COMMENT_REQUIRED → Folge-Button für das Begründungs-Modal).
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
   await runRaidDecline(interaction, raidId, '');
+}
+
+/** Folge-Button „Begründung eingeben“ (frische Interaktion) → Begründungs-Modal öffnen. */
+async function handleRaidDeclineReasonButton(interaction, raidId) {
+  await showDeclineModal(interaction, raidId);
 }
 
 async function continueRaidJoinFlow(interaction, raidId, guildId, json) {
@@ -3532,6 +3564,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (action === 'qj')         { await handleRaidQuickjoin(interaction, raidId); return; }
         if (action === 'decl')       { await handleRaidDeclineButton(interaction, raidId); return; }
+        if (action === 'declreason') { await handleRaidDeclineReasonButton(interaction, raidId); return; }
         if (action === 'join')        { await handleRaidJoinButton(interaction, raidId, extra); return; }
         if (action === 'join2')       { await handleRaidJoin2Button(interaction, raidId); return; }
         if (action === 'edit')        { await handleRaidEditButton(interaction, raidId); return; }
