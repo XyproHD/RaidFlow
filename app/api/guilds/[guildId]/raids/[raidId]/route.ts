@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
-import { syncRaidThreadSummary, postRaidLockedThreadNotice, postRaidAnnouncedThreadNotice } from '@/lib/raid-thread-sync';
+import { syncRaidThreadSummary, postRaidLockedThreadNotice, postRaidAnnouncedThreadNotice, postRaidScheduleChangeChannelNotice } from '@/lib/raid-thread-sync';
 import { parseMinSpecsPayload } from '@/lib/min-spec-keys';
 import {
   announceLayoutToStoredJson,
@@ -351,6 +351,11 @@ export async function PATCH(
   // Es gibt keine automatische Zwangsprüfung mehr bei Termin-/Dungeon-Änderungen.
   const resetSignups = body.resetSignups === true;
 
+  // Abweichung von Startzeit/-Datum bzw. Anmeldefrist gegenüber dem Ursprung erkennen
+  // (für Discord-Hinweis an die Raider, wenn Anmeldungen nicht zurückgesetzt werden).
+  const scheduleStartChanged = scheduledAt.getTime() !== raid.scheduledAt.getTime();
+  const signupDeadlineChanged = signupUntil.getTime() !== raid.signupUntil.getTime();
+
   let announcedPlannerGroupsJsonUpdate:
     | Prisma.InputJsonValue
     | Prisma.NullableJsonNullValueInput
@@ -567,7 +572,17 @@ export async function PATCH(
     });
   }
 
+  // Discord-Beitrag beim erfolgreichen Speichern aktualisieren.
   await syncRaidThreadSummary(raidId);
+
+  // Termin-/Friständerung ohne Anmelde-Reset: Raider im Channel informieren (wie bei Neuanlage).
+  if (!resetSignups && (scheduleStartChanged || signupDeadlineChanged)) {
+    await postRaidScheduleChangeChannelNotice(raidId, {
+      startChanged: scheduleStartChanged,
+      signupChanged: signupDeadlineChanged,
+    }).catch((e) => console.error('[PATCH raid] schedule change notice:', e));
+  }
+
   return NextResponse.json({
     ok: true,
     resetSignups,

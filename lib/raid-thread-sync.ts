@@ -455,6 +455,18 @@ function formatRaidChannelNoticeDate(date: Date): string {
   }).format(date);
 }
 
+function formatRaidChannelNoticeDateTime(date: Date): string {
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin',
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
 /** Raider-Rolle im Raid-Channel erwähnen (nicht im Thread-Log). */
 export async function postRaidRaiderChannelMention(
   raidId: string,
@@ -522,6 +534,49 @@ export async function postRaidOpenChannelNotice(raidId: string): Promise<void> {
     );
   } catch (e) {
     console.error('[postRaidOpenChannelNotice]', raidId, e);
+  }
+}
+
+/**
+ * Nach dem Bearbeiten eines Raids: Raider im Channel darauf hinweisen, dass sich
+ * Startzeit/Datum und/oder Anmeldefrist geändert haben (analog zur Neuanlage-Mitteilung).
+ * Wird nur aufgerufen, wenn die Anmeldungen NICHT zurückgesetzt wurden.
+ */
+export async function postRaidScheduleChangeChannelNotice(
+  raidId: string,
+  changes: { startChanged: boolean; signupChanged: boolean }
+): Promise<void> {
+  try {
+    if (!changes.startChanged && !changes.signupChanged) return;
+
+    const raid = await prisma.rfRaid.findUnique({
+      where: { id: raidId },
+      select: {
+        name: true,
+        status: true,
+        scheduledAt: true,
+        signupUntil: true,
+        discordChannelId: true,
+        dungeon: { select: { name: true } },
+      },
+    });
+    if (!raid?.discordChannelId?.trim()) return;
+    if (raid.status === 'cancelled' || raid.status === 'completed') return;
+
+    const lines: string[] = [
+      `es gibt eine Terminänderung für den Raid **${raid.dungeon.name} / ${raid.name}**:`,
+    ];
+    if (changes.startChanged) {
+      lines.push(`• 📅 Neuer Start: **${formatRaidChannelNoticeDateTime(raid.scheduledAt)} Uhr**`);
+    }
+    if (changes.signupChanged) {
+      lines.push(`• ⏰ Neue Anmeldefrist: **${formatRaidChannelNoticeDateTime(raid.signupUntil)} Uhr**`);
+    }
+    lines.push('Bitte prüft eure Anmeldung.');
+
+    await postRaidRaiderChannelMention(raidId, lines.join('\n'), { commaAfterMention: true });
+  } catch (e) {
+    console.error('[postRaidScheduleChangeChannelNotice]', raidId, e);
   }
 }
 
