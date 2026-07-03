@@ -2072,7 +2072,7 @@ const MSG_LOADING_JOIN2_BATCH = '⏳ Anmeldungen werden gesendet …';
 const raidPostMessages = new Map();
 
 /** Ephemerale Bot-Rückmeldungen nach Abschluss kurz anzeigen, dann entfernen. */
-const RAID_EPHEMERAL_TTL_MS = 3000;
+const RAID_EPHEMERAL_TTL_MS = 6000;
 
 function scheduleDeleteSingleEphemeralReply(interaction) {
   setTimeout(() => interaction.deleteReply().catch(() => {}), RAID_EPHEMERAL_TTL_MS);
@@ -2177,22 +2177,9 @@ async function runRaidDecline(interaction, raidId, reason) {
 }
 
 async function handleRaidDeclineButton(interaction, raidId) {
-  const { ok: stateOk, json: state } = await fetchRaidParticipantState(interaction, raidId);
-  if (!stateOk) {
-    await interaction.reply({ content: '❌ Verbindung zum Backend fehlgeschlagen.', ephemeral: true }).catch(() => {});
-    scheduleDeleteSingleEphemeralReply(interaction);
-    return;
-  }
-  if (!state.linked) {
-    await interaction.reply({ content: raidActionErrorText('NOT_LINKED'), ephemeral: true }).catch(() => {});
-    scheduleDeleteSingleEphemeralReply(interaction);
-    return;
-  }
-  if (!state.guildMember) {
-    await interaction.reply({ content: raidActionErrorText('NOT_GUILD_MEMBER'), ephemeral: true }).catch(() => {});
-    scheduleDeleteSingleEphemeralReply(interaction);
-    return;
-  }
+  // Nur EIN Backend-Call vor der Interaktions-Bestätigung, damit der 3-Sekunden-Timeout
+  // von Discord nicht überschritten wird ("Diese Interaktion ist fehlgeschlagen.").
+  // Gildenmitgliedschaft/Verknüpfung werden beim eigentlichen decline-POST geprüft.
   const { ok, json } = await getDiscordAction({
     action: 'get-signup', discordUserId: interaction.user.id, raidId,
   });
