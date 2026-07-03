@@ -310,9 +310,12 @@ export async function POST(request: NextRequest) {
     }
 
     const existing = await prisma.rfRaidSignup.findFirst({
-      where: { raidId, userId: user.id, characterId: picked.id },
+      where:  { raidId, userId: user.id, characterId: picked.id },
+      select: { id: true, type: true },
     });
-    if (existing) {
+    // Aktive Anmeldung → Quickjoin nicht möglich. „Nicht da" (declined) zählt nicht als
+    // aktive Anmeldung und wird beim Quickjoin als Bearbeitung in eine echte Anmeldung überführt.
+    if (existing && existing.type !== 'declined') {
       return NextResponse.json(
         {
           error: 'ALREADY_SIGNED_UP',
@@ -322,35 +325,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await prisma.rfRaidSignup.create({
-      data: {
-        raidId,
-        userId:               user.id,
-        characterId:          picked.id,
-        type:                 phase === 'reserve_only' ? 'reserve' : 'normal',
-        punctuality:          'on_time',
-        isLate:               false,
-        note:                 null,
-        signedSpec:           picked.mainSpec,
-        onlySignedSpec:       false,
-        forbidReserve:        false,
-        allowReserve:         false,
-        leaderAllowsReserve:  true,
-        leaderMarkedTeilnehmer: false,
-        leaderPlacement:      'signup',
-        setConfirmed:         false,
-      },
+    const pickedType = phase === 'reserve_only' ? 'reserve' : 'normal';
+    const { isCreate } = await commitRaidSelfSignupMutation({
+      raidId,
+      guildId:         raid.guildId,
+      userId:          user.id,
+      changedByUserId: user.id,
+      characterId:     picked.id,
+      typeNorm:        pickedType,
+      signedSpecRaw:   picked.mainSpec,
+      onlySignedSpec:  false,
+      forbidReserve:   false,
+      punctuality:     'on_time',
+      note:            '',
     });
 
-    const pickedType = phase === 'reserve_only' ? 'reserve' : 'normal';
     await syncRaidThreadSummary(raidId, { embedOnly: true });
-    await postSignupChangeThreadNotice(raidId, 'signup', {
+    await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
       characterName: picked.name,
       signedSpec:    picked.mainSpec,
       type:          pickedType,
       punctuality:   'on_time',
     });
-    return NextResponse.json({ ok: true, message: 'Quickjoin erfolgreich!' });
+    return NextResponse.json({
+      ok: true,
+      message: isCreate ? 'Quickjoin erfolgreich!' : 'Anmeldung aktualisiert!',
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -451,6 +451,14 @@ export async function POST(request: NextRequest) {
       punctuality,
       note:           noteRaw,
     });
+
+    // Aktive Anmeldung → evtl. vorhandene „Nicht da"-Markierung(en) dieses Users entfernen,
+    // damit ein Spieler nicht gleichzeitig angemeldet und „nicht da" ist.
+    if (typeNorm !== 'declined') {
+      await prisma.rfRaidSignup.deleteMany({
+        where: { raidId, userId: user.id, type: 'declined', NOT: { characterId: char.id } },
+      });
+    }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
     await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
