@@ -806,7 +806,7 @@ function MembersSection({
   const [showTwinks, setShowTwinks] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
   const [filterRaidGroupId, setFilterRaidGroupId] = useState<string>('all');
-  const [discordNamesSyncing, setDiscordNamesSyncing] = useState(false);
+  const [memberSyncing, setMemberSyncing] = useState(false);
   const [assigning, setAssigning] = useState<string | null>(null);
   const [popupMemberId, setPopupMemberId] = useState<string | null>(null);
   const [popupSelectedIds, setPopupSelectedIds] = useState<Set<string>>(new Set());
@@ -849,26 +849,26 @@ function MembersSection({
     setPopupSelectedIds(new Set(m.raidGroupIds));
   };
 
-  const handleSyncDiscordNames = async () => {
-    if (discordNamesSyncing) return;
-    setDiscordNamesSyncing(true);
+  const handleMemberSync = async () => {
+    if (memberSyncing) return;
+    setMemberSyncing(true);
     try {
-      const res = await fetch(`/api/guilds/${guildId}/members/sync-discord-names`, { method: 'POST' });
+      const res = await fetch(`/api/guilds/${guildId}/members/member-sync`, { method: 'POST' });
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         detail?: string;
         result?: {
           total: number;
-          charactersUpdated: number;
+          kept: number;
+          removedNotInGuild: number;
+          removedNoRole: number;
+          removedNoCharacter: number;
           skippedUnknownMembership: number;
-          notInDiscordGuild: number;
-          skippedNoGuildCharacters: number;
-          membersWithNameApplied: number;
         };
       };
       if (!res.ok) {
         if (res.status === 503 && data.error === 'Discord bot token not configured') {
-          throw new Error(t('discordNamesSyncNoBotToken'));
+          throw new Error(t('memberSyncNoBotToken'));
         }
         throw new Error(data.detail || data.error || res.statusText);
       }
@@ -877,20 +877,20 @@ function MembersSection({
       onSaved();
       if (r) {
         alert(
-          t('discordNamesSyncDone', {
-            chars: r.charactersUpdated,
-            named: r.membersWithNameApplied,
+          t('memberSyncDone', {
             total: r.total,
+            kept: r.kept,
+            gone: r.removedNotInGuild,
+            noRole: r.removedNoRole,
+            noChar: r.removedNoCharacter,
             unk: r.skippedUnknownMembership,
-            gone: r.notInDiscordGuild,
-            noChar: r.skippedNoGuildCharacters,
           })
         );
       }
     } catch (e) {
-      alert(e instanceof Error ? e.message : t('discordNamesSyncError'));
+      alert(e instanceof Error ? e.message : t('memberSyncError'));
     } finally {
-      setDiscordNamesSyncing(false);
+      setMemberSyncing(false);
     }
   };
 
@@ -1031,12 +1031,12 @@ function MembersSection({
         <div className="flex items-end sm:ml-auto">
           <button
             type="button"
-            onClick={() => void handleSyncDiscordNames()}
-            disabled={discordNamesSyncing}
-            title={t('discordNamesSyncHint')}
+            onClick={() => void handleMemberSync()}
+            disabled={memberSyncing}
+            title={t('memberSyncHint')}
             className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50 disabled:pointer-events-none whitespace-nowrap"
           >
-            {discordNamesSyncing ? t('discordNamesSyncRunning') : t('discordNamesSync')}
+            {memberSyncing ? t('memberSyncRunning') : t('memberSync')}
           </button>
         </div>
       </div>

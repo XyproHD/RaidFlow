@@ -266,6 +266,14 @@ export async function PATCH(
       : typeof body.discordLeaderChannelId === 'string'
         ? body.discordLeaderChannelId.trim() || null
         : raid.discordLeaderChannelId;
+  const discordGuestChannelId =
+    body.discordGuestChannelId === null
+      ? null
+      : typeof body.discordGuestChannelId === 'string'
+        ? body.discordGuestChannelId.trim() || null
+        : raid.discordGuestChannelId;
+  const allowGuests =
+    typeof body.allowGuests === 'boolean' ? body.allowGuests : raid.allowGuests;
 
   let organizerDiscordId: string | null | undefined = undefined;
   if ('organizerDiscordId' in body) {
@@ -339,26 +347,9 @@ export async function PATCH(
     );
   }
 
-  const confirmResetSignups = body.confirmResetSignups === true;
-  const timeChanged =
-    scheduledAtRaw !== undefined &&
-    scheduledAt.getTime() !== raid.scheduledAt.getTime();
-  const prevDungeonIds =
-    Array.isArray(raid.dungeonIds) && raid.dungeonIds.every((x) => typeof x === 'string')
-      ? Array.from(new Set((raid.dungeonIds as string[]).map((x) => x.trim()).filter(Boolean)))
-      : [raid.dungeonId];
-  const dungeonChanged =
-    raid.dungeonId !== dungeonId ||
-    JSON.stringify(prevDungeonIds) !== JSON.stringify(nextDungeonIds);
-
-  if ((timeChanged || dungeonChanged) && !confirmResetSignups) {
-    return NextResponse.json(
-      { error: 'confirmResetSignups required when changing schedule or dungeons' },
-      { status: 400 }
-    );
-  }
-
-  const resetSignups = (timeChanged || dungeonChanged) && confirmResetSignups;
+  // Der Bearbeiter entscheidet selbst, ob Anmeldungen zurückgesetzt werden sollen.
+  // Es gibt keine automatische Zwangsprüfung mehr bei Termin-/Dungeon-Änderungen.
+  const resetSignups = body.resetSignups === true;
 
   let announcedPlannerGroupsJsonUpdate:
     | Prisma.InputJsonValue
@@ -517,6 +508,18 @@ export async function PATCH(
     }
   }
 
+  if (discordGuestChannelId) {
+    const allowedGuest = await prisma.rfGuildAllowedChannel.findFirst({
+      where: { guildId, discordChannelId: discordGuestChannelId },
+    });
+    if (!allowedGuest) {
+      return NextResponse.json(
+        { error: 'Guest channel is not in the guild allowed list' },
+        { status: 400 }
+      );
+    }
+  }
+
   const raidUpdateData = {
     name,
     note,
@@ -533,6 +536,8 @@ export async function PATCH(
     raidGroupRestrictionId,
     discordChannelId,
     discordLeaderChannelId,
+    discordGuestChannelId,
+    allowGuests,
     ...(organizerDiscordId !== undefined ? { organizerDiscordId } : {}),
     maxPlayers,
     scheduledAt,

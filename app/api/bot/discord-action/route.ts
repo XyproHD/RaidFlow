@@ -536,8 +536,20 @@ export async function POST(request: NextRequest) {
     }
 
     const { withdrawRaidSignupRows } = await import('@/lib/raid-signup-withdraw');
+    // Bereits als „nicht da“ (declined) markierte Zeilen sind keine aktive Anmeldung mehr.
+    const activeRemovedRows = removedRows.filter((r) => r.type !== 'declined');
     let isCreate = false;
-    if (removedRows.length === 0) {
+    if (activeRemovedRows.length > 0) {
+      // Schritt 1: bestehende Anmeldung(en) abmelden – die Zeilen werden dabei auf „declined“
+      // gesetzt und dienen zugleich als „Nicht da“-Kennzeichnung.
+      await withdrawRaidSignupRows(prisma, {
+        raidId,
+        signupIds: activeRemovedRows.map((r) => r.id),
+        changedByUserId: user.id,
+        guildId: raid.guildId,
+      });
+    } else if (removedRows.length === 0) {
+      // Schritt 2: keine bestehende Anmeldung → „Nicht da“-Kennzeichnung neu anlegen.
       const result = await commitRaidSelfSignupMutation({
         raidId,
         guildId: raid.guildId,
@@ -552,17 +564,10 @@ export async function POST(request: NextRequest) {
         note: '',
       });
       isCreate = result.isCreate;
-    } else {
-      await withdrawRaidSignupRows(prisma, {
-        raidId,
-        signupIds: removedRows.map((r) => r.id),
-        changedByUserId: user.id,
-        guildId: raid.guildId,
-      });
     }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
-    for (const row of removedRows) {
+    for (const row of activeRemovedRows) {
       await postSignupChangeThreadNotice(raidId, 'unsignup', {
         characterName: row.character?.name ?? null,
         signedSpec: row.signedSpec,
@@ -570,7 +575,7 @@ export async function POST(request: NextRequest) {
         punctuality: row.punctuality,
       });
     }
-    if (removedRows.length === 0) {
+    if (activeRemovedRows.length === 0 && removedRows.length === 0) {
       await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
         characterName: markerChar.name,
         signedSpec: markerChar.mainSpec,
@@ -621,12 +626,22 @@ export async function POST(request: NextRequest) {
       include: { character: { select: { name: true } } },
     });
 
-    if (removedRows.length === 0) {
-      return NextResponse.json({ error: 'NOT_SIGNED_UP', message: 'Keine Anmeldung gefunden.' }, { status: 404 });
+    // „Nicht da“ (declined) gilt nicht als aktive Anmeldung – nur echte Anmeldungen abmelden.
+    const activeRemovedRows = removedRows.filter((r) => r.type !== 'declined');
+
+    if (activeRemovedRows.length === 0) {
+      return NextResponse.json(
+        {
+          error: 'NOT_SIGNED_UP',
+          message:
+            "Keine Abmeldung möglich da Du nicht angemeldet bist. Nutze 'Nicht da' um dich als abwesend zu markieren.",
+        },
+        { status: 404 }
+      );
     }
 
     const needsAnnouncedReason =
-      raid.status === 'announced' && removedRows.some((r) => r.setConfirmed);
+      raid.status === 'announced' && activeRemovedRows.some((r) => r.setConfirmed);
     if (needsAnnouncedReason || isLateCancellation) {
       if (reason.length < ANNOUNCED_SET_PLAYER_COMMENT_MIN) {
         return NextResponse.json(
@@ -647,7 +662,7 @@ export async function POST(request: NextRequest) {
     const { withdrawRaidSignupRows } = await import('@/lib/raid-signup-withdraw');
     await withdrawRaidSignupRows(prisma, {
       raidId,
-      signupIds: removedRows.map((r) => r.id),
+      signupIds: activeRemovedRows.map((r) => r.id),
       changedByUserId: user.id,
       guildId: raid.guildId,
     });
@@ -667,7 +682,7 @@ export async function POST(request: NextRequest) {
     }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
-    for (const row of removedRows) {
+    for (const row of activeRemovedRows) {
       await postSignupChangeThreadNotice(raidId, 'unsignup', {
         characterName: row.character?.name ?? null,
         signedSpec: row.signedSpec,

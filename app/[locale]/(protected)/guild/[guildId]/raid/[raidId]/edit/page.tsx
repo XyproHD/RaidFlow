@@ -72,10 +72,12 @@ export default async function RaidEditStandalonePage(props: {
     scheduledEndAt: ctx.raid.scheduledEndAt?.toISOString() ?? null,
     signupUntil: ctx.raid.signupUntil.toISOString(),
     signupVisibility: ctx.raid.signupVisibility,
+    allowGuests: ctx.raid.allowGuests,
     status: ctx.raid.status,
     discordThreadId: ctx.raid.discordThreadId,
     discordChannelId: ctx.raid.discordChannelId,
     discordLeaderChannelId: ctx.raid.discordLeaderChannelId,
+    discordGuestChannelId: ctx.raid.discordGuestChannelId,
     organizerDiscordId: ctx.raid.organizerDiscordId ?? null,
     dungeon: {
       id: ctx.raid.dungeon.id,

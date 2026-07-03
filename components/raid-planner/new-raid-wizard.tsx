@@ -201,9 +201,11 @@ export function NewRaidWizard({
     scheduledEndAt: string | null;
     signupUntil: string;
     signupVisibility: string;
+    allowGuests?: boolean;
     discordThreadId: string | null;
     discordChannelId: string | null;
     discordLeaderChannelId?: string | null;
+    discordGuestChannelId?: string | null;
     status: string;
     organizerDiscordId?: string | null;
   };
@@ -229,9 +231,11 @@ export function NewRaidWizard({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [resetAck, setResetAck] = useState(false);
+  /** Bearbeiter entscheidet selbst, ob die Änderungen die Anmeldungen zurücksetzen (Standard: nein). */
+  const [resetSignups, setResetSignups] = useState(false);
   const [cancelDmOpen, setCancelDmOpen] = useState(false);
   const [cancelDmBusy, setCancelDmBusy] = useState(false);
+  const [channelWarningOpen, setChannelWarningOpen] = useState(false);
 
   const [data, setData] = useState<Bootstrap | null>(null);
 
@@ -248,7 +252,7 @@ export function NewRaidWizard({
   const [organizerDiscordId, setOrganizerDiscordId] = useState(() =>
     mode === 'edit' && initialRaid ? (initialRaid.organizerDiscordId ?? '') : ''
   );
-  const [minTanks, setMinTanks] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minTanks : 1));
+  const [minTanks, setMinTanks] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minTanks : 0));
   const [minMelee, setMinMelee] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minMelee : 0));
   const [minRange, setMinRange] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minRange : 0));
   const [minHealers, setMinHealers] = useState(() => (mode === 'edit' && initialRaid ? initialRaid.minHealers : 0));
@@ -296,6 +300,12 @@ export function NewRaidWizard({
   );
   const [discordLeaderChannelId, setDiscordLeaderChannelId] = useState(() =>
     mode === 'edit' && initialRaid ? (initialRaid.discordLeaderChannelId ?? '') : ''
+  );
+  const [discordGuestChannelId, setDiscordGuestChannelId] = useState(() =>
+    mode === 'edit' && initialRaid ? (initialRaid.discordGuestChannelId ?? '') : ''
+  );
+  const [allowGuests, setAllowGuests] = useState(() =>
+    mode === 'edit' && initialRaid ? !!initialRaid.allowGuests : false
   );
 
   const [rangeStartIdx, setRangeStartIdx] = useState(() => {
@@ -398,25 +408,6 @@ export function NewRaidWizard({
   }, [data?.guildName, name, dungeonLineWizard, scheduledAt]);
 
   const isEdit = mode === 'edit' && !!raidId && !!initialRaid;
-  const initialDungeonIds = useMemo(() => {
-    if (!initialRaid) return [];
-    return Array.from(new Set([initialRaid.dungeonId, ...(initialRaid.dungeonIds ?? [])].filter(Boolean)));
-  }, [initialRaid]);
-  const dungeonChanged = useMemo(() => {
-    if (!isEdit) return false;
-    return JSON.stringify(initialDungeonIds) !== JSON.stringify(dungeonIds);
-  }, [isEdit, initialDungeonIds, dungeonIds]);
-  const scheduleChanged = useMemo(() => {
-    if (!isEdit || !initialRaid) return false;
-    const a0 = new Date(initialRaid.scheduledAt).getTime();
-    const e0 = (initialRaid.scheduledEndAt ? new Date(initialRaid.scheduledEndAt) : addMinutes(new Date(initialRaid.scheduledAt), 30)).getTime();
-    return a0 !== scheduledAt.getTime() || e0 !== scheduledEndAt.getTime();
-  }, [isEdit, initialRaid, scheduledAt, scheduledEndAt]);
-  const requiresReset = isEdit && (scheduleChanged || dungeonChanged);
-
-  useEffect(() => {
-    if (!requiresReset) setResetAck(false);
-  }, [requiresReset]);
 
   const loadBootstrap = useCallback(async () => {
     setLoading(true);
@@ -431,11 +422,7 @@ export function NewRaidWizard({
       }
       const json = (await res.json()) as Bootstrap;
       setData(json);
-      if (json.dungeons.length > 0 && mode !== 'edit') {
-        const first = json.dungeons[0]!;
-        setDungeonIds([first.id]);
-        setMaxPlayers(first.maxPlayers);
-      }
+      // Keine Dungeon-Vorauswahl: Pflichtfeld wird erst beim Speichern geprüft.
       if (mode === 'create') {
         const me = json.leaders.find((l) => l.userId === currentUserId);
         if (me?.discordId) {
@@ -760,15 +747,10 @@ export function NewRaidWizard({
     });
   };
 
-  const submit = async () => {
+  const submit = async (opts?: { skipChannelCheck?: boolean }) => {
     setSaveError(null);
     setSaving(true);
     try {
-      if (requiresReset && !resetAck) {
-        setSaveError(tEdit('resetSignupsWarning'));
-        setSaving(false);
-        return;
-      }
       if (!name.trim() || dungeonIds.length === 0) {
         setSaveError(t('validationBasics'));
         setSaving(false);
@@ -783,6 +765,12 @@ export function NewRaidWizard({
       if (!(signupD.getTime() < scheduledAt.getTime())) {
         setSaveError(t('validationSignupBeforeRaid'));
         setSaving(false);
+        return;
+      }
+      // Hinweis (nur bei Neuanlage), wenn Raid-Thread- oder Raidleader-Channel nicht gewählt sind ("kein Channelbeitrag").
+      if (!isEdit && !opts?.skipChannelCheck && (!discordChannelId.trim() || !discordLeaderChannelId.trim())) {
+        setSaving(false);
+        setChannelWarningOpen(true);
         return;
       }
       const dungeonId = dungeonIds[0] ?? '';
@@ -810,8 +798,10 @@ export function NewRaidWizard({
         scheduledEndAt: scheduledEndAt.toISOString(),
         signupUntil: signupUntil.toISOString(),
         signupVisibility,
+        allowGuests,
         discordChannelId: discordChannelId.trim() || null,
         discordLeaderChannelId: discordLeaderChannelId.trim() || null,
+        discordGuestChannelId: discordGuestChannelId.trim() || null,
         organizerDiscordId: organizerDiscordId.trim() || null,
       };
 
@@ -820,7 +810,7 @@ export function NewRaidWizard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...body,
-          ...(requiresReset ? { confirmResetSignups: true } : {}),
+          ...(isEdit ? { resetSignups } : {}),
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -1091,6 +1081,15 @@ export function NewRaidWizard({
                   <option value="raid_leader_only">{t('visibilityLeaders')}</option>
                 </select>
               </label>
+              <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-input"
+                  checked={allowGuests}
+                  onChange={(e) => setAllowGuests(e.target.checked)}
+                />
+                <span className="text-foreground">{t('allowGuests')}</span>
+              </label>
             </fieldset>
           </section>
 
@@ -1240,26 +1239,36 @@ export function NewRaidWizard({
                   ))}
                 </select>
               </label>
+              <label className="flex flex-col gap-1.5 text-sm max-w-md">
+                <span className="text-muted-foreground">{t('guestChannelLabel')}</span>
+                <select
+                  className="rounded-md border border-input bg-background px-3 py-2"
+                  value={discordGuestChannelId}
+                  onChange={(e) => setDiscordGuestChannelId(e.target.value)}
+                >
+                  <option value="">{t('channelNoPost')}</option>
+                  {data.allowedChannels.map((ch) => (
+                    <option key={ch.id} value={ch.discordChannelId}>
+                      {ch.name || ch.discordChannelId}
+                    </option>
+                  ))}
+                </select>
+              </label>
           </section>
 
           {isEdit ? (
-            <div className="rounded-xl border border-border bg-muted/15 p-4 text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">ℹ️</span>{' '}
-              {tEdit('resetSignupsWarning')}
-            </div>
-          ) : null}
-
-          {isEdit && requiresReset ? (
-            <div className="rounded-xl border border-amber-500/50 bg-amber-500/10 p-4 space-y-2">
-              <p className="text-sm">⚠️ {tEdit('resetSignupsWarning')}</p>
+            <div className="rounded-xl border border-border bg-muted/15 p-4 space-y-1.5">
               <label className="inline-flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
-                  checked={resetAck}
-                  onChange={(e) => setResetAck(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                  checked={resetSignups}
+                  onChange={(e) => setResetSignups(e.target.checked)}
+                  disabled={!editable}
                 />
-                <span>{tEdit('confirmReset')}</span>
+                <span className="font-medium text-foreground">{tEdit('resetSignupsOption')}</span>
               </label>
+              <p className="text-xs text-muted-foreground">{tEdit('resetSignupsOptionHint')}</p>
             </div>
           ) : null}
 
@@ -1295,7 +1304,7 @@ export function NewRaidWizard({
             ) : null}
             <button
               type="button"
-              disabled={saving || (requiresReset && !resetAck) || !editable}
+              disabled={saving || !editable}
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
               onClick={() => void submit()}
             >
@@ -1699,6 +1708,54 @@ export function NewRaidWizard({
                       {t('applyFromAvailability')}
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+      {portalMounted && channelWarningOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="channel-warning-title"
+              onMouseDown={(e) => {
+                if (e.target === e.currentTarget) setChannelWarningOpen(false);
+              }}
+            >
+              <div
+                className="w-full max-w-md space-y-4 rounded-xl border border-border bg-background p-5 shadow-xl"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <h2 id="channel-warning-title" className="text-base font-semibold text-foreground">
+                  {t('channelWarningTitle')}
+                </h2>
+                <p className="text-sm text-muted-foreground">{t('channelWarningIntro')}</p>
+                <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
+                  {!discordChannelId.trim() ? <li>{t('threadChannel')}</li> : null}
+                  {!discordLeaderChannelId.trim() ? <li>{t('leaderChannelLabel')}</li> : null}
+                </ul>
+                <p className="text-sm text-muted-foreground">{t('channelWarningQuestion')}</p>
+                <div className="flex flex-wrap justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-4 py-2 text-sm hover:bg-muted"
+                    onClick={() => setChannelWarningOpen(false)}
+                  >
+                    {t('channelWarningBack')}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+                    onClick={() => {
+                      setChannelWarningOpen(false);
+                      void submit({ skipChannelCheck: true });
+                    }}
+                  >
+                    {t('channelWarningProceed')}
+                  </button>
                 </div>
               </div>
             </div>,

@@ -31,7 +31,7 @@ const raidflowSlash = new SlashCommandBuilder()
     .addSubcommand((sub) =>
       sub
         .setName('check')
-        .setDescription('Status: Webapp/DB, Mindestrollen, deine Discord- und Webapp-Zuordnung')
+        .setDescription('Status: Webapp/DB, Mindestrollen, Bot-Berechtigungen, erlaubte Channels, deine Zuordnung')
     )
     .addSubcommand((sub) =>
       sub

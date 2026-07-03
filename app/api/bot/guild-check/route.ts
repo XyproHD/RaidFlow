@@ -42,6 +42,10 @@ export async function GET(request: Request) {
     where: { discordGuildId },
     include: {
       _count: { select: { raidGroups: true } },
+      guildAllowedChannels: {
+        select: { discordChannelId: true, name: true },
+        orderBy: { createdAt: 'asc' },
+      },
     },
   });
 
@@ -117,6 +121,10 @@ export async function GET(request: Request) {
           discordRoleRaiderId: guild.discordRoleRaiderId,
           raidGroupCount: guild._count.raidGroups,
           minimumRolesConfigured,
+          allowedChannels: guild.guildAllowedChannels.map((c) => ({
+            discordChannelId: c.discordChannelId,
+            name: c.name,
+          })),
         }
       : null,
     user: {

@@ -245,11 +245,15 @@ model RfRaid {
   scheduledEndAt          DateTime? @map("scheduled_end_at")
   signupUntil             DateTime  @map("signup_until")
   signupVisibility        String    @map("signup_visibility")
+  /// Gäste erlauben (Gast-Anmeldungen für diesen Raid); Funktion folgt später
+  allowGuests             Boolean   @default(false) @map("allow_guests")
   status                  String
   discordThreadId                String?   @map("discord_thread_id")
   discordChannelId               String?   @map("discord_channel_id")
   /// Discord-Kanal für Raidleader (z. B. spätere Bot-Benachrichtigungen)
   discordLeaderChannelId         String?   @map("discord_leader_channel_id")
+  /// Discord-Kanal für Gast-Anmelder (nur erlaubte Gilden-Channels); Funktion folgt später
+  discordGuestChannelId          String?   @map("discord_guest_channel_id")
   /// Erste Zusammenfassungs-Nachricht im Thread (PATCH bei Anmelde-Updates) – Legacy
   discordThreadSummaryMessageId  String?   @map("discord_thread_summary_message_id")
   /// Embed-Nachricht direkt im Channel (neue Posting-Logik; wird bei Updates gepatcht)

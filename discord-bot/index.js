@@ -165,6 +165,89 @@ function formatRolePresenceLine(guild, roleId, label) {
     : `• ${label}: **fehlt auf dem Server** (in DB: \`${roleId}\`)`;
 }
 
+/** Server-Berechtigungen, die RaidFlow laut lib/bot-invite.ts benötigt. */
+const RAIDFLOW_BOT_GUILD_PERMISSIONS = [
+  ['Rollen verwalten', PermissionFlagsBits.ManageRoles],
+  ['Channels sehen', PermissionFlagsBits.ViewChannel],
+  ['Nachrichten senden', PermissionFlagsBits.SendMessages],
+  ['Nachrichtenverlauf lesen', PermissionFlagsBits.ReadMessageHistory],
+  ['Slash-Commands', PermissionFlagsBits.UseApplicationCommands],
+  ['Threads verwalten', PermissionFlagsBits.ManageThreads],
+  ['Öffentliche Threads erstellen', PermissionFlagsBits.CreatePublicThreads],
+  ['In Threads schreiben', PermissionFlagsBits.SendMessagesInThreads],
+];
+
+/** Pro erlaubtem Channel (Raid-Threads / Embeds). */
+const RAIDFLOW_BOT_CHANNEL_PERMISSIONS = [
+  ['Sehen', PermissionFlagsBits.ViewChannel],
+  ['Senden', PermissionFlagsBits.SendMessages],
+  ['Verlauf lesen', PermissionFlagsBits.ReadMessageHistory],
+  ['Threads erstellen', PermissionFlagsBits.CreatePublicThreads],
+  ['In Threads schreiben', PermissionFlagsBits.SendMessagesInThreads],
+  ['Threads verwalten', PermissionFlagsBits.ManageThreads],
+];
+
+function formatBotGuildPermissionLines(botMember) {
+  if (!botMember) {
+    return { lines: ['• Bot-Mitglied auf diesem Server nicht geladen'], allOk: false, missing: [] };
+  }
+  const lines = [];
+  const missing = [];
+  for (const [label, flag] of RAIDFLOW_BOT_GUILD_PERMISSIONS) {
+    const has = botMember.permissions.has(flag);
+    lines.push(`• ${label}: **${has ? 'ja' : 'fehlt'}**`);
+    if (!has) missing.push(label);
+  }
+  return { lines, allOk: missing.length === 0, missing };
+}
+
+async function formatAllowedChannelPermissionLines(guild, botMember, allowedChannels) {
+  if (!allowedChannels?.length) {
+    return ['_(keine Channels in der Gildenverwaltung hinterlegt)_'];
+  }
+  if (!botMember) {
+    return ['_(Bot-Mitglied nicht geladen – Channel-Check nicht möglich)_'];
+  }
+
+  const lines = [];
+  for (const row of allowedChannels) {
+    const channelId = row.discordChannelId;
+    const displayName = row.name?.trim()
+      ? `#${row.name.trim()}`
+      : `\`${channelId}\``;
+
+    let channel = guild.channels.cache.get(channelId) ?? null;
+    if (!channel) {
+      try {
+        channel = await guild.channels.fetch(channelId);
+      } catch {
+        channel = null;
+      }
+    }
+
+    if (!channel) {
+      lines.push(`• ${displayName}: **nicht gefunden** (gelöscht oder kein Zugriff)`);
+      continue;
+    }
+
+    const perms = channel.permissionsFor(botMember);
+    if (!perms) {
+      lines.push(`• ${displayName}: **Berechtigungen nicht ermittelbar**`);
+      continue;
+    }
+
+    const missing = RAIDFLOW_BOT_CHANNEL_PERMISSIONS.filter(([, flag]) => !perms.has(flag)).map(
+      ([label]) => label
+    );
+    if (missing.length === 0) {
+      lines.push(`• ${displayName}: **ok**`);
+    } else {
+      lines.push(`• ${displayName}: **fehlt:** ${missing.join(', ')}`);
+    }
+  }
+  return lines;
+}
+
 function discordMainRaidFlowRole(member, gmId, rlId, rdId) {
   const ids = member.roles.cache;
   if (gmId && ids.has(gmId)) return 'Gildenmeister';
@@ -204,10 +287,24 @@ async function runRaidflowCheck(interaction) {
       /* interaction.member */
     }
 
+    let botMember = guild.members.me;
+    try {
+      botMember = await guild.members.fetchMe();
+    } catch {
+      /* guild.members.me */
+    }
+
     const g = data.rfGuild;
     const gmId = g?.discordRoleGuildmasterId;
     const rlId = g?.discordRoleRaidleaderId;
     const rdId = g?.discordRoleRaiderId;
+
+    const guildPermCheck = formatBotGuildPermissionLines(botMember);
+    const allowedChannelLines = await formatAllowedChannelPermissionLines(
+      guild,
+      botMember,
+      g?.allowedChannels ?? []
+    );
 
     const lines = [];
     lines.push('**RaidFlow – Status-Check**');
@@ -217,6 +314,17 @@ async function runRaidflowCheck(interaction) {
     lines.push(`• Mindestrollen in DB vollständig: **${g?.minimumRolesConfigured ? 'ja' : 'nein'}**`);
     lines.push(`• App-Config (Server erlaubt): **${data.allowedByAppConfig ? 'ja' : 'nein'}**`);
     if (g) lines.push(`• Raidgruppen in DB: **${g.raidGroupCount}**`);
+    if (g) {
+      lines.push(
+        `• Erlaubte Channels (Gildenverwaltung): **${(g.allowedChannels ?? []).length}**`
+      );
+    }
+    lines.push('');
+    lines.push('**Bot-Berechtigungen (Server)**');
+    lines.push(...guildPermCheck.lines);
+    lines.push('');
+    lines.push('**Erlaubte Channels (Bot-Zugriff)**');
+    lines.push(...allowedChannelLines);
     lines.push('');
     lines.push('**Konfigurierte Rollen auf Discord**');
     if (g) {
@@ -242,6 +350,34 @@ async function runRaidflowCheck(interaction) {
       lines.push('');
       lines.push('**Hinweise**');
       for (const h of data.hints) lines.push(`• ${h}`);
+    }
+
+    const botHints = [];
+    if (!guildPermCheck.allOk) {
+      botHints.push(
+        `Bot fehlen Server-Berechtigungen: ${guildPermCheck.missing.join(', ')}. Bot erneut einladen oder Rolle anpassen.`
+      );
+    }
+    if ((g?.allowedChannels ?? []).length > 0) {
+      const channelIssues = allowedChannelLines.filter(
+        (l) => !l.includes('**ok**') && !l.startsWith('_(')
+      );
+      if (channelIssues.length > 0) {
+        botHints.push(
+          `${channelIssues.length} erlaubte(r) Channel(s) sind für den Bot nicht voll nutzbar – siehe Abschnitt „Erlaubte Channels“.`
+        );
+      }
+    } else if (g) {
+      botHints.push(
+        'Keine erlaubten Channels in der Gildenverwaltung hinterlegt – beim Raid anlegen kann kein Discord-Channel gewählt werden.'
+      );
+    }
+    if (botHints.length) {
+      if (!data.hints?.length) {
+        lines.push('');
+        lines.push('**Hinweise**');
+      }
+      for (const h of botHints) lines.push(`• ${h}`);
     }
 
     lines.push('');
@@ -522,7 +658,7 @@ function buildHelpContent() {
     '',
     '**`/raidflow sync`** – Manueller Rollen-/Mitglieder-Sync für die Gilde (nur Gildenmeister oder Raidleader).',
     '',
-    '**`/raidflow check`** – Status: Server in Webapp/DB, Mindestrollen, deine Discord-Rollen vs. Webapp-Zuordnung. **Für alle Server-Mitglieder.**',
+    '**`/raidflow check`** – Status: Server in Webapp/DB, Mindestrollen, Bot-Berechtigungen, erlaubte Channels (Gildenverwaltung), deine Discord-Rollen vs. Webapp-Zuordnung. **Für alle Server-Mitglieder.**',
     '',
     '**`help`**, **`setup`**, **`group`** nur mit Setup-Recht (Owner / Administrator / Server verwalten). **`sync`** nur für Gildenmeister/Raidleader. **`check`** kann jeder auf dem Server nutzen.',
   ].join('\n');
@@ -1477,7 +1613,7 @@ function raidActionErrorText(err, json) {
       : '❌ Kein Charakter für diese Gilde gefunden. Bitte erst einen Charakter in der WebApp anlegen.',
     ALREADY_SIGNED_UP: '⚠️ Du bist bereits angemeldet.',
     SIGNUP_CLOSED:     '🔒 Die Anmeldung ist geschlossen oder der Raid nicht mehr offen.',
-    NOT_SIGNED_UP:     '⚠️ Du hast keine aktive Anmeldung.',
+    NOT_SIGNED_UP:     "⚠️ Keine Abmeldung möglich da Du nicht angemeldet bist. Nutze 'Nicht da' um dich als abwesend zu markieren.",
     REASON_REQUIRED:   '⚠️ Nach dem Anmeldeschluss ist eine Begründung für die Abmeldung erforderlich.',
     COMMENT_REQUIRED:  '⚠️ Als gesetzter Spieler ist eine Begründung nötig (mind. 10 Zeichen).',
   };
@@ -2798,25 +2934,27 @@ async function handleRaidUnregButton(interaction, raidId) {
     return;
   }
   const signups    = Array.isArray(json.signups) ? json.signups : [];
+  // „Nicht da“ (declined) zählt nicht als Anmeldung → für diese ist keine Abmeldung möglich.
+  const activeSignups = signups.filter((s) => s.type !== 'declined');
   const raidNoDash = raidId.replace(/-/g, '');
   const reasonRequired =
-    json.raidStatus === 'announced' && signups.some((s) => s.setConfirmed);
+    json.raidStatus === 'announced' && activeSignups.some((s) => s.setConfirmed);
 
-  if (signups.length === 0) {
-    await interaction.reply({ content: '⚠️ Du hast keine aktive Anmeldung.', ephemeral: true }).catch(() => {});
+  if (activeSignups.length === 0) {
+    await interaction.reply({ content: raidActionErrorText('NOT_SIGNED_UP'), ephemeral: true }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
-  if (signups.length === 1) {
-    await showUnregModal(interaction, raidNoDash, signups[0].id.replace(/-/g, ''), reasonRequired);
+  if (activeSignups.length === 1) {
+    await showUnregModal(interaction, raidNoDash, activeSignups[0].id.replace(/-/g, ''), reasonRequired);
     return;
   }
   // Mehrere Anmeldungen → Auswahl anbieten
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
   const { StringSelectMenuBuilder, ActionRowBuilder } = await import('discord.js');
   const options = [
-    { label: 'Alle Anmeldungen abmelden', value: 'alle', description: `${signups.length} Anmeldungen` },
-    ...signups.slice(0, 24).map(s => ({
+    { label: 'Alle Anmeldungen abmelden', value: 'alle', description: `${activeSignups.length} Anmeldungen` },
+    ...activeSignups.slice(0, 24).map(s => ({
       label:       truncateDiscordLabel(`${s.character?.name ?? '?'} (${s.signedSpec ?? s.character?.mainSpec ?? '?'})`, 100),
       value:       s.id,
       description: s.type === 'reserve' ? 'Reserve' : 'Normal',

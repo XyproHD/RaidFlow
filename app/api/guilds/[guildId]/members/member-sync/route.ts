@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import { requireGuildMasterOrForbid } from '@/lib/guild-master';
-import { syncGuildMemberDiscordDisplayNames } from '@/lib/guild-discord-display-name-sync';
+import { syncGuildMembers } from '@/lib/guild-member-sync';
 
 /**
- * POST /api/guilds/[guildId]/members/sync-discord-names
- * Gildenmeister: für alle RaidFlow-Mitglieder der Gilde Discord-Anzeigenamen laden und in rf_character speichern.
+ * POST /api/guilds/[guildId]/members/member-sync
+ * Gildenmeister: Mitgliederliste mit dem Discord-Server abgleichen.
+ * Entfernt Mitglieder, die nicht mehr auf dem Server sind, keine Gilden-Rolle
+ * oder keinen Charakter in dieser Gilde haben. Für verbleibende Mitglieder werden
+ * Rollen und Anzeigenamen aktualisiert.
  */
 export async function POST(
   _request: Request,
@@ -14,7 +17,7 @@ export async function POST(
   const auth = await requireGuildMasterOrForbid(guildId);
   if (auth instanceof NextResponse) return auth;
 
-  const result = await syncGuildMemberDiscordDisplayNames(guildId);
+  const result = await syncGuildMembers(guildId, auth.userId);
 
   if (!result.botTokenConfigured) {
     return NextResponse.json(
