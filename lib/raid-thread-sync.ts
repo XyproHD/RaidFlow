@@ -584,7 +584,7 @@ export async function postRaidScheduleChangeChannelNotice(
 // Signup-Änderungs-Protokoll
 // ---------------------------------------------------------------------------
 
-export type SignupChangeAction = 'signup' | 'unsignup' | 'edit';
+export type SignupChangeAction = 'signup' | 'unsignup' | 'unsignup_declined' | 'edit';
 
 export interface SignupChangeDetails {
   characterName: string | null;
@@ -653,6 +653,8 @@ export async function postSignupChangeThreadNotice(
         content = `🚫 **${charName}** ist nicht da`;
       } else if (action === 'signup') {
         content = `✍️ **${charName}** hat sich angemeldet${specText}${typeText}${puncText}`;
+      } else if (action === 'unsignup_declined') {
+        content = `🚫 **${charName}** hat sich abgemeldet und ist nicht da`;
       } else if (action === 'unsignup') {
         content = `🚪 **${charName}** hat sich abgemeldet`;
       } else if (action === 'edit' && details.type === 'declined') {
@@ -681,6 +683,8 @@ export async function postSignupChangeThreadNotice(
         content = `🚫 ${who} ist nicht da`;
       } else if (action === 'signup') {
         content = `✍️ ${who} hat sich angemeldet${anonTypeSuffix}${puncText}`;
+      } else if (action === 'unsignup_declined') {
+        content = `🚫 ${who} hat sich abgemeldet und ist nicht da`;
       } else if (action === 'unsignup') {
         content = `🚪 ${who} hat sich abgemeldet`;
       } else if (action === 'edit' && details.type === 'declined') {

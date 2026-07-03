@@ -576,7 +576,8 @@ export async function POST(request: NextRequest) {
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
     for (const row of activeRemovedRows) {
-      await postSignupChangeThreadNotice(raidId, 'unsignup', {
+      // War zuvor angemeldet und markiert sich direkt als „Nicht da" → beides im Log ausweisen.
+      await postSignupChangeThreadNotice(raidId, 'unsignup_declined', {
         characterName: row.character?.name ?? null,
         signedSpec: row.signedSpec,
         type: 'declined',
