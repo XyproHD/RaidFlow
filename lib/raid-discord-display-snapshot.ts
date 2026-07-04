@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { buildRaidEmbeds } from '@/lib/raid-embed-builder';
+import { buildRaidEmbeds, buildGuestRaidEmbeds } from '@/lib/raid-embed-builder';
 import { getAppConfig } from '@/lib/app-config';
 import type { DiscordEmbed } from '@/lib/discord-guild-api';
 
@@ -42,6 +42,7 @@ export function fingerprintRaidDiscordEmbeds(embeds: DiscordEmbed[]): string {
 
 export async function buildRaidDiscordEmbedsForRaid(
   raid: LoadedRaidForDisplay,
+  locale: 'de' | 'en' = 'de',
 ): Promise<DiscordEmbed[]> {
   const dungeonNames: string[] = [raid.dungeon.name];
   if (Array.isArray(raid.dungeonIds) && raid.dungeonIds.length > 1) {
@@ -58,7 +59,7 @@ export async function buildRaidDiscordEmbedsForRaid(
   const appConfig = await getAppConfig().catch(() => null);
   const discordEmojis = appConfig?.discordEmojis ?? {};
 
-  return buildRaidEmbeds({
+  const payload = {
     raidId: raid.id,
     guildId: raid.guildId,
     raidName: raid.name,
@@ -91,8 +92,10 @@ export async function buildRaidDiscordEmbedsForRaid(
       isGuest: s.isGuest,
     })),
     appUrl: getAppUrl(),
-    locale: 'de',
-  });
+    locale,
+  };
+
+  return locale === 'en' ? buildGuestRaidEmbeds(payload) : buildRaidEmbeds(payload);
 }
 
 export type RaidDiscordDisplaySnapshot = {
@@ -121,5 +124,5 @@ export async function getRaidDiscordDisplaySnapshot(
 export async function buildGuestRaidDiscordEmbedsForRaid(
   raid: LoadedRaidForDisplay,
 ): Promise<DiscordEmbed[]> {
-  return buildRaidDiscordEmbedsForRaid(raid);
+  return buildRaidDiscordEmbedsForRaid(raid, 'en');
 }

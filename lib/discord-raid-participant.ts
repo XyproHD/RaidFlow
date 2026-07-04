@@ -8,6 +8,10 @@ import {
   resolveGuestEligibility,
   assignCharacterForGuestSignup,
 } from '@/lib/guest-raid-access';
+import {
+  raidBotMessage,
+  type RaidBotLocale,
+} from '@/lib/discord-raid-bot-locale';
 
 function profileUrlForLocale(locale = 'de'): string {
   const base = process.env.NEXTAUTH_URL?.replace(/\/$/, '') || 'http://localhost:3000';
@@ -36,6 +40,7 @@ export type RaidParticipantState = {
     isMain: boolean;
     guildId: string | null;
   }>;
+  discordGuestChannelId: string | null;
   profileUrl: string;
   signupPhase: ReturnType<typeof computeRaidSignupPhase>;
   discordEmojis: Record<string, string>;
@@ -56,6 +61,7 @@ export async function buildRaidParticipantState(
       scheduledAt: true,
       status: true,
       raidGroupRestrictionId: true,
+      discordGuestChannelId: true,
       guild: { select: { id: true, name: true, discordGuildId: true } },
     },
   });
@@ -78,6 +84,7 @@ export async function buildRaidParticipantState(
       guestEligible: false,
       raidGuildId: raid.guildId,
       raidGuildName: raid.guild.name,
+      discordGuestChannelId: raid.discordGuestChannelId,
       characters: [],
       assignableCharacters: [],
       profileUrl: profileUrlForLocale(options?.locale),
@@ -138,6 +145,7 @@ export async function buildRaidParticipantState(
     guestEligible,
     raidGuildId: raid.guildId,
     raidGuildName: raid.guild.name,
+    discordGuestChannelId: raid.discordGuestChannelId,
     characters: profileChars,
     assignableCharacters: assignable,
     profileUrl: profileUrlForLocale(options?.locale),
@@ -150,19 +158,26 @@ export async function assignCharacterToRaidGuild(params: {
   discordUserId: string;
   raidId: string;
   characterId: string;
+  locale?: RaidBotLocale;
 }): Promise<
   | { ok: true; characterId: string }
   | { ok: false; error: string; message: string; status: number }
 > {
+  const locale = params.locale ?? 'de';
   const state = await buildRaidParticipantState(params.discordUserId, params.raidId);
   if (!state) {
-    return { ok: false, error: 'RAID_NOT_FOUND', message: 'Raid nicht gefunden.', status: 404 };
+    return {
+      ok: false,
+      error: 'RAID_NOT_FOUND',
+      message: raidBotMessage(locale, 'RAID_NOT_FOUND'),
+      status: 404,
+    };
   }
   if (!state.linked) {
     return {
       ok: false,
       error: 'NOT_LINKED',
-      message: 'Discord-Konto ist nicht mit RaidFlow verknüpft.',
+      message: raidBotMessage(locale, 'NOT_LINKED'),
       status: 403,
     };
   }
@@ -170,7 +185,7 @@ export async function assignCharacterToRaidGuild(params: {
     return {
       ok: false,
       error: 'NOT_GUILD_MEMBER',
-      message: 'Du bist kein RaidFlow-Mitglied dieser Gilde.',
+      message: raidBotMessage(locale, 'NOT_GUILD_MEMBER'),
       status: 403,
     };
   }
@@ -183,7 +198,7 @@ export async function assignCharacterToRaidGuild(params: {
     return {
       ok: false,
       error: 'NOT_LINKED',
-      message: 'Discord-Konto ist nicht mit RaidFlow verknüpft.',
+      message: raidBotMessage(locale, 'NOT_LINKED'),
       status: 403,
     };
   }
@@ -220,7 +235,7 @@ export async function assignCharacterToRaidGuild(params: {
     return {
       ok: false,
       error: 'CHARACTER_NOT_FOUND',
-      message: 'Charakter nicht gefunden oder bereits dieser Gilde zugeordnet.',
+      message: raidBotMessage(locale, 'CHARACTER_NOT_FOUND'),
       status: 404,
     };
   }
