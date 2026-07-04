@@ -138,12 +138,15 @@ export async function commitRaidSelfSignupMutation(
     where: { raidId, userId, characterId },
   });
 
+  const effectiveIsGuest = isGuest || existing?.isGuest === true;
+
   if (existing) {
     const prevSnap = snapshotSignup({ ...existing });
     const updated = await prisma.rfRaidSignup.update({
       where: { id: existing.id },
       data: {
         ...data,
+        isGuest: effectiveIsGuest,
         allowReserve: false,
         leaderAllowsReserve: forbidReserve ? false : existing.leaderAllowsReserve,
       },
@@ -194,6 +197,7 @@ export async function commitRaidSelfSignupMutation(
       raidId,
       userId,
       ...data,
+      isGuest: effectiveIsGuest,
       allowReserve: false,
       leaderAllowsReserve: !forbidReserve,
       leaderMarkedTeilnehmer: false,

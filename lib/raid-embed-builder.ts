@@ -60,6 +60,7 @@ export type RaidEmbedSignup = {
   type: string;
   originalSignupType?: string | null;
   setConfirmed?: boolean;
+  isGuest?: boolean;
 };
 
 export type StoredAnnouncedGroups = {
@@ -146,9 +147,15 @@ function punctualityIcon(p: string | null | undefined): string {
 }
 
 /** Spieler-Zeile: {KlasseEmoji}{SpecEmoji} Charname *(T)* {PuncIcon} */
+function embedCharacterLabel(s: RaidEmbedSignup | null | undefined): string | null {
+  if (!s?.characterName) return null;
+  return `${s.characterName}${s.isGuest ? ' (Gast)' : ''}`;
+}
+
 function playerLine(s: RaidEmbedSignup, emojis: Record<string, string>): string {
   const spec       = s.signedSpec?.trim() || s.mainSpec?.trim() || '?';
-  const charName   = s.characterName || '?';
+  const guestTag   = s.isGuest ? ' (Gast)' : '';
+  const charName   = `${s.characterName || '?'}${guestTag}`;
   const twink      = s.isMain === false ? ' *(T)*' : '';
   const punc       = punctualityIcon(s.punctuality);
   const emojiPart = getSpecEmoji(spec, emojis);
@@ -644,8 +651,14 @@ export function buildRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
       const leadSignup = group.raidLeaderUserId ? signupByUser.get(group.raidLeaderUserId) : null;
       const lootSignup = group.lootmasterUserId ? signupByUser.get(group.lootmasterUserId) : null;
       const headerParts: string[] = [];
-      if (leadSignup?.characterName) headerParts.push(`👑 Raidleader: **${leadSignup.characterName}**`);
-      if (lootSignup?.characterName) headerParts.push(`💰 Lootmeister: **${lootSignup.characterName}**`);
+      if (leadSignup?.characterName) {
+        const label = embedCharacterLabel(leadSignup);
+        if (label) headerParts.push(`👑 Raidleader: **${label}**`);
+      }
+      if (lootSignup?.characterName) {
+        const label = embedCharacterLabel(lootSignup);
+        if (label) headerParts.push(`💰 Lootmeister: **${label}**`);
+      }
       if (headerParts.length > 0) {
         headerLines.push(headerParts.join('  ·  '));
       }
@@ -765,48 +778,9 @@ export function buildRaidActionButtons(
   ];
 }
 
-/** Gekürztes Gast-Channel-Embed (ohne Spielerliste / Protokoll). */
+/** Gast-Channel: gleiches Embed wie Raid-Channel (Gäste mit „(Gast)“ in Spielerzeilen). */
 export function buildGuestRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
-  const {
-    raidId,
-    guildId,
-    raidName,
-    dungeonNames,
-    scheduledAt,
-    signupUntil,
-    status,
-    maxPlayers,
-    signups,
-    appUrl,
-    locale = 'de',
-  } = input;
-
-  const title = `👋 Gast-Raid · ${raidName} — ${dungeonNames.join(' + ')}`.slice(0, 256);
-  const color = embedColor(status, signupUntil);
-  const base = appUrl.replace(/\/$/, '');
-  const dashUrl = `${base}/${locale}/dashboard`;
-  const signupUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}?mode=signup`;
-
-  const uniquePlayers = new Set(signups.map((s) => s.userId)).size;
-
-  const description = [
-    `📅 **Termin:** ${formatDate(scheduledAt)} · ${formatTime(scheduledAt)} Uhr`,
-    `🗓️ **Anmeldung bis:** ${formatDate(signupUntil)} · ${formatTime(signupUntil)} Uhr`,
-    `📊 **Status:** ${statusText(status, signupUntil)}`,
-    `👥 **Anmeldungen:** ${uniquePlayers} / ${maxPlayers}`,
-    '',
-    `*[Dashboard](${dashUrl}) · [Zum Raid / Anmelden](${signupUrl})*`,
-    '',
-    '_Gast-Anmeldung für Discord-Mitglieder ohne Raider-Rolle. Die Teilnehmerliste ist nur für die Raidleitung sichtbar._',
-  ].join('\n');
-
-  return [
-    {
-      title,
-      description: description.slice(0, 4096),
-      color,
-    },
-  ];
+  return buildRaidEmbeds(input);
 }
 
 /** Gast-Channel-Buttons (ohne „Anmelden 2“ / „Bin nicht da“). */

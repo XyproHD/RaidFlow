@@ -194,6 +194,7 @@ export async function assignCharacterToRaidGuild(params: {
       userId: user.id,
       characterId: params.characterId,
       guildId: state.raidGuildId,
+      discordId: params.discordUserId,
       displayNameInGuild: guest.displayNameInGuild,
     });
     if (!assigned.ok) {

@@ -123,6 +123,7 @@ export async function POST(
       userId,
       characterId: character.id,
       guildId,
+      discordId: discordUserId,
       displayNameInGuild: guestCheck.displayNameInGuild,
     });
     if (!assigned.ok) {

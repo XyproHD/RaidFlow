@@ -148,6 +148,7 @@ export async function POST(
       userId: targetUserId,
       characterId: characterRaw.id,
       guildId,
+      discordId: targetUser.discordId,
       displayNameInGuild: guestCheck.displayNameInGuild,
     });
     if (!assigned.ok) {
@@ -228,7 +229,7 @@ export async function POST(
         leaderAllowsReserve: existing.forbidReserve ? false : existing.leaderAllowsReserve,
         leaderPlacement,
         setConfirmed,
-        isGuest,
+        isGuest: existing.isGuest || isGuest,
       },
     });
     await logRaidSignupAudit({

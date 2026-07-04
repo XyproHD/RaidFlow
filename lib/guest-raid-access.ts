@@ -23,6 +23,27 @@ import {
   type RaidQueryWindow,
 } from '@/lib/user-guilds';
 
+async function resolveDiscordDisplayNameForGuest(
+  guildId: string,
+  discordId: string,
+  displayNameInGuild?: string | null
+): Promise<string | null> {
+  const direct = displayNameInGuild?.trim();
+  if (direct) return direct;
+
+  const guild = await prisma.rfGuild.findUnique({
+    where: { id: guildId },
+    select: { discordGuildId: true },
+  });
+  if (!guild) return null;
+
+  const membership = await resolveDiscordGuildMembership(
+    guild.discordGuildId,
+    discordId
+  );
+  return membership.displayNameInGuild?.trim() || null;
+}
+
 export type RaidAccessMode = 'member' | 'guest';
 
 export type GuestEligibility = {
@@ -171,9 +192,10 @@ export async function assignCharacterForGuestSignup(params: {
   userId: string;
   characterId: string;
   guildId: string;
+  discordId: string;
   displayNameInGuild?: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
-  const { userId, characterId, guildId, displayNameInGuild } = params;
+  const { userId, characterId, guildId, discordId, displayNameInGuild } = params;
 
   const character = await prisma.rfCharacter.findFirst({
     where: {
@@ -181,7 +203,7 @@ export async function assignCharacterForGuestSignup(params: {
       userId,
       OR: [{ guildId: null }, { guildId }],
     },
-    select: { id: true, guildId: true },
+    select: { id: true, guildId: true, guildDiscordDisplayName: true },
   });
   if (!character) {
     return {
@@ -191,27 +213,85 @@ export async function assignCharacterForGuestSignup(params: {
     };
   }
 
-  if (character.guildId === guildId) {
+  const discordDisplayName = await resolveDiscordDisplayNameForGuest(
+    guildId,
+    discordId,
+    displayNameInGuild
+  );
+
+  const needsGuildAssign = character.guildId !== guildId;
+  const needsDiscordName =
+    !!discordDisplayName && !character.guildDiscordDisplayName?.trim();
+
+  if (!needsGuildAssign && !needsDiscordName) {
     return { ok: true };
   }
 
-  const hasMainInGuild = await prisma.rfCharacter.findFirst({
-    where: { userId, guildId, isMain: true },
-    select: { id: true },
-  });
+  const hasMainInGuild = needsGuildAssign
+    ? await prisma.rfCharacter.findFirst({
+        where: { userId, guildId, isMain: true },
+        select: { id: true },
+      })
+    : null;
 
   await prisma.rfCharacter.update({
     where: { id: characterId },
     data: {
-      guildId,
-      isMain: hasMainInGuild ? false : true,
-      ...(displayNameInGuild !== undefined && displayNameInGuild !== null
-        ? { guildDiscordDisplayName: displayNameInGuild.trim() || null }
+      ...(needsGuildAssign
+        ? {
+            guildId,
+            isMain: hasMainInGuild ? false : true,
+          }
         : {}),
+      ...(needsDiscordName ? { guildDiscordDisplayName: discordDisplayName } : {}),
     },
   });
 
   return { ok: true };
+}
+
+/** Korrigiert fehlende is_guest-Flags und Discord-Namen bei Gast-Anmeldungen. */
+export async function healGuestSignupMetadataForRaid(
+  raidId: string,
+  guildId: string
+): Promise<void> {
+  const rows = await prisma.rfRaidSignup.findMany({
+    where: { raidId, isGuest: false },
+    select: {
+      id: true,
+      userId: true,
+      user: { select: { discordId: true } },
+    },
+  });
+  for (const row of rows) {
+    const guest = await resolveIsGuestSignup(row.userId, row.user.discordId, guildId);
+    if (guest) {
+      await prisma.rfRaidSignup.update({
+        where: { id: row.id },
+        data: { isGuest: true },
+      });
+    }
+  }
+
+  const guestSignups = await prisma.rfRaidSignup.findMany({
+    where: { raidId, isGuest: true },
+    select: {
+      userId: true,
+      characterId: true,
+      character: { select: { id: true, guildDiscordDisplayName: true } },
+      user: { select: { discordId: true } },
+    },
+  });
+
+  for (const signup of guestSignups) {
+    if (!signup.characterId || signup.character?.guildDiscordDisplayName?.trim()) continue;
+    await assignCharacterForGuestSignup({
+      userId: signup.userId,
+      characterId: signup.characterId,
+      guildId,
+      discordId: signup.user.discordId,
+    });
+  }
 }
 
 /**

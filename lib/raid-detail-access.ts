@@ -11,6 +11,7 @@ import {
   type RaidSignupPhase,
 } from '@/lib/raid-detail-shared';
 import {
+  healGuestSignupMetadataForRaid,
   resolveRaidAccessWithGuests,
   type RaidAccessMode,
 } from '@/lib/guest-raid-access';
@@ -104,9 +105,17 @@ export async function getRaidDetailContext(
   const access = await resolveRaidAccess(userId, discordId, guildId, raidId);
   if (!access.ok) return access;
 
-  const raid = await loadRaidForDetailPage(guildId, raidId, locale);
+  let raid = await loadRaidForDetailPage(guildId, raidId, locale);
   if (!raid) {
     return { ok: false, reason: 'raid_not_found' };
+  }
+
+  if (raid.allowGuests) {
+    await healGuestSignupMetadataForRaid(raidId, guildId);
+    raid = await loadRaidForDetailPage(guildId, raidId, locale);
+    if (!raid) {
+      return { ok: false, reason: 'raid_not_found' };
+    }
   }
 
   const rawIds = (raid as unknown as { dungeonIds?: unknown }).dungeonIds;
