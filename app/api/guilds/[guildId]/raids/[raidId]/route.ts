@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
-import { syncRaidThreadSummary, postRaidLockedThreadNotice, postRaidAnnouncedThreadNotice, postRaidScheduleChangeChannelNotice } from '@/lib/raid-thread-sync';
+import { syncRaidThreadSummary, postRaidLockedThreadNotice, postRaidAnnouncedThreadNotice, postRaidScheduleChangeChannelNotice, syncRaidGuestChannelSummary } from '@/lib/raid-thread-sync';
 import { parseMinSpecsPayload } from '@/lib/min-spec-keys';
 import {
   announceLayoutToStoredJson,
@@ -132,6 +132,8 @@ export async function PATCH(
         console.error('[PATCH raid cancel] clear discord ids failed:', e);
       }
     }
+
+    void syncRaidGuestChannelSummary(raidId);
 
     const { sendRaidCancellationDirectMessages } = await import('@/lib/raid-cancel-notify');
     await sendRaidCancellationDirectMessages({

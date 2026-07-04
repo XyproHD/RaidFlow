@@ -764,3 +764,75 @@ export function buildRaidActionButtons(
     },
   ];
 }
+
+/** Gekürztes Gast-Channel-Embed (ohne Spielerliste / Protokoll). */
+export function buildGuestRaidEmbeds(input: RaidEmbedInput): DiscordEmbed[] {
+  const {
+    raidId,
+    guildId,
+    raidName,
+    dungeonNames,
+    scheduledAt,
+    signupUntil,
+    status,
+    maxPlayers,
+    signups,
+    appUrl,
+    locale = 'de',
+  } = input;
+
+  const title = `👋 Gast-Raid · ${raidName} — ${dungeonNames.join(' + ')}`.slice(0, 256);
+  const color = embedColor(status, signupUntil);
+  const base = appUrl.replace(/\/$/, '');
+  const dashUrl = `${base}/${locale}/dashboard`;
+  const signupUrl = `${base}/${locale}/guild/${guildId}/raid/${raidId}?mode=signup`;
+
+  const uniquePlayers = new Set(signups.map((s) => s.userId)).size;
+
+  const description = [
+    `📅 **Termin:** ${formatDate(scheduledAt)} · ${formatTime(scheduledAt)} Uhr`,
+    `🗓️ **Anmeldung bis:** ${formatDate(signupUntil)} · ${formatTime(signupUntil)} Uhr`,
+    `📊 **Status:** ${statusText(status, signupUntil)}`,
+    `👥 **Anmeldungen:** ${uniquePlayers} / ${maxPlayers}`,
+    '',
+    `*[Dashboard](${dashUrl}) · [Zum Raid / Anmelden](${signupUrl})*`,
+    '',
+    '_Gast-Anmeldung für Discord-Mitglieder ohne Raider-Rolle. Die Teilnehmerliste ist nur für die Raidleitung sichtbar._',
+  ].join('\n');
+
+  return [
+    {
+      title,
+      description: description.slice(0, 4096),
+      color,
+    },
+  ];
+}
+
+/** Gast-Channel-Buttons (ohne „Anmelden 2“ / „Bin nicht da“). */
+export function buildGuestRaidActionButtons(
+  raidId: string,
+  guildId: string
+): DiscordMessageComponent[] {
+  const rid = uuidNoDash(raidId);
+  const gid = uuidNoDash(guildId);
+
+  return [
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 3, label: 'Quickjoin', emoji: { name: '⚡' }, custom_id: `rf:qj:${rid}:${gid}` },
+        { type: 2, style: 1, label: 'Anmelden', emoji: { name: '📋' }, custom_id: `rf:join:${rid}:${gid}` },
+        { type: 2, style: 2, label: 'Bearbeiten', emoji: { name: '✏️' }, custom_id: `rf:edit:${rid}:${gid}` },
+      ],
+    },
+    {
+      type: 1,
+      components: [
+        { type: 2, style: 4, label: 'Abmelden', emoji: { name: '🚪' }, custom_id: `rf:unreg:${rid}:${gid}` },
+        { type: 2, style: 2, label: 'Info @ Raidlead', emoji: { name: '🟡' }, custom_id: `rf:inforl:${rid}:${gid}` },
+        { type: 2, style: 2, label: 'RaidTools', emoji: { name: '🟡' }, custom_id: `rf:tools:${rid}:${gid}` },
+      ],
+    },
+  ];
+}

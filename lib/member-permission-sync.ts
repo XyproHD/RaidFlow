@@ -18,7 +18,8 @@ export type GuildForPermissionSync = RfGuildWithRoles & { id: string };
  */
 export async function clearRaidFlowGuildMembershipForUser(
   userId: string,
-  guild: GuildForPermissionSync
+  guild: GuildForPermissionSync,
+  options?: { stillDiscordGuest?: boolean }
 ): Promise<void> {
   await prisma.rfCharacter.updateMany({
     where: { userId, guildId: guild.id },
@@ -40,7 +41,11 @@ export async function clearRaidFlowGuildMembershipForUser(
     where: { userId, guildId: guild.id },
   });
   try {
-    await pruneIneligibleOpenRaidSignups(userId, guild.id);
+    await pruneIneligibleOpenRaidSignups(
+      userId,
+      guild.id,
+      options?.stillDiscordGuest ?? false
+    );
   } catch (e) {
     console.error('[clearRaidFlowGuildMembershipForUser] prune', guild.id, e);
   }
@@ -141,10 +146,11 @@ export async function syncMemberPermissionsFromDiscordState(params: {
     }
   } else {
     /**
-     * Auf dem Discord-Server, aber ohne konfigurierte RaidFlow-Rolle (Gildenmeister / Raidleader / Raider):
-     * keine rf_user_guild-Zeile — Mindestrecht für RaidFlow-Gilde ist Raider (oder höher), siehe resolveRaidFlowRole.
+     * Discord-Mitglied ohne Raider/RL/GM: kein rf_user_guild — Gast-Raids bleiben möglich.
      */
-    await clearRaidFlowGuildMembershipForUser(userId, guild);
+    await clearRaidFlowGuildMembershipForUser(userId, guild, {
+      stillDiscordGuest: true,
+    });
   }
 
   // Legacy / TX-Fehler: rf_guild_member ohne rf_user_guild, aber Discord-Rollen liefern eine RaidFlow-Rolle.
@@ -184,7 +190,8 @@ export async function syncMemberPermissionsFromDiscordState(params: {
   }
 
   try {
-    await pruneIneligibleOpenRaidSignups(userId, guild.id);
+    const stillGuest = inGuild && !resolveRaidFlowRole(guild, roleIds);
+    await pruneIneligibleOpenRaidSignups(userId, guild.id, !!stillGuest);
   } catch (e) {
     console.error('[syncMemberPermissionsFromDiscordState] prune', guild.id, e);
   }

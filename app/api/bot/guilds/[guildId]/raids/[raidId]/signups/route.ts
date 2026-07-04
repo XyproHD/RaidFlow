@@ -4,6 +4,11 @@ import { verifyBotSecret } from '@/lib/bot-auth';
 import { ensureUserIdForDiscordId } from '@/lib/ensure-discord-user';
 import { pickCharacterForRaidSignup } from '@/lib/bot-pick-signup-character';
 import { computeRaidSignupPhase, resolveRaidAccess } from '@/lib/raid-detail-access';
+import {
+  assignCharacterForGuestSignup,
+  resolveGuestEligibility,
+  resolveIsGuestSignup,
+} from '@/lib/guest-raid-access';
 import { normalizeSignupPunctuality, normalizeSignupType } from '@/lib/raid-signup-constants';
 import {
   commitRaidSelfSignupMutation,
@@ -90,17 +95,44 @@ export async function POST(
       ? body.characterId.trim()
       : null;
 
-  const character = await pickCharacterForRaidSignup(userId, guildId, characterIdRaw);
+  const character = await pickCharacterForRaidSignup(
+    userId,
+    guildId,
+    characterIdRaw,
+    { allowUnassigned: access.accessMode === 'guest' }
+  );
   if (!character) {
     return NextResponse.json(
       {
         error: characterIdRaw
           ? 'Character not found for this guild'
-          : 'No character in this guild — create one first (bot or web)',
+          : access.accessMode === 'guest'
+            ? 'No character — create one in RaidFlow first'
+            : 'No character in this guild — create one first (bot or web)',
       },
       { status: 400 }
     );
   }
+
+  if (access.accessMode === 'guest') {
+    const guestCheck = await resolveGuestEligibility(userId, discordUserId, guildId);
+    if (!guestCheck.eligible) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    const assigned = await assignCharacterForGuestSignup({
+      userId,
+      characterId: character.id,
+      guildId,
+      displayNameInGuild: guestCheck.displayNameInGuild,
+    });
+    if (!assigned.ok) {
+      return NextResponse.json({ error: assigned.error }, { status: assigned.status });
+    }
+  }
+
+  const isGuest =
+    access.accessMode === 'guest' ||
+    (await resolveIsGuestSignup(userId, discordUserId, guildId));
 
   const typeRaw = typeof body.type === 'string' ? body.type.trim() : '';
   const typeNorm =
@@ -173,6 +205,7 @@ export async function POST(
     forbidReserve,
     punctuality,
     note,
+    isGuest,
   });
 
   await syncRaidThreadSummary(raidId);

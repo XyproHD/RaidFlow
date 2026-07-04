@@ -6,6 +6,8 @@ import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import { CharacterMainStar } from '@/components/character-main-star';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { CharacterNameWithDiscordInline } from '@/components/character-display-parts';
+import { guestSignupRowClass, guestSignupBadgeClass } from '@/lib/guest-ui-styles';
+import { cn } from '@/lib/utils';
 export type AnmeldungRow = {
   id: string;
   userId: string;
@@ -27,6 +29,7 @@ export type AnmeldungRow = {
   leaderMarkedTeilnehmer: boolean;
   onlySignedSpec?: boolean;
   forbidReserve?: boolean;
+  isGuest?: boolean;
 };
 
 function classIdForChar(mainSpec: string): string | null {
@@ -72,7 +75,12 @@ export function RaidSignupPlayerRow({
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-2 px-3 py-2',
+          s.isGuest && guestSignupRowClass
+        )}
+      >
         {s.character ? (
           <span
             className="shrink-0 w-6 flex items-center justify-center"
@@ -111,6 +119,9 @@ export function RaidSignupPlayerRow({
           discordName={discordName}
           className="font-medium text-foreground min-w-0 truncate"
         />
+        {s.isGuest ? (
+          <span className={guestSignupBadgeClass}>Gast</span>
+        ) : null}
         {showTypeLabel ? (
           <span className="text-sm text-muted-foreground shrink-0">{typeLabel(t, s.type, raidStatus)}</span>
         ) : null}

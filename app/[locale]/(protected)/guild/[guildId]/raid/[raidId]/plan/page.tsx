@@ -182,6 +182,7 @@ export default async function RaidPlanPage(props: {
         gearScore: (ch as unknown as { gearScore?: number | null })?.gearScore ?? null,
         note: s.note ?? null,
         profileWeekFocus: null,
+        isGuest: s.isGuest,
       };
     })
     .filter((row) => row.name.length > 0);
@@ -249,6 +250,7 @@ export default async function RaidPlanPage(props: {
         guildId={guildId}
         raidId={raidId}
         raidStatus={raid.status}
+        allowGuests={raid.allowGuests}
         persistedServerPlannerOrder={persistedServerPlannerOrder}
         canEditRaid={canEditRaid}
         guildCharacters={guildCharacters}

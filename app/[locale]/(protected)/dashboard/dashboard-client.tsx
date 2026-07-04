@@ -13,6 +13,7 @@ import { BattlenetLogo } from '@/components/battlenet-logo';
 import { CharacterSpecIconsInline } from '@/components/character-display-parts';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { cn } from '@/lib/utils';
+import { guestSignupBadgeClass } from '@/lib/guest-ui-styles';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
 import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
 
@@ -78,6 +79,8 @@ export type DashboardCalendarRaid = {
   hasNote: boolean;
   note: string | null;
   canEdit: boolean;
+  /** Gast-Raid (Discord-Gast ohne Raider-Rolle) */
+  accessMode?: 'member' | 'guest';
   /** Bei Status announced und >1 Gruppe: Anzahl für Kalender-Badge. */
   announcedGroupCount: number | null;
   mySignup: null | {
@@ -1015,6 +1018,9 @@ export function DashboardClient({
                                 >
                                   {r.name}
                                 </Link>
+                                {r.accessMode === 'guest' ? (
+                                  <span className={guestSignupBadgeClass}>{t('guestRaidBadge')}</span>
+                                ) : null}
                                 <span className="text-xs text-muted-foreground shrink-0">{timeLabel}</span>
                               </div>
                               <div className="text-xs text-muted-foreground truncate mt-0.5" title={`${r.dungeonName} · ${r.guildName}`}>

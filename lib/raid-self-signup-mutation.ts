@@ -78,6 +78,7 @@ export type RaidSelfSignupMutationInput = {
   punctuality: RaidSignupPunctuality;
   /** Leerstring wird als `null` gespeichert */
   note: string;
+  isGuest?: boolean;
 };
 
 export type RaidSignupRowBeforeMutation = {
@@ -110,6 +111,7 @@ export async function commitRaidSelfSignupMutation(
     forbidReserve,
     punctuality,
     note,
+    isGuest = false,
   } = input;
   const isLate = punctuality === 'late';
   const raid = await prisma.rfRaid.findUnique({
@@ -129,6 +131,7 @@ export async function commitRaidSelfSignupMutation(
     isLate,
     punctuality,
     note: note.trim().length > 0 ? note.trim() : null,
+    isGuest,
   };
 
   const existing = await prisma.rfRaidSignup.findFirst({

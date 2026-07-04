@@ -19,8 +19,8 @@ import {
   fetchAllChannelMessages,
   type DiscordFetchedMessage,
 } from '@/lib/discord-guild-api';
-import { buildRaidActionButtons } from '@/lib/raid-embed-builder';
-import { buildRaidDiscordEmbedsForRaid } from '@/lib/raid-discord-display-snapshot';
+import { buildRaidActionButtons, buildGuestRaidActionButtons } from '@/lib/raid-embed-builder';
+import { buildRaidDiscordEmbedsForRaid, buildGuestRaidDiscordEmbedsForRaid } from '@/lib/raid-discord-display-snapshot';
 import { getAppConfig } from '@/lib/app-config';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
@@ -44,6 +44,73 @@ async function loadRaidForSync(raidId: string) {
       },
     },
   });
+}
+
+export type SyncRaidGuestChannelSummaryOptions = SyncRaidThreadSummaryOptions;
+
+/**
+ * Gast-Channel-Embed: gekürzt, eigene Message-ID.
+ * Bei allowGuests=false oder fehlendem Kanal: Nachricht entfernen.
+ */
+export async function syncRaidGuestChannelSummary(
+  raidId: string,
+  opts?: SyncRaidGuestChannelSummaryOptions,
+): Promise<void> {
+  try {
+    const raid = await loadRaidForSync(raidId);
+    if (!raid) return;
+
+    const guestChannelId = raid.discordGuestChannelId?.trim() || null;
+    const shouldPost = raid.allowGuests && !!guestChannelId;
+
+    if (raid.status === 'cancelled' || raid.status === 'completed' || !shouldPost) {
+      if (raid.discordGuestChannelMessageId && guestChannelId) {
+        try {
+          const { deleteChannelMessage } = await import('@/lib/discord-guild-api');
+          await deleteChannelMessage(guestChannelId, raid.discordGuestChannelMessageId);
+        } catch (e) {
+          console.warn('[syncRaidGuestChannelSummary] delete failed:', e);
+        }
+        await prisma.rfRaid.update({
+          where: { id: raidId },
+          data: { discordGuestChannelMessageId: null },
+        });
+      }
+      return;
+    }
+
+    const embeds = await buildGuestRaidDiscordEmbedsForRaid(raid);
+    const components = buildGuestRaidActionButtons(raid.id, raid.guildId);
+
+    if (raid.discordGuestChannelMessageId) {
+      try {
+        await editChannelMessageFull(
+          guestChannelId!,
+          raid.discordGuestChannelMessageId,
+          opts?.embedOnly ? { embeds } : { embeds, components },
+        );
+        return;
+      } catch (e) {
+        console.warn('[syncRaidGuestChannelSummary] edit failed:', e);
+        if (!opts?.allowCreate) return;
+        await prisma.rfRaid.update({
+          where: { id: raidId },
+          data: { discordGuestChannelMessageId: null },
+        });
+      }
+    }
+
+    const { messageId } = await createChannelMessageFull(guestChannelId!, {
+      embeds,
+      components,
+    });
+    await prisma.rfRaid.update({
+      where: { id: raidId },
+      data: { discordGuestChannelMessageId: messageId },
+    });
+  } catch (e) {
+    console.error('[syncRaidGuestChannelSummary]', raidId, e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -74,7 +141,12 @@ export async function syncRaidThreadSummary(
 ): Promise<void> {
   try {
     const raid = await loadRaidForSync(raidId);
-    if (!raid?.discordChannelId) return;
+    if (!raid) return;
+
+    if (!raid.discordChannelId) {
+      await syncRaidGuestChannelSummary(raidId, opts);
+      return;
+    }
 
     /** Abgesagt oder abgeschlossen: Embed entfernen, keine erneute Synchronisation. */
     if (raid.status === 'cancelled' || raid.status === 'completed') {
@@ -94,6 +166,7 @@ export async function syncRaidThreadSummary(
           console.warn('[syncRaidThreadSummary] cancelled raid clear discord ids failed:', e);
         }
       }
+      await syncRaidGuestChannelSummary(raidId, opts);
       return;
     }
 
@@ -143,6 +216,7 @@ export async function syncRaidThreadSummary(
             // Thread existiert bereits oder Kanal unterstützt keine Threads – ignorieren
           }
         }
+        await syncRaidGuestChannelSummary(raidId, opts);
         return;
       } catch (e) {
         console.warn('[syncRaidThreadSummary] edit failed:', e);
@@ -158,6 +232,7 @@ export async function syncRaidThreadSummary(
     }
 
     if (!opts?.allowCreate) {
+      await syncRaidGuestChannelSummary(raidId, opts);
       return;
     }
 
@@ -182,6 +257,8 @@ export async function syncRaidThreadSummary(
         discordThreadId:         threadId,
       },
     });
+
+    await syncRaidGuestChannelSummary(raidId, opts);
   } catch (e) {
     console.error('[syncRaidThreadSummary]', raidId, e);
   }

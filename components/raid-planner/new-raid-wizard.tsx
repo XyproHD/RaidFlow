@@ -767,8 +767,14 @@ export function NewRaidWizard({
         setSaving(false);
         return;
       }
-      // Hinweis (nur bei Neuanlage), wenn Raid-Thread- oder Raidleader-Channel nicht gewählt sind ("kein Channelbeitrag").
-      if (!isEdit && !opts?.skipChannelCheck && (!discordChannelId.trim() || !discordLeaderChannelId.trim())) {
+      // Hinweis (nur bei Neuanlage), wenn Raid-Thread-, Raidleader- oder Gast-Channel fehlen.
+      if (
+        !isEdit &&
+        !opts?.skipChannelCheck &&
+        (!discordChannelId.trim() ||
+          !discordLeaderChannelId.trim() ||
+          (allowGuests && !discordGuestChannelId.trim()))
+      ) {
         setSaving(false);
         setChannelWarningOpen(true);
         return;
@@ -1736,6 +1742,9 @@ export function NewRaidWizard({
                 <ul className="list-disc space-y-1 pl-5 text-sm text-foreground">
                   {!discordChannelId.trim() ? <li>{t('threadChannel')}</li> : null}
                   {!discordLeaderChannelId.trim() ? <li>{t('leaderChannelLabel')}</li> : null}
+                  {allowGuests && !discordGuestChannelId.trim() ? (
+                    <li>{t('guestChannelLabel')}</li>
+                  ) : null}
                 </ul>
                 <p className="text-sm text-muted-foreground">{t('channelWarningQuestion')}</p>
                 <div className="flex flex-wrap justify-end gap-2 pt-1">

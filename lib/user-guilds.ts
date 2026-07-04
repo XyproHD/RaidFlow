@@ -44,6 +44,8 @@ export interface UserRaidInfo {
   maxPlayers: number;
   signupCount: number;
   canEdit: boolean; // Raidleader/Gildenmeister
+  /** Gast-Zugriff (Dashboard/Kalender) */
+  accessMode?: 'member' | 'guest';
 }
 
 export interface RaidQueryWindow {

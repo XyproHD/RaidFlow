@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { authOptions } from '@/lib/auth';
 import { getEffectiveUserId } from '@/lib/get-effective-user-id';
 import { getGuildsForUserCached, getRaidsForUser } from '@/lib/user-guilds';
+import { getGuestRaidsForDashboard } from '@/lib/guest-raid-access';
 import { getLocale } from 'next-intl/server';
 import { prisma } from '@/lib/prisma';
 import {
@@ -55,6 +56,24 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
     try {
       guilds = userId ? await getGuildsForUserCached(userId, discordId ?? null) : [];
       raids = await getRaidsForUser(guilds, { from: rangeStart, to: rangeEnd });
+      if (userId && discordId) {
+        const memberGuildIds = new Set(
+          guilds.filter((g) => g.role !== 'member').map((g) => g.id)
+        );
+        const guestRaids = await getGuestRaidsForDashboard(
+          userId,
+          discordId,
+          memberGuildIds,
+          { from: rangeStart, to: rangeEnd }
+        );
+        const byId = new Map(raids.map((r) => [r.id, r]));
+        for (const gr of guestRaids) {
+          if (!byId.has(gr.id)) byId.set(gr.id, gr);
+        }
+        raids = [...byId.values()].sort(
+          (a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime()
+        );
+      }
     } catch (e) {
       console.error('[Dashboard]', e);
     }
@@ -244,6 +263,8 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       return list.map((id) => dungeonNamesById.get(id) ?? dungeonFallbackById.get(id) ?? id).join(' / ');
     }
 
+    const raidAccessModeById = new Map(raids.map((r) => [r.id, r.accessMode ?? 'member']));
+
     const calendarRaids: DashboardCalendarRaid[] = raidRows.map((r) => ({
       id: r.id,
       guildId: r.guildId,
@@ -258,6 +279,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       hasNote: !!(r.note && r.note.trim()),
       note: (r.note && r.note.trim()) ? r.note : null,
       canEdit: canEditGuildIds.has(r.guildId),
+      accessMode: raidAccessModeById.get(r.id) ?? 'member',
       announcedGroupCount:
         r.status === 'announced'
           ? announcedGroupCountForDashboard(

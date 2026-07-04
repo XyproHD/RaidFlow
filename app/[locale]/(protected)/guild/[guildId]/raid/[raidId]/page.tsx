@@ -59,7 +59,7 @@ export default async function RaidDetailPage(props: {
     );
   }
 
-  const { raid, canEdit, canSignup, signupPhase } = ctx;
+  const { raid, canEdit, canSignup, signupPhase, accessMode } = ctx;
   const base = `/${locale}/guild/${guildId}/raid/${raidId}`;
   const canEditRaid = canEdit && raid.status === 'open';
   const canCompleteRaid =
@@ -97,7 +97,11 @@ export default async function RaidDetailPage(props: {
 
   const charRows = await findManyRfCharactersForDashboard(userId);
   const characters = charRows
-    .filter((c) => c.guildId === guildId)
+    .filter(
+      (c) =>
+        c.guildId === guildId ||
+        (accessMode === 'guest' && (c.guildId === null || c.guildId === guildId))
+    )
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((c) => ({
       id: c.id,
