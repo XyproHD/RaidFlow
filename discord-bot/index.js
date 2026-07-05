@@ -45,7 +45,6 @@ import {
 } from './raid-bot-i18n.js';
 import {
   getHelpTopicContent,
-  getHelpTopicOptions,
   helpLangLabel,
 } from './raid-bot-help.js';
 
@@ -3435,30 +3434,94 @@ async function handleRaidToolsButton(interaction, raidId) {
   }
 
   const rid = raidId.replace(/-/g, '');
-  const row = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId(`rf:toolsel:${rid}`)
-      .setPlaceholder(raidBotMessage(guestLocale, 'RAIDTOOLS_PLACEHOLDER'))
-      .addOptions(
-        new StringSelectMenuOptionBuilder()
-          .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_SYNC'))
-          .setDescription(raidBotMessage(guestLocale, 'RAIDTOOLS_SYNC_DESC'))
-          .setValue('sync'),
-        new StringSelectMenuOptionBuilder()
-          .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_PUSH'))
-          .setDescription(raidBotMessage(guestLocale, 'RAIDTOOLS_PUSH_DESC'))
-          .setValue('push'),
-        new StringSelectMenuOptionBuilder()
-          .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_PUSH_MENTION'))
-          .setDescription(raidBotMessage(guestLocale, 'RAIDTOOLS_PUSH_MENTION_DESC'))
-          .setValue('push-mention'),
-      ),
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`rf:toolsync:${rid}`)
+      .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_SYNC'))
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`rf:toolpush:${rid}`)
+      .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_PUSH'))
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`rf:toolpushm:${rid}`)
+      .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_PUSH_MENTION'))
+      .setStyle(ButtonStyle.Secondary),
   );
 
   await interaction.editReply({
     content:   raidBotMessage(guestLocale, 'RAIDTOOLS_TITLE'),
-    components: [row],
+    components: [row1],
   }).catch(() => {});
+}
+
+async function handleRaidToolRun(interaction, raidId, action) {
+  await interaction.deferUpdate().catch(() => interaction.deferReply({ ephemeral: true }).catch(() => {}));
+  const locale = botLocale(interaction, null);
+  await interaction.editReply({
+    content: raidBotMessage(locale, 'RAIDTOOLS_LOADING'),
+    components: [],
+  }).catch(() => {});
+
+  let ok = false;
+  let json = {};
+  try {
+    ({ ok, json } = await callDiscordAction({
+      action,
+      discordUserId: interaction.user.id,
+      raidId,
+    }, interaction));
+  } catch (e) {
+    console.error('[RaidToolRun]', action, e);
+    await interaction.editReply({ content: `❌ ${raidBotMessage(locale, 'BACKEND_FAILED')}`, components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  const outcome = ok
+    ? `✅ ${json.message ?? raidBotMessage(locale, 'DONE')}`
+    : raidToolsErrorText(json.error, locale);
+  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
+async function handleRaidToolPushMentionButton(interaction, raidId) {
+  const locale = botLocale(interaction, null);
+  await showRaidPushMentionModal(interaction, raidId, locale).catch(() => {});
+}
+
+async function handleRaidToolsSelect(interaction, raidId) {
+  // Legacy: alte Select-Menüs auf bestehenden Posts
+  const tool = interaction.values[0];
+
+  if (tool === 'push-mention') {
+    await handleRaidToolPushMentionButton(interaction, raidId);
+    return;
+  }
+
+  await interaction.deferUpdate().catch(() => interaction.deferReply({ ephemeral: true }).catch(() => {}));
+  const action = tool === 'push' ? 'push-raid' : 'sync-post';
+  const locale = botLocale(interaction, null);
+  let ok = false;
+  let json = {};
+  try {
+    ({ ok, json } = await callDiscordAction({
+      action,
+      discordUserId: interaction.user.id,
+      raidId,
+    }, interaction));
+  } catch (e) {
+    console.error('[RaidToolsSelect]', action, e);
+    await interaction.editReply({ content: `❌ ${raidBotMessage(locale, 'BACKEND_FAILED')}`, components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  const outcome = ok
+    ? `✅ ${json.message ?? raidBotMessage(locale, 'DONE')}`
+    : raidToolsErrorText(json.error, locale);
+  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
 }
 
 function showRaidPushMentionModal(interaction, raidId, locale = 'de') {
@@ -3495,41 +3558,6 @@ async function handleRaidPushMentionModal(interaction, raidId) {
 
   const outcome = ok
     ? `✅ ${json.message ?? raidBotMessage(locale, 'PUSH_MENTION_OK')}`
-    : raidToolsErrorText(json.error, locale);
-  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
-  scheduleDeleteSingleEphemeralReply(interaction);
-}
-
-async function handleRaidToolsSelect(interaction, raidId) {
-  const tool = interaction.values[0];
-  const { ok: stOk, json: stJson } = await fetchRaidParticipantState(interaction, raidId);
-  const locale = stOk ? botLocale(interaction, stJson) : botLocale(interaction, null);
-
-  if (tool === 'push-mention') {
-    await showRaidPushMentionModal(interaction, raidId, locale).catch(() => {});
-    return;
-  }
-
-  await interaction.deferReply({ ephemeral: true }).catch(() => {});
-
-  const action = tool === 'push' ? 'push-raid' : 'sync-post';
-  let ok = false;
-  let json = {};
-  try {
-    ({ ok, json } = await callDiscordAction({
-      action,
-      discordUserId: interaction.user.id,
-      raidId,
-    }, interaction));
-  } catch (e) {
-    console.error('[RaidToolsSelect]', action, e);
-    await interaction.editReply({ content: `❌ ${raidBotMessage(locale, 'BACKEND_FAILED')}`, components: [] }).catch(() => {});
-    scheduleDeleteSingleEphemeralReply(interaction);
-    return;
-  }
-
-  const outcome = ok
-    ? `✅ ${json.message ?? raidBotMessage(locale, 'DONE')}`
     : raidToolsErrorText(json.error, locale);
   await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
   scheduleDeleteSingleEphemeralReply(interaction);
@@ -3617,27 +3645,60 @@ function setHelpFlow(userId, raidId, data) {
   helpFlowState.set(helpKey(userId, raidId), { data, expiresAt: Date.now() + HELP_TTL_MS });
 }
 
-function buildHelpLangSelect(raidId, defaultLocale) {
-  const rid = raidId.replace(/-/g, '');
-  return new StringSelectMenuBuilder()
-    .setCustomId(`rf:helplang:${rid}`)
-    .setPlaceholder(raidBotMessage(defaultLocale, 'HELP_LANG_PLACEHOLDER'))
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions([
-      { label: 'Deutsch', value: 'de', default: defaultLocale === 'de' },
-      { label: 'English', value: 'en', default: defaultLocale === 'en' },
-    ]);
+const HELP_TOPIC_KEYS = ['newcomer', 'signup', 'leaderinfo', 'raidtools'];
+
+function helpTopicButtonLabel(locale, topic) {
+  const map = {
+    newcomer: 'HELP_TOPIC_NEWCOMER',
+    signup: 'HELP_TOPIC_SIGNUP',
+    leaderinfo: 'HELP_TOPIC_LEADER',
+    raidtools: 'HELP_TOPIC_TOOLS',
+  };
+  return raidBotMessage(locale, map[topic] ?? 'HELP_TOPIC_SIGNUP');
 }
 
-function buildHelpTopicSelect(raidId, locale) {
+function buildHelpLangButton(raidId, locale) {
   const rid = raidId.replace(/-/g, '');
-  return new StringSelectMenuBuilder()
-    .setCustomId(`rf:helptopic:${rid}`)
-    .setPlaceholder(raidBotMessage(locale, 'HELP_TOPIC_PLACEHOLDER'))
-    .setMinValues(1)
-    .setMaxValues(1)
-    .addOptions(getHelpTopicOptions(locale));
+  const otherLocale = locale === 'en' ? 'de' : 'en';
+  return new ButtonBuilder()
+    .setCustomId(`rf:helplang:${rid}`)
+    .setLabel(raidBotMessage(locale, otherLocale === 'en' ? 'HELP_SWITCH_LANG_EN' : 'HELP_SWITCH_LANG_DE'))
+    .setStyle(ButtonStyle.Secondary);
+}
+
+function buildHelpMenuComponents(raidId, locale) {
+  const rid = raidId.replace(/-/g, '');
+  const row1 = new ActionRowBuilder().addComponents(
+    ...HELP_TOPIC_KEYS.slice(0, 2).map((topic) =>
+      new ButtonBuilder()
+        .setCustomId(`rf:helptopic:${rid}:${topic}`)
+        .setLabel(helpTopicButtonLabel(locale, topic))
+        .setStyle(ButtonStyle.Primary)
+    ),
+  );
+  const row2 = new ActionRowBuilder().addComponents(
+    ...HELP_TOPIC_KEYS.slice(2).map((topic) =>
+      new ButtonBuilder()
+        .setCustomId(`rf:helptopic:${rid}:${topic}`)
+        .setLabel(helpTopicButtonLabel(locale, topic))
+        .setStyle(ButtonStyle.Primary)
+    ),
+    buildHelpLangButton(raidId, locale),
+  );
+  return [row1, row2];
+}
+
+function buildHelpTopicNavComponents(raidId, locale) {
+  const rid = raidId.replace(/-/g, '');
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`rf:helpback:${rid}`)
+        .setLabel(raidBotMessage(locale, 'HELP_BACK'))
+        .setStyle(ButtonStyle.Secondary),
+      buildHelpLangButton(raidId, locale),
+    ),
+  ];
 }
 
 async function handleRaidHelpButton(interaction, raidId) {
@@ -3646,41 +3707,74 @@ async function handleRaidHelpButton(interaction, raidId) {
   const defaultLocale = ok ? botLocale(interaction, json) : botLocale(interaction, null);
   setHelpFlow(interaction.user.id, raidId, { locale: defaultLocale });
 
-  const row = new ActionRowBuilder().addComponents(buildHelpLangSelect(raidId, defaultLocale));
   await interaction.editReply({
     content: [
-      raidBotMessage(defaultLocale, 'HELP_LANG_TITLE'),
+      raidBotMessage(defaultLocale, 'HELP_TOPIC_TITLE'),
       raidBotMessage(defaultLocale, 'HELP_LANG_HINT', { lang: helpLangLabel(defaultLocale) }),
     ].join('\n'),
-    components: [row],
+    components: buildHelpMenuComponents(raidId, defaultLocale),
   }).catch(() => {});
 }
 
-async function handleHelpLangSelect(interaction, raidId) {
-  const locale = interaction.values?.[0] === 'en' ? 'en' : 'de';
-  setHelpFlow(interaction.user.id, raidId, { locale });
-
-  const row = new ActionRowBuilder().addComponents(buildHelpTopicSelect(raidId, locale));
-  await interaction.update({
-    content: raidBotMessage(locale, 'HELP_TOPIC_TITLE'),
-    components: [row],
-  }).catch(() => {});
-}
-
-async function handleHelpTopicSelect(interaction, raidId) {
+async function handleHelpLangButton(interaction, raidId) {
+  await interaction.deferUpdate().catch(() => {});
   const flow = getHelpFlow(interaction.user.id, raidId);
-  const locale = flow?.locale ?? botLocale(interaction, null);
-  const topic = interaction.values?.[0];
-  const content = getHelpTopicContent(locale, topic);
-  if (!content) {
-    await interaction.update({
-      content: locale === 'en' ? '❌ Topic not found.' : '❌ Thema nicht gefunden.',
-      components: [],
+  const current = flow?.locale ?? botLocale(interaction, null);
+  const locale = current === 'en' ? 'de' : 'en';
+  const nextFlow = { locale, view: flow?.view ?? 'menu', topic: flow?.topic };
+  setHelpFlow(interaction.user.id, raidId, nextFlow);
+
+  if (nextFlow.view === 'topic' && nextFlow.topic) {
+    const content = getHelpTopicContent(locale, nextFlow.topic);
+    await interaction.editReply({
+      content: content ?? raidBotMessage(locale, 'HELP_TOPIC_TITLE'),
+      components: buildHelpTopicNavComponents(raidId, locale),
     }).catch(() => {});
     return;
   }
-  await interaction.update({ content, components: [] }).catch(() => {});
-  scheduleDeleteSingleEphemeralReply(interaction);
+
+  await interaction.editReply({
+    content: [
+      raidBotMessage(locale, 'HELP_TOPIC_TITLE'),
+      raidBotMessage(locale, 'HELP_LANG_HINT', { lang: helpLangLabel(locale) }),
+    ].join('\n'),
+    components: buildHelpMenuComponents(raidId, locale),
+  }).catch(() => {});
+}
+
+async function handleHelpTopicButton(interaction, raidId, topic) {
+  await interaction.deferUpdate().catch(() => {});
+  const flow = getHelpFlow(interaction.user.id, raidId);
+  const locale = flow?.locale ?? botLocale(interaction, null);
+  setHelpFlow(interaction.user.id, raidId, { locale, view: 'topic', topic });
+
+  const content = getHelpTopicContent(locale, topic);
+  if (!content) {
+    await interaction.editReply({
+      content: locale === 'en' ? '❌ Topic not found.' : '❌ Thema nicht gefunden.',
+      components: buildHelpMenuComponents(raidId, locale),
+    }).catch(() => {});
+    return;
+  }
+  await interaction.editReply({
+    content,
+    components: buildHelpTopicNavComponents(raidId, locale),
+  }).catch(() => {});
+}
+
+async function handleHelpBackButton(interaction, raidId) {
+  await interaction.deferUpdate().catch(() => {});
+  const flow = getHelpFlow(interaction.user.id, raidId);
+  const locale = flow?.locale ?? botLocale(interaction, null);
+  setHelpFlow(interaction.user.id, raidId, { locale, view: 'menu' });
+
+  await interaction.editReply({
+    content: [
+      raidBotMessage(locale, 'HELP_TOPIC_TITLE'),
+      raidBotMessage(locale, 'HELP_LANG_HINT', { lang: helpLangLabel(locale) }),
+    ].join('\n'),
+    components: buildHelpMenuComponents(raidId, locale),
+  }).catch(() => {});
 }
 
 // =============================================================================
@@ -3739,8 +3833,17 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'j2nextchar')  { await handleJoin2StepNav(interaction, raidId, 'next'); return; }
         if (action === 'j2open')      { await handleJoin2OpenNoteModal(interaction, raidId); return; }
         if (action === 'tools')       { await handleRaidToolsButton(interaction, raidId); return; }
+        if (action === 'toolsync')    { await handleRaidToolRun(interaction, raidId, 'sync-post'); return; }
+        if (action === 'toolpush')    { await handleRaidToolRun(interaction, raidId, 'push-raid'); return; }
+        if (action === 'toolpushm')   { await handleRaidToolPushMentionButton(interaction, raidId); return; }
         if (action === 'inforl')      { await handleRaidInfoRlButton(interaction, raidId); return; }
         if (action === 'help')        { await handleRaidHelpButton(interaction, raidId); return; }
+        if (action === 'helplang')    { await handleHelpLangButton(interaction, raidId); return; }
+        if (action === 'helpback')    { await handleHelpBackButton(interaction, raidId); return; }
+        if (action === 'helptopic')   {
+          const topic = parts[3];
+          if (topic) { await handleHelpTopicButton(interaction, raidId, topic); return; }
+        }
 
         console.warn('[RaidButton] unbekannte Aktion:', action, bid);
         if (interaction.deferred || interaction.replied) {
@@ -3841,28 +3944,6 @@ client.on('interactionCreate', async (interaction) => {
         await handleJoin2PuncSelect(interaction, raidId);
       } catch (e) {
         console.error('[Join2PuncSelect]', customId, e);
-        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
-      }
-      return;
-    }
-    if (customId.startsWith('rf:helplang:')) {
-      const parts = customId.split(':');
-      const raidId = noDashToUuid(parts[2]);
-      try {
-        await handleHelpLangSelect(interaction, raidId);
-      } catch (e) {
-        console.error('[HelpLangSelect]', customId, e);
-        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
-      }
-      return;
-    }
-    if (customId.startsWith('rf:helptopic:')) {
-      const parts = customId.split(':');
-      const raidId = noDashToUuid(parts[2]);
-      try {
-        await handleHelpTopicSelect(interaction, raidId);
-      } catch (e) {
-        console.error('[HelpTopicSelect]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
       }
       return;

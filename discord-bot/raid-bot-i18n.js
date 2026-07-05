@@ -135,6 +135,14 @@ const MESSAGES = {
     HELP_TOPIC_TITLE: '**Hilfe — Thema wählen**',
     HELP_TOPIC_PLACEHOLDER: 'Thema wählen…',
     LEADER_INFO_UNAVAILABLE: 'ℹ️ **Info an Raidleitung** steht für diesen Raid nicht zur Verfügung (kein Raidleader-Kanal hinterlegt).',
+    HELP_SWITCH_LANG_EN: '🌐 English',
+    HELP_SWITCH_LANG_DE: '🌐 Deutsch',
+    HELP_BACK: '← Zurück',
+    HELP_TOPIC_NEWCOMER: 'Erste Schritte',
+    HELP_TOPIC_SIGNUP: 'Anmeldung',
+    HELP_TOPIC_LEADER: 'Info RL',
+    HELP_TOPIC_TOOLS: 'RaidTools',
+    RAIDTOOLS_LOADING: '⏳ Wird ausgeführt …',
   },
   en: {
     NOT_LINKED:
@@ -260,6 +268,14 @@ const MESSAGES = {
     HELP_TOPIC_TITLE: '**Help — choose a topic**',
     HELP_TOPIC_PLACEHOLDER: 'Choose topic…',
     LEADER_INFO_UNAVAILABLE: 'ℹ️ **Info @ Raid lead** is not available for this raid (no raid leader channel configured).',
+    HELP_SWITCH_LANG_EN: '🌐 English',
+    HELP_SWITCH_LANG_DE: '🌐 Deutsch',
+    HELP_BACK: '← Back',
+    HELP_TOPIC_NEWCOMER: 'Getting started',
+    HELP_TOPIC_SIGNUP: 'Sign-up',
+    HELP_TOPIC_LEADER: 'Info RL',
+    HELP_TOPIC_TOOLS: 'RaidTools',
+    RAIDTOOLS_LOADING: '⏳ Running …',
   },
 };
 
