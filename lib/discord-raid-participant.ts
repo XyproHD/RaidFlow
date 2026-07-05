@@ -41,6 +41,7 @@ export type RaidParticipantState = {
     guildId: string | null;
   }>;
   discordGuestChannelId: string | null;
+  hasLeaderChannel: boolean;
   profileUrl: string;
   signupPhase: ReturnType<typeof computeRaidSignupPhase>;
   discordEmojis: Record<string, string>;
@@ -62,6 +63,7 @@ export async function buildRaidParticipantState(
       status: true,
       raidGroupRestrictionId: true,
       discordGuestChannelId: true,
+      discordLeaderChannelId: true,
       guild: { select: { id: true, name: true, discordGuildId: true } },
     },
   });
@@ -85,6 +87,7 @@ export async function buildRaidParticipantState(
       raidGuildId: raid.guildId,
       raidGuildName: raid.guild.name,
       discordGuestChannelId: raid.discordGuestChannelId,
+      hasLeaderChannel: !!raid.discordLeaderChannelId?.trim(),
       characters: [],
       assignableCharacters: [],
       profileUrl: profileUrlForLocale(options?.locale),
@@ -146,6 +149,7 @@ export async function buildRaidParticipantState(
     raidGuildId: raid.guildId,
     raidGuildName: raid.guild.name,
     discordGuestChannelId: raid.discordGuestChannelId,
+    hasLeaderChannel: !!raid.discordLeaderChannelId?.trim(),
     characters: profileChars,
     assignableCharacters: assignable,
     profileUrl: profileUrlForLocale(options?.locale),

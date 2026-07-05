@@ -43,6 +43,11 @@ import {
   raidToolsErrorText,
   typeLabels,
 } from './raid-bot-i18n.js';
+import {
+  getHelpTopicContent,
+  getHelpTopicOptions,
+  helpLangLabel,
+} from './raid-bot-help.js';
 
 const DISCORD_ADMINISTRATOR = Number(PermissionFlagsBits.Administrator);
 const DISCORD_MANAGE_GUILD = Number(PermissionFlagsBits.ManageGuild);
@@ -3533,6 +3538,16 @@ async function handleRaidToolsSelect(interaction, raidId) {
 async function handleRaidInfoRlButton(interaction, raidId) {
   const { ok, json } = await fetchRaidParticipantState(interaction, raidId);
   const locale = ok ? botLocale(interaction, json) : botLocale(interaction, null);
+
+  if (!ok || !json.hasLeaderChannel) {
+    await interaction.reply({
+      content: raidBotMessage(locale, 'LEADER_INFO_UNAVAILABLE'),
+      ephemeral: true,
+    }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
   const raidNoDash = raidId.replace(/-/g, '');
   const modal = new ModalBuilder()
     .setCustomId(`rfm:rlinfo:${raidNoDash}`)
@@ -3574,6 +3589,97 @@ async function handleRaidLeaderInfoModal(interaction, raidId) {
     ? `✅ ${json.message ?? raidBotMessage(locale, 'LEADER_INFO_SENT')}`
     : (json?.message ? `❌ ${json.message}` : raidToolsErrorText(json.error, locale));
   await interaction.editReply({ content: outcome }).catch(() => {});
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
+// ---------------------------------------------------------------------------
+// Hilfe (Sprache → Thema → Text)
+// ---------------------------------------------------------------------------
+
+const helpFlowState = new Map();
+const HELP_TTL_MS = 10 * 60 * 1000;
+
+function helpKey(userId, raidId) {
+  return `help::${userId}::${raidId}`;
+}
+
+function getHelpFlow(userId, raidId) {
+  const entry = helpFlowState.get(helpKey(userId, raidId));
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    helpFlowState.delete(helpKey(userId, raidId));
+    return null;
+  }
+  return entry.data;
+}
+
+function setHelpFlow(userId, raidId, data) {
+  helpFlowState.set(helpKey(userId, raidId), { data, expiresAt: Date.now() + HELP_TTL_MS });
+}
+
+function buildHelpLangSelect(raidId, defaultLocale) {
+  const rid = raidId.replace(/-/g, '');
+  return new StringSelectMenuBuilder()
+    .setCustomId(`rf:helplang:${rid}`)
+    .setPlaceholder(raidBotMessage(defaultLocale, 'HELP_LANG_PLACEHOLDER'))
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions([
+      { label: 'Deutsch', value: 'de', default: defaultLocale === 'de' },
+      { label: 'English', value: 'en', default: defaultLocale === 'en' },
+    ]);
+}
+
+function buildHelpTopicSelect(raidId, locale) {
+  const rid = raidId.replace(/-/g, '');
+  return new StringSelectMenuBuilder()
+    .setCustomId(`rf:helptopic:${rid}`)
+    .setPlaceholder(raidBotMessage(locale, 'HELP_TOPIC_PLACEHOLDER'))
+    .setMinValues(1)
+    .setMaxValues(1)
+    .addOptions(getHelpTopicOptions(locale));
+}
+
+async function handleRaidHelpButton(interaction, raidId) {
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  const { ok, json } = await fetchRaidParticipantState(interaction, raidId);
+  const defaultLocale = ok ? botLocale(interaction, json) : botLocale(interaction, null);
+  setHelpFlow(interaction.user.id, raidId, { locale: defaultLocale });
+
+  const row = new ActionRowBuilder().addComponents(buildHelpLangSelect(raidId, defaultLocale));
+  await interaction.editReply({
+    content: [
+      raidBotMessage(defaultLocale, 'HELP_LANG_TITLE'),
+      raidBotMessage(defaultLocale, 'HELP_LANG_HINT', { lang: helpLangLabel(defaultLocale) }),
+    ].join('\n'),
+    components: [row],
+  }).catch(() => {});
+}
+
+async function handleHelpLangSelect(interaction, raidId) {
+  const locale = interaction.values?.[0] === 'en' ? 'en' : 'de';
+  setHelpFlow(interaction.user.id, raidId, { locale });
+
+  const row = new ActionRowBuilder().addComponents(buildHelpTopicSelect(raidId, locale));
+  await interaction.update({
+    content: raidBotMessage(locale, 'HELP_TOPIC_TITLE'),
+    components: [row],
+  }).catch(() => {});
+}
+
+async function handleHelpTopicSelect(interaction, raidId) {
+  const flow = getHelpFlow(interaction.user.id, raidId);
+  const locale = flow?.locale ?? botLocale(interaction, null);
+  const topic = interaction.values?.[0];
+  const content = getHelpTopicContent(locale, topic);
+  if (!content) {
+    await interaction.update({
+      content: locale === 'en' ? '❌ Topic not found.' : '❌ Thema nicht gefunden.',
+      components: [],
+    }).catch(() => {});
+    return;
+  }
+  await interaction.update({ content, components: [] }).catch(() => {});
   scheduleDeleteSingleEphemeralReply(interaction);
 }
 
@@ -3634,6 +3740,7 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'j2open')      { await handleJoin2OpenNoteModal(interaction, raidId); return; }
         if (action === 'tools')       { await handleRaidToolsButton(interaction, raidId); return; }
         if (action === 'inforl')      { await handleRaidInfoRlButton(interaction, raidId); return; }
+        if (action === 'help')        { await handleRaidHelpButton(interaction, raidId); return; }
 
         console.warn('[RaidButton] unbekannte Aktion:', action, bid);
         if (interaction.deferred || interaction.replied) {
@@ -3734,6 +3841,28 @@ client.on('interactionCreate', async (interaction) => {
         await handleJoin2PuncSelect(interaction, raidId);
       } catch (e) {
         console.error('[Join2PuncSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:helplang:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleHelpLangSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[HelpLangSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:helptopic:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleHelpTopicSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[HelpTopicSelect]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
       }
       return;

@@ -128,6 +128,13 @@ const MESSAGES = {
     UNREGISTER_OK: 'Abmeldung erfolgreich.',
     NO_ACTIVE_SIGNUP: 'Du hast keine aktive Anmeldung zum Bearbeiten.',
     SIGNUP_COUNT: '{n} Anmeldungen',
+    HELP_BTN: 'Hilfe',
+    HELP_LANG_TITLE: '**Hilfe — Sprache wählen**',
+    HELP_LANG_HINT: 'Standard: {lang}. Du kannst die Sprache vor der Themenauswahl wechseln.',
+    HELP_LANG_PLACEHOLDER: 'Sprache wählen…',
+    HELP_TOPIC_TITLE: '**Hilfe — Thema wählen**',
+    HELP_TOPIC_PLACEHOLDER: 'Thema wählen…',
+    LEADER_INFO_UNAVAILABLE: 'ℹ️ **Info an Raidleitung** steht für diesen Raid nicht zur Verfügung (kein Raidleader-Kanal hinterlegt).',
   },
   en: {
     NOT_LINKED:
@@ -246,6 +253,13 @@ const MESSAGES = {
     DECLINED_OK: 'You are marked as not attending.',
     UNREGISTER_OK: 'Withdrawal successful.',
     NO_ACTIVE_SIGNUP: 'You have no active sign-up to edit.',
+    HELP_BTN: 'Help',
+    HELP_LANG_TITLE: '**Help — choose language**',
+    HELP_LANG_HINT: 'Default: {lang}. You can switch language before picking a topic.',
+    HELP_LANG_PLACEHOLDER: 'Choose language…',
+    HELP_TOPIC_TITLE: '**Help — choose a topic**',
+    HELP_TOPIC_PLACEHOLDER: 'Choose topic…',
+    LEADER_INFO_UNAVAILABLE: 'ℹ️ **Info @ Raid lead** is not available for this raid (no raid leader channel configured).',
   },
 };
 

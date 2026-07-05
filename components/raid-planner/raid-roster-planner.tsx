@@ -777,7 +777,7 @@ export function RaidRosterPlanner({
   }, [raidId, initialSignups, applySavedOrders]);
 
   const [mainAltFilter, setMainAltFilter] = useState<MainAltFilter>('both');
-  const [memberGuestFilter, setMemberGuestFilter] = useState<MemberGuestFilter>('member');
+  const [memberGuestFilter, setMemberGuestFilter] = useState<MemberGuestFilter>('all');
   const [allowWeekday, setAllowWeekday] = useState(true);
   const [allowWeekend, setAllowWeekend] = useState(true);
   const [roleFilter, setRoleFilter] = useState<Record<TbcRole, boolean>>({
