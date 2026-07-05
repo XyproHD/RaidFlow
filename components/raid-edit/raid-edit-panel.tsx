@@ -94,10 +94,12 @@ export type RaidEditSerialized = {
   scheduledEndAt: string | null;
   signupUntil: string;
   signupVisibility: string;
+  allowGuests: boolean;
   status: string;
   discordThreadId: string | null;
   discordChannelId: string | null;
   discordLeaderChannelId: string | null;
+  discordGuestChannelId: string | null;
   organizerDiscordId?: string | null;
   dungeon: { id: string; name: string };
   raidGroupRestriction: { id: string; name: string } | null;

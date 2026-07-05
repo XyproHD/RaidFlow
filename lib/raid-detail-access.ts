@@ -10,8 +10,13 @@ import {
   type RaidPageMode,
   type RaidSignupPhase,
 } from '@/lib/raid-detail-shared';
+import {
+  healGuestSignupMetadataForRaid,
+  resolveRaidAccessWithGuests,
+  type RaidAccessMode,
+} from '@/lib/guest-raid-access';
 
-export type { RaidPageMode, RaidSignupPhase };
+export type { RaidPageMode, RaidSignupPhase, RaidAccessMode };
 export { computeRaidSignupPhase, parseRaidPageMode } from '@/lib/raid-detail-shared';
 export { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
 
@@ -73,37 +78,10 @@ export async function resolveRaidAccess(
       /** true solange Raid offen und Anmeldung (inkl. nur-Reserve-Phase) möglich */
       canSignup: boolean;
       signupPhase: RaidSignupPhase;
+      accessMode: RaidAccessMode;
     }
 > {
-  const guilds = await getGuildsForUser(userId, discordId);
-  const guildInfo = guilds.find((g) => g.id === guildId);
-  if (!guildInfo) {
-    return { ok: false, reason: 'guild_not_found' };
-  }
-
-  const raid = await prisma.rfRaid.findFirst({
-    where: { id: raidId, guildId },
-    select: {
-      id: true,
-      guildId: true,
-      raidGroupRestrictionId: true,
-      status: true,
-      signupUntil: true,
-      scheduledAt: true,
-    },
-  });
-  if (!raid) {
-    return { ok: false, reason: 'raid_not_found' };
-  }
-  if (!userGuildCanSeeRaid(guildInfo, raid)) {
-    return { ok: false, reason: 'raid_access_denied' };
-  }
-
-  const canEdit = userGuildCanEditRaids(guildInfo);
-  const signupPhase = computeRaidSignupPhase(raid);
-  const canSignup = signupPhase !== 'closed';
-
-  return { ok: true, guildInfo, canEdit, canSignup, signupPhase };
+  return resolveRaidAccessWithGuests(userId, discordId, guildId, raidId);
 }
 
 export async function getRaidDetailContext(
@@ -120,15 +98,24 @@ export async function getRaidDetailContext(
       canEdit: boolean;
       canSignup: boolean;
       signupPhase: RaidSignupPhase;
+      accessMode: RaidAccessMode;
       raid: (NonNullable<Awaited<ReturnType<typeof loadRaidForDetailPage>>> & { dungeonNames: string[] });
     }
 > {
   const access = await resolveRaidAccess(userId, discordId, guildId, raidId);
   if (!access.ok) return access;
 
-  const raid = await loadRaidForDetailPage(guildId, raidId, locale);
+  let raid = await loadRaidForDetailPage(guildId, raidId, locale);
   if (!raid) {
     return { ok: false, reason: 'raid_not_found' };
+  }
+
+  if (raid.allowGuests) {
+    await healGuestSignupMetadataForRaid(raidId, guildId);
+    raid = await loadRaidForDetailPage(guildId, raidId, locale);
+    if (!raid) {
+      return { ok: false, reason: 'raid_not_found' };
+    }
   }
 
   const rawIds = (raid as unknown as { dungeonIds?: unknown }).dungeonIds;
@@ -164,6 +151,7 @@ export async function getRaidDetailContext(
     canEdit: access.canEdit,
     canSignup: access.canSignup,
     signupPhase: access.signupPhase,
+    accessMode: access.accessMode,
     raid: { ...raid, dungeonNames },
   };
 }

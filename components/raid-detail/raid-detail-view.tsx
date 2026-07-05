@@ -103,6 +103,7 @@ export type RaidDetailRaid = {
     forbidReserve: boolean;
     leaderPlacement: string;
     setConfirmed: boolean;
+    isGuest?: boolean;
     character: {
       name: string;
       mainSpec: string;
@@ -221,6 +222,7 @@ function raidSignupToAnmeldungRow(
     leaderMarkedTeilnehmer: s.leaderMarkedTeilnehmer,
     onlySignedSpec: s.onlySignedSpec,
     forbidReserve: s.forbidReserve,
+    isGuest: !!s.isGuest,
   };
 }
 

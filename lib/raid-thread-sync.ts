@@ -19,8 +19,8 @@ import {
   fetchAllChannelMessages,
   type DiscordFetchedMessage,
 } from '@/lib/discord-guild-api';
-import { buildRaidActionButtons } from '@/lib/raid-embed-builder';
-import { buildRaidDiscordEmbedsForRaid } from '@/lib/raid-discord-display-snapshot';
+import { buildRaidActionButtons, buildGuestRaidActionButtons } from '@/lib/raid-embed-builder';
+import { buildRaidDiscordEmbedsForRaid, buildGuestRaidDiscordEmbedsForRaid } from '@/lib/raid-discord-display-snapshot';
 import { getAppConfig } from '@/lib/app-config';
 import { roleFromSpecDisplayName } from '@/lib/spec-to-role';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
@@ -44,6 +44,73 @@ async function loadRaidForSync(raidId: string) {
       },
     },
   });
+}
+
+export type SyncRaidGuestChannelSummaryOptions = SyncRaidThreadSummaryOptions;
+
+/**
+ * Gast-Channel-Embed: gekürzt, eigene Message-ID.
+ * Bei allowGuests=false oder fehlendem Kanal: Nachricht entfernen.
+ */
+export async function syncRaidGuestChannelSummary(
+  raidId: string,
+  opts?: SyncRaidGuestChannelSummaryOptions,
+): Promise<void> {
+  try {
+    const raid = await loadRaidForSync(raidId);
+    if (!raid) return;
+
+    const guestChannelId = raid.discordGuestChannelId?.trim() || null;
+    const shouldPost = raid.allowGuests && !!guestChannelId;
+
+    if (raid.status === 'cancelled' || raid.status === 'completed' || !shouldPost) {
+      if (raid.discordGuestChannelMessageId && guestChannelId) {
+        try {
+          const { deleteChannelMessage } = await import('@/lib/discord-guild-api');
+          await deleteChannelMessage(guestChannelId, raid.discordGuestChannelMessageId);
+        } catch (e) {
+          console.warn('[syncRaidGuestChannelSummary] delete failed:', e);
+        }
+        await prisma.rfRaid.update({
+          where: { id: raidId },
+          data: { discordGuestChannelMessageId: null },
+        });
+      }
+      return;
+    }
+
+    const embeds = await buildGuestRaidDiscordEmbedsForRaid(raid);
+    const components = buildGuestRaidActionButtons(raid.id, raid.guildId);
+
+    if (raid.discordGuestChannelMessageId) {
+      try {
+        await editChannelMessageFull(
+          guestChannelId!,
+          raid.discordGuestChannelMessageId,
+          opts?.embedOnly ? { embeds } : { embeds, components },
+        );
+        return;
+      } catch (e) {
+        console.warn('[syncRaidGuestChannelSummary] edit failed:', e);
+        if (!opts?.allowCreate) return;
+        await prisma.rfRaid.update({
+          where: { id: raidId },
+          data: { discordGuestChannelMessageId: null },
+        });
+      }
+    }
+
+    const { messageId } = await createChannelMessageFull(guestChannelId!, {
+      embeds,
+      components,
+    });
+    await prisma.rfRaid.update({
+      where: { id: raidId },
+      data: { discordGuestChannelMessageId: messageId },
+    });
+  } catch (e) {
+    console.error('[syncRaidGuestChannelSummary]', raidId, e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -74,7 +141,12 @@ export async function syncRaidThreadSummary(
 ): Promise<void> {
   try {
     const raid = await loadRaidForSync(raidId);
-    if (!raid?.discordChannelId) return;
+    if (!raid) return;
+
+    if (!raid.discordChannelId) {
+      await syncRaidGuestChannelSummary(raidId, opts);
+      return;
+    }
 
     /** Abgesagt oder abgeschlossen: Embed entfernen, keine erneute Synchronisation. */
     if (raid.status === 'cancelled' || raid.status === 'completed') {
@@ -94,6 +166,7 @@ export async function syncRaidThreadSummary(
           console.warn('[syncRaidThreadSummary] cancelled raid clear discord ids failed:', e);
         }
       }
+      await syncRaidGuestChannelSummary(raidId, opts);
       return;
     }
 
@@ -143,6 +216,7 @@ export async function syncRaidThreadSummary(
             // Thread existiert bereits oder Kanal unterstützt keine Threads – ignorieren
           }
         }
+        await syncRaidGuestChannelSummary(raidId, opts);
         return;
       } catch (e) {
         console.warn('[syncRaidThreadSummary] edit failed:', e);
@@ -158,6 +232,7 @@ export async function syncRaidThreadSummary(
     }
 
     if (!opts?.allowCreate) {
+      await syncRaidGuestChannelSummary(raidId, opts);
       return;
     }
 
@@ -182,6 +257,8 @@ export async function syncRaidThreadSummary(
         discordThreadId:         threadId,
       },
     });
+
+    await syncRaidGuestChannelSummary(raidId, opts);
   } catch (e) {
     console.error('[syncRaidThreadSummary]', raidId, e);
   }
@@ -455,6 +532,18 @@ function formatRaidChannelNoticeDate(date: Date): string {
   }).format(date);
 }
 
+function formatRaidChannelNoticeDateTime(date: Date): string {
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin',
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
 /** Raider-Rolle im Raid-Channel erwähnen (nicht im Thread-Log). */
 export async function postRaidRaiderChannelMention(
   raidId: string,
@@ -525,11 +614,54 @@ export async function postRaidOpenChannelNotice(raidId: string): Promise<void> {
   }
 }
 
+/**
+ * Nach dem Bearbeiten eines Raids: Raider im Channel darauf hinweisen, dass sich
+ * Startzeit/Datum und/oder Anmeldefrist geändert haben (analog zur Neuanlage-Mitteilung).
+ * Wird nur aufgerufen, wenn die Anmeldungen NICHT zurückgesetzt wurden.
+ */
+export async function postRaidScheduleChangeChannelNotice(
+  raidId: string,
+  changes: { startChanged: boolean; signupChanged: boolean }
+): Promise<void> {
+  try {
+    if (!changes.startChanged && !changes.signupChanged) return;
+
+    const raid = await prisma.rfRaid.findUnique({
+      where: { id: raidId },
+      select: {
+        name: true,
+        status: true,
+        scheduledAt: true,
+        signupUntil: true,
+        discordChannelId: true,
+        dungeon: { select: { name: true } },
+      },
+    });
+    if (!raid?.discordChannelId?.trim()) return;
+    if (raid.status === 'cancelled' || raid.status === 'completed') return;
+
+    const lines: string[] = [
+      `es gibt eine Terminänderung für den Raid **${raid.dungeon.name} / ${raid.name}**:`,
+    ];
+    if (changes.startChanged) {
+      lines.push(`• 📅 Neuer Start: **${formatRaidChannelNoticeDateTime(raid.scheduledAt)} Uhr**`);
+    }
+    if (changes.signupChanged) {
+      lines.push(`• ⏰ Neue Anmeldefrist: **${formatRaidChannelNoticeDateTime(raid.signupUntil)} Uhr**`);
+    }
+    lines.push('Bitte prüft eure Anmeldung.');
+
+    await postRaidRaiderChannelMention(raidId, lines.join('\n'), { commaAfterMention: true });
+  } catch (e) {
+    console.error('[postRaidScheduleChangeChannelNotice]', raidId, e);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Signup-Änderungs-Protokoll
 // ---------------------------------------------------------------------------
 
-export type SignupChangeAction = 'signup' | 'unsignup' | 'edit';
+export type SignupChangeAction = 'signup' | 'unsignup' | 'unsignup_declined' | 'edit';
 
 export interface SignupChangeDetails {
   characterName: string | null;
@@ -598,6 +730,8 @@ export async function postSignupChangeThreadNotice(
         content = `🚫 **${charName}** ist nicht da`;
       } else if (action === 'signup') {
         content = `✍️ **${charName}** hat sich angemeldet${specText}${typeText}${puncText}`;
+      } else if (action === 'unsignup_declined') {
+        content = `🚫 **${charName}** hat sich abgemeldet und ist nicht da`;
       } else if (action === 'unsignup') {
         content = `🚪 **${charName}** hat sich abgemeldet`;
       } else if (action === 'edit' && details.type === 'declined') {
@@ -626,6 +760,8 @@ export async function postSignupChangeThreadNotice(
         content = `🚫 ${who} ist nicht da`;
       } else if (action === 'signup') {
         content = `✍️ ${who} hat sich angemeldet${anonTypeSuffix}${puncText}`;
+      } else if (action === 'unsignup_declined') {
+        content = `🚫 ${who} hat sich abgemeldet und ist nicht da`;
       } else if (action === 'unsignup') {
         content = `🚪 ${who} hat sich abgemeldet`;
       } else if (action === 'edit' && details.type === 'declined') {

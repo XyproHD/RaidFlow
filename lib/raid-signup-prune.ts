@@ -2,10 +2,15 @@
  * Entfernt Raid-Anmeldungen, wenn der User für die betreffenden **offenen** Raids
  * (status `open`) der Gilde nach aktuellem DB-Stand keine Berechtigung mehr hat
  * (Server verlassen, nur noch `member`, oder Raidgruppen-Einschränkung nicht erfüllt).
+ *
+ * Gast-Signups auf `allowGuests`-Raids ohne Gruppen-Restriction bleiben, solange
+ * der User Discord-Mitglied ohne Raider-Rolle ist. Verliert der User die Gast-
+ * Berechtigung (Server verlassen oder Raider-Rolle), werden auch Gast-Signups entfernt.
  */
 
 import { prisma } from '@/lib/prisma';
 import { syncRaidThreadSummary } from '@/lib/raid-thread-sync';
+import { raidAllowsGuestAccess } from '@/lib/guest-raid-access';
 
 function userEligibleForOpenRaid(
   role: string | null | undefined,
@@ -21,13 +26,23 @@ function userEligibleForOpenRaid(
   return true;
 }
 
+function guestSignupMayStay(
+  raid: { allowGuests: boolean; raidGroupRestrictionId: string | null },
+  stillDiscordGuest: boolean
+): boolean {
+  return stillDiscordGuest && raidAllowsGuestAccess(raid);
+}
+
 /**
  * Löscht alle Signups des Users zu **offenen** Raids dieser Gilde, für die er nicht mehr teilnehmen darf.
  * Triggert Thread-Zusammenfassung pro betroffenem Raid (best effort).
+ *
+ * @param stillDiscordGuest true wenn User auf dem Discord-Server ist, aber keine Raider/RL/GM-Rolle hat
  */
 export async function pruneIneligibleOpenRaidSignups(
   userId: string,
-  guildId: string
+  guildId: string,
+  stillDiscordGuest = false
 ): Promise<void> {
   const [ug, member, openRaids] = await Promise.all([
     prisma.rfUserGuild.findUnique({
@@ -40,7 +55,11 @@ export async function pruneIneligibleOpenRaidSignups(
     }),
     prisma.rfRaid.findMany({
       where: { guildId, status: 'open' },
-      select: { id: true, raidGroupRestrictionId: true },
+      select: {
+        id: true,
+        allowGuests: true,
+        raidGroupRestrictionId: true,
+      },
     }),
   ]);
 
@@ -48,7 +67,15 @@ export async function pruneIneligibleOpenRaidSignups(
   const role = ug?.role ?? null;
 
   const raidIdsToPrune = openRaids
-    .filter((raid) => !userEligibleForOpenRaid(role, raidGroupIds, raid.raidGroupRestrictionId))
+    .filter((raid) => {
+      if (userEligibleForOpenRaid(role, raidGroupIds, raid.raidGroupRestrictionId)) {
+        return false;
+      }
+      if (guestSignupMayStay(raid, stillDiscordGuest)) {
+        return false;
+      }
+      return true;
+    })
     .map((r) => r.id);
 
   if (raidIdsToPrune.length === 0) return;

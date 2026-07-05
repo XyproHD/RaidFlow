@@ -105,6 +105,13 @@ export async function POST(
       ? body.discordLeaderChannelId.trim()
       : null;
 
+  const discordGuestChannelId =
+    typeof body.discordGuestChannelId === 'string' && body.discordGuestChannelId.trim()
+      ? body.discordGuestChannelId.trim()
+      : null;
+
+  const allowGuests = body.allowGuests === true;
+
   /** Thread wird angelegt, sobald ein Raid-Thread-Kanal gewählt ist (kein separater Schalter). */
   const createDiscordThread = !!discordChannelId;
 
@@ -209,6 +216,18 @@ export async function POST(
     }
   }
 
+  if (discordGuestChannelId) {
+    const allowedGuest = await prisma.rfGuildAllowedChannel.findFirst({
+      where: { guildId, discordChannelId: discordGuestChannelId },
+    });
+    if (!allowedGuest) {
+      return NextResponse.json(
+        { error: 'Guest channel is not in the guild allowed list' },
+        { status: 400 }
+      );
+    }
+  }
+
   if (createDiscordThread) {
     const allowed = await prisma.rfGuildAllowedChannel.findFirst({
       where: { guildId, discordChannelId },
@@ -252,10 +271,12 @@ export async function POST(
       scheduledEndAt,
       signupUntil,
       signupVisibility,
+      allowGuests,
       status: 'open',
       discordThreadId: null,
       discordChannelId: null,
       discordLeaderChannelId,
+      discordGuestChannelId,
     },
   });
 

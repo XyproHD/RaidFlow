@@ -3,6 +3,15 @@ import { getAppConfig } from '@/lib/app-config';
 import { getGuildsForUser, userGuildCanSeeRaid } from '@/lib/user-guilds';
 import { computeRaidSignupPhase } from '@/lib/raid-detail-shared';
 import { syncDiscordUserGuildMemberships } from '@/lib/sync-user-guild-memberships';
+import {
+  raidAllowsGuestAccess,
+  resolveGuestEligibility,
+  assignCharacterForGuestSignup,
+} from '@/lib/guest-raid-access';
+import {
+  raidBotMessage,
+  type RaidBotLocale,
+} from '@/lib/discord-raid-bot-locale';
 
 function profileUrlForLocale(locale = 'de'): string {
   const base = process.env.NEXTAUTH_URL?.replace(/\/$/, '') || 'http://localhost:3000';
@@ -12,6 +21,8 @@ function profileUrlForLocale(locale = 'de'): string {
 export type RaidParticipantState = {
   linked: boolean;
   guildMember: boolean;
+  /** Gast-Anmeldung auf allowGuests-Raid möglich */
+  guestEligible: boolean;
   raidGuildId: string;
   raidGuildName: string;
   characters: Array<{
@@ -29,6 +40,8 @@ export type RaidParticipantState = {
     isMain: boolean;
     guildId: string | null;
   }>;
+  discordGuestChannelId: string | null;
+  hasLeaderChannel: boolean;
   profileUrl: string;
   signupPhase: ReturnType<typeof computeRaidSignupPhase>;
   discordEmojis: Record<string, string>;
@@ -44,10 +57,13 @@ export async function buildRaidParticipantState(
     select: {
       id: true,
       guildId: true,
+      allowGuests: true,
       signupUntil: true,
       scheduledAt: true,
       status: true,
       raidGroupRestrictionId: true,
+      discordGuestChannelId: true,
+      discordLeaderChannelId: true,
       guild: { select: { id: true, name: true, discordGuildId: true } },
     },
   });
@@ -67,8 +83,11 @@ export async function buildRaidParticipantState(
     return {
       linked: false,
       guildMember: false,
+      guestEligible: false,
       raidGuildId: raid.guildId,
       raidGuildName: raid.guild.name,
+      discordGuestChannelId: raid.discordGuestChannelId,
+      hasLeaderChannel: !!raid.discordLeaderChannelId?.trim(),
       characters: [],
       assignableCharacters: [],
       profileUrl: profileUrlForLocale(options?.locale),
@@ -77,7 +96,7 @@ export async function buildRaidParticipantState(
     };
   }
 
-  const [guilds, charsInGuild, assignable, appCfg] = await Promise.all([
+  const [guilds, charsInGuild, assignable, appCfg, guestCheck] = await Promise.all([
     getGuildsForUser(syncResult.userId, discordUserId, { skipOwnerWebFullAccess: true }),
     prisma.rfCharacter.findMany({
       where: { userId: syncResult.userId, guildId: raid.guildId },
@@ -102,6 +121,9 @@ export async function buildRaidParticipantState(
       take: 25,
     }),
     getAppConfig().catch(() => null),
+    raidAllowsGuestAccess(raid)
+      ? resolveGuestEligibility(syncResult.userId, discordUserId, raid.guildId)
+      : Promise.resolve({ eligible: false, membershipKnown: true, displayNameInGuild: null }),
   ]);
 
   const guildInfo = guilds.find((g) => g.id === raid.guildId);
@@ -113,12 +135,22 @@ export async function buildRaidParticipantState(
       raidGroupRestrictionId: raid.raidGroupRestrictionId,
     });
 
+  const guestEligible = !guildMember && guestCheck.eligible;
+
+  const profileChars =
+    guestEligible && assignable.length > 0
+      ? [...assignable, ...charsInGuild.filter((c) => !assignable.some((a) => a.id === c.id))]
+      : charsInGuild;
+
   return {
     linked: true,
-    guildMember,
+    guildMember: guildMember || guestEligible,
+    guestEligible,
     raidGuildId: raid.guildId,
     raidGuildName: raid.guild.name,
-    characters: charsInGuild,
+    discordGuestChannelId: raid.discordGuestChannelId,
+    hasLeaderChannel: !!raid.discordLeaderChannelId?.trim(),
+    characters: profileChars,
     assignableCharacters: assignable,
     profileUrl: profileUrlForLocale(options?.locale),
     signupPhase: computeRaidSignupPhase(raid),
@@ -130,19 +162,26 @@ export async function assignCharacterToRaidGuild(params: {
   discordUserId: string;
   raidId: string;
   characterId: string;
+  locale?: RaidBotLocale;
 }): Promise<
   | { ok: true; characterId: string }
   | { ok: false; error: string; message: string; status: number }
 > {
+  const locale = params.locale ?? 'de';
   const state = await buildRaidParticipantState(params.discordUserId, params.raidId);
   if (!state) {
-    return { ok: false, error: 'RAID_NOT_FOUND', message: 'Raid nicht gefunden.', status: 404 };
+    return {
+      ok: false,
+      error: 'RAID_NOT_FOUND',
+      message: raidBotMessage(locale, 'RAID_NOT_FOUND'),
+      status: 404,
+    };
   }
   if (!state.linked) {
     return {
       ok: false,
       error: 'NOT_LINKED',
-      message: 'Discord-Konto ist nicht mit RaidFlow verknüpft.',
+      message: raidBotMessage(locale, 'NOT_LINKED'),
       status: 403,
     };
   }
@@ -150,7 +189,7 @@ export async function assignCharacterToRaidGuild(params: {
     return {
       ok: false,
       error: 'NOT_GUILD_MEMBER',
-      message: 'Du bist kein RaidFlow-Mitglied dieser Gilde.',
+      message: raidBotMessage(locale, 'NOT_GUILD_MEMBER'),
       status: 403,
     };
   }
@@ -163,9 +202,29 @@ export async function assignCharacterToRaidGuild(params: {
     return {
       ok: false,
       error: 'NOT_LINKED',
-      message: 'Discord-Konto ist nicht mit RaidFlow verknüpft.',
+      message: raidBotMessage(locale, 'NOT_LINKED'),
       status: 403,
     };
+  }
+
+  if (state.guestEligible) {
+    const guest = await resolveGuestEligibility(user.id, params.discordUserId, state.raidGuildId);
+    const assigned = await assignCharacterForGuestSignup({
+      userId: user.id,
+      characterId: params.characterId,
+      guildId: state.raidGuildId,
+      discordId: params.discordUserId,
+      displayNameInGuild: guest.displayNameInGuild,
+    });
+    if (!assigned.ok) {
+      return {
+        ok: false,
+        error: 'CHARACTER_NOT_FOUND',
+        message: assigned.error,
+        status: assigned.status,
+      };
+    }
+    return { ok: true, characterId: params.characterId };
   }
 
   const char = await prisma.rfCharacter.findFirst({
@@ -180,7 +239,7 @@ export async function assignCharacterToRaidGuild(params: {
     return {
       ok: false,
       error: 'CHARACTER_NOT_FOUND',
-      message: 'Charakter nicht gefunden oder bereits dieser Gilde zugeordnet.',
+      message: raidBotMessage(locale, 'CHARACTER_NOT_FOUND'),
       status: 404,
     };
   }

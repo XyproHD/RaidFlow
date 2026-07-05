@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { normalizeParticipationWeight } from '@/lib/raid-participation-weight';
+import { syncRaidGuestChannelSummary } from '@/lib/raid-thread-sync';
 
 type EntryIn = { signupId?: unknown; weight?: unknown };
 
@@ -120,6 +121,8 @@ export async function POST(
       console.error('[POST raid complete] clear discord ids failed:', e);
     }
   }
+
+  void syncRaidGuestChannelSummary(raidId);
 
   return NextResponse.json({ ok: true, status: 'completed' });
 }

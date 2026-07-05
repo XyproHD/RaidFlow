@@ -12,6 +12,11 @@ import {
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
 import { syncRaidThreadSummary, postSignupChangeThreadNotice } from '@/lib/raid-thread-sync';
 import {
+  assignCharacterForGuestSignup,
+  resolveGuestEligibility,
+  resolveIsGuestSignup,
+} from '@/lib/guest-raid-access';
+import {
   ANNOUNCED_SET_PLAYER_COMMENT_MIN,
   requiresAnnouncedSetPlayerComment,
   snapFromMutationResult,
@@ -95,16 +100,60 @@ export async function POST(
     );
   }
 
-  const character = await prisma.rfCharacter.findFirst({
-    where: { id: characterId, userId, guildId },
-    select: { id: true, name: true, mainSpec: true, offSpec: true },
+  const characterRaw = await prisma.rfCharacter.findFirst({
+    where:
+      access.accessMode === 'guest'
+        ? {
+            id: characterId,
+            userId,
+            OR: [{ guildId: null }, { guildId }],
+          }
+        : { id: characterId, userId, guildId },
+    select: { id: true, name: true, mainSpec: true, offSpec: true, guildId: true },
   });
-  if (!character) {
+  if (!characterRaw) {
     return NextResponse.json(
-      { error: 'Character not found for this guild' },
+      {
+        error:
+          access.accessMode === 'guest'
+            ? 'Character not found'
+            : 'Character not found for this guild',
+      },
       { status: 400 }
     );
   }
+
+  if (access.accessMode === 'guest') {
+    const guestCheck = await resolveGuestEligibility(
+      userId,
+      session.discordId as string,
+      guildId
+    );
+    if (!guestCheck.eligible) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    const assigned = await assignCharacterForGuestSignup({
+      userId,
+      characterId: characterRaw.id,
+      guildId,
+      discordId: session.discordId as string,
+      displayNameInGuild: guestCheck.displayNameInGuild,
+    });
+    if (!assigned.ok) {
+      return NextResponse.json({ error: assigned.error }, { status: assigned.status });
+    }
+  }
+
+  const character = {
+    id: characterRaw.id,
+    name: characterRaw.name,
+    mainSpec: characterRaw.mainSpec,
+    offSpec: characterRaw.offSpec,
+  };
+
+  const isGuest =
+    access.accessMode === 'guest' ||
+    (await resolveIsGuestSignup(userId, session.discordId as string, guildId));
 
   const signedSpecForRules =
     typeNorm === 'declined' ? signedSpecRaw || character.mainSpec : signedSpecRaw;
@@ -160,6 +209,7 @@ export async function POST(
     forbidReserve: typeNorm === 'declined' ? false : forbidReserve,
     punctuality: typeNorm === 'declined' ? 'on_time' : punctuality,
     note,
+    isGuest,
   });
   await syncRaidThreadSummary(raidId);
   await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {

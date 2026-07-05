@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireRaidPlannerOrForbid } from '@/lib/raid-planner-auth';
 import { userHasRaidflowParticipationInGuild } from '@/lib/guild-permissions-db';
-import { syncRaidThreadSummary, postRaidLockedThreadNotice, postRaidAnnouncedThreadNotice } from '@/lib/raid-thread-sync';
+import { syncRaidThreadSummary, postRaidLockedThreadNotice, postRaidAnnouncedThreadNotice, postRaidScheduleChangeChannelNotice, syncRaidGuestChannelSummary } from '@/lib/raid-thread-sync';
 import { parseMinSpecsPayload } from '@/lib/min-spec-keys';
 import {
   announceLayoutToStoredJson,
@@ -132,6 +132,8 @@ export async function PATCH(
         console.error('[PATCH raid cancel] clear discord ids failed:', e);
       }
     }
+
+    void syncRaidGuestChannelSummary(raidId);
 
     const { sendRaidCancellationDirectMessages } = await import('@/lib/raid-cancel-notify');
     await sendRaidCancellationDirectMessages({
@@ -266,6 +268,14 @@ export async function PATCH(
       : typeof body.discordLeaderChannelId === 'string'
         ? body.discordLeaderChannelId.trim() || null
         : raid.discordLeaderChannelId;
+  const discordGuestChannelId =
+    body.discordGuestChannelId === null
+      ? null
+      : typeof body.discordGuestChannelId === 'string'
+        ? body.discordGuestChannelId.trim() || null
+        : raid.discordGuestChannelId;
+  const allowGuests =
+    typeof body.allowGuests === 'boolean' ? body.allowGuests : raid.allowGuests;
 
   let organizerDiscordId: string | null | undefined = undefined;
   if ('organizerDiscordId' in body) {
@@ -339,26 +349,14 @@ export async function PATCH(
     );
   }
 
-  const confirmResetSignups = body.confirmResetSignups === true;
-  const timeChanged =
-    scheduledAtRaw !== undefined &&
-    scheduledAt.getTime() !== raid.scheduledAt.getTime();
-  const prevDungeonIds =
-    Array.isArray(raid.dungeonIds) && raid.dungeonIds.every((x) => typeof x === 'string')
-      ? Array.from(new Set((raid.dungeonIds as string[]).map((x) => x.trim()).filter(Boolean)))
-      : [raid.dungeonId];
-  const dungeonChanged =
-    raid.dungeonId !== dungeonId ||
-    JSON.stringify(prevDungeonIds) !== JSON.stringify(nextDungeonIds);
+  // Der Bearbeiter entscheidet selbst, ob Anmeldungen zurückgesetzt werden sollen.
+  // Es gibt keine automatische Zwangsprüfung mehr bei Termin-/Dungeon-Änderungen.
+  const resetSignups = body.resetSignups === true;
 
-  if ((timeChanged || dungeonChanged) && !confirmResetSignups) {
-    return NextResponse.json(
-      { error: 'confirmResetSignups required when changing schedule or dungeons' },
-      { status: 400 }
-    );
-  }
-
-  const resetSignups = (timeChanged || dungeonChanged) && confirmResetSignups;
+  // Abweichung von Startzeit/-Datum bzw. Anmeldefrist gegenüber dem Ursprung erkennen
+  // (für Discord-Hinweis an die Raider, wenn Anmeldungen nicht zurückgesetzt werden).
+  const scheduleStartChanged = scheduledAt.getTime() !== raid.scheduledAt.getTime();
+  const signupDeadlineChanged = signupUntil.getTime() !== raid.signupUntil.getTime();
 
   let announcedPlannerGroupsJsonUpdate:
     | Prisma.InputJsonValue
@@ -517,6 +515,18 @@ export async function PATCH(
     }
   }
 
+  if (discordGuestChannelId) {
+    const allowedGuest = await prisma.rfGuildAllowedChannel.findFirst({
+      where: { guildId, discordChannelId: discordGuestChannelId },
+    });
+    if (!allowedGuest) {
+      return NextResponse.json(
+        { error: 'Guest channel is not in the guild allowed list' },
+        { status: 400 }
+      );
+    }
+  }
+
   const raidUpdateData = {
     name,
     note,
@@ -533,6 +543,8 @@ export async function PATCH(
     raidGroupRestrictionId,
     discordChannelId,
     discordLeaderChannelId,
+    discordGuestChannelId,
+    allowGuests,
     ...(organizerDiscordId !== undefined ? { organizerDiscordId } : {}),
     maxPlayers,
     scheduledAt,
@@ -562,7 +574,17 @@ export async function PATCH(
     });
   }
 
+  // Discord-Beitrag beim erfolgreichen Speichern aktualisieren.
   await syncRaidThreadSummary(raidId);
+
+  // Termin-/Friständerung ohne Anmelde-Reset: Raider im Channel informieren (wie bei Neuanlage).
+  if (!resetSignups && (scheduleStartChanged || signupDeadlineChanged)) {
+    await postRaidScheduleChangeChannelNotice(raidId, {
+      startChanged: scheduleStartChanged,
+      signupChanged: signupDeadlineChanged,
+    }).catch((e) => console.error('[PATCH raid] schedule change notice:', e));
+  }
+
   return NextResponse.json({
     ok: true,
     resetSignups,

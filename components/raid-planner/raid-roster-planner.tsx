@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+import { guestSignupBadgeClass, guestSignupSurfaceClass } from '@/lib/guest-ui-styles';
 import { formatRaidTerminLine } from '@/lib/format-raid-termin';
 import { getSpecByDisplayName, TBC_CLASS_IDS, type TbcRole } from '@/lib/wow-tbc-classes';
 import { isMinSpecClassKey, minSpecKeyTitle, parseMinSpecClassKey } from '@/lib/min-spec-keys';
@@ -74,6 +75,7 @@ const RAID_PLANNER_CLASS_I18N = {
 } as const;
 
 type MainAltFilter = 'mains' | 'both' | 'twinks';
+type MemberGuestFilter = 'member' | 'all' | 'guest';
 type PlannerPunctuality = 'on_time' | 'tight' | 'late';
 
 export type RosterPlannerSignup = {
@@ -103,6 +105,7 @@ export type RosterPlannerSignup = {
   note?: string | null;
   /** Profil-Fokus Werktag/Wochenende; fehlt = beide Filter erlauben */
   profileWeekFocus?: 'weekday' | 'weekend' | null;
+  isGuest?: boolean;
 };
 
 export type GuildCharacterOption = {
@@ -116,6 +119,7 @@ export type GuildCharacterOption = {
   guildDiscordDisplayName: string | null;
   classId: string | null;
   role: TbcRole;
+  isGuest?: boolean;
 };
 
 type RaidHeaderMeta = {
@@ -449,6 +453,7 @@ export function RaidRosterPlanner({
   canEditRaid,
   initialPlannerLeaderNotesHtml,
   raidStatus,
+  allowGuests = false,
   persistedServerPlannerOrder = null,
 }: {
   locale: string;
@@ -465,6 +470,8 @@ export function RaidRosterPlanner({
   initialPlannerLeaderNotesHtml: string | null;
   /** rf_raid.status — Ankündigen nur bei open */
   raidStatus: string;
+  /** rf_raid.allow_guests — Gast-Pool im Add-Modal */
+  allowGuests?: boolean;
   /** Bei status announced: Gruppen/Reserve vom Server (ohne localStorage). */
   persistedServerPlannerOrder?: AnnounceRaidPayload | null;
 }) {
@@ -474,6 +481,7 @@ export function RaidRosterPlanner({
   const tPlanner = useTranslations('raidPlanner');
   const tProfile = useTranslations('profile');
   const tCancelDm = useTranslations('raidCancelDm');
+  const tDash = useTranslations('dashboard');
   const router = useRouter();
   const intlLocale = useLocale();
 
@@ -769,6 +777,7 @@ export function RaidRosterPlanner({
   }, [raidId, initialSignups, applySavedOrders]);
 
   const [mainAltFilter, setMainAltFilter] = useState<MainAltFilter>('both');
+  const [memberGuestFilter, setMemberGuestFilter] = useState<MemberGuestFilter>('all');
   const [allowWeekday, setAllowWeekday] = useState(true);
   const [allowWeekend, setAllowWeekend] = useState(true);
   const [roleFilter, setRoleFilter] = useState<Record<TbcRole, boolean>>({
@@ -921,6 +930,67 @@ export function RaidRosterPlanner({
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState('');
   const [addSelectedId, setAddSelectedId] = useState<string | null>(null);
+  const [addMemberGuestMode, setAddMemberGuestMode] = useState<'member' | 'guest'>('member');
+  const [guestAddCharacters, setGuestAddCharacters] = useState<GuildCharacterOption[]>([]);
+
+  useEffect(() => {
+    if (!addOpen || addMemberGuestMode !== 'guest') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/guilds/${encodeURIComponent(guildId)}/raid-planner/guest-candidates?raidId=${encodeURIComponent(raidId)}`
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          candidates?: Array<{
+            userId: string;
+            displayName: string;
+            characters: Array<{
+              id: string;
+              name: string;
+              mainSpec: string;
+              offSpec: string | null;
+              isMain: boolean;
+              gearScore: number | null;
+              classId: string | null;
+              role: TbcRole | null;
+            }>;
+          }>;
+        };
+        if (cancelled) return;
+        const flat: GuildCharacterOption[] = [];
+        for (const c of data.candidates ?? []) {
+          for (const ch of c.characters) {
+            flat.push({
+              id: ch.id,
+              userId: c.userId,
+              name: ch.name,
+              mainSpec: ch.mainSpec,
+              offSpec: ch.offSpec,
+              isMain: ch.isMain,
+              gearScore: ch.gearScore,
+              guildDiscordDisplayName: c.displayName,
+              classId: ch.classId,
+              role: (ch.role ?? 'Melee') as TbcRole,
+              isGuest: true,
+            });
+          }
+        }
+        setGuestAddCharacters(flat);
+      } catch {
+        if (!cancelled) setGuestAddCharacters([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [addOpen, addMemberGuestMode, guildId, raidId]);
+
+  const addCharacterPool = useMemo(
+    () => (addMemberGuestMode === 'guest' ? guestAddCharacters : guildCharacters),
+    [addMemberGuestMode, guestAddCharacters, guildCharacters]
+  );
 
   const [dragSession, setDragSession] = useState<DragSession | null>(null);
   const [dragPoint, setDragPoint] = useState<{ clientX: number; clientY: number } | null>(null);
@@ -1234,20 +1304,30 @@ export function RaidRosterPlanner({
 
   const addCandidates = useMemo(() => {
     const q = addQuery.trim().toLowerCase();
-    const all = guildCharacters.filter((c) => !usedCharacterIds.has(c.id));
+    const all = addCharacterPool.filter((c) => !usedCharacterIds.has(c.id));
     if (!q) return all.slice(0, 50);
     return all
       .filter((c) => c.name.toLowerCase().includes(q))
       .slice(0, 50);
-  }, [addQuery, guildCharacters, usedCharacterIds]);
+  }, [addQuery, addCharacterPool, usedCharacterIds]);
 
   const addSelected = useMemo(
-    () => (addSelectedId ? guildCharacters.find((c) => c.id === addSelectedId) ?? null : null),
-    [addSelectedId, guildCharacters]
+    () => (addSelectedId ? addCharacterPool.find((c) => c.id === addSelectedId) ?? null : null),
+    [addSelectedId, addCharacterPool]
+  );
+
+  const passesMemberGuestFilter = useCallback(
+    (s: RosterPlannerSignup) => {
+      if (memberGuestFilter === 'all') return true;
+      if (memberGuestFilter === 'guest') return !!s.isGuest;
+      return !s.isGuest;
+    },
+    [memberGuestFilter]
   );
 
   const passesCharFilters = useCallback(
     (s: RosterPlannerSignup) => {
+      if (!passesMemberGuestFilter(s)) return false;
       if (mainAltFilter === 'mains' && !s.isMain) return false;
       if (mainAltFilter === 'twinks' && s.isMain) return false;
       const wf = s.profileWeekFocus;
@@ -1257,7 +1337,7 @@ export function RaidRosterPlanner({
       if (s.classId && !classFilter[s.classId]) return false;
       return true;
     },
-    [mainAltFilter, allowWeekday, allowWeekend, roleFilter, classFilter]
+    [mainAltFilter, allowWeekday, allowWeekend, roleFilter, classFilter, passesMemberGuestFilter]
   );
 
   const filteredPoolIds = useMemo(() => {
@@ -1974,6 +2054,7 @@ export function RaidRosterPlanner({
           attVariant === 'uncertain' && 'border-red-400/60 dark:border-red-700/55',
           attVariant === 'declined' &&
             'border-red-400/60 dark:border-red-800/50 bg-red-500/[0.09] dark:bg-red-950/40',
+          s.isGuest && guestSignupSurfaceClass,
           comparisonRowClass(cmpPlacement, comparisonEnabled),
           isDragging && 'opacity-25'
         )}
@@ -2104,12 +2185,23 @@ export function RaidRosterPlanner({
         gearScore: fallbackGearScore,
         note,
         profileWeekFocus: null,
+        isGuest: !!addSelected.isGuest,
       };
       return [...prev, row];
     });
     setAddOpen(false);
     setAddQuery('');
     setAddSelectedId(null);
+    setAddMemberGuestMode('member');
+    setGuestAddCharacters([]);
+  }
+
+  function openAddModal() {
+    setAddMemberGuestMode('member');
+    setAddQuery('');
+    setAddSelectedId(null);
+    setGuestAddCharacters([]);
+    setAddOpen(true);
   }
 
   async function submitRaidCancelFromOverlay(discordMessage: string) {
@@ -3233,7 +3325,7 @@ export function RaidRosterPlanner({
                   className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background hover:bg-muted shrink-0"
                   aria-label={tPlanner('add')}
                   title={tPlanner('add')}
-                  onClick={() => setAddOpen(true)}
+                  onClick={openAddModal}
                 >
                   ➕
                 </button>
@@ -3373,6 +3465,33 @@ export function RaidRosterPlanner({
                       className={cn(
                         'rounded-md px-2.5 py-1.5 text-sm flex-1',
                         mainAltFilter === v
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-muted'
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="text-muted-foreground text-xs">{tPlanner('filterMemberGuest')}</span>
+                <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+                  {(
+                    [
+                      ['member', tPlanner('filterMemberGuestMember')],
+                      ['all', tPlanner('filterMemberGuestAll')],
+                      ['guest', tPlanner('filterMemberGuestGuest')],
+                    ] as const
+                  ).map(([v, label]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setMemberGuestFilter(v)}
+                      className={cn(
+                        'rounded-md px-2 py-1.5 text-xs flex-1',
+                        memberGuestFilter === v
                           ? 'bg-primary text-primary-foreground'
                           : 'text-muted-foreground hover:bg-muted'
                       )}
@@ -4130,6 +4249,40 @@ export function RaidRosterPlanner({
                   </div>
 
                   <div className="p-4 space-y-3">
+                    {allowGuests ? (
+                      <div className="space-y-1.5">
+                        <span className="text-muted-foreground text-xs">
+                          {tPlanner('filterMemberGuest')}
+                        </span>
+                        <div className="flex rounded-lg border border-border p-0.5 bg-muted/30">
+                          {(
+                            [
+                              ['member', tPlanner('filterMemberGuestMember')],
+                              ['guest', tPlanner('filterMemberGuestGuest')],
+                            ] as const
+                          ).map(([v, label]) => (
+                            <button
+                              key={v}
+                              type="button"
+                              onClick={() => {
+                                setAddMemberGuestMode(v);
+                                setAddQuery('');
+                                setAddSelectedId(null);
+                              }}
+                              className={cn(
+                                'rounded-md px-2 py-1.5 text-xs flex-1',
+                                addMemberGuestMode === v
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'text-muted-foreground hover:bg-muted'
+                              )}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
                     <input
                       value={addQuery}
                       onChange={(e) => {
@@ -4157,7 +4310,8 @@ export function RaidRosterPlanner({
                                 onClick={() => setAddSelectedId(c.id)}
                                 className={cn(
                                   'w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2',
-                                  selected && 'bg-primary/10'
+                                  selected && 'bg-primary/10',
+                                  c.isGuest && guestSignupSurfaceClass
                                 )}
                               >
                                 <CharacterMainStar
@@ -4178,6 +4332,9 @@ export function RaidRosterPlanner({
                                   />
                                 </span>
                                 <span className="font-medium truncate">{c.name}</span>
+                                {c.isGuest ? (
+                                  <span className={guestSignupBadgeClass}>{tDash('guestRaidBadge')}</span>
+                                ) : null}
                                 <span className="ml-auto flex items-center gap-2">
                                   <CharacterDiscordPill discordName={displayDiscordName} />
                                   <CharacterGearscorePill gearScore={displayGearScore} />

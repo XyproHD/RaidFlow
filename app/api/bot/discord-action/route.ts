@@ -23,6 +23,11 @@ import {
 import { syncDiscordUserGuildMemberships } from '@/lib/sync-user-guild-memberships';
 import { getAppConfig } from '@/lib/app-config';
 import {
+  raidBotMessage,
+  resolveRaidBotLocale,
+  type RaidBotLocale,
+} from '@/lib/discord-raid-bot-locale';
+import {
   ANNOUNCED_SET_PLAYER_COMMENT_MIN,
   requiresAnnouncedSetPlayerComment,
   snapFromMutationResult,
@@ -96,6 +101,7 @@ export async function GET(request: NextRequest) {
       scheduledAt: true,
       status: true,
       discordLeaderChannelId: true,
+      discordGuestChannelId: true,
     },
   });
   if (!raid) {
@@ -121,6 +127,7 @@ export async function GET(request: NextRequest) {
       linked: true,
       canManage: access.canEdit,
       hasLeaderChannel: !!raid.discordLeaderChannelId?.trim(),
+      discordGuestChannelId: raid.discordGuestChannelId,
     });
   }
 
@@ -153,6 +160,7 @@ export async function GET(request: NextRequest) {
       signupUntil: raid.signupUntil.toISOString(),
       signupPhase,
       raidStatus: raid.status,
+      discordGuestChannelId: raid.discordGuestChannelId,
     });
   }
 
@@ -224,12 +232,17 @@ export async function POST(request: NextRequest) {
       status: true,
       signupUntil: true,
       scheduledAt: true,
+      discordGuestChannelId: true,
       guild: { select: { discordGuildId: true } },
     },
   });
   if (!raid) {
     return NextResponse.json({ error: 'Raid not found' }, { status: 404 });
   }
+
+  const discordChannelId =
+    typeof body.discordChannelId === 'string' ? body.discordChannelId.trim() : '';
+  const botLocale = resolveRaidBotLocale(discordChannelId, raid.discordGuestChannelId);
 
   if (action === 'assign-character-guild') {
     const characterId =
@@ -241,6 +254,7 @@ export async function POST(request: NextRequest) {
       discordUserId,
       raidId,
       characterId,
+      locale: botLocale,
     });
     if (!result.ok) {
       return NextResponse.json(
@@ -263,7 +277,7 @@ export async function POST(request: NextRequest) {
   });
   if (!user) {
     return NextResponse.json(
-      { error: 'NOT_LINKED', message: 'Discord-Konto ist nicht mit RaidFlow verknüpft.' },
+      { error: 'NOT_LINKED', message: raidBotMessage(botLocale, 'NOT_LINKED') },
       { status: 403 }
     );
   }
@@ -274,7 +288,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: 'NOT_GUILD_MEMBER',
-        message: 'Du bist kein RaidFlow-Mitglied dieser Gilde.',
+        message: raidBotMessage(botLocale, 'NOT_GUILD_MEMBER'),
       },
       { status: 403 }
     );
@@ -286,7 +300,7 @@ export async function POST(request: NextRequest) {
   if (action === 'quickjoin') {
     if (!access.canSignup) {
       return NextResponse.json(
-        { error: 'SIGNUP_CLOSED', message: 'Anmeldung ist geschlossen oder Raid nicht mehr offen.' },
+        { error: 'SIGNUP_CLOSED', message: raidBotMessage(botLocale, 'SIGNUP_CLOSED') },
         { status: 403 }
       );
     }
@@ -306,51 +320,54 @@ export async function POST(request: NextRequest) {
       : null;
     const picked = main ?? fallback;
     if (!picked) {
-      return NextResponse.json({ error: 'NO_CHARACTER', message: 'Kein Charakter in dieser Gilde gefunden.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'NO_CHARACTER', message: raidBotMessage(botLocale, 'NO_CHARACTER_GUILD') },
+        { status: 400 }
+      );
     }
 
     const existing = await prisma.rfRaidSignup.findFirst({
-      where: { raidId, userId: user.id, characterId: picked.id },
+      where:  { raidId, userId: user.id, characterId: picked.id },
+      select: { id: true, type: true },
     });
-    if (existing) {
+    // Aktive Anmeldung → Quickjoin nicht möglich. „Nicht da" (declined) zählt nicht als
+    // aktive Anmeldung und wird beim Quickjoin als Bearbeitung in eine echte Anmeldung überführt.
+    if (existing && existing.type !== 'declined') {
       return NextResponse.json(
         {
           error: 'ALREADY_SIGNED_UP',
-          message: 'Du bist mit diesem Charakter bereits angemeldet.',
+          message: raidBotMessage(botLocale, 'ALREADY_SIGNED_UP'),
         },
         { status: 409 }
       );
     }
 
-    await prisma.rfRaidSignup.create({
-      data: {
-        raidId,
-        userId:               user.id,
-        characterId:          picked.id,
-        type:                 phase === 'reserve_only' ? 'reserve' : 'normal',
-        punctuality:          'on_time',
-        isLate:               false,
-        note:                 null,
-        signedSpec:           picked.mainSpec,
-        onlySignedSpec:       false,
-        forbidReserve:        false,
-        allowReserve:         false,
-        leaderAllowsReserve:  true,
-        leaderMarkedTeilnehmer: false,
-        leaderPlacement:      'signup',
-        setConfirmed:         false,
-      },
+    const pickedType = phase === 'reserve_only' ? 'reserve' : 'normal';
+    const { isCreate } = await commitRaidSelfSignupMutation({
+      raidId,
+      guildId:         raid.guildId,
+      userId:          user.id,
+      changedByUserId: user.id,
+      characterId:     picked.id,
+      typeNorm:        pickedType,
+      signedSpecRaw:   picked.mainSpec,
+      onlySignedSpec:  false,
+      forbidReserve:   false,
+      punctuality:     'on_time',
+      note:            '',
     });
 
-    const pickedType = phase === 'reserve_only' ? 'reserve' : 'normal';
     await syncRaidThreadSummary(raidId, { embedOnly: true });
-    await postSignupChangeThreadNotice(raidId, 'signup', {
+    await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
       characterName: picked.name,
       signedSpec:    picked.mainSpec,
       type:          pickedType,
       punctuality:   'on_time',
     });
-    return NextResponse.json({ ok: true, message: 'Quickjoin erfolgreich!' });
+    return NextResponse.json({
+      ok: true,
+      message: isCreate ? raidBotMessage(botLocale, 'QUICKJOIN_OK') : raidBotMessage(botLocale, 'SIGNUP_UPDATED'),
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -359,7 +376,7 @@ export async function POST(request: NextRequest) {
   if (action === 'join' || action === 'edit-signup') {
     if (!access.canSignup) {
       return NextResponse.json(
-        { error: 'SIGNUP_CLOSED', message: 'Anmeldung ist geschlossen oder Raid nicht mehr offen.' },
+        { error: 'SIGNUP_CLOSED', message: raidBotMessage(botLocale, 'SIGNUP_CLOSED') },
         { status: 403 }
       );
     }
@@ -452,6 +469,14 @@ export async function POST(request: NextRequest) {
       note:           noteRaw,
     });
 
+    // Aktive Anmeldung → evtl. vorhandene „Nicht da"-Markierung(en) dieses Users entfernen,
+    // damit ein Spieler nicht gleichzeitig angemeldet und „nicht da" ist.
+    if (typeNorm !== 'declined') {
+      await prisma.rfRaidSignup.deleteMany({
+        where: { raidId, userId: user.id, type: 'declined', NOT: { characterId: char.id } },
+      });
+    }
+
     await syncRaidThreadSummary(raidId, { embedOnly: true });
     await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
       characterName: char.name,
@@ -477,7 +502,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       isCreate,
-      message: isCreate ? 'Anmeldung erfolgreich!' : 'Anmeldung aktualisiert!',
+      message: isCreate ? raidBotMessage(botLocale, 'SIGNUP_OK') : raidBotMessage(botLocale, 'SIGNUP_UPDATED'),
     });
   }
 
@@ -487,7 +512,7 @@ export async function POST(request: NextRequest) {
   if (action === 'decline') {
     if (!access.canSignup) {
       return NextResponse.json(
-        { error: 'SIGNUP_CLOSED', message: 'Anmeldung ist geschlossen oder Raid nicht mehr offen.' },
+        { error: 'SIGNUP_CLOSED', message: raidBotMessage(botLocale, 'SIGNUP_CLOSED') },
         { status: 403 }
       );
     }
@@ -532,12 +557,27 @@ export async function POST(request: NextRequest) {
       });
     }
     if (!markerChar) {
-      return NextResponse.json({ error: 'NO_CHARACTER', message: 'Kein Charakter in dieser Gilde gefunden.' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'NO_CHARACTER', message: raidBotMessage(botLocale, 'NO_CHARACTER_GUILD') },
+        { status: 400 }
+      );
     }
 
     const { withdrawRaidSignupRows } = await import('@/lib/raid-signup-withdraw');
+    // Bereits als „nicht da“ (declined) markierte Zeilen sind keine aktive Anmeldung mehr.
+    const activeRemovedRows = removedRows.filter((r) => r.type !== 'declined');
     let isCreate = false;
-    if (removedRows.length === 0) {
+    if (activeRemovedRows.length > 0) {
+      // Schritt 1: bestehende Anmeldung(en) abmelden – die Zeilen werden dabei auf „declined“
+      // gesetzt und dienen zugleich als „Nicht da“-Kennzeichnung.
+      await withdrawRaidSignupRows(prisma, {
+        raidId,
+        signupIds: activeRemovedRows.map((r) => r.id),
+        changedByUserId: user.id,
+        guildId: raid.guildId,
+      });
+    } else if (removedRows.length === 0) {
+      // Schritt 2: keine bestehende Anmeldung → „Nicht da“-Kennzeichnung neu anlegen.
       const result = await commitRaidSelfSignupMutation({
         raidId,
         guildId: raid.guildId,
@@ -552,25 +592,19 @@ export async function POST(request: NextRequest) {
         note: '',
       });
       isCreate = result.isCreate;
-    } else {
-      await withdrawRaidSignupRows(prisma, {
-        raidId,
-        signupIds: removedRows.map((r) => r.id),
-        changedByUserId: user.id,
-        guildId: raid.guildId,
-      });
     }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
-    for (const row of removedRows) {
-      await postSignupChangeThreadNotice(raidId, 'unsignup', {
+    for (const row of activeRemovedRows) {
+      // War zuvor angemeldet und markiert sich direkt als „Nicht da" → beides im Log ausweisen.
+      await postSignupChangeThreadNotice(raidId, 'unsignup_declined', {
         characterName: row.character?.name ?? null,
         signedSpec: row.signedSpec,
         type: 'declined',
         punctuality: row.punctuality,
       });
     }
-    if (removedRows.length === 0) {
+    if (activeRemovedRows.length === 0 && removedRows.length === 0) {
       await postSignupChangeThreadNotice(raidId, isCreate ? 'signup' : 'edit', {
         characterName: markerChar.name,
         signedSpec: markerChar.mainSpec,
@@ -594,7 +628,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, message: 'Du bist als „nicht da“ markiert.' });
+    return NextResponse.json({ ok: true, message: raidBotMessage(botLocale, 'DECLINED_OK') });
   }
 
   // -------------------------------------------------------------------------
@@ -603,7 +637,7 @@ export async function POST(request: NextRequest) {
   if (action === 'unregister') {
     if (!access.canSignup) {
       return NextResponse.json(
-        { error: 'SIGNUP_CLOSED', message: 'Anmeldung ist geschlossen oder Raid nicht mehr offen.' },
+        { error: 'SIGNUP_CLOSED', message: raidBotMessage(botLocale, 'SIGNUP_CLOSED') },
         { status: 403 }
       );
     }
@@ -621,20 +655,32 @@ export async function POST(request: NextRequest) {
       include: { character: { select: { name: true } } },
     });
 
-    if (removedRows.length === 0) {
-      return NextResponse.json({ error: 'NOT_SIGNED_UP', message: 'Keine Anmeldung gefunden.' }, { status: 404 });
+    // „Nicht da“ (declined) gilt nicht als aktive Anmeldung – nur echte Anmeldungen abmelden.
+    const activeRemovedRows = removedRows.filter((r) => r.type !== 'declined');
+
+    if (activeRemovedRows.length === 0) {
+      return NextResponse.json(
+        {
+          error: 'NOT_SIGNED_UP',
+          message: raidBotMessage(botLocale, 'NOT_SIGNED_UP'),
+        },
+        { status: 404 }
+      );
     }
 
     const needsAnnouncedReason =
-      raid.status === 'announced' && removedRows.some((r) => r.setConfirmed);
+      raid.status === 'announced' && activeRemovedRows.some((r) => r.setConfirmed);
     if (needsAnnouncedReason || isLateCancellation) {
       if (reason.length < ANNOUNCED_SET_PLAYER_COMMENT_MIN) {
         return NextResponse.json(
           {
             error: 'REASON_REQUIRED',
             message: needsAnnouncedReason
-              ? `Als gesetzter Spieler ist eine Begründung nötig (mind. ${ANNOUNCED_SET_PLAYER_COMMENT_MIN} Zeichen).`
-              : 'Nach dem Anmeldeschluss ist eine Begründung für die Abmeldung erforderlich.',
+              ? raidBotMessage(botLocale, 'REASON_REQUIRED_SET').replace(
+                  '{min}',
+                  String(ANNOUNCED_SET_PLAYER_COMMENT_MIN)
+                )
+              : raidBotMessage(botLocale, 'REASON_REQUIRED'),
           },
           { status: 400 }
         );
@@ -647,7 +693,7 @@ export async function POST(request: NextRequest) {
     const { withdrawRaidSignupRows } = await import('@/lib/raid-signup-withdraw');
     await withdrawRaidSignupRows(prisma, {
       raidId,
-      signupIds: removedRows.map((r) => r.id),
+      signupIds: activeRemovedRows.map((r) => r.id),
       changedByUserId: user.id,
       guildId: raid.guildId,
     });
@@ -667,7 +713,7 @@ export async function POST(request: NextRequest) {
     }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
-    for (const row of removedRows) {
+    for (const row of activeRemovedRows) {
       await postSignupChangeThreadNotice(raidId, 'unsignup', {
         characterName: row.character?.name ?? null,
         signedSpec: row.signedSpec,
@@ -687,7 +733,7 @@ export async function POST(request: NextRequest) {
         });
       }
     }
-    return NextResponse.json({ ok: true, message: 'Abmeldung erfolgreich.' });
+    return NextResponse.json({ ok: true, message: raidBotMessage(botLocale, 'UNREGISTER_OK') });
   }
 
   // -------------------------------------------------------------------------
@@ -696,17 +742,17 @@ export async function POST(request: NextRequest) {
   if (action === 'sync-post') {
     if (!access.canEdit) {
       return NextResponse.json(
-        { error: 'FORBIDDEN', message: 'Nur Raidleader oder Gildenmeister dürfen RaidTools nutzen.' },
+        { error: 'FORBIDDEN', message: raidBotMessage(botLocale, 'FORBIDDEN_RAIDTOOLS') },
         { status: 403 }
       );
     }
     try {
       await syncRaidThreadSummary(raidId);
-      return NextResponse.json({ ok: true, message: 'Discord-Beitrag wurde aktualisiert.' });
+      return NextResponse.json({ ok: true, message: raidBotMessage(botLocale, 'SYNC_OK') });
     } catch (e) {
       console.error('[discord-action sync-post]', raidId, e);
       return NextResponse.json(
-        { error: 'SYNC_FAILED', message: 'Beitrag konnte nicht synchronisiert werden.' },
+        { error: 'SYNC_FAILED', message: raidBotMessage(botLocale, 'SYNC_FAILED') },
         { status: 500 }
       );
     }
@@ -718,7 +764,7 @@ export async function POST(request: NextRequest) {
   if (action === 'push-raid') {
     if (!access.canEdit) {
       return NextResponse.json(
-        { error: 'FORBIDDEN', message: 'Nur Raidleader oder Gildenmeister dürfen RaidTools nutzen.' },
+        { error: 'FORBIDDEN', message: raidBotMessage(botLocale, 'FORBIDDEN_RAIDTOOLS') },
         { status: 403 }
       );
     }
@@ -816,7 +862,7 @@ export async function POST(request: NextRequest) {
       typeof body.discordUserLabel === 'string' ? body.discordUserLabel.trim() : '';
     if (!message) {
       return NextResponse.json(
-        { error: 'MESSAGE_EMPTY', message: 'Bitte eine Nachricht eingeben.' },
+        { error: 'MESSAGE_EMPTY', message: raidBotMessage(botLocale, 'LEADER_INFO_EMPTY') },
         { status: 400 }
       );
     }
@@ -825,27 +871,27 @@ export async function POST(request: NextRequest) {
     }
     try {
       await postRaidLeaderChannelInfo(raidId, discordUserLabel, message);
-      return NextResponse.json({ ok: true, message: 'Nachricht wurde an den Raidleader-Kanal gesendet.' });
+      return NextResponse.json({ ok: true, message: raidBotMessage(botLocale, 'LEADER_INFO_OK') });
     } catch (e) {
       const err = e instanceof Error ? e.message : String(e);
       if (err === 'NO_LEADER_CHANNEL') {
         return NextResponse.json(
           {
             error: 'NO_LEADER_CHANNEL',
-            message: 'Für diesen Raid ist kein Raidleader-Kanal hinterlegt.',
+            message: raidBotMessage(botLocale, 'LEADER_INFO_NO_CHANNEL'),
           },
           { status: 400 }
         );
       }
       if (err === 'MESSAGE_EMPTY') {
         return NextResponse.json(
-          { error: 'MESSAGE_EMPTY', message: 'Bitte eine Nachricht eingeben.' },
+          { error: 'MESSAGE_EMPTY', message: raidBotMessage(botLocale, 'LEADER_INFO_EMPTY') },
           { status: 400 }
         );
       }
       console.error('[discord-action leader-info]', raidId, e);
       return NextResponse.json(
-        { error: 'POST_FAILED', message: 'Nachricht konnte nicht gesendet werden.' },
+        { error: 'POST_FAILED', message: raidBotMessage(botLocale, 'LEADER_INFO_FAILED') },
         { status: 500 }
       );
     }

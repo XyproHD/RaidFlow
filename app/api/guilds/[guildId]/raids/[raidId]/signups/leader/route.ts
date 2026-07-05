@@ -17,6 +17,11 @@ import {
   displayNameForSignupRow,
   jsonSignupValidationError,
 } from '@/lib/raid-signup-api-errors';
+import {
+  assignCharacterForGuestSignup,
+  resolveGuestEligibility,
+  resolveIsGuestSignup,
+} from '@/lib/guest-raid-access';
 
 function validateSignedSpec(
   signedSpec: string,
@@ -74,7 +79,7 @@ export async function POST(
 
   const raid = await prisma.rfRaid.findFirst({
     where: { id: raidId, guildId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, allowGuests: true },
   });
   if (!raid) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -86,8 +91,28 @@ export async function POST(
     return NextResponse.json({ error: 'Raid is not open for planning' }, { status: 403 });
   }
 
-  const character = await prisma.rfCharacter.findFirst({
-    where: { id: characterId, userId: targetUserId, guildId },
+  const targetUser = await prisma.rfUser.findUnique({
+    where: { id: targetUserId },
+    select: { discordId: true },
+  });
+  if (!targetUser) {
+    return NextResponse.json({ error: 'User not found' }, { status: 400 });
+  }
+
+  const isGuest = await resolveIsGuestSignup(
+    targetUserId,
+    targetUser.discordId,
+    guildId
+  );
+
+  const characterRaw = await prisma.rfCharacter.findFirst({
+    where: isGuest
+      ? {
+          id: characterId,
+          userId: targetUserId,
+          OR: [{ guildId: null }, { guildId }],
+        }
+      : { id: characterId, userId: targetUserId, guildId },
     select: {
       id: true,
       name: true,
@@ -96,12 +121,48 @@ export async function POST(
       offSpec: true,
     },
   });
-  if (!character) {
+  if (!characterRaw) {
     return NextResponse.json(
-      { error: 'Character not found for this user and guild' },
+      {
+        error: isGuest
+          ? 'Character not found'
+          : 'Character not found for this user and guild',
+      },
       { status: 400 }
     );
   }
+
+  if (isGuest) {
+    if (!raid.allowGuests) {
+      return NextResponse.json({ error: 'Guests are not allowed for this raid' }, { status: 403 });
+    }
+    const guestCheck = await resolveGuestEligibility(
+      targetUserId,
+      targetUser.discordId,
+      guildId
+    );
+    if (!guestCheck.eligible) {
+      return NextResponse.json({ error: 'User is not an eligible guest' }, { status: 403 });
+    }
+    const assigned = await assignCharacterForGuestSignup({
+      userId: targetUserId,
+      characterId: characterRaw.id,
+      guildId,
+      discordId: targetUser.discordId,
+      displayNameInGuild: guestCheck.displayNameInGuild,
+    });
+    if (!assigned.ok) {
+      return NextResponse.json({ error: assigned.error }, { status: assigned.status });
+    }
+  }
+
+  const character = {
+    id: characterRaw.id,
+    name: characterRaw.name,
+    guildDiscordDisplayName: characterRaw.guildDiscordDisplayName,
+    mainSpec: characterRaw.mainSpec,
+    offSpec: characterRaw.offSpec,
+  };
 
   if (!validateSignedSpec(signedSpecRaw, character.mainSpec, character.offSpec)) {
     return NextResponse.json({ error: 'signedSpec must match main or off spec' }, { status: 400 });
@@ -168,6 +229,7 @@ export async function POST(
         leaderAllowsReserve: existing.forbidReserve ? false : existing.leaderAllowsReserve,
         leaderPlacement,
         setConfirmed,
+        isGuest: existing.isGuest || isGuest,
       },
     });
     await logRaidSignupAudit({
@@ -200,6 +262,7 @@ export async function POST(
       forbidReserve: false,
       leaderPlacement,
       setConfirmed,
+      isGuest,
     },
   });
   await logRaidSignupAudit({
