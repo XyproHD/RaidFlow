@@ -32,6 +32,7 @@ import {
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
+  MessageFlags,
 } from 'discord.js';
 import { handleAppHomeInteraction } from './app-home.js';
 import { scheduleRaidPostReconcile } from './raid-post-reconcile.js';
@@ -3701,19 +3702,28 @@ function buildHelpTopicNavComponents(raidId, locale) {
   ];
 }
 
+/** Keine Link-Vorschau in Hilfe-Ephemerals (z. B. Webportal-URL bei Erste Schritte). */
+function helpReplyPayload(content, components = []) {
+  return {
+    content,
+    components,
+    flags: MessageFlags.SuppressEmbeds,
+  };
+}
+
 async function handleRaidHelpButton(interaction, raidId) {
-  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  await interaction.deferReply({ ephemeral: true, flags: MessageFlags.SuppressEmbeds }).catch(() => {});
   const { ok, json } = await fetchRaidParticipantState(interaction, raidId);
   const defaultLocale = ok ? botLocale(interaction, json) : botLocale(interaction, null);
   setHelpFlow(interaction.user.id, raidId, { locale: defaultLocale });
 
-  await interaction.editReply({
-    content: [
+  await interaction.editReply(helpReplyPayload(
+    [
       raidBotMessage(defaultLocale, 'HELP_TOPIC_TITLE'),
       raidBotMessage(defaultLocale, 'HELP_LANG_HINT', { lang: helpLangLabel(defaultLocale) }),
     ].join('\n'),
-    components: buildHelpMenuComponents(raidId, defaultLocale),
-  }).catch(() => {});
+    buildHelpMenuComponents(raidId, defaultLocale),
+  )).catch(() => {});
 }
 
 async function handleHelpLangButton(interaction, raidId) {
@@ -3726,20 +3736,20 @@ async function handleHelpLangButton(interaction, raidId) {
 
   if (nextFlow.view === 'topic' && nextFlow.topic) {
     const content = getHelpTopicContent(locale, nextFlow.topic);
-    await interaction.editReply({
-      content: content ?? raidBotMessage(locale, 'HELP_TOPIC_TITLE'),
-      components: buildHelpTopicNavComponents(raidId, locale),
-    }).catch(() => {});
+    await interaction.editReply(helpReplyPayload(
+      content ?? raidBotMessage(locale, 'HELP_TOPIC_TITLE'),
+      buildHelpTopicNavComponents(raidId, locale),
+    )).catch(() => {});
     return;
   }
 
-  await interaction.editReply({
-    content: [
+  await interaction.editReply(helpReplyPayload(
+    [
       raidBotMessage(locale, 'HELP_TOPIC_TITLE'),
       raidBotMessage(locale, 'HELP_LANG_HINT', { lang: helpLangLabel(locale) }),
     ].join('\n'),
-    components: buildHelpMenuComponents(raidId, locale),
-  }).catch(() => {});
+    buildHelpMenuComponents(raidId, locale),
+  )).catch(() => {});
 }
 
 async function handleHelpTopicButton(interaction, raidId, topic) {
@@ -3750,16 +3760,16 @@ async function handleHelpTopicButton(interaction, raidId, topic) {
 
   const content = getHelpTopicContent(locale, topic);
   if (!content) {
-    await interaction.editReply({
-      content: locale === 'en' ? '❌ Topic not found.' : '❌ Thema nicht gefunden.',
-      components: buildHelpMenuComponents(raidId, locale),
-    }).catch(() => {});
+    await interaction.editReply(helpReplyPayload(
+      locale === 'en' ? '❌ Topic not found.' : '❌ Thema nicht gefunden.',
+      buildHelpMenuComponents(raidId, locale),
+    )).catch(() => {});
     return;
   }
-  await interaction.editReply({
+  await interaction.editReply(helpReplyPayload(
     content,
-    components: buildHelpTopicNavComponents(raidId, locale),
-  }).catch(() => {});
+    buildHelpTopicNavComponents(raidId, locale),
+  )).catch(() => {});
 }
 
 async function handleHelpBackButton(interaction, raidId) {
@@ -3768,13 +3778,13 @@ async function handleHelpBackButton(interaction, raidId) {
   const locale = flow?.locale ?? botLocale(interaction, null);
   setHelpFlow(interaction.user.id, raidId, { locale, view: 'menu' });
 
-  await interaction.editReply({
-    content: [
+  await interaction.editReply(helpReplyPayload(
+    [
       raidBotMessage(locale, 'HELP_TOPIC_TITLE'),
       raidBotMessage(locale, 'HELP_LANG_HINT', { lang: helpLangLabel(locale) }),
     ].join('\n'),
-    components: buildHelpMenuComponents(raidId, locale),
-  }).catch(() => {});
+    buildHelpMenuComponents(raidId, locale),
+  )).catch(() => {});
 }
 
 // =============================================================================
