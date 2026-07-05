@@ -1,24 +1,53 @@
 /** Raid signup help texts (DE/EN). */
 
+function webPortalUrl(locale) {
+  const base = (process.env.WEBAPP_URL || process.env.NEXTAUTH_URL || 'http://localhost:3000').replace(/\/$/, '');
+  return `${base}/${locale === 'en' ? 'en' : 'de'}`;
+}
+
+function buildNewcomerBody(locale) {
+  const url = webPortalUrl(locale);
+  if (locale === 'en') {
+    return [
+      '**1. Connect RaidFlow to Discord**',
+      `Sign in at the [RaidFlow web portal](${url}) and link your Discord account to RaidFlow.`,
+      '',
+      '**2. Create a character**',
+      'Add at least one WoW character in the web portal (Profile → Characters). Assign it to your guild if you are a member.',
+      '• Use the **exact spelling as in-game** — including special characters and upper/lowercase.',
+      '• Your **Battle.net profile must not be set to “Private”**, otherwise RaidFlow cannot find the character via BNet Sync.',
+      '• Run **BNet Sync** to match name and realm with Battle.net before saving.',
+      '',
+      '**3. Sign up**',
+      'Click **Quickjoin** (main char, fast) or **Sign up** (with options) on the raid post.',
+      '',
+      '**Note:** You must be a guild member with raid access, or — if the raid allows guests — be eligible to join via the guest channel.',
+    ].join('\n');
+  }
+  return [
+    '**1. RaidFlow mit Discord verbinden**',
+    `Melde dich im [RaidFlow-Webportal](${url}) an und verknüpfe dein Discord-Konto mit RaidFlow.`,
+    '',
+    '**2. Charakter anlegen**',
+    'Lege im Webportal mindestens einen WoW-Charakter an (Profil → Charaktere). Ordne ihn deiner Gilde zu, wenn du Mitglied bist.',
+    '• **Exakte Schreibweise wie im Spiel** — inklusive Sonderzeichen und Groß-/Kleinschreibung.',
+    '• Dein **Battle.net-Profil darf nicht auf „Privat“** gestellt sein, sonst kann RaidFlow den Charakter nicht per BNet Sync finden.',
+    '• Nutze **BNet Sync**, um Name und Server mit Battle.net abzugleichen, bevor du speicherst.',
+    '',
+    '**3. Anmelden**',
+    'Klicke am Raid-Beitrag auf **Quickjoin** (Hauptchar, schnell) oder **Anmelden** (mit Optionen).',
+    '',
+    '**Hinweis:** Zum Anmelden musst du Gildenmitglied mit Raid-Zugang sein oder — wenn der Raid Gäste erlaubt — als Gast über den Gastkanal teilnehmen dürfen.',
+  ].join('\n');
+}
+
 const TOPICS = {
   de: {
     newcomer: {
       label: 'Erste Schritte / Neulinge',
       description: 'Konto verknüpfen, Charakter anlegen',
       title: '🆕 Erste Schritte',
-      body: [
-        '**1. RaidFlow mit Discord verbinden**',
-        'Öffne die RaidFlow-Startansicht (App Home) und verknüpfe dein Discord-Konto mit RaidFlow.',
-        '',
-        '**2. Charakter anlegen**',
-        'Lege in der RaidFlow-WebApp mindestens einen WoW-Charakter an (Profil → Charaktere). Ordne ihn deiner Gilde zu, wenn du Mitglied bist.',
-        '',
-        '**3. Berechtigung prüfen**',
-        'Zum Anmelden musst du entweder Gildenmitglied mit Raid-Zugang sein oder — wenn der Raid Gäste erlaubt — als Gast über den Gastkanal teilnehmen dürfen.',
-        '',
-        '**4. Anmelden**',
-        'Klicke am Raid-Beitrag auf **Quickjoin** (Hauptchar, schnell) oder **Anmelden** (mit Optionen).',
-      ].join('\n'),
+      body: '',
     },
     signup: {
       label: 'Anmelde-Anleitung',
@@ -81,19 +110,7 @@ const TOPICS = {
       label: 'Getting started',
       description: 'Link account, create character',
       title: '🆕 Getting started',
-      body: [
-        '**1. Connect RaidFlow to Discord**',
-        'Open RaidFlow App Home and link your Discord account to RaidFlow.',
-        '',
-        '**2. Create a character**',
-        'Add at least one WoW character in the RaidFlow web app (Profile → Characters). Assign it to your guild if you are a member.',
-        '',
-        '**3. Check access**',
-        'To sign up you must either be a guild member with raid access or — if the raid allows guests — be eligible to join via the guest channel.',
-        '',
-        '**4. Sign up**',
-        'Click **Quickjoin** (main char, fast) or **Sign up** (with options) on the raid post.',
-      ].join('\n'),
+      body: '',
     },
     signup: {
       label: 'Sign-up guide',
@@ -159,6 +176,10 @@ export function helpTopicKeys() {
 
 export function getHelpTopicContent(locale, topic) {
   const lang = locale === 'en' ? 'en' : 'de';
+  if (topic === 'newcomer') {
+    const t = TOPICS[lang].newcomer;
+    return `${t.title}\n\n${buildNewcomerBody(lang)}`;
+  }
   const t = TOPICS[lang][topic] ?? TOPICS.de[topic];
   if (!t) return null;
   return `${t.title}\n\n${t.body}`;
