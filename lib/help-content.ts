@@ -1,4 +1,25 @@
 export const FIRST_STEPS_GUEST_CHAPTER_ID = 'first-steps-guest';
+export const BOT_SETUP_CHAPTER_ID = 'bot-setup';
+export const RAID_SIGNUP_CHAPTER_ID = 'raid-signup';
+
+export type HelpChapterId =
+  | typeof FIRST_STEPS_GUEST_CHAPTER_ID
+  | typeof BOT_SETUP_CHAPTER_ID
+  | typeof RAID_SIGNUP_CHAPTER_ID;
+
+export type HelpChapterMeta = {
+  id: HelpChapterId;
+  titleKey:
+    | 'firstStepsGuestTitle'
+    | 'botSetupTitle'
+    | 'raidSignupTitle';
+};
+
+export const HELP_CHAPTERS: HelpChapterMeta[] = [
+  { id: FIRST_STEPS_GUEST_CHAPTER_ID, titleKey: 'firstStepsGuestTitle' },
+  { id: BOT_SETUP_CHAPTER_ID, titleKey: 'botSetupTitle' },
+  { id: RAID_SIGNUP_CHAPTER_ID, titleKey: 'raidSignupTitle' },
+];
 
 export type HelpScreenshotStep = {
   file: string;
