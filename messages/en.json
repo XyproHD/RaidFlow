@@ -866,5 +866,31 @@
   },
   "statusBanner": {
     "label": "Notice"
+  },
+  "help": {
+    "menuTitle": "Help",
+    "firstStepsGuest": "First Steps (Guest)",
+    "firstStepsGuestTitle": "First Steps (Guest)",
+    "firstStepsGuestIntro": "This guide shows how to sign in to RaidFlow and create a WoW character as a guest. You can then sign up for raids via the guest channel on Discord, if the raid allows guests.",
+    "step1Title": "Sign in with Discord",
+    "step1Text": "Open the RaidFlow landing page and click “Login with Discord”. You will be redirected to Discord.",
+    "step2Title": "Authorize RaidFlow",
+    "step2Text": "On the Discord authorization page, click “Authorize” to allow RaidFlow to use your Discord account. You will then return to the web portal.",
+    "step3Title": "Add a character",
+    "step3Text": "Go to “My Profile” and open the “My Characters” section. Click “+ Add character”.",
+    "step4Title": "Select your WoW realm",
+    "step4Text": "In the dialog, search for the realm your character plays on and select it from the list.",
+    "step5Title": "Find your character via BNet Sync",
+    "step5Text": "Enter the character name exactly as in-game and click “BNet Sync”. Pick the matching character from the Battle.net list. Your Battle.net profile must not be set to “Private”.",
+    "step6Title": "Set class and specs",
+    "step6Text": "Choose class, main spec, and optionally an off-spec. If you are not on any RaidFlow Discord server, you may save the character without assigning a guild. Then click “Save”.",
+    "step7Title": "Sign up for a raid",
+    "step7Text": "Open the raid’s guest channel on Discord. Use “Quickjoin” (fast sign-up with main character) or “Sign up” (with options for spec, punctuality, and note) on the raid post.",
+    "tipsTitle": "Important notes",
+    "tipExactSpelling": "Character name and realm must match WoW exactly — including special characters and capitalization.",
+    "tipBnetPrivate": "Your Battle.net profile must be public (not “Private”), otherwise BNet Sync cannot find your character.",
+    "tipNoGuild": "Without membership on a RaidFlow Discord server, you can still create and save a character.",
+    "tipGuestEligibility": "To sign up you must be a guild member with raid access, or — if the raid allows guests — be eligible to join via the guest channel.",
+    "backToApp": "Back to app"
   }
 }

@@ -37,6 +37,7 @@ export function Topbar({
   const tCommon = useTranslations('common');
   const tTopbar = useTranslations('topbar');
   const tDashboard = useTranslations('dashboard');
+  const tHelp = useTranslations('help');
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -382,6 +383,29 @@ export function Topbar({
                         </>
                       )}
                     </nav>
+
+                    <div className="my-2 h-px bg-border" />
+
+                    <div className="px-1 pb-1">
+                      <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {tHelp('menuTitle')}
+                      </p>
+                      <Link
+                        href={`/${locale}/help/first-steps-guest`}
+                        onClick={closeBurger}
+                        className={cn(
+                          'rounded-lg px-3 py-2.5 text-sm font-medium flex items-center gap-3 transition-colors min-h-[42px]',
+                          pathname?.includes('/help/first-steps-guest')
+                            ? 'bg-accent text-foreground'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                        )}
+                      >
+                        <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
+                        {tHelp('firstStepsGuest')}
+                      </Link>
+                    </div>
 
                     <div className="my-2 h-px bg-border" />
 
