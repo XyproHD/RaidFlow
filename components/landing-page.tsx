@@ -32,6 +32,7 @@ export async function LandingPage({
 }: LandingPageProps) {
   const t = await getTranslations('home');
   const tFooter = await getTranslations('footer');
+  const tHelp = await getTranslations('help');
   const tCommon = await getTranslations('common');
   const tMaintenance = await getTranslations('maintenance');
   const locale = await getLocale();
@@ -102,7 +103,10 @@ export async function LandingPage({
         </div>
       </div>
 
-      <footer className="h-12 flex items-center justify-center gap-6 border-t border-border text-xs text-muted-foreground">
+      <footer className="h-12 flex items-center justify-center gap-6 border-t border-border text-xs text-muted-foreground flex-wrap px-4">
+        <Link href={`/${locale}/help`} className="hover:text-foreground transition-colors">
+          {tHelp('menuTitle')}
+        </Link>
         <Link href={`/${locale}/impressum`} className="hover:text-foreground transition-colors">
           {tFooter('imprint')}
         </Link>
