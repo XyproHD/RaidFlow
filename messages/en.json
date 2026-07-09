@@ -869,6 +869,10 @@
   },
   "help": {
     "menuTitle": "Help",
+    "pageTitle": "Help",
+    "pageIntro": "Short guides and common questions about the RaidFlow web app. Pick a chapter in the sidebar or scroll to your topic.",
+    "tocTitle": "Contents",
+    "zoomScreenshot": "Enlarge",
     "firstStepsGuest": "First Steps (Guest)",
     "firstStepsGuestTitle": "First Steps (Guest)",
     "firstStepsGuestIntro": "This guide shows how to sign in to RaidFlow and create a WoW character as a guest. You can then sign up for raids via the guest channel on Discord, if the raid allows guests.",

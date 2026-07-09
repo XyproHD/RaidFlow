@@ -869,6 +869,10 @@
   },
   "help": {
     "menuTitle": "Hilfe",
+    "pageTitle": "Hilfe",
+    "pageIntro": "Kurzanleitungen und häufige Fragen zur RaidFlow-Webanwendung. Wähle ein Kapitel in der Navigation oder scrolle direkt zum Thema.",
+    "tocTitle": "Inhalt",
+    "zoomScreenshot": "Vergrößern",
     "firstStepsGuest": "Erste Schritte (Gast)",
     "firstStepsGuestTitle": "Erste Schritte (Gast)",
     "firstStepsGuestIntro": "Diese Anleitung zeigt, wie du dich bei RaidFlow anmeldest und als Gast einen WoW-Charakter anlegst. Danach kannst du dich über den Gastkanal auf Discord für Raids anmelden, sofern der Raid Gäste zulässt.",

@@ -104,8 +104,8 @@ export async function LandingPage({
       </div>
 
       <footer className="h-12 flex items-center justify-center gap-6 border-t border-border text-xs text-muted-foreground flex-wrap px-4">
-        <Link href={`/${locale}/help/first-steps-guest`} className="hover:text-foreground transition-colors">
-          {tHelp('firstStepsGuest')}
+        <Link href={`/${locale}/help`} className="hover:text-foreground transition-colors">
+          {tHelp('menuTitle')}
         </Link>
         <Link href={`/${locale}/impressum`} className="hover:text-foreground transition-colors">
           {tFooter('imprint')}
