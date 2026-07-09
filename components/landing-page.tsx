@@ -110,8 +110,8 @@ export async function LandingPage({
         <Link href={`/${locale}/impressum`} className="hover:text-foreground transition-colors">
           {tFooter('imprint')}
         </Link>
-        <Link href={`/${locale}/disclaimer`} className="hover:text-foreground transition-colors">
-          {tFooter('disclaimer')}
+        <Link href={`/${locale}/datenschutz`} className="hover:text-foreground transition-colors">
+          {tFooter('privacy')}
         </Link>
       </footer>
     </main>

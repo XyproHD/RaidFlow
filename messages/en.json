@@ -12,7 +12,9 @@
   },
   "footer": {
     "imprint": "Imprint",
-    "disclaimer": "Disclaimer"
+    "privacy": "Privacy",
+    "disclaimer": "Disclaimer",
+    "underConstruction": "This page is still under construction."
   },
   "topbar": {
     "themeLabel": "Display mode",
@@ -27,6 +29,7 @@
   },
   "shell": {
     "logout": "Log out",
+    "login": "Login",
     "myProfile": "My Profile",
     "guildManagement": "Guild Management",
     "discordBotInvite": "Discord Bot invite",

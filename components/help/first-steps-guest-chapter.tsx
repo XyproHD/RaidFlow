@@ -18,39 +18,25 @@ export async function FirstStepsGuestChapter() {
       title={t('firstStepsTitle')}
       intro={t.rich('firstStepsIntro', rich)}
     >
-      <ol className="mt-6 divide-y divide-border">
-        {FIRST_STEPS_GUEST_SCREENSHOTS.map((step, index) => (
-          <li
-            key={step.file}
-            className="grid gap-4 py-6 first:pt-0 last:pb-0 md:grid-cols-[minmax(0,1fr)_220px] md:items-start"
-          >
-            <div className="min-w-0 space-y-2">
-              <h4 className="text-base font-medium text-foreground">
-                <span className="mr-2 text-primary">{index + 1}.</span>
-                {t(step.titleKey)}
-              </h4>
-              <HelpProse>{t.rich(step.textKey, rich)}</HelpProse>
-            </div>
-            <div className="md:justify-self-end">
-              <HelpScreenshot
-                src={`${HELP_SCREENSHOT_BASE}/${step.file}`}
-                alt={t(step.titleKey)}
-                zoomLabel={t('zoomScreenshot')}
-              />
-            </div>
-          </li>
-        ))}
+      {FIRST_STEPS_GUEST_SCREENSHOTS.map((step, index) => (
+        <HelpSection
+          key={step.file}
+          title={`${index + 1}. ${t(step.titleKey)}`}
+          screenshot={
+            <HelpScreenshot
+              src={`${HELP_SCREENSHOT_BASE}/${step.file}`}
+              alt={t(step.titleKey)}
+              zoomLabel={t('zoomScreenshot')}
+            />
+          }
+        >
+          <HelpProse>{t.rich(step.textKey, rich)}</HelpProse>
+        </HelpSection>
+      ))}
 
-        <li className="py-6">
-          <h4 className="text-base font-medium text-foreground">
-            <span className="mr-2 text-primary">7.</span>
-            {t('step7Title')}
-          </h4>
-          <div className="mt-2">
-            <HelpProse>{t.rich('step7Text', rich)}</HelpProse>
-          </div>
-        </li>
-      </ol>
+      <HelpSection title={`7. ${t('step7Title')}`}>
+        <HelpProse>{t.rich('step7Text', rich)}</HelpProse>
+      </HelpSection>
 
       <aside className="mt-6 rounded-lg border border-border bg-muted/30 p-4 md:p-5">
         <h4 className="text-sm font-semibold text-foreground">{t('tipsTitle')}</h4>

@@ -25,9 +25,10 @@ type HelpSectionProps = {
   title: string;
   children: ReactNode;
   className?: string;
+  screenshot?: ReactNode;
 };
 
-export function HelpSection({ title, children, className }: HelpSectionProps) {
+export function HelpSection({ title, children, className, screenshot }: HelpSectionProps) {
   return (
     <div
       className={
@@ -36,7 +37,14 @@ export function HelpSection({ title, children, className }: HelpSectionProps) {
       }
     >
       <h4 className="text-base font-medium text-foreground">{title}</h4>
-      <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">{children}</div>
+      {screenshot ? (
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
+          <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">{children}</div>
+          <div className="md:justify-self-end">{screenshot}</div>
+        </div>
+      ) : (
+        <div className="space-y-2 text-sm leading-relaxed text-muted-foreground">{children}</div>
+      )}
     </div>
   );
 }
