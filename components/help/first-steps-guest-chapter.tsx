@@ -1,26 +1,35 @@
 import { getTranslations } from 'next-intl/server';
-import { HelpChapter } from '@/components/help/help-chapter';
+import { HelpBulletList, HelpChapter, HelpProse, HelpSection } from '@/components/help/help-chapter';
+import { getHelpRichComponents } from '@/components/help/help-rich-text';
 import { HelpScreenshot } from '@/components/help/help-screenshot';
 import {
-  FIRST_STEPS_GUEST_CHAPTER_ID,
+  FIRST_STEPS_CHAPTER_ID,
   FIRST_STEPS_GUEST_SCREENSHOTS,
   HELP_SCREENSHOT_BASE,
 } from '@/lib/help-content';
 
 export async function FirstStepsGuestChapter() {
   const t = await getTranslations('help');
+  const rich = getHelpRichComponents();
 
   return (
-    <HelpChapter id={FIRST_STEPS_GUEST_CHAPTER_ID} title={t('firstStepsGuestTitle')} intro={t('firstStepsGuestIntro')}>
+    <HelpChapter
+      id={FIRST_STEPS_CHAPTER_ID}
+      title={t('firstStepsTitle')}
+      intro={t.rich('firstStepsIntro', rich)}
+    >
       <ol className="mt-6 divide-y divide-border">
         {FIRST_STEPS_GUEST_SCREENSHOTS.map((step, index) => (
-          <li key={step.file} className="grid gap-4 py-6 first:pt-0 last:pb-0 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
+          <li
+            key={step.file}
+            className="grid gap-4 py-6 first:pt-0 last:pb-0 md:grid-cols-[minmax(0,1fr)_220px] md:items-start"
+          >
             <div className="min-w-0 space-y-2">
-              <h3 className="text-base font-medium text-foreground">
+              <h4 className="text-base font-medium text-foreground">
                 <span className="mr-2 text-primary">{index + 1}.</span>
                 {t(step.titleKey)}
-              </h3>
-              <p className="text-sm leading-relaxed text-muted-foreground">{t(step.textKey)}</p>
+              </h4>
+              <HelpProse>{t.rich(step.textKey, rich)}</HelpProse>
             </div>
             <div className="md:justify-self-end">
               <HelpScreenshot
@@ -33,22 +42,28 @@ export async function FirstStepsGuestChapter() {
         ))}
 
         <li className="py-6">
-          <h3 className="text-base font-medium text-foreground">
+          <h4 className="text-base font-medium text-foreground">
             <span className="mr-2 text-primary">7.</span>
             {t('step7Title')}
-          </h3>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{t('step7Text')}</p>
+          </h4>
+          <div className="mt-2">
+            <HelpProse>{t.rich('step7Text', rich)}</HelpProse>
+          </div>
         </li>
       </ol>
 
       <aside className="mt-6 rounded-lg border border-border bg-muted/30 p-4 md:p-5">
-        <h3 className="text-sm font-semibold text-foreground">{t('tipsTitle')}</h3>
-        <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
-          <li>{t('tipExactSpelling')}</li>
-          <li>{t('tipBnetPrivate')}</li>
-          <li>{t('tipNoGuild')}</li>
-          <li>{t('tipGuestEligibility')}</li>
-        </ul>
+        <h4 className="text-sm font-semibold text-foreground">{t('tipsTitle')}</h4>
+        <div className="mt-2">
+          <HelpBulletList
+            items={[
+              t.rich('tipExactSpelling', rich),
+              t.rich('tipBnetPrivate', rich),
+              t.rich('tipNoGuild', rich),
+              t.rich('tipGuestEligibility', rich),
+            ]}
+          />
+        </div>
       </aside>
     </HelpChapter>
   );

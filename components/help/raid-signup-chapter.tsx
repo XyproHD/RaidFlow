@@ -1,59 +1,77 @@
 import { getTranslations } from 'next-intl/server';
-import { HelpBulletList, HelpChapter, HelpSection } from '@/components/help/help-chapter';
+import { HelpBulletList, HelpChapter, HelpProse, HelpSection } from '@/components/help/help-chapter';
+import { getHelpRichComponents } from '@/components/help/help-rich-text';
 import { RAID_SIGNUP_CHAPTER_ID } from '@/lib/help-content';
 
 export async function RaidSignupChapter() {
   const t = await getTranslations('help');
+  const rich = getHelpRichComponents();
 
   return (
-    <HelpChapter id={RAID_SIGNUP_CHAPTER_ID} title={t('raidSignupTitle')} intro={t('raidSignupIntro')}>
+    <HelpChapter
+      id={RAID_SIGNUP_CHAPTER_ID}
+      title={t('raidSignupTitle')}
+      intro={t.rich('raidSignupIntro', rich)}
+    >
       <HelpSection title={t('raidSignupPrereqTitle')}>
-        <p>{t('raidSignupPrereqText')}</p>
+        <HelpProse>{t.rich('raidSignupPrereqText', rich)}</HelpProse>
       </HelpSection>
 
       <HelpSection title={t('raidSignupWebTitle')}>
-        <p>{t('raidSignupWebText')}</p>
+        <HelpProse>{t.rich('raidSignupWebText', rich)}</HelpProse>
         <HelpBulletList
-          items={[t('raidSignupWebBullet1'), t('raidSignupWebBullet2'), t('raidSignupWebBullet3')]}
+          items={[
+            t.rich('raidSignupWebBullet1', rich),
+            t.rich('raidSignupWebBullet2', rich),
+            t.rich('raidSignupWebBullet3', rich),
+          ]}
         />
       </HelpSection>
 
       <HelpSection title={t('raidSignupWebOptionsTitle')}>
-        <p>{t('raidSignupWebOptionsText')}</p>
+        <HelpProse>{t.rich('raidSignupWebOptionsText', rich)}</HelpProse>
         <HelpBulletList
           items={[
-            t('raidSignupWebOptionsBullet1'),
-            t('raidSignupWebOptionsBullet2'),
-            t('raidSignupWebOptionsBullet3'),
-            t('raidSignupWebOptionsBullet4'),
-            t('raidSignupWebOptionsBullet5'),
-            t('raidSignupWebOptionsBullet6'),
+            t.rich('raidSignupWebOptionsBullet1', rich),
+            t.rich('raidSignupWebOptionsBullet2', rich),
+            t.rich('raidSignupWebOptionsBullet3', rich),
+            t.rich('raidSignupWebOptionsBullet4', rich),
+            t.rich('raidSignupWebOptionsBullet5', rich),
+            t.rich('raidSignupWebOptionsBullet6', rich),
           ]}
         />
       </HelpSection>
 
       <HelpSection title={t('raidSignupDiscordTitle')}>
-        <p>{t('raidSignupDiscordText')}</p>
+        <HelpProse>{t.rich('raidSignupDiscordText', rich)}</HelpProse>
         <HelpBulletList
-          items={[t('raidSignupDiscordBullet1'), t('raidSignupDiscordBullet2'), t('raidSignupDiscordBullet3')]}
+          items={[
+            t.rich('raidSignupDiscordBullet1', rich),
+            t.rich('raidSignupDiscordBullet2', rich),
+            t.rich('raidSignupDiscordBullet3', rich),
+          ]}
         />
       </HelpSection>
 
       <HelpSection title={t('raidSignupDiscordActionsTitle')}>
         <HelpBulletList
           items={[
-            t('raidSignupDiscordAction1'),
-            t('raidSignupDiscordAction2'),
-            t('raidSignupDiscordAction3'),
-            t('raidSignupDiscordAction4'),
-            t('raidSignupDiscordAction5'),
+            t.rich('raidSignupDiscordAction1', rich),
+            t.rich('raidSignupDiscordAction2', rich),
+            t.rich('raidSignupDiscordAction3', rich),
+            t.rich('raidSignupDiscordAction4', rich),
+            t.rich('raidSignupDiscordAction5', rich),
           ]}
         />
       </HelpSection>
 
       <aside className="mt-6 rounded-lg border border-border bg-muted/30 p-4 md:p-5">
-        <h3 className="text-sm font-semibold text-foreground">{t('raidSignupTipsTitle')}</h3>
-        <HelpBulletList items={[t('raidSignupTip1'), t('raidSignupTip2'), t('raidSignupTip3')]} />
+        <h4 className="text-sm font-semibold text-foreground">{t('raidSignupTipsTitle')}</h4>
+        <div className="mt-2">
+          <HelpBulletList
+            items={[t.rich('raidSignupTip1', rich), t.rich('raidSignupTip2', rich), t.rich('raidSignupTip3', rich)]}
+          />
+        </div>
       </aside>
     </HelpChapter>
   );
