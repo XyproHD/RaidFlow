@@ -1,13 +1,16 @@
 import { getTranslations } from 'next-intl/server';
+import { SiteFooter } from '@/components/site-footer';
 
-/** Platzhalter Disclaimer (Phase 1). */
 export default async function DisclaimerPage() {
   const t = await getTranslations('footer');
 
   return (
-    <main className="min-h-screen bg-background p-6 md:p-8 page-container">
-      <h1 className="text-2xl font-bold text-foreground mb-4">{t('disclaimer')}</h1>
-      <p className="text-muted-foreground">{t('underConstruction')}</p>
-    </main>
+    <div className="bg-background">
+      <main className="page-container p-6 md:p-8">
+        <h1 className="mb-4 text-2xl font-bold text-foreground">{t('disclaimer')}</h1>
+        <p className="text-muted-foreground">{t('underConstruction')}</p>
+      </main>
+      <SiteFooter />
+    </div>
   );
 }

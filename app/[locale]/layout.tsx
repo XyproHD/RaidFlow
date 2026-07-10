@@ -81,7 +81,7 @@ export default async function LocaleLayout({
         <SessionProvider>
           <ThemeProvider>
             <NextIntlClientProvider messages={messages}>
-              <div className="min-h-screen flex flex-col bg-background">
+              <div className="flex min-h-dvh flex-col bg-background">
                 <Topbar
                   locale={locale}
                   isLoggedIn={isLoggedIn}
@@ -92,7 +92,7 @@ export default async function LocaleLayout({
                   initialUserGuilds={userGuilds}
                 />
                 {showStatusBanner && <StatusBanner message={statusMessage} />}
-                <main className="flex-1">{children}</main>
+                <div className="flex min-h-0 flex-1 flex-col">{children}</div>
                 <KofiFab />
                 <FeedbackFab />
               </div>

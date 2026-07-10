@@ -14,7 +14,8 @@
     "imprint": "Impressum",
     "privacy": "Datenschutz",
     "disclaimer": "Disclaimer",
-    "underConstruction": "Diese Seite befindet sich noch im Aufbau."
+    "underConstruction": "Diese Seite befindet sich noch im Aufbau.",
+    "copyright": "© 2026 by RaidFlow.de"
   },
   "topbar": {
     "themeLabel": "Anzeige-Modus",

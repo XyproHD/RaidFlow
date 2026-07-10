@@ -1,3 +1,4 @@
+import { SiteFooter } from '@/components/site-footer';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { getServerSession } from 'next-auth';
@@ -20,8 +21,9 @@ export default async function HelpPage({ params }: PageProps) {
   const backHref = session?.discordId ? `/${locale}/profile` : `/${locale}`;
 
   return (
-    <main className="min-h-screen bg-background page-container py-8 md:py-10">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
+    <div className="bg-background">
+      <div className="page-container py-8 md:py-10">
+        <div className="mx-auto flex max-w-6xl flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
         <aside className="lg:sticky lg:top-20 lg:w-60 lg:shrink-0">
           <nav aria-label={t('tocTitle')} className="rounded-xl border border-border bg-card p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -69,7 +71,10 @@ export default async function HelpPage({ params }: PageProps) {
             </Link>
           </div>
         </article>
+        </div>
       </div>
-    </main>
+
+      <SiteFooter className="mt-10" />
+    </div>
   );
 }
