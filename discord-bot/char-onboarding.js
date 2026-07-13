@@ -71,15 +71,27 @@ function resolveOnboardingLocale(interaction, flow, deps) {
   return deps?.botLocale?.(interaction, flow ?? null) ?? 'de';
 }
 
-/** Immer dieselbe ephemere Onboarding-Nachricht bearbeiten (kein followUp/reply). */
+/** Ephemere Onboarding-Nachricht bearbeiten (immer editReply, nicht message.edit). */
 async function editOnboardingEphemeral(interaction, content, components = []) {
   const payload = { content, components };
-  if (interaction.message) {
-    await interaction.message.edit(payload).catch(() => {});
-    return;
-  }
   if (interaction.deferred || interaction.replied) {
     await interaction.editReply(payload).catch(() => {});
+    return;
+  }
+  if (typeof interaction.update === 'function' && interaction.isMessageComponent?.()) {
+    await interaction.update(payload).catch(() => {});
+    return;
+  }
+  await interaction.editReply(payload).catch(() => {});
+}
+
+/** Nach deferUpdate/deferReply: ephemeres Original per Webhook patchen (auch async). */
+async function patchOnboardingEphemeral(interaction, content, components = []) {
+  const payload = { content, components };
+  try {
+    await interaction.editReply(payload);
+  } catch {
+    await interaction.webhook?.editMessage?.('@original', payload).catch(() => {});
   }
 }
 
@@ -312,7 +324,7 @@ export async function handleCharOnboardingCancel(interaction, raidId, deps) {
 export async function handleCharOnboardingNameModal(interaction, raidId, deps) {
   const flow = getCharOnboardingFlow(interaction.user.id);
   if (!flow || flow.raidId !== raidId) {
-    await interaction.deferUpdate().catch(() => interaction.deferReply({ ephemeral: true }).catch(() => {}));
+    await interaction.deferUpdate().catch(() => {});
     await showOnboardingSessionExpired(interaction, flow, deps);
     return;
   }
@@ -320,7 +332,7 @@ export async function handleCharOnboardingNameModal(interaction, raidId, deps) {
   const locale = flow.locale ?? 'de';
   const name = interaction.fields.getTextInputValue('charname').trim();
   if (!name) {
-    await interaction.deferUpdate().catch(() => interaction.deferReply({ ephemeral: true }).catch(() => {}));
+    await interaction.deferUpdate().catch(() => {});
     await editOnboardingEphemeral(
       interaction,
       `${buildIntroContent(flow)}\n\n${formatMsg(locale, 'CO_EMPTY_NAME')}`,
@@ -333,14 +345,15 @@ export async function handleCharOnboardingNameModal(interaction, raidId, deps) {
   flow.step = 'bnet_loading';
   setCharOnboardingFlow(interaction.user.id, flow);
 
-  await interaction.deferUpdate().catch(() => interaction.deferReply({ ephemeral: true }).catch(() => {}));
+  await interaction.deferUpdate().catch(() => {});
   await editOnboardingEphemeral(interaction, buildBnetLoadingContent(flow), []);
 
-  void runBnetResolve(interaction.user.id, interaction.message, flow, deps);
+  void runBnetResolve(interaction, flow, deps);
 }
 
-async function runBnetResolve(userId, message, flow, deps) {
+async function runBnetResolve(interaction, flow, deps) {
   const locale = flow.locale ?? 'de';
+  const userId = interaction.user.id;
   try {
     const { ok, json } = await postWebappJson(
       '/api/bot/battlenet/resolve-character',
@@ -359,12 +372,11 @@ async function runBnetResolve(userId, message, flow, deps) {
       current.step = 'bnet_fail';
       setCharOnboardingFlow(userId, current);
       const detail = typeof json.error === 'string' ? json.error : '';
-      if (message) {
-        await message.edit({
-          content: buildBnetFailContent(current, detail),
-          components: buildBnetFailComponents(current.raidId, locale),
-        }).catch(() => {});
-      }
+      await patchOnboardingEphemeral(
+        interaction,
+        buildBnetFailContent(current, detail),
+        buildBnetFailComponents(current.raidId, locale),
+      );
       return;
     }
 
@@ -372,12 +384,11 @@ async function runBnetResolve(userId, message, flow, deps) {
     if (!classId) {
       current.step = 'bnet_fail';
       setCharOnboardingFlow(userId, current);
-      if (message) {
-        await message.edit({
-          content: buildBnetFailContent(current, 'Class could not be mapped.'),
-          components: buildBnetFailComponents(current.raidId, locale),
-        }).catch(() => {});
-      }
+      await patchOnboardingEphemeral(
+        interaction,
+        buildBnetFailContent(current, 'Class could not be mapped.'),
+        buildBnetFailComponents(current.raidId, locale),
+      );
       return;
     }
 
@@ -393,24 +404,22 @@ async function runBnetResolve(userId, message, flow, deps) {
 
     setCharOnboardingFlow(userId, current);
 
-    if (message) {
-      await message.edit({
-        content: buildSpecStepContent(current),
-        components: buildSpecStepComponents(current.raidId, current),
-      }).catch(() => {});
-    }
+    await patchOnboardingEphemeral(
+      interaction,
+      buildSpecStepContent(current),
+      buildSpecStepComponents(current.raidId, current),
+    );
   } catch (err) {
     const current = getCharOnboardingFlow(userId);
     if (!current) return;
     current.step = 'bnet_fail';
     setCharOnboardingFlow(userId, current);
     const detail = err instanceof Error ? err.message : String(err);
-    if (message) {
-      await message.edit({
-        content: buildBnetFailContent(current, detail),
-        components: buildBnetFailComponents(current.raidId, locale),
-      }).catch(() => {});
-    }
+    await patchOnboardingEphemeral(
+      interaction,
+      buildBnetFailContent(current, detail),
+      buildBnetFailComponents(current.raidId, locale),
+    );
   }
 }
 
@@ -462,10 +471,10 @@ export async function handleCharOnboardingConfirm(interaction, raidId, deps) {
   await interaction.deferUpdate().catch(() => {});
   await editOnboardingEphemeral(interaction, formatMsg(locale, 'CO_STATUS_CREATING'), []);
 
-  void createCharAndResume(interaction, interaction.message, flow, deps);
+  void createCharAndResume(interaction, flow, deps);
 }
 
-async function createCharAndResume(interaction, message, flow, deps) {
+async function createCharAndResume(interaction, flow, deps) {
   const locale = flow.locale ?? 'de';
   const userId = interaction.user.id;
 
@@ -496,12 +505,11 @@ async function createCharAndResume(interaction, message, flow, deps) {
 
     if (!ok) {
       const detail = typeof json.error === 'string' ? json.error : 'Unknown error';
-      if (message) {
-        await message.edit({
-          content: formatMsg(locale, 'CO_CREATE_FAIL', { detail }),
-          components: buildBnetFailComponents(flow.raidId, locale),
-        }).catch(() => {});
-      }
+      await patchOnboardingEphemeral(
+        interaction,
+        formatMsg(locale, 'CO_CREATE_FAIL', { detail }),
+        buildBnetFailComponents(flow.raidId, locale),
+      );
       current.step = 'spec';
       setCharOnboardingFlow(userId, current);
       return;
@@ -509,29 +517,24 @@ async function createCharAndResume(interaction, message, flow, deps) {
 
     clearCharOnboardingFlow(userId);
 
-    await resumeOriginalRaidAction(interaction, message, flow, deps);
+    await resumeOriginalRaidAction(interaction, flow, deps);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    if (message) {
-      await message.edit({
-        content: formatMsg(locale, 'CO_CREATE_FAIL', { detail }),
-        components: buildBnetFailComponents(flow.raidId, locale),
-      }).catch(() => {});
-    }
+    await patchOnboardingEphemeral(
+      interaction,
+      formatMsg(locale, 'CO_CREATE_FAIL', { detail }),
+      buildBnetFailComponents(flow.raidId, locale),
+    );
   }
 }
 
-async function resumeOriginalRaidAction(interaction, message, flow, deps) {
+async function resumeOriginalRaidAction(interaction, flow, deps) {
   const { ok, json } = await deps.fetchRaidParticipantState(interaction, flow.raidId);
   const locale = ok ? deps.botLocale(interaction, json) : flow.locale ?? 'de';
 
   if (!ok || !json.guildMember) {
     const errText = `❌ ${deps.raidBotMessage(locale, 'BACKEND_FAILED')}`;
-    if (message) {
-      await message.edit({ content: errText, components: [] }).catch(() => {});
-    } else {
-      await interaction.editReply({ content: errText, components: [] }).catch(() => {});
-    }
+    await patchOnboardingEphemeral(interaction, errText, []);
     deps.scheduleDeleteSingleEphemeralReply(interaction);
     return;
   }
@@ -551,11 +554,7 @@ async function resumeOriginalRaidAction(interaction, message, flow, deps) {
       ? `⚡ ${qjJson.message ?? deps.raidBotMessage(locale, 'QUICKJOIN_OK')}`
       : deps.raidActionErrorText(qjJson.error, qjJson, locale);
 
-    if (message) {
-      await message.edit({ content: outcome, components: [] }).catch(() => {});
-    } else {
-      await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
-    }
+    await patchOnboardingEphemeral(interaction, outcome, []);
     if (qjOk) deps.triggerRaidPostReconcile(flow.raidId, raidPostMsg);
     deps.scheduleDeleteSingleEphemeralReply(interaction);
     return;
