@@ -116,16 +116,43 @@ export function battlenetClassNameToTbcClassId(className) {
   const n = className.trim().toLowerCase();
   const map = {
     druid: 'druid',
+    druide: 'druid',
     hunter: 'hunter',
+    jager: 'hunter',
+    jäger: 'hunter',
     mage: 'mage',
+    magier: 'mage',
     paladin: 'paladin',
     priest: 'priest',
+    priester: 'priest',
     rogue: 'rogue',
+    schurke: 'rogue',
     shaman: 'shaman',
+    schamane: 'shaman',
     warlock: 'warlock',
+    hexenmeister: 'warlock',
     warrior: 'warrior',
+    krieger: 'warrior',
   };
   return map[n] ?? '';
+}
+
+/** className und/oder mainSpec (z. B. „Fire Mage“) → classId */
+export function resolveClassIdFromBnetResponse(json) {
+  const fromClass = battlenetClassNameToTbcClassId(json?.profile?.className);
+  if (fromClass) return fromClass;
+  const mainSpec = typeof json?.mainSpec === 'string' ? json.mainSpec.trim() : '';
+  if (mainSpec) {
+    const parsed = getSpecByDisplayName(mainSpec);
+    if (parsed) return parsed.classId;
+  }
+  const activeSpec =
+    typeof json?.profile?.activeSpecName === 'string' ? json.profile.activeSpecName.trim() : '';
+  if (activeSpec) {
+    const parsedActive = getSpecByDisplayName(activeSpec);
+    if (parsedActive) return parsedActive.classId;
+  }
+  return '';
 }
 
 export function getSpecByDisplayName(displayName) {

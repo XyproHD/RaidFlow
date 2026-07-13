@@ -17,6 +17,7 @@ import {
   getSpecByDisplayName,
   getSpecDisplayName,
   getSpecsForClass,
+  resolveClassIdFromBnetResponse,
 } from './tbc-specs.js';
 
 export const CHAR_ONBOARD_TTL_MS = 10 * 60 * 1000;
@@ -380,13 +381,16 @@ async function runBnetResolve(interaction, flow, deps) {
       return;
     }
 
-    const classId = battlenetClassNameToTbcClassId(json.profile?.className);
+    const classId =
+      (typeof json.classId === 'string' && json.classId.trim()) ||
+      resolveClassIdFromBnetResponse(json);
     if (!classId) {
       current.step = 'bnet_fail';
       setCharOnboardingFlow(userId, current);
+      const classHint = json.profile?.className ?? json.mainSpec ?? '?';
       await patchOnboardingEphemeral(
         interaction,
-        buildBnetFailContent(current, 'Class could not be mapped.'),
+        buildBnetFailContent(current, `Class could not be mapped (${classHint}).`),
         buildBnetFailComponents(current.raidId, locale),
       );
       return;
@@ -397,7 +401,10 @@ async function runBnetResolve(interaction, flow, deps) {
     current.step = 'spec';
 
     const bnetMain = json.mainSpec ?? json.profile?.activeSpecName ?? '';
-    const parsed = bnetMain ? getSpecByDisplayName(bnetMain) : null;
+    const parsed =
+      (typeof json.mainSpecId === 'string' && json.mainSpecId.trim()
+        ? { classId, specId: json.mainSpecId.trim() }
+        : null) || (bnetMain ? getSpecByDisplayName(bnetMain) : null);
     if (parsed && parsed.classId === classId) {
       current.mainSpecId = parsed.specId;
     }

@@ -163,14 +163,23 @@ export function battlenetClassNameToTbcClassId(className: string | null | undefi
   const n = className.trim().toLowerCase();
   const map: Record<string, string> = {
     druid: 'druid',
+    druide: 'druid',
     hunter: 'hunter',
+    jager: 'hunter',
+    'jäger': 'hunter',
     mage: 'mage',
+    magier: 'mage',
     paladin: 'paladin',
     priest: 'priest',
+    priester: 'priest',
     rogue: 'rogue',
+    schurke: 'rogue',
     shaman: 'shaman',
+    schamane: 'shaman',
     warlock: 'warlock',
+    hexenmeister: 'warlock',
     warrior: 'warrior',
+    krieger: 'warrior',
   };
   return map[n] ?? '';
 }
