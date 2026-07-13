@@ -159,10 +159,15 @@ function buildSpecStepComponents(raidId, flow) {
   const mainOptions = specs.map((s) => ({
     label: truncateLabel(getSpecDisplayName(flow.classId, s.id), 100),
     value: s.id,
+    default: flow.mainSpecId === s.id,
   }));
   const offOptions = [
-    { label: formatMsg(locale, 'CO_OFF_NONE'), value: '__none__' },
-    ...mainOptions.map((o) => ({ ...o })),
+    { label: formatMsg(locale, 'CO_OFF_NONE'), value: '__none__', default: !flow.offSpecId },
+    ...mainOptions.map((o) => ({
+      label: o.label,
+      value: o.value,
+      default: flow.offSpecId === o.value,
+    })),
   ];
 
   const rows = [];
