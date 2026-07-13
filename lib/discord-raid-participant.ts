@@ -45,6 +45,10 @@ export type RaidParticipantState = {
   profileUrl: string;
   signupPhase: ReturnType<typeof computeRaidSignupPhase>;
   discordEmojis: Record<string, string>;
+  /** WoW-Realm der RaidFlow-Gilde (Battle.net-Setup) */
+  battlenetRealmId: string | null;
+  /** Raider/RL/GM — nicht Gast */
+  isRaidGuildMember: boolean;
 };
 
 export async function buildRaidParticipantState(
@@ -64,7 +68,9 @@ export async function buildRaidParticipantState(
       raidGroupRestrictionId: true,
       discordGuestChannelId: true,
       discordLeaderChannelId: true,
-      guild: { select: { id: true, name: true, discordGuildId: true } },
+      guild: {
+        select: { id: true, name: true, discordGuildId: true, battlenetRealmId: true },
+      },
     },
   });
   if (!raid) return null;
@@ -75,38 +81,19 @@ export async function buildRaidParticipantState(
     discordGuildId: discordGuildId ?? undefined,
   });
 
-  const user = await prisma.rfUser.findUnique({
-    where: { discordId: discordUserId },
-    select: { id: true },
-  });
-  if (!user) {
-    return {
-      linked: false,
-      guildMember: false,
-      guestEligible: false,
-      raidGuildId: raid.guildId,
-      raidGuildName: raid.guild.name,
-      discordGuestChannelId: raid.discordGuestChannelId,
-      hasLeaderChannel: !!raid.discordLeaderChannelId?.trim(),
-      characters: [],
-      assignableCharacters: [],
-      profileUrl: profileUrlForLocale(options?.locale),
-      signupPhase: computeRaidSignupPhase(raid),
-      discordEmojis: {},
-    };
-  }
+  const userId = syncResult.userId;
 
   const [guilds, charsInGuild, assignable, appCfg, guestCheck] = await Promise.all([
-    getGuildsForUser(syncResult.userId, discordUserId, { skipOwnerWebFullAccess: true }),
+    getGuildsForUser(userId, discordUserId, { skipOwnerWebFullAccess: true }),
     prisma.rfCharacter.findMany({
-      where: { userId: syncResult.userId, guildId: raid.guildId },
+      where: { userId, guildId: raid.guildId },
       select: { id: true, name: true, mainSpec: true, offSpec: true, isMain: true },
       orderBy: [{ isMain: 'desc' }, { name: 'asc' }],
       take: 25,
     }),
     prisma.rfCharacter.findMany({
       where: {
-        userId: syncResult.userId,
+        userId,
         OR: [{ guildId: null }, { guildId: { not: raid.guildId } }],
       },
       select: {
@@ -122,12 +109,12 @@ export async function buildRaidParticipantState(
     }),
     getAppConfig().catch(() => null),
     raidAllowsGuestAccess(raid)
-      ? resolveGuestEligibility(syncResult.userId, discordUserId, raid.guildId)
+      ? resolveGuestEligibility(userId, discordUserId, raid.guildId)
       : Promise.resolve({ eligible: false, membershipKnown: true, displayNameInGuild: null }),
   ]);
 
   const guildInfo = guilds.find((g) => g.id === raid.guildId);
-  const guildMember =
+  const isRaidGuildMember =
     !!guildInfo &&
     guildInfo.role !== 'member' &&
     userGuildCanSeeRaid(guildInfo, {
@@ -135,7 +122,8 @@ export async function buildRaidParticipantState(
       raidGroupRestrictionId: raid.raidGroupRestrictionId,
     });
 
-  const guestEligible = !guildMember && guestCheck.eligible;
+  const guestEligible = !isRaidGuildMember && guestCheck.eligible;
+  const guildMember = isRaidGuildMember || guestEligible;
 
   const profileChars =
     guestEligible && assignable.length > 0
@@ -144,8 +132,9 @@ export async function buildRaidParticipantState(
 
   return {
     linked: true,
-    guildMember: guildMember || guestEligible,
+    guildMember,
     guestEligible,
+    isRaidGuildMember,
     raidGuildId: raid.guildId,
     raidGuildName: raid.guild.name,
     discordGuestChannelId: raid.discordGuestChannelId,
@@ -155,6 +144,7 @@ export async function buildRaidParticipantState(
     profileUrl: profileUrlForLocale(options?.locale),
     signupPhase: computeRaidSignupPhase(raid),
     discordEmojis: appCfg?.discordEmojis ?? {},
+    battlenetRealmId: raid.guild.battlenetRealmId ?? null,
   };
 }
 

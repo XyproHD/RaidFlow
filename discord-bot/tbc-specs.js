@@ -109,3 +109,32 @@ export function getSpecDisplayName(classId, specId) {
 export function getSpecsForClass(classId) {
   return TBC_CLASSES.find((c) => c.id === classId)?.specs ?? [];
 }
+
+/** Englische Klassenbezeichnung aus Battle.net → TBC_CLASSES.id */
+export function battlenetClassNameToTbcClassId(className) {
+  if (!className?.trim()) return '';
+  const n = className.trim().toLowerCase();
+  const map = {
+    druid: 'druid',
+    hunter: 'hunter',
+    mage: 'mage',
+    paladin: 'paladin',
+    priest: 'priest',
+    rogue: 'rogue',
+    shaman: 'shaman',
+    warlock: 'warlock',
+    warrior: 'warrior',
+  };
+  return map[n] ?? '';
+}
+
+export function getSpecByDisplayName(displayName) {
+  for (const cls of TBC_CLASSES) {
+    for (const spec of cls.specs) {
+      if (getSpecDisplayName(cls.id, spec.id) === displayName) {
+        return { classId: cls.id, specId: spec.id };
+      }
+    }
+  }
+  return null;
+}

@@ -48,6 +48,14 @@ import {
   getHelpTopicContent,
   helpLangLabel,
 } from './raid-bot-help.js';
+import {
+  startCharOnboarding,
+  handleCharOnboardingOpenModal,
+  handleCharOnboardingCancel,
+  handleCharOnboardingNameModal,
+  handleCharOnboardingSpecSelect,
+  handleCharOnboardingConfirm,
+} from './char-onboarding.js';
 
 const DISCORD_ADMINISTRATOR = Number(PermissionFlagsBits.Administrator);
 const DISCORD_MANAGE_GUILD = Number(PermissionFlagsBits.ManageGuild);
@@ -146,6 +154,22 @@ async function callWebapp(path, body) {
     throw new Error(`Webapp ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+function charOnboardingDeps() {
+  return {
+    getWebappHeaders,
+    restoreRaidPostComponents,
+    scheduleDeleteSingleEphemeralReply,
+    fetchRaidParticipantState,
+    callDiscordAction,
+    continueRaidJoinFlow,
+    triggerRaidPostReconcile,
+    botLocale,
+    raidBotMessage,
+    raidActionErrorText,
+    raidPostMessages,
+  };
 }
 
 function truncateDiscordLabel(s, maxLen = 100) {
@@ -1667,6 +1691,19 @@ async function ensureRaidParticipant(interaction, raidId, opts = {}) {
     return { ok: false };
   }
   if (!json.linked) {
+    if (
+      requireCharacters &&
+      (opts.assignPurpose === 'qj' || opts.assignPurpose === 'join')
+    ) {
+      await startCharOnboarding(
+        interaction,
+        raidId,
+        json,
+        { ...opts, locale },
+        charOnboardingDeps(),
+      );
+      return { ok: false };
+    }
     if (raidPostMsg && raidPostOrig.length) await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
     await interaction.editReply({ content: raidActionErrorText('NOT_LINKED', undefined, locale), components: [] }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
@@ -1687,6 +1724,16 @@ async function ensureRaidParticipant(interaction, raidId, opts = {}) {
       return { ok: false };
     }
     if (chars.length === 0) {
+      if (opts.assignPurpose === 'qj' || opts.assignPurpose === 'join') {
+        await startCharOnboarding(
+          interaction,
+          raidId,
+          json,
+          { ...opts, locale },
+          charOnboardingDeps(),
+        );
+        return { ok: false };
+      }
       if (raidPostMsg && raidPostOrig.length) await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
       await interaction.editReply({
         content: raidActionErrorText('NO_CHARACTER', json, locale),
@@ -2091,6 +2138,7 @@ function triggerRaidPostReconcile(raidId, message) {
 async function handleRaidQuickjoin(interaction, raidId) {
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
   const raidPostMsg        = interaction.message;
+  raidPostMessages.set(`${interaction.user.id}:${raidId}`, raidPostMsg);
   const originalComponents = raidPostMsg?.components ?? [];
   if (originalComponents.length) {
     await disableRaidPostButtons(raidPostMsg).catch(() => {});
@@ -3850,6 +3898,12 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'help')        { await handleRaidHelpButton(interaction, raidId); return; }
         if (action === 'helplang')    { await handleHelpLangButton(interaction, raidId); return; }
         if (action === 'helpback')    { await handleHelpBackButton(interaction, raidId); return; }
+        if (action === 'co') {
+          const sub = parts[2];
+          if (sub === 'open') { await handleCharOnboardingOpenModal(interaction, raidId); return; }
+          if (sub === 'cancel') { await handleCharOnboardingCancel(interaction, raidId, charOnboardingDeps()); return; }
+          if (sub === 'confirm') { await handleCharOnboardingConfirm(interaction, raidId, charOnboardingDeps()); return; }
+        }
         if (action === 'helptopic')   {
           const topic = parts[3];
           if (topic) { await handleHelpTopicButton(interaction, raidId, topic); return; }
@@ -3913,6 +3967,18 @@ client.on('interactionCreate', async (interaction) => {
   // Select-Menüs (Setup-Flow + Raid-Aktionen)
   if (interaction.isStringSelectMenu()) {
     const customId = interaction.customId;
+    if (customId.startsWith('rf:cospec:')) {
+      const parts = customId.split(':');
+      const kind = parts[2];
+      const raidId = noDashToUuid(parts[3]);
+      try {
+        await handleCharOnboardingSpecSelect(interaction, raidId, kind);
+      } catch (e) {
+        console.error('[CharOnboardSpec]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
     if (customId.startsWith('rf:assignchar:')) {
       const parts = customId.split(':');
       const raidId = noDashToUuid(parts[2]);
@@ -4164,6 +4230,7 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'rlinfo')       { await handleRaidLeaderInfoModal(interaction, raidId); return; }
         if (action === 'pushmention')  { await handleRaidPushMentionModal(interaction, raidId); return; }
         if (action === 'decline')      { await handleRaidDeclineModal(interaction, raidId); return; }
+        if (action === 'coname')       { await handleCharOnboardingNameModal(interaction, raidId, charOnboardingDeps()); return; }
       } catch (e) {
         console.error('[RaidModal]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler beim Verarbeiten.', ephemeral: true }).catch(() => {});

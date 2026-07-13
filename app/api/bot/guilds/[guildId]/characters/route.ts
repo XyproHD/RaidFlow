@@ -18,6 +18,7 @@ import { assertBattlenetProfileForNewCharacter } from '@/lib/character-battlenet
 import { characterToClientDto } from '@/lib/character-api-dto';
 import { findUniqueRfCharacterForProfileDto } from '@/lib/rf-character-gear-score-compat';
 import { getGuildsForUser } from '@/lib/user-guilds';
+import { resolveGuestEligibility } from '@/lib/guest-raid-access';
 
 function readDiscordUserId(request: NextRequest, body: Record<string, unknown>): string {
   const q = request.nextUrl.searchParams.get('discordUserId')?.trim();
@@ -83,15 +84,33 @@ export async function POST(
     skipOwnerWebFullAccess: true,
   });
   const allowedGuildIds = new Set(userGuilds.map((g) => g.id));
+  const guildInfo = userGuilds.find((g) => g.id === guildId);
+  const isRaidGuildMember = !!guildInfo && guildInfo.role !== 'member';
 
-  if (userGuilds.length > 0) {
+  const guestOnboarding = body.guestOnboarding === true;
+  let guestEligible = false;
+  if (guestOnboarding && !isRaidGuildMember) {
+    const guest = await resolveGuestEligibility(userId, discordUserId, guildId);
+    guestEligible = guest.eligible;
+  }
+
+  if (isRaidGuildMember) {
     if (!allowedGuildIds.has(guildId)) {
       return NextResponse.json(
         { error: 'Bitte eine Gilde aus den Discord-Servern des Users wählen.' },
         { status: 400 }
       );
     }
-  } else if (!allowedGuildIds.has(guildId)) {
+  } else if (guestEligible) {
+    // Gast-Onboarding: Charakter für diese Gilde anlegen
+  } else if (userGuilds.length > 0) {
+    if (!allowedGuildIds.has(guildId)) {
+      return NextResponse.json(
+        { error: 'Bitte eine Gilde aus den Discord-Servern des Users wählen.' },
+        { status: 400 }
+      );
+    }
+  } else {
     return NextResponse.json({ error: 'Ungültige Gilde.' }, { status: 400 });
   }
 
@@ -171,6 +190,15 @@ export async function POST(
     );
   }
 
+  const isMainExplicit = body.isMain === true;
+  const isMain =
+    isMainExplicit ||
+    (isRaidGuildMember &&
+      !(await prisma.rfCharacter.findFirst({
+        where: { userId, guildId },
+        select: { id: true },
+      })));
+
   try {
     const createdId = await prisma.$transaction(async (tx) => {
       const created = await tx.rfCharacter.create({
@@ -180,7 +208,7 @@ export async function POST(
           guildId,
           mainSpec,
           offSpec,
-          isMain: false,
+          isMain,
         },
       });
       const data = battlenetProfileJsonToUpsertData(battlenetProfile!);
