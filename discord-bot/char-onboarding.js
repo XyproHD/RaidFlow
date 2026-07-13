@@ -66,6 +66,30 @@ function formatMsg(locale, key, vars = {}) {
   return s;
 }
 
+function resolveOnboardingLocale(interaction, flow, deps) {
+  if (flow?.locale) return flow.locale;
+  return deps?.botLocale?.(interaction, flow ?? null) ?? 'de';
+}
+
+/** Immer dieselbe ephemere Onboarding-Nachricht bearbeiten (kein followUp/reply). */
+async function editOnboardingEphemeral(interaction, content, components = []) {
+  const payload = { content, components };
+  if (interaction.message) {
+    await interaction.message.edit(payload).catch(() => {});
+    return;
+  }
+  if (interaction.deferred || interaction.replied) {
+    await interaction.editReply(payload).catch(() => {});
+  }
+}
+
+async function showOnboardingSessionExpired(interaction, flow, deps) {
+  const locale = resolveOnboardingLocale(interaction, flow, deps);
+  clearCharOnboardingFlow(interaction.user.id);
+  await editOnboardingEphemeral(interaction, formatMsg(locale, 'CO_SESSION_EXPIRED'), []);
+  deps?.scheduleDeleteSingleEphemeralReply?.(interaction);
+}
+
 async function postWebappJson(path, body, getWebappHeaders) {
   const base = (process.env.WEBAPP_URL || 'http://localhost:3000').replace(/\/$/, '');
   const res = await fetch(`${base}${path}`, {
@@ -266,13 +290,11 @@ export async function startCharOnboarding(interaction, raidId, json, opts, deps)
   return true;
 }
 
-export async function handleCharOnboardingOpenModal(interaction, raidId) {
+export async function handleCharOnboardingOpenModal(interaction, raidId, deps) {
   const flow = getCharOnboardingFlow(interaction.user.id);
   if (!flow || flow.raidId !== raidId) {
-    await interaction.reply({
-      content: formatMsg('de', 'CO_SESSION_EXPIRED'),
-      ephemeral: true,
-    }).catch(() => {});
+    await interaction.deferUpdate().catch(() => {});
+    await showOnboardingSessionExpired(interaction, flow, deps);
     return;
   }
   await interaction.showModal(buildCharNameModal(raidId, flow.locale ?? 'de')).catch(() => {});
@@ -280,34 +302,30 @@ export async function handleCharOnboardingOpenModal(interaction, raidId) {
 
 export async function handleCharOnboardingCancel(interaction, raidId, deps) {
   const flow = getCharOnboardingFlow(interaction.user.id);
-  const locale = flow?.locale ?? 'de';
+  const locale = resolveOnboardingLocale(interaction, flow, deps);
   clearCharOnboardingFlow(interaction.user.id);
   await interaction.deferUpdate().catch(() => {});
-  await interaction.message?.edit({
-    content: formatMsg(locale, 'CO_CANCELLED'),
-    components: [],
-  }).catch(() => {
-    interaction.editReply({ content: formatMsg(locale, 'CO_CANCELLED'), components: [] }).catch(() => {});
-  });
+  await editOnboardingEphemeral(interaction, formatMsg(locale, 'CO_CANCELLED'), []);
   deps.scheduleDeleteSingleEphemeralReply(interaction);
 }
 
 export async function handleCharOnboardingNameModal(interaction, raidId, deps) {
   const flow = getCharOnboardingFlow(interaction.user.id);
   if (!flow || flow.raidId !== raidId) {
-    await interaction.reply({
-      content: formatMsg('de', 'CO_SESSION_EXPIRED'),
-      ephemeral: true,
-    }).catch(() => {});
+    await interaction.deferUpdate().catch(() => interaction.deferReply({ ephemeral: true }).catch(() => {}));
+    await showOnboardingSessionExpired(interaction, flow, deps);
     return;
   }
 
+  const locale = flow.locale ?? 'de';
   const name = interaction.fields.getTextInputValue('charname').trim();
   if (!name) {
-    await interaction.reply({
-      content: formatMsg(flow.locale ?? 'de', 'CO_PICK_MAIN'),
-      ephemeral: true,
-    }).catch(() => {});
+    await interaction.deferUpdate().catch(() => interaction.deferReply({ ephemeral: true }).catch(() => {}));
+    await editOnboardingEphemeral(
+      interaction,
+      `${buildIntroContent(flow)}\n\n${formatMsg(locale, 'CO_EMPTY_NAME')}`,
+      buildNameStepComponents(raidId, locale),
+    );
     return;
   }
 
@@ -315,16 +333,10 @@ export async function handleCharOnboardingNameModal(interaction, raidId, deps) {
   flow.step = 'bnet_loading';
   setCharOnboardingFlow(interaction.user.id, flow);
 
-  await interaction.deferUpdate().catch(() => {});
-  const msg = interaction.message;
-  if (msg) {
-    await msg.edit({
-      content: buildBnetLoadingContent(flow),
-      components: [],
-    }).catch(() => {});
-  }
+  await interaction.deferUpdate().catch(() => interaction.deferReply({ ephemeral: true }).catch(() => {}));
+  await editOnboardingEphemeral(interaction, buildBnetLoadingContent(flow), []);
 
-  void runBnetResolve(interaction.user.id, msg, flow, deps);
+  void runBnetResolve(interaction.user.id, interaction.message, flow, deps);
 }
 
 async function runBnetResolve(userId, message, flow, deps) {
@@ -402,13 +414,11 @@ async function runBnetResolve(userId, message, flow, deps) {
   }
 }
 
-export async function handleCharOnboardingSpecSelect(interaction, raidId, kind) {
+export async function handleCharOnboardingSpecSelect(interaction, raidId, kind, deps) {
   const flow = getCharOnboardingFlow(interaction.user.id);
   if (!flow || flow.raidId !== raidId) {
-    await interaction.reply({
-      content: formatMsg('de', 'CO_SESSION_EXPIRED'),
-      ephemeral: true,
-    }).catch(() => {});
+    await interaction.deferUpdate().catch(() => {});
+    await showOnboardingSessionExpired(interaction, flow, deps);
     return;
   }
 
@@ -430,19 +440,19 @@ export async function handleCharOnboardingSpecSelect(interaction, raidId, kind) 
 
 export async function handleCharOnboardingConfirm(interaction, raidId, deps) {
   const flow = getCharOnboardingFlow(interaction.user.id);
-  const locale = flow?.locale ?? 'de';
+  const locale = resolveOnboardingLocale(interaction, flow, deps);
   if (!flow || flow.raidId !== raidId) {
-    await interaction.reply({
-      content: formatMsg(locale, 'CO_SESSION_EXPIRED'),
-      ephemeral: true,
-    }).catch(() => {});
+    await interaction.deferUpdate().catch(() => {});
+    await showOnboardingSessionExpired(interaction, flow, deps);
     return;
   }
   if (!flow.mainSpecId) {
-    await interaction.reply({
-      content: formatMsg(locale, 'CO_PICK_MAIN'),
-      ephemeral: true,
-    }).catch(() => {});
+    await interaction.deferUpdate().catch(() => {});
+    await editOnboardingEphemeral(
+      interaction,
+      `${buildSpecStepContent(flow)}\n\n${formatMsg(locale, 'CO_PICK_MAIN')}`,
+      buildSpecStepComponents(raidId, flow),
+    );
     return;
   }
 
@@ -450,15 +460,9 @@ export async function handleCharOnboardingConfirm(interaction, raidId, deps) {
   setCharOnboardingFlow(interaction.user.id, flow);
 
   await interaction.deferUpdate().catch(() => {});
-  const msg = interaction.message;
-  if (msg) {
-    await msg.edit({
-      content: formatMsg(locale, 'CO_STATUS_CREATING'),
-      components: [],
-    }).catch(() => {});
-  }
+  await editOnboardingEphemeral(interaction, formatMsg(locale, 'CO_STATUS_CREATING'), []);
 
-  void createCharAndResume(interaction, msg, flow, deps);
+  void createCharAndResume(interaction, interaction.message, flow, deps);
 }
 
 async function createCharAndResume(interaction, message, flow, deps) {

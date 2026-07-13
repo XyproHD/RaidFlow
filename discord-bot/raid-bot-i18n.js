@@ -173,6 +173,7 @@ const MESSAGES = {
     CO_CREATE_FAIL: '❌ Charakter konnte nicht angelegt werden: {detail}',
     CO_CANCELLED: 'Charakter-Anlage abgebrochen.',
     CO_SESSION_EXPIRED: '⚠️ Sitzung abgebrochen. Bitte erneut auf Quickjoin oder Anmelden klicken.',
+    CO_EMPTY_NAME: '⚠️ Bitte einen gültigen Charakternamen eingeben.',
   },
   en: {
     NOT_LINKED:
@@ -336,6 +337,7 @@ const MESSAGES = {
     CO_CREATE_FAIL: '❌ Could not create character: {detail}',
     CO_CANCELLED: 'Character creation cancelled.',
     CO_SESSION_EXPIRED: '⚠️ Session expired. Please click Quick join or Sign up again.',
+    CO_EMPTY_NAME: '⚠️ Please enter a valid character name.',
   },
 };
 

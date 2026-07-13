@@ -3900,9 +3900,15 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'helpback')    { await handleHelpBackButton(interaction, raidId); return; }
         if (action === 'co') {
           const sub = parts[2];
-          if (sub === 'open') { await handleCharOnboardingOpenModal(interaction, raidId); return; }
-          if (sub === 'cancel') { await handleCharOnboardingCancel(interaction, raidId, charOnboardingDeps()); return; }
-          if (sub === 'confirm') { await handleCharOnboardingConfirm(interaction, raidId, charOnboardingDeps()); return; }
+          const coRaidId = parts[3] ? noDashToUuid(parts[3]) : null;
+          if (!coRaidId) {
+            await interaction.reply({ content: '❌ Ungültige Aktion.', ephemeral: true }).catch(() => {});
+            return;
+          }
+          const coDeps = charOnboardingDeps();
+          if (sub === 'open') { await handleCharOnboardingOpenModal(interaction, coRaidId, coDeps); return; }
+          if (sub === 'cancel') { await handleCharOnboardingCancel(interaction, coRaidId, coDeps); return; }
+          if (sub === 'confirm') { await handleCharOnboardingConfirm(interaction, coRaidId, coDeps); return; }
         }
         if (action === 'helptopic')   {
           const topic = parts[3];
@@ -3972,7 +3978,7 @@ client.on('interactionCreate', async (interaction) => {
       const kind = parts[2];
       const raidId = noDashToUuid(parts[3]);
       try {
-        await handleCharOnboardingSpecSelect(interaction, raidId, kind);
+        await handleCharOnboardingSpecSelect(interaction, raidId, kind, charOnboardingDeps());
       } catch (e) {
         console.error('[CharOnboardSpec]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
