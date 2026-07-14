@@ -15,17 +15,63 @@ export function isRaidSignupType(s: string): s is RaidSignupType {
   return normalizeSignupType(s) !== null;
 }
 
+/** DB-Marker: explizite Abmeldung (type bleibt `declined`, unterscheidbar von „Nicht da“). */
+export const WITHDRAWN_SIGNUP_ORIGINAL_TYPE = 'withdrawn';
+
 /** Legacy DB-Wert `main` → `normal`. */
 export function signupTypeNorm(raw: string): string {
   return raw === 'main' ? 'normal' : raw;
 }
 
-/** Für Planer-Kader: abgemeldete Spieler nicht im Kader/Reserve platzierbar. */
+/** Aktive Anmeldung (zählt für Plätze / Kader-Pool). */
+export function isActiveRaidSignup(row: { type?: string | null }): boolean {
+  return signupTypeNorm(row.type ?? 'normal') !== 'declined';
+}
+
+export function isWithdrawnRaidSignup(row: {
+  type?: string | null;
+  originalSignupType?: string | null;
+}): boolean {
+  if (signupTypeNorm(row.type ?? '') !== 'declined') return false;
+  return signupTypeNorm(row.originalSignupType ?? 'declined') === WITHDRAWN_SIGNUP_ORIGINAL_TYPE;
+}
+
+/** „Nicht da“ ohne explizite Abmeldung. */
+export function isNotAttendingRaidSignup(row: {
+  type?: string | null;
+  originalSignupType?: string | null;
+}): boolean {
+  return signupTypeNorm(row.type ?? '') === 'declined' && !isWithdrawnRaidSignup(row);
+}
+
+/** Planer/Listen: declined oder Legacy-Marker withdrawn. */
+export function isDeclinedLikeSignupType(raw: string | null | undefined): boolean {
+  const t = signupTypeNorm(raw ?? '');
+  return t === 'declined' || t === WITHDRAWN_SIGNUP_ORIGINAL_TYPE;
+}
+
+/** Prisma: Legacy-Abmeldungen (vor Delete-Fix) aus Listen ausblenden. */
+export const PRISMA_VISIBLE_SIGNUP_WHERE = {
+  NOT: {
+    type: 'declined' as const,
+    originalSignupType: WITHDRAWN_SIGNUP_ORIGINAL_TYPE,
+  },
+};
+
+/** Prisma-Filter für Zählungen aktiver Anmeldungen. */
+export const PRISMA_ACTIVE_SIGNUP_WHERE = { type: { not: 'declined' as const } };
+
+export const PRISMA_ACTIVE_SIGNUP_COUNT_SELECT = {
+  signups: { where: PRISMA_ACTIVE_SIGNUP_WHERE },
+} as const;
+
 export function isPlannableRaidSignup(row: {
   type: string;
   originalSignupType?: string | null;
 }): boolean {
-  return signupTypeNorm(row.originalSignupType ?? row.type) !== 'declined';
+  if (!isActiveRaidSignup(row)) return false;
+  const orig = signupTypeNorm(row.originalSignupType ?? row.type);
+  return orig !== 'declined' && orig !== WITHDRAWN_SIGNUP_ORIGINAL_TYPE;
 }
 
 /** „Unklar“ / „Nicht da“ — bei Ankündigung/Speichern nicht durch Reserve ersetzen. */

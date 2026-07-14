@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+import { isDeclinedLikeSignupType } from '@/lib/raid-signup-constants';
 import { guestSignupBadgeClass, guestSignupSurfaceClass } from '@/lib/guest-ui-styles';
 import { formatRaidTerminLine } from '@/lib/format-raid-termin';
 import { getSpecByDisplayName, TBC_CLASS_IDS, type TbcRole } from '@/lib/wow-tbc-classes';
@@ -399,9 +400,9 @@ function typeNorm(v: string) {
 }
 
 function attendanceRowVariant(s: RosterPlannerSignup): 'default' | 'uncertain' | 'declined' {
+  if (isDeclinedLikeSignupType(s.signupType)) return 'declined';
   const tn = typeNorm(s.signupType);
   if (tn === 'uncertain') return 'uncertain';
-  if (tn === 'declined') return 'declined';
   return 'default';
 }
 
@@ -519,10 +520,7 @@ export function RaidRosterPlanner({
     () =>
       new Set(
         signups
-          .filter((s) => {
-            const t = s.signupType === 'main' ? 'normal' : s.signupType;
-            return t !== 'declined';
-          })
+          .filter((s) => !isDeclinedLikeSignupType(s.signupType === 'main' ? 'normal' : s.signupType))
           .map((s) => s.id)
       ),
     [signups]
@@ -1354,7 +1352,7 @@ export function RaidRosterPlanner({
         const s = byId.get(id);
         if (!s) return false;
         const tn = typeNorm(s.signupType);
-        return tn !== 'uncertain' && tn !== 'declined';
+        return tn !== 'uncertain' && !isDeclinedLikeSignupType(s.signupType);
       }),
     [filteredPoolIds, byId]
   );

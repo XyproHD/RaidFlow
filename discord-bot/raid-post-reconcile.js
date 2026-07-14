@@ -1,12 +1,12 @@
 /**
  * Stiller Hintergrund-Abgleich: Discord-Raid-Post-Embed ↔ Backend-Snapshot.
- * Keine User-Rückmeldung, kein Logging.
+ * Aktualisiert Raidkanal und (falls vorhanden) Gastkanal.
  */
 
 const RECONCILE_MAX_ATTEMPTS = 24;
 const RECONCILE_DELAY_MS = 500;
 
-/** @type {Map<string, { running: boolean, pending: boolean, message: import('discord.js').Message | null }>} */
+/** @type {Map<string, { running: boolean, pending: boolean }>} */
 const reconcileState = new Map();
 
 function sleep(ms) {
@@ -38,17 +38,32 @@ async function fetchDisplaySnapshot(getWebappJson, raidId) {
   }
 }
 
-async function resolveRaidPostMessage(client, state, snapshot) {
-  if (state.message) return state.message;
-  if (!snapshot?.channelId || !snapshot?.messageId) return null;
+/**
+ * @param {import('discord.js').Client} client
+ * @param {{ channelId?: string, messageId?: string | null, embeds?: unknown[], fingerprint?: string } | null | undefined} target
+ */
+async function reconcilePostTarget(client, target) {
+  if (!target?.channelId || !target?.messageId || !target?.fingerprint || !Array.isArray(target.embeds)) {
+    return true;
+  }
+
   try {
-    const channel = await client.channels.fetch(snapshot.channelId);
-    if (!channel?.isTextBased?.()) return null;
-    const message = await channel.messages.fetch(snapshot.messageId);
-    state.message = message;
-    return message;
+    const channel = await client.channels.fetch(target.channelId);
+    if (!channel?.isTextBased?.()) return true;
+    const message = await channel.messages.fetch(target.messageId);
+    const currentFingerprint = fingerprintDiscordEmbeds(message.embeds);
+    if (currentFingerprint === target.fingerprint) return true;
+
+    const components = message.components?.length ? message.components : undefined;
+    await message
+      .edit({
+        embeds: target.embeds,
+        ...(components ? { components } : {}),
+      })
+      .catch(() => {});
+    return false;
   } catch {
-    return null;
+    return true;
   }
 }
 
@@ -62,19 +77,12 @@ async function runReconcileLoop(client, getWebappJson, raidId) {
     const snapshot = await fetchDisplaySnapshot(getWebappJson, raidId);
     if (!snapshot?.fingerprint || !Array.isArray(snapshot.embeds)) break;
 
-    const message = await resolveRaidPostMessage(client, state, snapshot);
-    if (!message) break;
+    const mainDone = await reconcilePostTarget(client, snapshot);
+    const guestDone = snapshot.guest
+      ? await reconcilePostTarget(client, snapshot.guest)
+      : true;
 
-    const currentFingerprint = fingerprintDiscordEmbeds(message.embeds);
-    if (currentFingerprint === snapshot.fingerprint) break;
-
-    const components = message.components?.length ? message.components : undefined;
-    await message
-      .edit({
-        embeds: snapshot.embeds,
-        ...(components ? { components } : {}),
-      })
-      .catch(() => {});
+    if (mainDone && guestDone) break;
 
     await sleep(RECONCILE_DELAY_MS);
   }
@@ -92,22 +100,20 @@ async function runReconcileLoop(client, getWebappJson, raidId) {
 }
 
 /**
- * Startet (oder verlängert) den stillen Embed-Abgleich für einen Raid-Post.
+ * Startet (oder verlängert) den stillen Embed-Abgleich für Raid- und Gast-Post.
  * @param {import('discord.js').Client} client
  * @param {(path: string, queryParams: Record<string, string>) => Promise<unknown>} getWebappJson
  * @param {string} raidId
- * @param {import('discord.js').Message | null | undefined} message
  */
-export function scheduleRaidPostReconcile(client, getWebappJson, raidId, message) {
+export function scheduleRaidPostReconcile(client, getWebappJson, raidId) {
   if (!raidId) return;
 
   let state = reconcileState.get(raidId);
   if (!state) {
-    state = { running: false, pending: false, message: null };
+    state = { running: false, pending: false };
     reconcileState.set(raidId, state);
   }
 
-  if (message) state.message = message;
   state.pending = true;
 
   if (!state.running) {

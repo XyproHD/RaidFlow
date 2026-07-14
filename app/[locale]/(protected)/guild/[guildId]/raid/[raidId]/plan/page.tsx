@@ -14,6 +14,7 @@ import {
 } from '@/components/raid-planner/raid-roster-planner';
 import { getRaidDetailContext } from '@/lib/raid-detail-access';
 import { filterSignupsVisibleToViewer } from '@/lib/raid-detail-shared';
+import { isWithdrawnRaidSignup } from '@/lib/raid-signup-constants';
 import { buildSpecAttendanceByMinKeys } from '@/lib/min-spec-keys';
 import {
   computeRoleAttendanceFromSignups,
@@ -141,7 +142,7 @@ export default async function RaidPlanPage(props: {
     raid.signupVisibility,
     ctx.canEdit,
     raid.status
-  );
+  ).filter((s) => !isWithdrawnRaidSignup(s));
 
   const initialSignups: RosterPlannerSignup[] = visibleSignups
     .map((s) => {

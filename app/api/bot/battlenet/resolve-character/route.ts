@@ -6,6 +6,7 @@ import {
 import { verifyBotSecret } from '@/lib/bot-auth';
 import { classicFetchResultToJson } from '@/lib/battlenet-character-persist';
 import { loadRfBattlenetRealmRow, realmRowToBattlenetRealmArg } from '@/lib/battlenet-realm-resolve';
+import { battlenetClassNameToTbcClassId, getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 
 /**
  * POST /api/bot/battlenet/resolve-character
@@ -61,11 +62,19 @@ export async function POST(request: NextRequest) {
       delete profileOut.rawProfile;
     }
 
+    const classId =
+      battlenetClassNameToTbcClassId(profile.className) ||
+      getSpecByDisplayName(mainSpec)?.classId ||
+      '';
+    const mainSpecId = classId ? getSpecByDisplayName(mainSpec)?.specId ?? '' : '';
+
     return NextResponse.json({
       ok: true,
       realmId: realm.id,
       characterName: resolvedName,
       mainSpec,
+      classId,
+      mainSpecId,
       profile: profileOut,
     });
   } catch (err) {

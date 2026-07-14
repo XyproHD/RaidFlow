@@ -112,8 +112,11 @@ function placementPrefix(p) {
   return '';
 }
 
-function typeIcon(t) {
+function typeIcon(t, originalSignupType) {
   const x = String(t || '').toLowerCase();
+  if (x === 'declined') {
+    return String(originalSignupType || '').toLowerCase() === 'withdrawn' ? '🚪' : '🚫';
+  }
   if (x === 'uncertain') return '❓';
   if (x === 'reserve') return '🪑';
   if (x === 'normal' || x === 'main') return '📅';
@@ -138,10 +141,11 @@ function buildDashboardEmbeds(payload) {
     reserveCount: 0,
     uncertainCount: 0,
     declinedCount: 0,
+    withdrawnCount: 0,
   };
   top.addFields({
     name: '📌 Anmeldung(en) Statusübersicht',
-    value: `✅ Ges. ${s.confirmedCount}  •  🪑 Res. ${s.reserveCount}  •  ❓ Uns. ${s.uncertainCount}  •  🚫 Abs. ${s.declinedCount}`,
+    value: `✅ Ges. ${s.confirmedCount}  •  🪑 Res. ${s.reserveCount}  •  ❓ Uns. ${s.uncertainCount}  •  🚫 Nicht da ${s.declinedCount}  •  🚪 Abgem. ${s.withdrawnCount ?? 0}`,
     inline: false,
   });
 
@@ -152,9 +156,9 @@ function buildDashboardEmbeds(payload) {
   } else {
     const lines = rows.slice(0, 10).map((r) => {
       const when = fmtDateTime(locale, r.scheduledAtIso);
-      const place = placementPrefix(r.leaderPlacement);
-      const typ = typeIcon(r.type);
-      const confirm = r.setConfirmed ? '✅' : '';
+      const place = r.type === 'declined' ? '' : placementPrefix(r.leaderPlacement);
+      const typ = typeIcon(r.type, r.originalSignupType);
+      const confirm = r.setConfirmed && r.type !== 'declined' ? '✅' : '';
       const specKey = r.signedSpec ? (SPEC_KEY_BY_DISPLAY[String(r.signedSpec).trim()] ?? null) : null;
       const roleKey = specKey ? (ROLE_KEY_BY_SPEC_KEY[specKey] ?? null) : null;
       const clsKey = r.signedSpec ? classKeyFromSpecDisplayName(r.signedSpec) : null;

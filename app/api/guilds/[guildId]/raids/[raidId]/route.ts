@@ -574,10 +574,10 @@ export async function PATCH(
     });
   }
 
-  // Discord-Beitrag beim erfolgreichen Speichern aktualisieren.
-  await syncRaidThreadSummary(raidId);
+  // Discord-Beiträge beim Speichern immer erneuern (auch ohne inhaltliche Änderung).
+  await syncRaidThreadSummary(raidId, { allowCreate: true });
 
-  // Termin-/Friständerung ohne Anmelde-Reset: Raider im Channel informieren (wie bei Neuanlage).
+  // Termin-/Friständerung ohne Anmelde-Reset: Raider- und Gast-Channel informieren + Gast-Embed aktualisieren.
   if (!resetSignups && (scheduleStartChanged || signupDeadlineChanged)) {
     await postRaidScheduleChangeChannelNotice(raidId, {
       startChanged: scheduleStartChanged,

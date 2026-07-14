@@ -24,7 +24,7 @@ function effectiveSpec(s: CompositionSignupRow): string | null {
 export function countRolesFromSignups(signups: CompositionSignupRow[]) {
   const counts = { Tank: 0, Melee: 0, Range: 0, Healer: 0 };
   for (const s of signups) {
-    if (s.type === 'reserve') continue;
+    if (s.type === 'reserve' || s.type === 'declined') continue;
     const role = roleFromSpecDisplayName(effectiveSpec(s));
     if (role && role in counts) {
       counts[role]++;

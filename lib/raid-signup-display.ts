@@ -11,7 +11,7 @@ import {
   parseStoredAnnouncedPlannerJson,
   type AnnounceRaidPayload,
 } from '@/lib/raid-announce';
-import { signupTypeNorm } from '@/lib/raid-signup-constants';
+import { isWithdrawnRaidSignup, signupTypeNorm, WITHDRAWN_SIGNUP_ORIGINAL_TYPE } from '@/lib/raid-signup-constants';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 
 export type SignupDisplayView = 'public' | 'planner';
@@ -91,7 +91,7 @@ export function publicSignupBucket(
   }
 
   const orig = effectiveOriginalSignupType(signup);
-  if (orig === 'declined') return 'declined';
+  if (orig === 'declined' || orig === WITHDRAWN_SIGNUP_ORIGINAL_TYPE) return 'declined';
   if (orig === 'reserve') return 'reserve';
   return 'main';
 }
@@ -123,7 +123,9 @@ export function filterSignupsByPublicBucket<T extends SignupDisplayRow>(
   raid: RaidDisplayContext,
   bucket: PublicSignupBucket
 ): T[] {
-  return signups.filter((s) => publicSignupBucket(s, raid) === bucket);
+  return signups.filter(
+    (s) => !isWithdrawnRaidSignup(s) && publicSignupBucket(s, raid) === bucket
+  );
 }
 
 export function orderedPublicReserveIds(
@@ -178,14 +180,15 @@ export function signupsForPublicRoleCounts<T extends SignupDisplayRow>(
   signups: T[],
   raid: RaidDisplayContext
 ): T[] {
+  const active = signups.filter((s) => !isWithdrawnRaidSignup(s));
   if (isPublishedRaidStatus(raid.status)) {
     const rosterIds = new Set(publishedRosterIds(raid));
     if (rosterIds.size > 0) {
-      return signups.filter((s) => rosterIds.has(s.id));
+      return active.filter((s) => rosterIds.has(s.id));
     }
-    return filterSignupsByPublicBucket(signups, raid, 'main');
+    return filterSignupsByPublicBucket(active, raid, 'main');
   }
-  return filterSignupsByPublicBucket(signups, raid, 'main');
+  return filterSignupsByPublicBucket(active, raid, 'main');
 }
 
 /** Vergleich Planer ↔ Ankündigung (Dashboard). */

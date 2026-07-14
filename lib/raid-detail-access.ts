@@ -10,6 +10,7 @@ import {
   type RaidPageMode,
   type RaidSignupPhase,
 } from '@/lib/raid-detail-shared';
+import { PRISMA_ACTIVE_SIGNUP_COUNT_SELECT } from '@/lib/raid-signup-constants';
 import {
   healGuestSignupMetadataForRaid,
   resolveRaidAccessWithGuests,
@@ -58,7 +59,7 @@ async function loadRaidForDetailPage(
         },
         orderBy: { signedAt: 'asc' },
       },
-      _count: { select: { signups: true } },
+      _count: { select: PRISMA_ACTIVE_SIGNUP_COUNT_SELECT },
     },
   });
 }

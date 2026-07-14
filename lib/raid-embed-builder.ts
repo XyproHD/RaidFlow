@@ -794,7 +794,7 @@ export function buildRaidActionButtons(
       type: 1,
       components: [
         { type: 2, style: 2, label: 'Hilfe', emoji: { name: '❓' }, custom_id: `rf:help:${rid}:${gid}` },
-        { type: 2, style: 2, label: 'RaidTools', emoji: { name: '🟡' }, custom_id: `rf:tools:${rid}:${gid}` },
+        { type: 2, style: 2, label: 'Optionen', emoji: { name: '⚙️' }, custom_id: `rf:opts:${rid}:${gid}` },
         { type: 2, style: 2, label: 'Info @ Raidlead', emoji: { name: '🟡' }, custom_id: `rf:inforl:${rid}:${gid}` },
       ],
     },
@@ -828,7 +828,7 @@ export function buildGuestRaidActionButtons(
       components: [
         { type: 2, style: 4, label: 'Withdraw', emoji: { name: '🚪' }, custom_id: `rf:unreg:${rid}:${gid}` },
         { type: 2, style: 2, label: 'Info @ Raid lead', emoji: { name: '🟡' }, custom_id: `rf:inforl:${rid}:${gid}` },
-        { type: 2, style: 2, label: 'RaidTools', emoji: { name: '🟡' }, custom_id: `rf:tools:${rid}:${gid}` },
+        { type: 2, style: 2, label: 'Options', emoji: { name: '⚙️' }, custom_id: `rf:opts:${rid}:${gid}` },
         { type: 2, style: 2, label: 'Help', emoji: { name: '❓' }, custom_id: `rf:help:${rid}:${gid}` },
       ],
     },

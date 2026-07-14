@@ -13,6 +13,7 @@ import {
   postRaidRaiderChannelMention,
   postSignupChangeThreadNotice,
   pushRaidDiscordPost,
+  syncRaidGuestChannelSummary,
   syncRaidThreadSummary,
 } from '@/lib/raid-thread-sync';
 import { getRaidDiscordDisplaySnapshot } from '@/lib/raid-discord-display-snapshot';
@@ -306,24 +307,49 @@ export async function POST(request: NextRequest) {
     }
 
     const phase = computeRaidSignupPhase(raid);
-    const main  = await prisma.rfCharacter.findFirst({
-      where:   { userId: user.id, guildId: raid.guildId, isMain: true },
-      select:  { id: true, name: true, mainSpec: true },
-      orderBy: { updatedAt: 'desc' },
-    });
-    const fallback = !main
-      ? await prisma.rfCharacter.findFirst({
-          where:   { userId: user.id, guildId: raid.guildId },
-          select:  { id: true, name: true, mainSpec: true },
-          orderBy: { updatedAt: 'desc' },
-        })
-      : null;
-    const picked = main ?? fallback;
-    if (!picked) {
-      return NextResponse.json(
-        { error: 'NO_CHARACTER', message: raidBotMessage(botLocale, 'NO_CHARACTER_GUILD') },
-        { status: 400 }
-      );
+    const characterIdParam =
+      typeof body.characterId === 'string' ? body.characterId.trim() : '';
+
+    let picked: { id: string; name: string; mainSpec: string } | null = null;
+
+    if (characterIdParam) {
+      picked = await prisma.rfCharacter.findFirst({
+        where: {
+          id: characterIdParam,
+          userId: user.id,
+          guildId: raid.guildId,
+        },
+        select: { id: true, name: true, mainSpec: true },
+      });
+      if (!picked) {
+        return NextResponse.json(
+          {
+            error: 'CHARACTER_NOT_FOUND',
+            message: raidBotMessage(botLocale, 'CHARACTER_NOT_FOUND'),
+          },
+          { status: 404 }
+        );
+      }
+    } else {
+      const main = await prisma.rfCharacter.findFirst({
+        where:   { userId: user.id, guildId: raid.guildId, isMain: true },
+        select:  { id: true, name: true, mainSpec: true },
+        orderBy: { updatedAt: 'desc' },
+      });
+      const fallback = !main
+        ? await prisma.rfCharacter.findFirst({
+            where:   { userId: user.id, guildId: raid.guildId },
+            select:  { id: true, name: true, mainSpec: true },
+            orderBy: { updatedAt: 'desc' },
+          })
+        : null;
+      picked = main ?? fallback;
+      if (!picked) {
+        return NextResponse.json(
+          { error: 'NO_CHARACTER', message: raidBotMessage(botLocale, 'NO_CHARACTER_GUILD') },
+          { status: 400 }
+        );
+      }
     }
 
     const existing = await prisma.rfRaidSignup.findFirst({
@@ -575,6 +601,7 @@ export async function POST(request: NextRequest) {
         signupIds: activeRemovedRows.map((r) => r.id),
         changedByUserId: user.id,
         guildId: raid.guildId,
+        asUnregister: false,
       });
     } else if (removedRows.length === 0) {
       // Schritt 2: keine bestehende Anmeldung → „Nicht da“-Kennzeichnung neu anlegen.
@@ -595,6 +622,7 @@ export async function POST(request: NextRequest) {
     }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
+    await syncRaidGuestChannelSummary(raidId, { embedOnly: true });
     for (const row of activeRemovedRows) {
       // War zuvor angemeldet und markiert sich direkt als „Nicht da" → beides im Log ausweisen.
       await postSignupChangeThreadNotice(raidId, 'unsignup_declined', {
@@ -696,6 +724,7 @@ export async function POST(request: NextRequest) {
       signupIds: activeRemovedRows.map((r) => r.id),
       changedByUserId: user.id,
       guildId: raid.guildId,
+      asUnregister: true,
     });
 
     if (reason) {
@@ -713,6 +742,7 @@ export async function POST(request: NextRequest) {
     }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
+    await syncRaidGuestChannelSummary(raidId, { embedOnly: true });
     for (const row of activeRemovedRows) {
       await postSignupChangeThreadNotice(raidId, 'unsignup', {
         characterName: row.character?.name ?? null,

@@ -19,6 +19,7 @@ import {
   fetchAllChannelMessages,
   type DiscordFetchedMessage,
 } from '@/lib/discord-guild-api';
+import { PRISMA_VISIBLE_SIGNUP_WHERE } from '@/lib/raid-signup-constants';
 import { buildRaidActionButtons, buildGuestRaidActionButtons } from '@/lib/raid-embed-builder';
 import { buildRaidDiscordEmbedsForRaid, buildGuestRaidDiscordEmbedsForRaid } from '@/lib/raid-discord-display-snapshot';
 import { getAppConfig } from '@/lib/app-config';
@@ -35,6 +36,7 @@ async function loadRaidForSync(raidId: string) {
     include: {
       dungeon: { select: { name: true } },
       signups: {
+        where: PRISMA_VISIBLE_SIGNUP_WHERE,
         include: {
           character: {
             select: { name: true, mainSpec: true, isMain: true },
@@ -220,6 +222,7 @@ export async function syncRaidThreadSummary(
         return;
       } catch (e) {
         console.warn('[syncRaidThreadSummary] edit failed:', e);
+        await syncRaidGuestChannelSummary(raidId, opts);
         if (!opts?.allowCreate) {
           return;
         }
@@ -544,6 +547,70 @@ function formatRaidChannelNoticeDateTime(date: Date): string {
   }).format(date);
 }
 
+/** Freitext im Gast-Channel (ohne Raider-Mention), nur bei allowGuests. */
+export async function postRaidGuestChannelNotice(
+  raidId: string,
+  messageBody: string
+): Promise<void> {
+  const raid = await prisma.rfRaid.findUnique({
+    where: { id: raidId },
+    select: {
+      allowGuests: true,
+      discordGuestChannelId: true,
+      status: true,
+    },
+  });
+  const channelId = raid?.discordGuestChannelId?.trim();
+  if (!channelId || !raid?.allowGuests) return;
+  if (raid.status === 'cancelled' || raid.status === 'completed') return;
+
+  const body = messageBody.trim();
+  if (!body) return;
+
+  await createChannelMessageFull(channelId, {
+    content: body.slice(0, 2000),
+  });
+}
+
+function buildScheduleChangeNoticeBody(
+  raid: {
+    name: string;
+    scheduledAt: Date;
+    signupUntil: Date;
+    dungeon: { name: string };
+  },
+  changes: { startChanged: boolean; signupChanged: boolean },
+  locale: 'de' | 'en'
+): string {
+  if (locale === 'en') {
+    const lines: string[] = [
+      `There is a schedule change for raid **${raid.dungeon.name} / ${raid.name}**:`,
+    ];
+    if (changes.startChanged) {
+      lines.push(`• 📅 New start: **${formatRaidChannelNoticeDateTime(raid.scheduledAt)}**`);
+    }
+    if (changes.signupChanged) {
+      lines.push(
+        `• ⏰ New sign-up deadline: **${formatRaidChannelNoticeDateTime(raid.signupUntil)}**`
+      );
+    }
+    lines.push('Please review your sign-up.');
+    return lines.join('\n');
+  }
+
+  const lines: string[] = [
+    `es gibt eine Terminänderung für den Raid **${raid.dungeon.name} / ${raid.name}**:`,
+  ];
+  if (changes.startChanged) {
+    lines.push(`• 📅 Neuer Start: **${formatRaidChannelNoticeDateTime(raid.scheduledAt)} Uhr**`);
+  }
+  if (changes.signupChanged) {
+    lines.push(`• ⏰ Neue Anmeldefrist: **${formatRaidChannelNoticeDateTime(raid.signupUntil)} Uhr**`);
+  }
+  lines.push('Bitte prüft eure Anmeldung.');
+  return lines.join('\n');
+}
+
 /** Raider-Rolle im Raid-Channel erwähnen (nicht im Thread-Log). */
 export async function postRaidRaiderChannelMention(
   raidId: string,
@@ -633,25 +700,26 @@ export async function postRaidScheduleChangeChannelNotice(
         status: true,
         scheduledAt: true,
         signupUntil: true,
+        allowGuests: true,
         discordChannelId: true,
+        discordGuestChannelId: true,
         dungeon: { select: { name: true } },
       },
     });
-    if (!raid?.discordChannelId?.trim()) return;
+    if (!raid) return;
     if (raid.status === 'cancelled' || raid.status === 'completed') return;
 
-    const lines: string[] = [
-      `es gibt eine Terminänderung für den Raid **${raid.dungeon.name} / ${raid.name}**:`,
-    ];
-    if (changes.startChanged) {
-      lines.push(`• 📅 Neuer Start: **${formatRaidChannelNoticeDateTime(raid.scheduledAt)} Uhr**`);
-    }
-    if (changes.signupChanged) {
-      lines.push(`• ⏰ Neue Anmeldefrist: **${formatRaidChannelNoticeDateTime(raid.signupUntil)} Uhr**`);
-    }
-    lines.push('Bitte prüft eure Anmeldung.');
+    const memberBody = buildScheduleChangeNoticeBody(raid, changes, 'de');
+    const guestBody = buildScheduleChangeNoticeBody(raid, changes, 'en');
 
-    await postRaidRaiderChannelMention(raidId, lines.join('\n'), { commaAfterMention: true });
+    if (raid?.discordChannelId?.trim()) {
+      await postRaidRaiderChannelMention(raidId, memberBody, { commaAfterMention: true });
+    }
+
+    if (raid?.allowGuests && raid.discordGuestChannelId?.trim()) {
+      await postRaidGuestChannelNotice(raidId, guestBody);
+      await syncRaidGuestChannelSummary(raidId, { allowCreate: true });
+    }
   } catch (e) {
     console.error('[postRaidScheduleChangeChannelNotice]', raidId, e);
   }

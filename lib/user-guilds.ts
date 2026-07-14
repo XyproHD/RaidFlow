@@ -7,6 +7,7 @@
 
 import { cache } from 'react';
 import { prisma } from '@/lib/prisma';
+import { PRISMA_ACTIVE_SIGNUP_COUNT_SELECT } from '@/lib/raid-signup-constants';
 import { getAppConfig, isGuildAllowed } from '@/lib/app-config';
 import { applyOwnerWebFullAccessToRole } from '@/lib/owner-web-permission-override';
 
@@ -197,7 +198,7 @@ export async function getRaidsForUser(
     include: {
       guild: { select: { name: true } },
       dungeon: { select: { name: true } },
-      _count: { select: { signups: true } },
+      _count: { select: PRISMA_ACTIVE_SIGNUP_COUNT_SELECT },
     },
     orderBy: { scheduledAt: 'asc' },
   });

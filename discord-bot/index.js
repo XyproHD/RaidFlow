@@ -48,6 +48,14 @@ import {
   getHelpTopicContent,
   helpLangLabel,
 } from './raid-bot-help.js';
+import {
+  startCharOnboarding,
+  handleCharOnboardingOpenModal,
+  handleCharOnboardingCancel,
+  handleCharOnboardingNameModal,
+  handleCharOnboardingSpecSelect,
+  handleCharOnboardingConfirm,
+} from './char-onboarding.js';
 
 const DISCORD_ADMINISTRATOR = Number(PermissionFlagsBits.Administrator);
 const DISCORD_MANAGE_GUILD = Number(PermissionFlagsBits.ManageGuild);
@@ -146,6 +154,22 @@ async function callWebapp(path, body) {
     throw new Error(`Webapp ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+function charOnboardingDeps() {
+  return {
+    getWebappHeaders,
+    restoreRaidPostComponents,
+    scheduleDeleteSingleEphemeralReply,
+    fetchRaidParticipantState,
+    callDiscordAction,
+    continueRaidJoinFlow,
+    triggerRaidPostReconcile,
+    botLocale,
+    raidBotMessage,
+    raidActionErrorText,
+    raidPostMessages,
+  };
 }
 
 function truncateDiscordLabel(s, maxLen = 100) {
@@ -1649,6 +1673,66 @@ async function showAssignCharacterMenu(interaction, raidId, assignableChars, pur
   }).catch(() => {});
 }
 
+/** Chars, die dieser Raid-Gilde zugeordnet sind (nicht nur Profil / andere Gilde). */
+function guildCharactersFromParticipantState(json) {
+  const chars = Array.isArray(json?.characters) ? json.characters : [];
+  const assignable = Array.isArray(json?.assignableCharacters) ? json.assignableCharacters : [];
+  const assignableIds = new Set(assignable.map((c) => c.id));
+  return chars.filter((c) => !assignableIds.has(c.id));
+}
+
+function needsQuickjoinCharacterPick(state) {
+  const guildChars = guildCharactersFromParticipantState(state);
+  if (guildChars.length <= 1) return false;
+  return !guildChars.some((c) => c.isMain === true);
+}
+
+async function showQuickjoinCharacterMenu(interaction, raidId, guildChars, locale = 'de') {
+  const { StringSelectMenuBuilder, ActionRowBuilder } = await import('discord.js');
+  const raidNoDash = raidId.replace(/-/g, '');
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(`rf:qjchar:${raidNoDash}`)
+    .setPlaceholder(raidBotMessage(locale, 'QJ_CHAR_PLACEHOLDER'))
+    .addOptions(guildChars.slice(0, 25).map((c) => ({
+      label: truncateDiscordLabel(`${c.name} (${c.mainSpec})`, 100),
+      value: c.id,
+      description: c.isMain ? raidBotMessage(locale, 'MAIN_CHAR') : raidBotMessage(locale, 'TWINK'),
+    })));
+  await interaction.editReply({
+    content: raidBotMessage(locale, 'QJ_CHAR_PICK_TITLE'),
+    components: [new ActionRowBuilder().addComponents(select)],
+  }).catch(() => {});
+}
+
+const quickjoinPending = new Map();
+
+async function runQuickjoinAfterPrep(interaction, raidId, locale, opts = {}) {
+  const pendingKey = `${interaction.user.id}:${raidId}`;
+  const pending = quickjoinPending.get(pendingKey);
+  const raidPostMsg = opts.raidPostMsg ?? pending?.raidPostMsg ?? null;
+  const originalComponents = opts.originalComponents ?? pending?.originalComponents ?? [];
+  quickjoinPending.delete(pendingKey);
+
+  const { ok, json } = await callDiscordAction({
+    action: 'quickjoin',
+    discordUserId: interaction.user.id,
+    raidId,
+    discordGuildId: interaction.guildId ?? '',
+    ...(opts.characterId ? { characterId: opts.characterId } : {}),
+  }, interaction);
+
+  if (raidPostMsg && originalComponents.length) {
+    await raidPostMsg.edit({ components: originalComponents }).catch(() => {});
+  }
+
+  const outcome = ok
+    ? `⚡ ${json.message ?? raidBotMessage(locale, 'QUICKJOIN_OK')}`
+    : raidActionErrorText(json.error, json, locale);
+  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
 /**
  * Sync + Teilnehmerstatus. Bei Fehler wird bereits geantwortet.
  * @returns {Promise<{ ok: true, state: object } | { ok: false }>}
@@ -1667,6 +1751,19 @@ async function ensureRaidParticipant(interaction, raidId, opts = {}) {
     return { ok: false };
   }
   if (!json.linked) {
+    if (
+      requireCharacters &&
+      (opts.assignPurpose === 'qj' || opts.assignPurpose === 'join')
+    ) {
+      await startCharOnboarding(
+        interaction,
+        raidId,
+        json,
+        { ...opts, locale },
+        charOnboardingDeps(),
+      );
+      return { ok: false };
+    }
     if (raidPostMsg && raidPostOrig.length) await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
     await interaction.editReply({ content: raidActionErrorText('NOT_LINKED', undefined, locale), components: [] }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
@@ -1687,6 +1784,16 @@ async function ensureRaidParticipant(interaction, raidId, opts = {}) {
       return { ok: false };
     }
     if (chars.length === 0) {
+      if (opts.assignPurpose === 'qj' || opts.assignPurpose === 'join') {
+        await startCharOnboarding(
+          interaction,
+          raidId,
+          json,
+          { ...opts, locale },
+          charOnboardingDeps(),
+        );
+        return { ok: false };
+      }
       if (raidPostMsg && raidPostOrig.length) await restoreRaidPostComponents(raidPostMsg, raidPostOrig);
       await interaction.editReply({
         content: raidActionErrorText('NO_CHARACTER', json, locale),
@@ -2084,13 +2191,14 @@ function scheduleDeleteSingleEphemeralReply(interaction) {
 }
 
 /** Stiller Hintergrund-Abgleich Raid-Post-Embed ↔ Backend (nach erfolgreicher Mutation). */
-function triggerRaidPostReconcile(raidId, message) {
-  scheduleRaidPostReconcile(client, getWebappJson, raidId, message ?? null);
+function triggerRaidPostReconcile(raidId) {
+  scheduleRaidPostReconcile(client, getWebappJson, raidId);
 }
 
 async function handleRaidQuickjoin(interaction, raidId) {
   await interaction.deferReply({ ephemeral: true }).catch(() => {});
   const raidPostMsg        = interaction.message;
+  raidPostMessages.set(`${interaction.user.id}:${raidId}`, raidPostMsg);
   const originalComponents = raidPostMsg?.components ?? [];
   if (originalComponents.length) {
     await disableRaidPostButtons(raidPostMsg).catch(() => {});
@@ -2105,23 +2213,27 @@ async function handleRaidQuickjoin(interaction, raidId) {
   if (!prep.ok) return;
   const locale = prep.locale ?? botLocale(interaction, prep.state);
 
-  const { ok, json } = await callDiscordAction({
-    action: 'quickjoin',
-    discordUserId: interaction.user.id,
-    raidId,
-    discordGuildId: interaction.guildId ?? '',
-  }, interaction);
-
-  if (raidPostMsg && originalComponents.length) {
-    await raidPostMsg.edit({ components: originalComponents }).catch(() => {});
+  if (needsQuickjoinCharacterPick(prep.state)) {
+    quickjoinPending.set(`${interaction.user.id}:${raidId}`, { raidPostMsg, originalComponents });
+    await showQuickjoinCharacterMenu(
+      interaction,
+      raidId,
+      guildCharactersFromParticipantState(prep.state),
+      locale,
+    );
+    return;
   }
 
-  const outcome = ok
-    ? `⚡ ${json.message ?? raidBotMessage(locale, 'QUICKJOIN_OK')}`
-    : raidActionErrorText(json.error, json, locale);
-  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
-  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
-  scheduleDeleteSingleEphemeralReply(interaction);
+  await runQuickjoinAfterPrep(interaction, raidId, locale, { raidPostMsg, originalComponents });
+}
+
+async function handleQuickjoinCharSelect(interaction, raidId) {
+  const characterId = interaction.values?.[0];
+  if (!characterId) return;
+  await interaction.deferUpdate().catch(() => {});
+  const { ok, json } = await fetchRaidParticipantState(interaction, raidId);
+  const locale = ok ? botLocale(interaction, json) : botLocale(interaction, null);
+  await runQuickjoinAfterPrep(interaction, raidId, locale, { characterId });
 }
 
 async function showDeclineModal(interaction, raidId, locale = 'de') {
@@ -2356,19 +2468,7 @@ async function handleAssignCharSelect(interaction, raidId, purpose) {
   }
 
   if (purpose === 'qj') {
-    const raidPostMsg = interaction.message;
-    const { ok: qjOk, json: qjJson } = await callDiscordAction({
-      action: 'quickjoin',
-      discordUserId: interaction.user.id,
-      raidId,
-      discordGuildId: interaction.guildId ?? '',
-    }, interaction);
-    const outcome = qjOk
-      ? `⚡ ${qjJson.message ?? raidBotMessage(stateLocale, 'QUICKJOIN_OK')}`
-      : raidActionErrorText(qjJson.error, qjJson, stateLocale);
-    await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
-    if (qjOk) triggerRaidPostReconcile(raidId, raidPostMsg);
-    scheduleDeleteSingleEphemeralReply(interaction);
+    await runQuickjoinAfterPrep(interaction, raidId, stateLocale, { characterId });
     return;
   }
 
@@ -3401,10 +3501,46 @@ async function handleEditNoteModal(interaction, raidId) {
 // RaidTools & Info @ Raidlead
 // ---------------------------------------------------------------------------
 
-async function handleRaidToolsButton(interaction, raidId) {
-  await interaction.deferReply({ ephemeral: true }).catch(() => {});
-  const locale = botLocale(interaction, null);
+function buildOptionsMenuComponents(raidId, guildId, locale) {
+  const rid = raidId.replace(/-/g, '');
+  const gid = guildId.replace(/-/g, '');
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`rf:optstools:${rid}`)
+        .setLabel(raidBotMessage(locale, 'OPTIONS_RAID_TOOLS'))
+        .setEmoji('🛠️')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`rf:optschar:${rid}:${gid}`)
+        .setLabel(raidBotMessage(locale, 'OPTIONS_ADD_CHAR'))
+        .setEmoji('👤')
+        .setStyle(ButtonStyle.Primary),
+    ),
+  ];
+}
 
+function buildRaidToolsMenuComponents(raidId, locale) {
+  const rid = raidId.replace(/-/g, '');
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`rf:toolsync:${rid}`)
+        .setLabel(raidBotMessage(locale, 'RAIDTOOLS_SYNC'))
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`rf:toolpush:${rid}`)
+        .setLabel(raidBotMessage(locale, 'RAIDTOOLS_PUSH'))
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`rf:toolpushm:${rid}`)
+        .setLabel(raidBotMessage(locale, 'RAIDTOOLS_PUSH_MENTION'))
+        .setStyle(ButtonStyle.Secondary),
+    ),
+  ];
+}
+
+async function replyRaidToolsMenu(interaction, raidId, locale) {
   let ok = false;
   let json = {};
   try {
@@ -3415,7 +3551,7 @@ async function handleRaidToolsButton(interaction, raidId) {
       ...(interaction.channelId ? { discordChannelId: interaction.channelId } : {}),
     }));
   } catch (e) {
-    console.error('[RaidToolsButton] get-raid-tools', e);
+    console.error('[RaidTools] get-raid-tools', e);
     await interaction.editReply({ content: `❌ ${raidBotMessage(locale, 'BACKEND_FAILED')}`, components: [] }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
@@ -3434,26 +3570,64 @@ async function handleRaidToolsButton(interaction, raidId) {
     return;
   }
 
-  const rid = raidId.replace(/-/g, '');
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`rf:toolsync:${rid}`)
-      .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_SYNC'))
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId(`rf:toolpush:${rid}`)
-      .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_PUSH'))
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`rf:toolpushm:${rid}`)
-      .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_PUSH_MENTION'))
-      .setStyle(ButtonStyle.Secondary),
-  );
+  await interaction.editReply({
+    content: raidBotMessage(guestLocale, 'RAIDTOOLS_TITLE'),
+    components: buildRaidToolsMenuComponents(raidId, guestLocale),
+  }).catch(() => {});
+}
+
+async function handleRaidOptionsButton(interaction, raidId, guildId) {
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  const { ok, json } = await fetchRaidParticipantState(interaction, raidId);
+  const locale = ok ? botLocale(interaction, json) : botLocale(interaction, null);
+  const resolvedGuildId = guildId || json?.raidGuildId || '';
+  if (!resolvedGuildId) {
+    await interaction.editReply({ content: `❌ ${raidBotMessage(locale, 'BACKEND_FAILED')}`, components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
 
   await interaction.editReply({
-    content:   raidBotMessage(guestLocale, 'RAIDTOOLS_TITLE'),
-    components: [row1],
+    content: raidBotMessage(locale, 'OPTIONS_TITLE'),
+    components: buildOptionsMenuComponents(raidId, resolvedGuildId, locale),
   }).catch(() => {});
+}
+
+async function handleRaidOptionsToolsButton(interaction, raidId) {
+  await interaction.deferUpdate().catch(() => {});
+  const locale = botLocale(interaction, null);
+  await replyRaidToolsMenu(interaction, raidId, locale);
+}
+
+async function handleRaidOptionsAddCharButton(interaction, raidId, guildId) {
+  await interaction.deferUpdate().catch(() => {});
+  const { ok, json } = await fetchRaidParticipantState(interaction, raidId);
+  const locale = ok ? botLocale(interaction, json) : botLocale(interaction, null);
+
+  if (!ok) {
+    await interaction.editReply({ content: `❌ ${raidBotMessage(locale, 'BACKEND_FAILED')}`, components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+  if (!json.linked) {
+    await interaction.editReply({ content: raidActionErrorText('NOT_LINKED', undefined, locale), components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  await startCharOnboarding(
+    interaction,
+    raidId,
+    json,
+    { assignPurpose: 'addchar', locale },
+    charOnboardingDeps(),
+  );
+}
+
+async function handleRaidToolsButton(interaction, raidId) {
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  const locale = botLocale(interaction, null);
+  await replyRaidToolsMenu(interaction, raidId, locale);
 }
 
 async function handleRaidToolRun(interaction, raidId, action) {
@@ -3646,12 +3820,13 @@ function setHelpFlow(userId, raidId, data) {
   helpFlowState.set(helpKey(userId, raidId), { data, expiresAt: Date.now() + HELP_TTL_MS });
 }
 
-const HELP_TOPIC_KEYS = ['newcomer', 'signup', 'leaderinfo', 'raidtools'];
+const HELP_TOPIC_KEYS = ['newcomer', 'signup', 'options', 'leaderinfo', 'raidtools'];
 
 function helpTopicButtonLabel(locale, topic) {
   const map = {
     newcomer: 'HELP_TOPIC_NEWCOMER',
     signup: 'HELP_TOPIC_SIGNUP',
+    options: 'HELP_TOPIC_OPTIONS',
     leaderinfo: 'HELP_TOPIC_LEADER',
     raidtools: 'HELP_TOPIC_TOOLS',
   };
@@ -3670,7 +3845,7 @@ function buildHelpLangButton(raidId, locale) {
 function buildHelpMenuComponents(raidId, locale) {
   const rid = raidId.replace(/-/g, '');
   const row1 = new ActionRowBuilder().addComponents(
-    ...HELP_TOPIC_KEYS.slice(0, 2).map((topic) =>
+    ...HELP_TOPIC_KEYS.slice(0, 3).map((topic) =>
       new ButtonBuilder()
         .setCustomId(`rf:helptopic:${rid}:${topic}`)
         .setLabel(helpTopicButtonLabel(locale, topic))
@@ -3678,7 +3853,7 @@ function buildHelpMenuComponents(raidId, locale) {
     ),
   );
   const row2 = new ActionRowBuilder().addComponents(
-    ...HELP_TOPIC_KEYS.slice(2).map((topic) =>
+    ...HELP_TOPIC_KEYS.slice(3).map((topic) =>
       new ButtonBuilder()
         .setCustomId(`rf:helptopic:${rid}:${topic}`)
         .setLabel(helpTopicButtonLabel(locale, topic))
@@ -3843,6 +4018,9 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'j2nextchar')  { await handleJoin2StepNav(interaction, raidId, 'next'); return; }
         if (action === 'j2open')      { await handleJoin2OpenNoteModal(interaction, raidId); return; }
         if (action === 'tools')       { await handleRaidToolsButton(interaction, raidId); return; }
+        if (action === 'opts')        { await handleRaidOptionsButton(interaction, raidId, extra); return; }
+        if (action === 'optstools')   { await handleRaidOptionsToolsButton(interaction, raidId); return; }
+        if (action === 'optschar')    { await handleRaidOptionsAddCharButton(interaction, raidId, extra); return; }
         if (action === 'toolsync')    { await handleRaidToolRun(interaction, raidId, 'sync-post'); return; }
         if (action === 'toolpush')    { await handleRaidToolRun(interaction, raidId, 'push-raid'); return; }
         if (action === 'toolpushm')   { await handleRaidToolPushMentionButton(interaction, raidId); return; }
@@ -3850,6 +4028,18 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'help')        { await handleRaidHelpButton(interaction, raidId); return; }
         if (action === 'helplang')    { await handleHelpLangButton(interaction, raidId); return; }
         if (action === 'helpback')    { await handleHelpBackButton(interaction, raidId); return; }
+        if (action === 'co') {
+          const sub = parts[2];
+          const coRaidId = parts[3] ? noDashToUuid(parts[3]) : null;
+          if (!coRaidId) {
+            await interaction.reply({ content: '❌ Ungültige Aktion.', ephemeral: true }).catch(() => {});
+            return;
+          }
+          const coDeps = charOnboardingDeps();
+          if (sub === 'open') { await handleCharOnboardingOpenModal(interaction, coRaidId, coDeps); return; }
+          if (sub === 'cancel') { await handleCharOnboardingCancel(interaction, coRaidId, coDeps); return; }
+          if (sub === 'confirm') { await handleCharOnboardingConfirm(interaction, coRaidId, coDeps); return; }
+        }
         if (action === 'helptopic')   {
           const topic = parts[3];
           if (topic) { await handleHelpTopicButton(interaction, raidId, topic); return; }
@@ -3913,6 +4103,18 @@ client.on('interactionCreate', async (interaction) => {
   // Select-Menüs (Setup-Flow + Raid-Aktionen)
   if (interaction.isStringSelectMenu()) {
     const customId = interaction.customId;
+    if (customId.startsWith('rf:cospec:')) {
+      const parts = customId.split(':');
+      const kind = parts[2];
+      const raidId = noDashToUuid(parts[3]);
+      try {
+        await handleCharOnboardingSpecSelect(interaction, raidId, kind, charOnboardingDeps());
+      } catch (e) {
+        console.error('[CharOnboardSpec]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
     if (customId.startsWith('rf:assignchar:')) {
       const parts = customId.split(':');
       const raidId = noDashToUuid(parts[2]);
@@ -3921,6 +4123,17 @@ client.on('interactionCreate', async (interaction) => {
         await handleAssignCharSelect(interaction, raidId, purpose);
       } catch (e) {
         console.error('[AssignCharSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:qjchar:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleQuickjoinCharSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[QuickjoinCharSelect]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
       }
       return;
@@ -4164,6 +4377,7 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'rlinfo')       { await handleRaidLeaderInfoModal(interaction, raidId); return; }
         if (action === 'pushmention')  { await handleRaidPushMentionModal(interaction, raidId); return; }
         if (action === 'decline')      { await handleRaidDeclineModal(interaction, raidId); return; }
+        if (action === 'coname')       { await handleCharOnboardingNameModal(interaction, raidId, charOnboardingDeps()); return; }
       } catch (e) {
         console.error('[RaidModal]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler beim Verarbeiten.', ephemeral: true }).catch(() => {});

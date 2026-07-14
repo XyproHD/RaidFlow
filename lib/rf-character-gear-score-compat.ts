@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { PRISMA_VISIBLE_SIGNUP_WHERE } from '@/lib/raid-signup-constants';
 
 /** Wenn `gear_score` in der DB fehlt (Migration noch nicht angewendet), schlagen normale Prisma-Reads auf `RfCharacter` fehl (P2022). */
 export function isMissingGearScoreColumnError(error: unknown): boolean {
@@ -133,6 +134,7 @@ type SignupForDashboard = Prisma.RfRaidSignupGetPayload<{
   select: {
     raidId: true;
     type: true;
+    originalSignupType: true;
     signedSpec: true;
     onlySignedSpec: true;
     leaderPlacement: true;
@@ -202,6 +204,7 @@ export async function findManyRaidSignupsForDashboard(
   const selectWithGs = {
     raidId: true,
     type: true,
+    originalSignupType: true,
     signedSpec: true,
     onlySignedSpec: true,
     leaderPlacement: true,
@@ -235,6 +238,7 @@ export async function findManyRaidSignupsForDashboard(
   const selectNoGs = {
     raidId: true,
     type: true,
+    originalSignupType: true,
     signedSpec: true,
     onlySignedSpec: true,
     leaderPlacement: true,
@@ -266,6 +270,7 @@ export async function findManyRaidSignupsForDashboard(
 
   const where = {
     userId,
+    ...PRISMA_VISIBLE_SIGNUP_WHERE,
     raid: {
       scheduledAt: { gte: now, lte: rangeEnd },
       status: { notIn: ['cancelled', 'completed'] },
