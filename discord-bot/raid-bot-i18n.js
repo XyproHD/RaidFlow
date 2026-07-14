@@ -140,11 +140,14 @@ const MESSAGES = {
     HELP_BACK: '← Zurück',
     HELP_TOPIC_NEWCOMER: 'Erste Schritte',
     HELP_TOPIC_SIGNUP: 'Anmeldung',
+    HELP_TOPIC_OPTIONS: 'Optionen',
     HELP_TOPIC_LEADER: 'Info RL',
     HELP_TOPIC_TOOLS: 'RaidTools',
     RAIDTOOLS_LOADING: '⏳ Wird ausgeführt …',
     CO_INTRO:
       '**Charakter anlegen**\n\nDu hast noch keinen Charakter für diese Gilde. Bevor du dich anmelden kannst, lege bitte deinen WoW-Charakter an.',
+    CO_INTRO_HAS_CHARS:
+      '**Charakter anlegen**\n\nDeine Charaktere für diese Gilde:\n{list}\n\nLege einen weiteren Charakter an:',
     CO_NO_REALM:
       '❌ **RaidFlow-Setup unvollständig**\n\nDer Gildenleiter hat das RaidFlow-Setup noch nicht abgeschlossen (WoW-Server/Realm fehlt). Bitte wende dich an die Gildenleitung.',
     CO_STATUS_INTRO: '📋 **Status:** Bereit — bitte Charakternamen eingeben.',
@@ -178,6 +181,9 @@ const MESSAGES = {
     OPTIONS_TITLE: '⚙️ **Optionen** – wähle eine Aktion:',
     OPTIONS_RAID_TOOLS: 'RaidTools',
     OPTIONS_ADD_CHAR: 'Charakter anlegen',
+    QJ_CHAR_PICK_TITLE:
+      '**Quickjoin** — Du hast mehrere Charaktere ohne Hauptcharakter. Bitte wähle einen Charakter:',
+    QJ_CHAR_PLACEHOLDER: 'Charakter für Quickjoin wählen…',
   },
   en: {
     NOT_LINKED:
@@ -308,11 +314,14 @@ const MESSAGES = {
     HELP_BACK: '← Back',
     HELP_TOPIC_NEWCOMER: 'Getting started',
     HELP_TOPIC_SIGNUP: 'Sign-up',
+    HELP_TOPIC_OPTIONS: 'Options',
     HELP_TOPIC_LEADER: 'Info RL',
     HELP_TOPIC_TOOLS: 'RaidTools',
     RAIDTOOLS_LOADING: '⏳ Running …',
     CO_INTRO:
       '**Create character**\n\nYou do not have a character for this guild yet. Please add your WoW character before signing up.',
+    CO_INTRO_HAS_CHARS:
+      '**Add character**\n\nYour characters for this guild:\n{list}\n\nAdd another character:',
     CO_NO_REALM:
       '❌ **RaidFlow setup incomplete**\n\nThe guild master has not finished RaidFlow setup (WoW realm missing). Please contact your guild leadership.',
     CO_STATUS_INTRO: '📋 **Status:** Ready — please enter your character name.',
@@ -346,6 +355,9 @@ const MESSAGES = {
     OPTIONS_TITLE: '⚙️ **Options** – choose an action:',
     OPTIONS_RAID_TOOLS: 'Raid Tools',
     OPTIONS_ADD_CHAR: 'Add Character',
+    QJ_CHAR_PICK_TITLE:
+      '**Quick join** — You have several characters and no main character. Please choose one:',
+    QJ_CHAR_PLACEHOLDER: 'Choose character for quick join…',
   },
 };
 

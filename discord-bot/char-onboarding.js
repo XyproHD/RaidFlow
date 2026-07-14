@@ -203,10 +203,24 @@ function buildSpecStepComponents(raidId, flow) {
   return rows;
 }
 
+function formatExistingCharacterLine(c, locale) {
+  const role = c.isMain
+    ? formatMsg(locale, 'MAIN_CHAR')
+    : formatMsg(locale, 'TWINK');
+  return `• **${c.name}** — ${c.mainSpec} (${role})`;
+}
+
 function buildIntroContent(flow) {
   const locale = flow.locale ?? 'de';
+  const existing = Array.isArray(flow.existingCharacters) ? flow.existingCharacters : [];
+  const intro = existing.length === 0
+    ? formatMsg(locale, 'CO_INTRO')
+    : formatMsg(locale, 'CO_INTRO_HAS_CHARS', {
+      list: existing.map((c) => formatExistingCharacterLine(c, locale)).join('\n'),
+    });
+
   return [
-    formatMsg(locale, 'CO_INTRO'),
+    intro,
     '',
     formatMsg(locale, 'CO_STATUS_INTRO'),
     '',
@@ -287,6 +301,7 @@ export async function startCharOnboarding(interaction, raidId, json, opts, deps)
     locale,
     isRaidGuildMember: json.isRaidGuildMember === true,
     guestEligible: json.guestEligible === true,
+    existingCharacters: Array.isArray(json.characters) ? json.characters : [],
     step: 'name',
     characterName: '',
     battlenetProfile: null,

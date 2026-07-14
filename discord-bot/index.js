@@ -1673,6 +1673,66 @@ async function showAssignCharacterMenu(interaction, raidId, assignableChars, pur
   }).catch(() => {});
 }
 
+/** Chars, die dieser Raid-Gilde zugeordnet sind (nicht nur Profil / andere Gilde). */
+function guildCharactersFromParticipantState(json) {
+  const chars = Array.isArray(json?.characters) ? json.characters : [];
+  const assignable = Array.isArray(json?.assignableCharacters) ? json.assignableCharacters : [];
+  const assignableIds = new Set(assignable.map((c) => c.id));
+  return chars.filter((c) => !assignableIds.has(c.id));
+}
+
+function needsQuickjoinCharacterPick(state) {
+  const guildChars = guildCharactersFromParticipantState(state);
+  if (guildChars.length <= 1) return false;
+  return !guildChars.some((c) => c.isMain === true);
+}
+
+async function showQuickjoinCharacterMenu(interaction, raidId, guildChars, locale = 'de') {
+  const { StringSelectMenuBuilder, ActionRowBuilder } = await import('discord.js');
+  const raidNoDash = raidId.replace(/-/g, '');
+  const select = new StringSelectMenuBuilder()
+    .setCustomId(`rf:qjchar:${raidNoDash}`)
+    .setPlaceholder(raidBotMessage(locale, 'QJ_CHAR_PLACEHOLDER'))
+    .addOptions(guildChars.slice(0, 25).map((c) => ({
+      label: truncateDiscordLabel(`${c.name} (${c.mainSpec})`, 100),
+      value: c.id,
+      description: c.isMain ? raidBotMessage(locale, 'MAIN_CHAR') : raidBotMessage(locale, 'TWINK'),
+    })));
+  await interaction.editReply({
+    content: raidBotMessage(locale, 'QJ_CHAR_PICK_TITLE'),
+    components: [new ActionRowBuilder().addComponents(select)],
+  }).catch(() => {});
+}
+
+const quickjoinPending = new Map();
+
+async function runQuickjoinAfterPrep(interaction, raidId, locale, opts = {}) {
+  const pendingKey = `${interaction.user.id}:${raidId}`;
+  const pending = quickjoinPending.get(pendingKey);
+  const raidPostMsg = opts.raidPostMsg ?? pending?.raidPostMsg ?? null;
+  const originalComponents = opts.originalComponents ?? pending?.originalComponents ?? [];
+  quickjoinPending.delete(pendingKey);
+
+  const { ok, json } = await callDiscordAction({
+    action: 'quickjoin',
+    discordUserId: interaction.user.id,
+    raidId,
+    discordGuildId: interaction.guildId ?? '',
+    ...(opts.characterId ? { characterId: opts.characterId } : {}),
+  }, interaction);
+
+  if (raidPostMsg && originalComponents.length) {
+    await raidPostMsg.edit({ components: originalComponents }).catch(() => {});
+  }
+
+  const outcome = ok
+    ? `⚡ ${json.message ?? raidBotMessage(locale, 'QUICKJOIN_OK')}`
+    : raidActionErrorText(json.error, json, locale);
+  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
+  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
+  scheduleDeleteSingleEphemeralReply(interaction);
+}
+
 /**
  * Sync + Teilnehmerstatus. Bei Fehler wird bereits geantwortet.
  * @returns {Promise<{ ok: true, state: object } | { ok: false }>}
@@ -2153,23 +2213,27 @@ async function handleRaidQuickjoin(interaction, raidId) {
   if (!prep.ok) return;
   const locale = prep.locale ?? botLocale(interaction, prep.state);
 
-  const { ok, json } = await callDiscordAction({
-    action: 'quickjoin',
-    discordUserId: interaction.user.id,
-    raidId,
-    discordGuildId: interaction.guildId ?? '',
-  }, interaction);
-
-  if (raidPostMsg && originalComponents.length) {
-    await raidPostMsg.edit({ components: originalComponents }).catch(() => {});
+  if (needsQuickjoinCharacterPick(prep.state)) {
+    quickjoinPending.set(`${interaction.user.id}:${raidId}`, { raidPostMsg, originalComponents });
+    await showQuickjoinCharacterMenu(
+      interaction,
+      raidId,
+      guildCharactersFromParticipantState(prep.state),
+      locale,
+    );
+    return;
   }
 
-  const outcome = ok
-    ? `⚡ ${json.message ?? raidBotMessage(locale, 'QUICKJOIN_OK')}`
-    : raidActionErrorText(json.error, json, locale);
-  await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
-  if (ok) triggerRaidPostReconcile(raidId, raidPostMsg);
-  scheduleDeleteSingleEphemeralReply(interaction);
+  await runQuickjoinAfterPrep(interaction, raidId, locale, { raidPostMsg, originalComponents });
+}
+
+async function handleQuickjoinCharSelect(interaction, raidId) {
+  const characterId = interaction.values?.[0];
+  if (!characterId) return;
+  await interaction.deferUpdate().catch(() => {});
+  const { ok, json } = await fetchRaidParticipantState(interaction, raidId);
+  const locale = ok ? botLocale(interaction, json) : botLocale(interaction, null);
+  await runQuickjoinAfterPrep(interaction, raidId, locale, { characterId });
 }
 
 async function showDeclineModal(interaction, raidId, locale = 'de') {
@@ -2404,19 +2468,7 @@ async function handleAssignCharSelect(interaction, raidId, purpose) {
   }
 
   if (purpose === 'qj') {
-    const raidPostMsg = interaction.message;
-    const { ok: qjOk, json: qjJson } = await callDiscordAction({
-      action: 'quickjoin',
-      discordUserId: interaction.user.id,
-      raidId,
-      discordGuildId: interaction.guildId ?? '',
-    }, interaction);
-    const outcome = qjOk
-      ? `⚡ ${qjJson.message ?? raidBotMessage(stateLocale, 'QUICKJOIN_OK')}`
-      : raidActionErrorText(qjJson.error, qjJson, stateLocale);
-    await interaction.editReply({ content: outcome, components: [] }).catch(() => {});
-    if (qjOk) triggerRaidPostReconcile(raidId, raidPostMsg);
-    scheduleDeleteSingleEphemeralReply(interaction);
+    await runQuickjoinAfterPrep(interaction, raidId, stateLocale, { characterId });
     return;
   }
 
@@ -3768,12 +3820,13 @@ function setHelpFlow(userId, raidId, data) {
   helpFlowState.set(helpKey(userId, raidId), { data, expiresAt: Date.now() + HELP_TTL_MS });
 }
 
-const HELP_TOPIC_KEYS = ['newcomer', 'signup', 'leaderinfo', 'raidtools'];
+const HELP_TOPIC_KEYS = ['newcomer', 'signup', 'options', 'leaderinfo', 'raidtools'];
 
 function helpTopicButtonLabel(locale, topic) {
   const map = {
     newcomer: 'HELP_TOPIC_NEWCOMER',
     signup: 'HELP_TOPIC_SIGNUP',
+    options: 'HELP_TOPIC_OPTIONS',
     leaderinfo: 'HELP_TOPIC_LEADER',
     raidtools: 'HELP_TOPIC_TOOLS',
   };
@@ -3792,7 +3845,7 @@ function buildHelpLangButton(raidId, locale) {
 function buildHelpMenuComponents(raidId, locale) {
   const rid = raidId.replace(/-/g, '');
   const row1 = new ActionRowBuilder().addComponents(
-    ...HELP_TOPIC_KEYS.slice(0, 2).map((topic) =>
+    ...HELP_TOPIC_KEYS.slice(0, 3).map((topic) =>
       new ButtonBuilder()
         .setCustomId(`rf:helptopic:${rid}:${topic}`)
         .setLabel(helpTopicButtonLabel(locale, topic))
@@ -3800,7 +3853,7 @@ function buildHelpMenuComponents(raidId, locale) {
     ),
   );
   const row2 = new ActionRowBuilder().addComponents(
-    ...HELP_TOPIC_KEYS.slice(2).map((topic) =>
+    ...HELP_TOPIC_KEYS.slice(3).map((topic) =>
       new ButtonBuilder()
         .setCustomId(`rf:helptopic:${rid}:${topic}`)
         .setLabel(helpTopicButtonLabel(locale, topic))
@@ -4070,6 +4123,17 @@ client.on('interactionCreate', async (interaction) => {
         await handleAssignCharSelect(interaction, raidId, purpose);
       } catch (e) {
         console.error('[AssignCharSelect]', customId, e);
+        await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
+      }
+      return;
+    }
+    if (customId.startsWith('rf:qjchar:')) {
+      const parts = customId.split(':');
+      const raidId = noDashToUuid(parts[2]);
+      try {
+        await handleQuickjoinCharSelect(interaction, raidId);
+      } catch (e) {
+        console.error('[QuickjoinCharSelect]', customId, e);
         await interaction.reply({ content: '❌ Interner Fehler.', ephemeral: true }).catch(() => {});
       }
       return;

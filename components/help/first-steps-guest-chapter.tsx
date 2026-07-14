@@ -47,6 +47,7 @@ export async function FirstStepsGuestChapter() {
               t.rich('tipBnetPrivate', rich),
               t.rich('tipNoGuild', rich),
               t.rich('tipGuestEligibility', rich),
+              t.rich('tipDiscordChar', rich),
             ]}
           />
         </div>

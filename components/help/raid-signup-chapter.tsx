@@ -49,6 +49,18 @@ export async function RaidSignupChapter() {
             t.rich('raidSignupDiscordBullet1', rich),
             t.rich('raidSignupDiscordBullet2', rich),
             t.rich('raidSignupDiscordBullet3', rich),
+            t.rich('raidSignupDiscordBullet4', rich),
+          ]}
+        />
+      </HelpSection>
+
+      <HelpSection title={t('raidSignupDiscordOptionsTitle')}>
+        <HelpProse>{t.rich('raidSignupDiscordOptionsText', rich)}</HelpProse>
+        <HelpBulletList
+          items={[
+            t.rich('raidSignupDiscordOptionsBullet1', rich),
+            t.rich('raidSignupDiscordOptionsBullet2', rich),
+            t.rich('raidSignupDiscordOptionsBullet3', rich),
           ]}
         />
       </HelpSection>
@@ -61,6 +73,7 @@ export async function RaidSignupChapter() {
             t.rich('raidSignupDiscordAction3', rich),
             t.rich('raidSignupDiscordAction4', rich),
             t.rich('raidSignupDiscordAction5', rich),
+            t.rich('raidSignupDiscordAction6', rich),
           ]}
         />
       </HelpSection>
@@ -69,7 +82,12 @@ export async function RaidSignupChapter() {
         <h4 className="text-sm font-semibold text-foreground">{t('raidSignupTipsTitle')}</h4>
         <div className="mt-2">
           <HelpBulletList
-            items={[t.rich('raidSignupTip1', rich), t.rich('raidSignupTip2', rich), t.rich('raidSignupTip3', rich)]}
+            items={[
+              t.rich('raidSignupTip1', rich),
+              t.rich('raidSignupTip2', rich),
+              t.rich('raidSignupTip3', rich),
+              t.rich('raidSignupTip4', rich),
+            ]}
           />
         </div>
       </aside>
