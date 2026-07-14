@@ -5,7 +5,10 @@ import {
   type AnnounceRaidPayload,
 } from '@/lib/raid-announce';
 import { removeSignupIdsFromAnnouncePayload } from '@/lib/planner-roster-sanitize';
-import { setConfirmedForPlacement } from '@/lib/raid-leader-placement';
+import {
+  setConfirmedForPlacement,
+} from '@/lib/raid-leader-placement';
+import { WITHDRAWN_SIGNUP_ORIGINAL_TYPE } from '@/lib/raid-signup-constants';
 
 export function moveSignupIdsToDeclineInAnnouncePayload(
   payload: AnnounceRaidPayload,
@@ -78,9 +81,11 @@ export async function withdrawRaidSignupRows(
     guildId: string;
     /** Bei angekündigtem Kader: setConfirmed zurücksetzen */
     clearConfirmed?: boolean;
+    /** true = Abmelden (Marker `withdrawn`), false = „Nicht da“ */
+    asUnregister?: boolean;
   }
 ): Promise<void> {
-  const { raidId, signupIds, changedByUserId, guildId, clearConfirmed = true } = args;
+  const { raidId, signupIds, changedByUserId, guildId, clearConfirmed = true, asUnregister = true } = args;
   if (signupIds.length === 0) return;
 
   const { logRaidSignupAudit, snapshotSignup } = await import('@/lib/raid-signup-audit');
@@ -95,7 +100,7 @@ export async function withdrawRaidSignupRows(
       where: { id: prev.id },
       data: {
         type: 'declined',
-        originalSignupType: 'declined',
+        originalSignupType: asUnregister ? WITHDRAWN_SIGNUP_ORIGINAL_TYPE : 'declined',
         leaderPlacement: 'signup',
         ...(clearConfirmed ? { setConfirmed: false } : {}),
       },

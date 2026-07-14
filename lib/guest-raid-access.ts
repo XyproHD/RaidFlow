@@ -4,6 +4,7 @@
  */
 
 import { prisma } from '@/lib/prisma';
+import { PRISMA_ACTIVE_SIGNUP_COUNT_SELECT } from '@/lib/raid-signup-constants';
 import {
   resolveRaidFlowRole,
   type RfGuildWithRoles,
@@ -325,7 +326,7 @@ export async function getGuestRaidsForDashboard(
     include: {
       guild: { select: { id: true, name: true, discordGuildId: true } },
       dungeon: { select: { name: true } },
-      _count: { select: { signups: true } },
+      _count: { select: PRISMA_ACTIVE_SIGNUP_COUNT_SELECT },
     },
     orderBy: { scheduledAt: 'asc' },
   });

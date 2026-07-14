@@ -14,6 +14,10 @@ import { CharacterSpecIconsInline } from '@/components/character-display-parts';
 import { SignupSpecIcons } from '@/components/raid-detail/signup-spec-icons';
 import { cn } from '@/lib/utils';
 import { guestSignupBadgeClass } from '@/lib/guest-ui-styles';
+import {
+  isWithdrawnRaidSignup,
+  signupTypeNorm,
+} from '@/lib/raid-signup-constants';
 import { formatDefaultRaidCancelDmDe } from '@/lib/raid-cancel-message';
 import { RaidCancelDiscordOverlay } from '@/components/raid-cancel-discord-overlay';
 
@@ -62,6 +66,7 @@ export type DashboardSignupRow = {
   characterGearScore: number | null;
   characterIsMain: boolean | null;
   type: string;
+  originalSignupType?: string;
   onlySignedSpec: boolean;
 };
 
@@ -85,6 +90,8 @@ export type DashboardCalendarRaid = {
   announcedGroupCount: number | null;
   mySignup: null | {
     id: string;
+    type?: string;
+    originalSignupType?: string;
     leaderPlacement: string;
     setConfirmed: boolean;
   };
@@ -141,9 +148,15 @@ function guildRoleBadges(
   return [];
 }
 
-function myStatusIcon(raidStatus: string, mySignup: DashboardCalendarRaid['mySignup']): '⌛' | '⚠️' | '✅' | '🪑' | '✕' | null {
+function myStatusIcon(
+  raidStatus: string,
+  mySignup: DashboardCalendarRaid['mySignup']
+): '⌛' | '⚠️' | '✅' | '🪑' | '✕' | '🚫' | '🚪' | null {
   if (!mySignup) return null;
   if (raidStatus === 'cancelled') return '✕';
+  if (signupTypeNorm(mySignup.type ?? 'normal') === 'declined') {
+    return isWithdrawnRaidSignup(mySignup) ? '🚪' : '🚫';
+  }
   if (raidStatus !== 'locked' && raidStatus !== 'announced') return '⌛';
   if (mySignup.leaderPlacement === 'substitute') return '🪑';
   if (mySignup.setConfirmed) return '✅';
@@ -157,10 +170,15 @@ function myStatusIconTooltip(
 ): string {
   if (!mySignup) return '';
   if (raidStatus === 'cancelled') return tDetail('myPlacement_absage');
-  if (raidStatus !== 'locked' && raidStatus !== 'announced') return 'Angemeldet – warte auf Bestätigung durch die Raidleitung';
-  if (mySignup.leaderPlacement === 'substitute') return 'Als Ersatzspieler eingeteilt';
-  if (mySignup.setConfirmed) return 'Angemeldet und vom Raidleiter bestätigt';
-  return 'Angemeldet – noch nicht bestätigt';
+  if (signupTypeNorm(mySignup.type ?? 'normal') === 'declined') {
+    return isWithdrawnRaidSignup(mySignup)
+      ? tDetail('mySignupStatus_withdrawn')
+      : tDetail('mySignupStatus_notAttending');
+  }
+  if (raidStatus !== 'locked' && raidStatus !== 'announced') return tDetail('mySignupStatus_waiting');
+  if (mySignup.leaderPlacement === 'substitute') return tDetail('mySignupStatus_substitute');
+  if (mySignup.setConfirmed) return tDetail('mySignupStatus_confirmed');
+  return tDetail('mySignupStatus_unconfirmed');
 }
 
 function daysDiff(raidDate: Date, referenceDay: Date): number {
@@ -630,6 +648,8 @@ export function DashboardClient({
                   const key = `${s.guildId}:${s.raidId}`;
                   const statusIcon = myStatusIcon(s.raidStatus, {
                     id: 'x',
+                    type: s.type,
+                    originalSignupType: s.originalSignupType,
                     leaderPlacement: s.leaderPlacement,
                     setConfirmed: s.setConfirmed,
                   });
@@ -688,7 +708,13 @@ export function DashboardClient({
                             className="cursor-help text-sm inline-block"
                             title={myStatusIconTooltip(
                               s.raidStatus,
-                              { id: 'x', leaderPlacement: s.leaderPlacement, setConfirmed: s.setConfirmed },
+                              {
+                                id: 'x',
+                                type: s.type,
+                                originalSignupType: s.originalSignupType,
+                                leaderPlacement: s.leaderPlacement,
+                                setConfirmed: s.setConfirmed,
+                              },
                               tRaidDetail
                             )}
                           >

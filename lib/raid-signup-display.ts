@@ -11,7 +11,7 @@ import {
   parseStoredAnnouncedPlannerJson,
   type AnnounceRaidPayload,
 } from '@/lib/raid-announce';
-import { signupTypeNorm } from '@/lib/raid-signup-constants';
+import { signupTypeNorm, WITHDRAWN_SIGNUP_ORIGINAL_TYPE } from '@/lib/raid-signup-constants';
 import { orderedReserveSignupIdsForDisplay } from '@/lib/planner-reserve-order';
 
 export type SignupDisplayView = 'public' | 'planner';
@@ -91,7 +91,7 @@ export function publicSignupBucket(
   }
 
   const orig = effectiveOriginalSignupType(signup);
-  if (orig === 'declined') return 'declined';
+  if (orig === 'declined' || orig === WITHDRAWN_SIGNUP_ORIGINAL_TYPE) return 'declined';
   if (orig === 'reserve') return 'reserve';
   return 'main';
 }

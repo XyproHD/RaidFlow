@@ -133,6 +133,7 @@ type SignupForDashboard = Prisma.RfRaidSignupGetPayload<{
   select: {
     raidId: true;
     type: true;
+    originalSignupType: true;
     signedSpec: true;
     onlySignedSpec: true;
     leaderPlacement: true;
@@ -202,6 +203,7 @@ export async function findManyRaidSignupsForDashboard(
   const selectWithGs = {
     raidId: true,
     type: true,
+    originalSignupType: true,
     signedSpec: true,
     onlySignedSpec: true,
     leaderPlacement: true,
@@ -235,6 +237,7 @@ export async function findManyRaidSignupsForDashboard(
   const selectNoGs = {
     raidId: true,
     type: true,
+    originalSignupType: true,
     signedSpec: true,
     onlySignedSpec: true,
     leaderPlacement: true,

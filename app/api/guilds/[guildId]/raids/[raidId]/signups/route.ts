@@ -298,12 +298,13 @@ export async function DELETE(
       ? { raidId, userId, characterId: characterIdFilter }
       : { raidId, userId },
   });
-  if (toRemove.length === 0) {
+  const activeToRemove = toRemove.filter((s) => s.type !== 'declined');
+  if (activeToRemove.length === 0) {
     return NextResponse.json({ error: 'No signup' }, { status: 404 });
   }
 
   const needsWithdrawReason =
-    raid.status === 'announced' && toRemove.some((s) => s.setConfirmed);
+    raid.status === 'announced' && activeToRemove.some((s) => s.setConfirmed);
   if (needsWithdrawReason && withdrawReason.length < WITHDRAW_REASON_MIN) {
     return NextResponse.json(
       {
@@ -316,12 +317,13 @@ export async function DELETE(
   const { withdrawRaidSignupRows } = await import('@/lib/raid-signup-withdraw');
   await withdrawRaidSignupRows(prisma, {
     raidId,
-    signupIds: toRemove.map((s) => s.id),
+    signupIds: activeToRemove.map((s) => s.id),
     changedByUserId: userId,
     guildId,
+    asUnregister: true,
   });
 
-  for (const existing of toRemove) {
+  for (const existing of activeToRemove) {
     const deletedChar = existing.characterId
       ? await prisma.rfCharacter.findUnique({
           where: { id: existing.characterId },

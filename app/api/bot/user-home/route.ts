@@ -2,6 +2,13 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyBotSecret } from '@/lib/bot-auth';
 import { findManyRaidSignupsForDashboard } from '@/lib/rf-character-gear-score-compat';
+import {
+  isActiveRaidSignup,
+  isNotAttendingRaidSignup,
+  isWithdrawnRaidSignup,
+  PRISMA_ACTIVE_SIGNUP_COUNT_SELECT,
+  signupTypeNorm,
+} from '@/lib/raid-signup-constants';
 import { getAppConfig } from '@/lib/app-config';
 
 /**
@@ -49,6 +56,7 @@ export async function GET(request: Request) {
         reserveCount: 0,
         uncertainCount: 0,
         declinedCount: 0,
+        withdrawnCount: 0,
       },
       mySignups: [] as const,
       upcomingRaids: [] as const,
@@ -80,10 +88,17 @@ export async function GET(request: Request) {
           include: {
             guild: { select: { name: true } },
             dungeon: { select: { name: true } },
-            _count: { select: { signups: true } },
+            _count: { select: PRISMA_ACTIVE_SIGNUP_COUNT_SELECT },
             signups: {
               where: { userId: user.id },
-              select: { id: true, leaderPlacement: true, setConfirmed: true },
+              select: {
+                id: true,
+                type: true,
+                originalSignupType: true,
+                leaderPlacement: true,
+                setConfirmed: true,
+              },
+              orderBy: { signedAt: 'desc' },
               take: 1,
             },
           },
@@ -105,6 +120,7 @@ export async function GET(request: Request) {
       scheduledAtIso: s.raid.scheduledAt.toISOString(),
       raidStatus: s.raid.status,
       type: s.type,
+      originalSignupType: s.originalSignupType,
       leaderPlacement: s.leaderPlacement,
       setConfirmed: s.setConfirmed,
       signedCharacterName: s.character?.name ?? null,
@@ -143,14 +159,13 @@ export async function GET(request: Request) {
     };
   });
 
-  const typeNorm = (v: string) => (v === 'main' ? 'normal' : v);
-  const signupCount = mySignupRows.length;
-  const confirmedCount = mySignupRows.filter((s) => s.setConfirmed).length;
-  const reserveCount = mySignupRows.filter((s) => s.leaderPlacement === 'substitute').length;
-  const uncertainCount = mySignupRows.filter((s) => typeNorm(s.type) === 'uncertain').length;
-  const declinedCount = mySignupRows.filter(
-    (s) => !s.setConfirmed && s.leaderPlacement !== 'substitute'
-  ).length;
+  const activeRows = mySignupRows.filter(isActiveRaidSignup);
+  const signupCount = activeRows.length;
+  const confirmedCount = activeRows.filter((s) => s.setConfirmed).length;
+  const reserveCount = activeRows.filter((s) => s.leaderPlacement === 'substitute').length;
+  const uncertainCount = activeRows.filter((s) => signupTypeNorm(s.type) === 'uncertain').length;
+  const declinedCount = mySignupRows.filter(isNotAttendingRaidSignup).length;
+  const withdrawnCount = mySignupRows.filter(isWithdrawnRaidSignup).length;
 
   const canCreateGuildIds = guildRows
     .filter((g) => g.role === 'raidleader' || g.role === 'guildmaster')
@@ -174,6 +189,7 @@ export async function GET(request: Request) {
       reserveCount,
       uncertainCount,
       declinedCount,
+      withdrawnCount,
     },
     mySignups,
     upcomingRaids,

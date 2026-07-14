@@ -575,6 +575,7 @@ export async function POST(request: NextRequest) {
         signupIds: activeRemovedRows.map((r) => r.id),
         changedByUserId: user.id,
         guildId: raid.guildId,
+        asUnregister: false,
       });
     } else if (removedRows.length === 0) {
       // Schritt 2: keine bestehende Anmeldung → „Nicht da“-Kennzeichnung neu anlegen.
@@ -696,6 +697,7 @@ export async function POST(request: NextRequest) {
       signupIds: activeRemovedRows.map((r) => r.id),
       changedByUserId: user.id,
       guildId: raid.guildId,
+      asUnregister: true,
     });
 
     if (reason) {

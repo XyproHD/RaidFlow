@@ -11,6 +11,7 @@ import {
   findManyRfCharactersForDashboard,
   findManyRaidSignupsForDashboard,
 } from '@/lib/rf-character-gear-score-compat';
+import { PRISMA_ACTIVE_SIGNUP_COUNT_SELECT } from '@/lib/raid-signup-constants';
 import { parseStoredAnnouncedPlannerJson } from '@/lib/raid-announce';
 import { getSpecByDisplayName } from '@/lib/wow-tbc-classes';
 import type { DashboardCalendarRaid, DashboardCharacter, DashboardGuild, DashboardSignupRow } from './dashboard-client';
@@ -206,11 +207,18 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
             announcedPlannerGroupsJson: true,
             guild: { select: { name: true } },
             dungeon: { select: { name: true } },
-            _count: { select: { signups: true } },
+            _count: { select: PRISMA_ACTIVE_SIGNUP_COUNT_SELECT },
             signups: userId
               ? {
                   where: { userId },
-                  select: { id: true, leaderPlacement: true, setConfirmed: true },
+                  select: {
+                    id: true,
+                    type: true,
+                    originalSignupType: true,
+                    leaderPlacement: true,
+                    setConfirmed: true,
+                  },
+                  orderBy: { signedAt: 'desc' },
                   take: 1,
                 }
               : undefined,
@@ -286,7 +294,15 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
               (r as unknown as { announcedPlannerGroupsJson?: unknown }).announcedPlannerGroupsJson
             )
           : null,
-      mySignup: (r as unknown as { signups?: { id: string; leaderPlacement: string; setConfirmed: boolean }[] }).signups?.[0] ?? null,
+      mySignup: (r as unknown as {
+        signups?: {
+          id: string;
+          type: string;
+          originalSignupType: string;
+          leaderPlacement: string;
+          setConfirmed: boolean;
+        }[];
+      }).signups?.[0] ?? null,
     }));
 
     // UI: "+ Neuer Raid" is shown if user can create raids (Raidleader/Gildenleiter)
@@ -313,6 +329,7 @@ export default async function DashboardPage(props: { searchParams?: SearchParams
       characterGearScore: s.character?.gearScore ?? null,
       characterIsMain: s.character?.isMain ?? null,
       type: s.type,
+      originalSignupType: s.originalSignupType,
       onlySignedSpec: s.onlySignedSpec ?? false,
     }));
 
