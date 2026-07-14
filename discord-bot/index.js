@@ -2131,8 +2131,8 @@ function scheduleDeleteSingleEphemeralReply(interaction) {
 }
 
 /** Stiller Hintergrund-Abgleich Raid-Post-Embed ↔ Backend (nach erfolgreicher Mutation). */
-function triggerRaidPostReconcile(raidId, message) {
-  scheduleRaidPostReconcile(client, getWebappJson, raidId, message ?? null);
+function triggerRaidPostReconcile(raidId) {
+  scheduleRaidPostReconcile(client, getWebappJson, raidId);
 }
 
 async function handleRaidQuickjoin(interaction, raidId) {

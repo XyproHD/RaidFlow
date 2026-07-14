@@ -13,6 +13,7 @@ import {
   postRaidRaiderChannelMention,
   postSignupChangeThreadNotice,
   pushRaidDiscordPost,
+  syncRaidGuestChannelSummary,
   syncRaidThreadSummary,
 } from '@/lib/raid-thread-sync';
 import { getRaidDiscordDisplaySnapshot } from '@/lib/raid-discord-display-snapshot';
@@ -596,6 +597,7 @@ export async function POST(request: NextRequest) {
     }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
+    await syncRaidGuestChannelSummary(raidId, { embedOnly: true });
     for (const row of activeRemovedRows) {
       // War zuvor angemeldet und markiert sich direkt als „Nicht da" → beides im Log ausweisen.
       await postSignupChangeThreadNotice(raidId, 'unsignup_declined', {
@@ -715,6 +717,7 @@ export async function POST(request: NextRequest) {
     }
 
     await syncRaidThreadSummary(raidId, { embedOnly: true });
+    await syncRaidGuestChannelSummary(raidId, { embedOnly: true });
     for (const row of activeRemovedRows) {
       await postSignupChangeThreadNotice(raidId, 'unsignup', {
         characterName: row.character?.name ?? null,

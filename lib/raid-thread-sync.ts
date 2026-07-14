@@ -222,6 +222,7 @@ export async function syncRaidThreadSummary(
         return;
       } catch (e) {
         console.warn('[syncRaidThreadSummary] edit failed:', e);
+        await syncRaidGuestChannelSummary(raidId, opts);
         if (!opts?.allowCreate) {
           return;
         }

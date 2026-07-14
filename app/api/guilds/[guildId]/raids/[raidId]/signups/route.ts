@@ -10,7 +10,7 @@ import {
   validateRaidSignupBusinessRules,
 } from '@/lib/raid-self-signup-mutation';
 import { logRaidSignupAudit, snapshotSignup } from '@/lib/raid-signup-audit';
-import { syncRaidThreadSummary, postSignupChangeThreadNotice } from '@/lib/raid-thread-sync';
+import { postSignupChangeThreadNotice, syncRaidGuestChannelSummary, syncRaidThreadSummary } from '@/lib/raid-thread-sync';
 import {
   assignCharacterForGuestSignup,
   resolveGuestEligibility,
@@ -366,5 +366,6 @@ export async function DELETE(
     }
   }
   await syncRaidThreadSummary(raidId);
+  await syncRaidGuestChannelSummary(raidId);
   return NextResponse.json({ ok: true });
 }

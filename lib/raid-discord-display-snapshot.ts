@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { buildRaidEmbeds, buildGuestRaidEmbeds } from '@/lib/raid-embed-builder';
 import { getAppConfig } from '@/lib/app-config';
+import { PRISMA_VISIBLE_SIGNUP_WHERE } from '@/lib/raid-signup-constants';
 import type { DiscordEmbed } from '@/lib/discord-guild-api';
 
 function getAppUrl(): string {
@@ -16,6 +17,7 @@ async function loadRaidForDisplay(raidId: string) {
     include: {
       dungeon: { select: { name: true } },
       signups: {
+        where: PRISMA_VISIBLE_SIGNUP_WHERE,
         include: {
           character: {
             select: { name: true, mainSpec: true, isMain: true },
@@ -98,11 +100,15 @@ export async function buildRaidDiscordEmbedsForRaid(
   return locale === 'en' ? buildGuestRaidEmbeds(payload) : buildRaidEmbeds(payload);
 }
 
-export type RaidDiscordDisplaySnapshot = {
+export type RaidDiscordPostTargetSnapshot = {
   channelId: string;
   messageId: string | null;
   embeds: DiscordEmbed[];
   fingerprint: string;
+};
+
+export type RaidDiscordDisplaySnapshot = RaidDiscordPostTargetSnapshot & {
+  guest: RaidDiscordPostTargetSnapshot | null;
 };
 
 export async function getRaidDiscordDisplaySnapshot(
@@ -113,12 +119,26 @@ export async function getRaidDiscordDisplaySnapshot(
   if (raid.status === 'cancelled' || raid.status === 'completed') return null;
 
   const embeds = await buildRaidDiscordEmbedsForRaid(raid);
-  return {
+  const main: RaidDiscordPostTargetSnapshot = {
     channelId: raid.discordChannelId,
     messageId: raid.discordChannelMessageId,
     embeds,
     fingerprint: fingerprintRaidDiscordEmbeds(embeds),
   };
+
+  let guest: RaidDiscordPostTargetSnapshot | null = null;
+  const guestChannelId = raid.discordGuestChannelId?.trim() || null;
+  if (raid.allowGuests && guestChannelId) {
+    const guestEmbeds = await buildGuestRaidDiscordEmbedsForRaid(raid);
+    guest = {
+      channelId: guestChannelId,
+      messageId: raid.discordGuestChannelMessageId,
+      embeds: guestEmbeds,
+      fingerprint: fingerprintRaidDiscordEmbeds(guestEmbeds),
+    };
+  }
+
+  return { ...main, guest };
 }
 
 export async function buildGuestRaidDiscordEmbedsForRaid(
