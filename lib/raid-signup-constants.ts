@@ -44,6 +44,20 @@ export function isNotAttendingRaidSignup(row: {
   return signupTypeNorm(row.type ?? '') === 'declined' && !isWithdrawnRaidSignup(row);
 }
 
+/** Planer/Listen: declined oder Legacy-Marker withdrawn. */
+export function isDeclinedLikeSignupType(raw: string | null | undefined): boolean {
+  const t = signupTypeNorm(raw ?? '');
+  return t === 'declined' || t === WITHDRAWN_SIGNUP_ORIGINAL_TYPE;
+}
+
+/** Prisma: Legacy-Abmeldungen (vor Delete-Fix) aus Listen ausblenden. */
+export const PRISMA_VISIBLE_SIGNUP_WHERE = {
+  NOT: {
+    type: 'declined' as const,
+    originalSignupType: WITHDRAWN_SIGNUP_ORIGINAL_TYPE,
+  },
+};
+
 /** Prisma-Filter für Zählungen aktiver Anmeldungen. */
 export const PRISMA_ACTIVE_SIGNUP_WHERE = { type: { not: 'declined' as const } };
 

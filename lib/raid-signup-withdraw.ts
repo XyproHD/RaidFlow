@@ -5,10 +5,7 @@ import {
   type AnnounceRaidPayload,
 } from '@/lib/raid-announce';
 import { removeSignupIdsFromAnnouncePayload } from '@/lib/planner-roster-sanitize';
-import {
-  setConfirmedForPlacement,
-} from '@/lib/raid-leader-placement';
-import { WITHDRAWN_SIGNUP_ORIGINAL_TYPE } from '@/lib/raid-signup-constants';
+import { setConfirmedForPlacement } from '@/lib/raid-leader-placement';
 
 export function moveSignupIdsToDeclineInAnnouncePayload(
   payload: AnnounceRaidPayload,
@@ -30,16 +27,11 @@ export function moveSignupIdsToDeclineInAnnouncePayload(
   return { ...stripped, declineOrder };
 }
 
-/**
- * Spieler bleibt im Raid (type/originalSignupType = declined), Planer-JSON wird bereinigt.
- */
-export async function markSignupWithdrawnInPlannerStorage(
+async function patchPlannerJsonForRaid(
   prisma: PrismaClient,
   raidId: string,
-  signupIds: string[]
+  patch: (payload: AnnounceRaidPayload, maxPlayers: number) => AnnounceRaidPayload
 ): Promise<void> {
-  if (signupIds.length === 0) return;
-
   const raid = await prisma.rfRaid.findUnique({
     where: { id: raidId },
     select: {
@@ -57,19 +49,46 @@ export async function markSignupWithdrawnInPlannerStorage(
 
   const draft = parseStoredAnnouncedPlannerJson(raid.draftPlannerGroupsJson);
   if (draft) {
-    const next = moveSignupIdsToDeclineInAnnouncePayload(draft, signupIds, raid.maxPlayers);
+    const next = patch(draft, raid.maxPlayers);
     data.draftPlannerGroupsJson = announceLayoutToStoredJson(next, raid.maxPlayers);
   }
 
   const announced = parseStoredAnnouncedPlannerJson(raid.announcedPlannerGroupsJson);
   if (announced) {
-    const next = moveSignupIdsToDeclineInAnnouncePayload(announced, signupIds, raid.maxPlayers);
+    const next = patch(announced, raid.maxPlayers);
     data.announcedPlannerGroupsJson = announceLayoutToStoredJson(next, raid.maxPlayers);
   }
 
   if (Object.keys(data).length > 0) {
     await prisma.rfRaid.update({ where: { id: raidId }, data });
   }
+}
+
+/** Abmeldung: Signup komplett aus Planer-JSON entfernen (nicht in Absage-Block). */
+export async function removeSignupIdsFromPlannerStorage(
+  prisma: PrismaClient,
+  raidId: string,
+  signupIds: string[]
+): Promise<void> {
+  if (signupIds.length === 0) return;
+  const idSet = new Set(signupIds);
+  await patchPlannerJsonForRaid(prisma, raidId, (payload, maxPlayers) =>
+    removeSignupIdsFromAnnouncePayload(payload, idSet, maxPlayers)
+  );
+}
+
+/**
+ * „Nicht da“: Spieler bleibt im Raid (type/originalSignupType = declined), Planer-JSON → Absage-Block.
+ */
+export async function markSignupWithdrawnInPlannerStorage(
+  prisma: PrismaClient,
+  raidId: string,
+  signupIds: string[]
+): Promise<void> {
+  if (signupIds.length === 0) return;
+  await patchPlannerJsonForRaid(prisma, raidId, (payload, maxPlayers) =>
+    moveSignupIdsToDeclineInAnnouncePayload(payload, signupIds, maxPlayers)
+  );
 }
 
 export async function withdrawRaidSignupRows(
@@ -81,7 +100,7 @@ export async function withdrawRaidSignupRows(
     guildId: string;
     /** Bei angekündigtem Kader: setConfirmed zurücksetzen */
     clearConfirmed?: boolean;
-    /** true = Abmelden (Marker `withdrawn`), false = „Nicht da“ */
+    /** true = Abmelden (Zeile löschen), false = „Nicht da“ (declined behalten) */
     asUnregister?: boolean;
   }
 ): Promise<void> {
@@ -94,13 +113,31 @@ export async function withdrawRaidSignupRows(
     where: { id: { in: signupIds }, raidId },
   });
 
+  if (asUnregister) {
+    await removeSignupIdsFromPlannerStorage(prisma, raidId, signupIds);
+    for (const prev of rows) {
+      const prevSnap = snapshotSignup(prev as unknown as Record<string, unknown>);
+      await logRaidSignupAudit({
+        signupId: prev.id,
+        raidId,
+        guildId,
+        changedByUserId,
+        action: 'signup_delete',
+        oldValue: prevSnap,
+        newValue: null,
+      });
+      await prisma.rfRaidSignup.delete({ where: { id: prev.id } });
+    }
+    return;
+  }
+
   for (const prev of rows) {
     const prevSnap = snapshotSignup(prev as unknown as Record<string, unknown>);
     const updated = await prisma.rfRaidSignup.update({
       where: { id: prev.id },
       data: {
         type: 'declined',
-        originalSignupType: asUnregister ? WITHDRAWN_SIGNUP_ORIGINAL_TYPE : 'declined',
+        originalSignupType: 'declined',
         leaderPlacement: 'signup',
         ...(clearConfirmed ? { setConfirmed: false } : {}),
       },

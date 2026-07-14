@@ -19,6 +19,7 @@ import {
   fetchAllChannelMessages,
   type DiscordFetchedMessage,
 } from '@/lib/discord-guild-api';
+import { PRISMA_VISIBLE_SIGNUP_WHERE } from '@/lib/raid-signup-constants';
 import { buildRaidActionButtons, buildGuestRaidActionButtons } from '@/lib/raid-embed-builder';
 import { buildRaidDiscordEmbedsForRaid, buildGuestRaidDiscordEmbedsForRaid } from '@/lib/raid-discord-display-snapshot';
 import { getAppConfig } from '@/lib/app-config';
@@ -35,6 +36,7 @@ async function loadRaidForSync(raidId: string) {
     include: {
       dungeon: { select: { name: true } },
       signups: {
+        where: PRISMA_VISIBLE_SIGNUP_WHERE,
         include: {
           character: {
             select: { name: true, mainSpec: true, isMain: true },
