@@ -3449,10 +3449,46 @@ async function handleEditNoteModal(interaction, raidId) {
 // RaidTools & Info @ Raidlead
 // ---------------------------------------------------------------------------
 
-async function handleRaidToolsButton(interaction, raidId) {
-  await interaction.deferReply({ ephemeral: true }).catch(() => {});
-  const locale = botLocale(interaction, null);
+function buildOptionsMenuComponents(raidId, guildId, locale) {
+  const rid = raidId.replace(/-/g, '');
+  const gid = guildId.replace(/-/g, '');
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`rf:optstools:${rid}`)
+        .setLabel(raidBotMessage(locale, 'OPTIONS_RAID_TOOLS'))
+        .setEmoji('🛠️')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`rf:optschar:${rid}:${gid}`)
+        .setLabel(raidBotMessage(locale, 'OPTIONS_ADD_CHAR'))
+        .setEmoji('👤')
+        .setStyle(ButtonStyle.Primary),
+    ),
+  ];
+}
 
+function buildRaidToolsMenuComponents(raidId, locale) {
+  const rid = raidId.replace(/-/g, '');
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`rf:toolsync:${rid}`)
+        .setLabel(raidBotMessage(locale, 'RAIDTOOLS_SYNC'))
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId(`rf:toolpush:${rid}`)
+        .setLabel(raidBotMessage(locale, 'RAIDTOOLS_PUSH'))
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`rf:toolpushm:${rid}`)
+        .setLabel(raidBotMessage(locale, 'RAIDTOOLS_PUSH_MENTION'))
+        .setStyle(ButtonStyle.Secondary),
+    ),
+  ];
+}
+
+async function replyRaidToolsMenu(interaction, raidId, locale) {
   let ok = false;
   let json = {};
   try {
@@ -3463,7 +3499,7 @@ async function handleRaidToolsButton(interaction, raidId) {
       ...(interaction.channelId ? { discordChannelId: interaction.channelId } : {}),
     }));
   } catch (e) {
-    console.error('[RaidToolsButton] get-raid-tools', e);
+    console.error('[RaidTools] get-raid-tools', e);
     await interaction.editReply({ content: `❌ ${raidBotMessage(locale, 'BACKEND_FAILED')}`, components: [] }).catch(() => {});
     scheduleDeleteSingleEphemeralReply(interaction);
     return;
@@ -3482,26 +3518,64 @@ async function handleRaidToolsButton(interaction, raidId) {
     return;
   }
 
-  const rid = raidId.replace(/-/g, '');
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`rf:toolsync:${rid}`)
-      .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_SYNC'))
-      .setStyle(ButtonStyle.Primary),
-    new ButtonBuilder()
-      .setCustomId(`rf:toolpush:${rid}`)
-      .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_PUSH'))
-      .setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder()
-      .setCustomId(`rf:toolpushm:${rid}`)
-      .setLabel(raidBotMessage(guestLocale, 'RAIDTOOLS_PUSH_MENTION'))
-      .setStyle(ButtonStyle.Secondary),
-  );
+  await interaction.editReply({
+    content: raidBotMessage(guestLocale, 'RAIDTOOLS_TITLE'),
+    components: buildRaidToolsMenuComponents(raidId, guestLocale),
+  }).catch(() => {});
+}
+
+async function handleRaidOptionsButton(interaction, raidId, guildId) {
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  const { ok, json } = await fetchRaidParticipantState(interaction, raidId);
+  const locale = ok ? botLocale(interaction, json) : botLocale(interaction, null);
+  const resolvedGuildId = guildId || json?.raidGuildId || '';
+  if (!resolvedGuildId) {
+    await interaction.editReply({ content: `❌ ${raidBotMessage(locale, 'BACKEND_FAILED')}`, components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
 
   await interaction.editReply({
-    content:   raidBotMessage(guestLocale, 'RAIDTOOLS_TITLE'),
-    components: [row1],
+    content: raidBotMessage(locale, 'OPTIONS_TITLE'),
+    components: buildOptionsMenuComponents(raidId, resolvedGuildId, locale),
   }).catch(() => {});
+}
+
+async function handleRaidOptionsToolsButton(interaction, raidId) {
+  await interaction.deferUpdate().catch(() => {});
+  const locale = botLocale(interaction, null);
+  await replyRaidToolsMenu(interaction, raidId, locale);
+}
+
+async function handleRaidOptionsAddCharButton(interaction, raidId, guildId) {
+  await interaction.deferUpdate().catch(() => {});
+  const { ok, json } = await fetchRaidParticipantState(interaction, raidId);
+  const locale = ok ? botLocale(interaction, json) : botLocale(interaction, null);
+
+  if (!ok) {
+    await interaction.editReply({ content: `❌ ${raidBotMessage(locale, 'BACKEND_FAILED')}`, components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+  if (!json.linked) {
+    await interaction.editReply({ content: raidActionErrorText('NOT_LINKED', undefined, locale), components: [] }).catch(() => {});
+    scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  await startCharOnboarding(
+    interaction,
+    raidId,
+    json,
+    { assignPurpose: 'addchar', locale },
+    charOnboardingDeps(),
+  );
+}
+
+async function handleRaidToolsButton(interaction, raidId) {
+  await interaction.deferReply({ ephemeral: true }).catch(() => {});
+  const locale = botLocale(interaction, null);
+  await replyRaidToolsMenu(interaction, raidId, locale);
 }
 
 async function handleRaidToolRun(interaction, raidId, action) {
@@ -3891,6 +3965,9 @@ client.on('interactionCreate', async (interaction) => {
         if (action === 'j2nextchar')  { await handleJoin2StepNav(interaction, raidId, 'next'); return; }
         if (action === 'j2open')      { await handleJoin2OpenNoteModal(interaction, raidId); return; }
         if (action === 'tools')       { await handleRaidToolsButton(interaction, raidId); return; }
+        if (action === 'opts')        { await handleRaidOptionsButton(interaction, raidId, extra); return; }
+        if (action === 'optstools')   { await handleRaidOptionsToolsButton(interaction, raidId); return; }
+        if (action === 'optschar')    { await handleRaidOptionsAddCharButton(interaction, raidId, extra); return; }
         if (action === 'toolsync')    { await handleRaidToolRun(interaction, raidId, 'sync-post'); return; }
         if (action === 'toolpush')    { await handleRaidToolRun(interaction, raidId, 'push-raid'); return; }
         if (action === 'toolpushm')   { await handleRaidToolPushMentionButton(interaction, raidId); return; }

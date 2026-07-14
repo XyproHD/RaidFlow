@@ -264,7 +264,7 @@ function buildCharNameModal(raidId, locale) {
 export async function startCharOnboarding(interaction, raidId, json, opts, deps) {
   const locale = opts.locale ?? 'de';
   const purpose = opts.assignPurpose;
-  if (purpose !== 'qj' && purpose !== 'join') return false;
+  if (purpose !== 'qj' && purpose !== 'join' && purpose !== 'addchar') return false;
 
   const realmId = json.battlenetRealmId?.trim?.() ?? json.battlenetRealmId ?? '';
   if (!realmId) {
@@ -544,7 +544,24 @@ async function resumeOriginalRaidAction(interaction, flow, deps) {
   const { ok, json } = await deps.fetchRaidParticipantState(interaction, flow.raidId);
   const locale = ok ? deps.botLocale(interaction, json) : flow.locale ?? 'de';
 
-  if (!ok || !json.guildMember) {
+  if (!ok) {
+    const errText = `❌ ${deps.raidBotMessage(locale, 'BACKEND_FAILED')}`;
+    await patchOnboardingEphemeral(interaction, errText, []);
+    deps.scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  if (flow.purpose === 'addchar') {
+    await patchOnboardingEphemeral(
+      interaction,
+      formatMsg(locale, 'CO_STATUS_DONE', { name: flow.characterName ?? '?' }),
+      [],
+    );
+    deps.scheduleDeleteSingleEphemeralReply(interaction);
+    return;
+  }
+
+  if (!json.guildMember) {
     const errText = `❌ ${deps.raidBotMessage(locale, 'BACKEND_FAILED')}`;
     await patchOnboardingEphemeral(interaction, errText, []);
     deps.scheduleDeleteSingleEphemeralReply(interaction);

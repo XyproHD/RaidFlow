@@ -94,6 +94,7 @@ const TOPICS = {
       title: '🛠️ RaidTools',
       body: [
         '**RaidTools** steht nur Raidleadern und Gildenmeistern zur Verfügung.',
+        'Am Raid-Beitrag: **Optionen** → **RaidTools**.',
         '',
         '**Beitrag aktualisieren** — Synchronisiert den Discord-Beitrag mit dem aktuellen Stand aus RaidFlow (Anmeldungen, Kader, Status).',
         '',
@@ -157,6 +158,7 @@ const TOPICS = {
       title: '🛠️ RaidTools',
       body: [
         '**RaidTools** is available to raid leaders and guild masters only.',
+        'On the raid post: **Options** → **Raid Tools**.',
         '',
         '**Update post** — Syncs the Discord post with the current RaidFlow state (sign-ups, roster, status).',
         '',

@@ -172,8 +172,12 @@ const MESSAGES = {
     CO_BNET_FAIL_DETAIL: '\n\n*Details: {detail}*',
     CO_CREATE_FAIL: '❌ Charakter konnte nicht angelegt werden: {detail}',
     CO_CANCELLED: 'Charakter-Anlage abgebrochen.',
-    CO_SESSION_EXPIRED: '⚠️ Sitzung abgebrochen. Bitte erneut auf Quickjoin oder Anmelden klicken.',
+    CO_SESSION_EXPIRED: '⚠️ Sitzung abgebrochen. Bitte erneut über Quickjoin, Anmelden oder Optionen → Charakter anlegen starten.',
     CO_EMPTY_NAME: '⚠️ Bitte einen gültigen Charakternamen eingeben.',
+    OPTIONS_BTN: 'Optionen',
+    OPTIONS_TITLE: '⚙️ **Optionen** – wähle eine Aktion:',
+    OPTIONS_RAID_TOOLS: 'RaidTools',
+    OPTIONS_ADD_CHAR: 'Charakter anlegen',
   },
   en: {
     NOT_LINKED:
@@ -336,8 +340,12 @@ const MESSAGES = {
     CO_BNET_FAIL_DETAIL: '\n\n*Details: {detail}*',
     CO_CREATE_FAIL: '❌ Could not create character: {detail}',
     CO_CANCELLED: 'Character creation cancelled.',
-    CO_SESSION_EXPIRED: '⚠️ Session expired. Please click Quick join or Sign up again.',
+    CO_SESSION_EXPIRED: '⚠️ Session expired. Start again via Quick join, Sign up, or Options → Add character.',
     CO_EMPTY_NAME: '⚠️ Please enter a valid character name.',
+    OPTIONS_BTN: 'Options',
+    OPTIONS_TITLE: '⚙️ **Options** – choose an action:',
+    OPTIONS_RAID_TOOLS: 'Raid Tools',
+    OPTIONS_ADD_CHAR: 'Add Character',
   },
 };
 
